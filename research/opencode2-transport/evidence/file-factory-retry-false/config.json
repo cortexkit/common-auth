@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    "<spike>/plugin"
+  ],
+  "providers": {
+    "customaisdk": {
+      "name": "aisdk: package that is a local file",
+      "package": "aisdk:file://<spike>/plugin/sdk-factory.mjs",
+      "settings": {
+        "baseURL": "http://127.0.0.1:55621/v1",
+        "apiKey": "sk-mock-not-a-real-key"
+      },
+      "models": {
+        "mock-model": {
+          "name": "Mock via plugin-supplied SDK"
+        }
+      }
+    }
+  }
+}

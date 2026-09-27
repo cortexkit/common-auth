@@ -1,0 +1,25 @@
+{
+  "scenario": "openai-http-retry-observe",
+  "mode": "observe,retry-observe",
+  "model": "openai/mock-model",
+  "exit": 0,
+  "signal": null,
+  "ms": 2753,
+  "mockRequests": 4,
+  "pluginEvents": [
+    "setup",
+    "session.context",
+    "session.title",
+    "session.model.request",
+    "session.model.request",
+    "session.http.request",
+    "session.http.response",
+    "session.http.request",
+    "session.http.response",
+    "session.retry",
+    "session.context",
+    "session.model.request",
+    "session.http.request",
+    "session.http.response"
+  ]
+}

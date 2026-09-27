@@ -1,0 +1,22 @@
+{
+  "scenario": "compat-http-replace",
+  "mode": "observe,http-replace",
+  "model": "mockcompat/mock-model",
+  "exit": 0,
+  "signal": null,
+  "ms": 692,
+  "mockRequests": 2,
+  "pluginEvents": [
+    "setup",
+    "session.title",
+    "session.context",
+    "session.model.request",
+    "session.model.request",
+    "session.http.request",
+    "session.http.response",
+    "session.http.response.replaced",
+    "session.http.request",
+    "session.http.response",
+    "session.http.response.replaced"
+  ]
+}

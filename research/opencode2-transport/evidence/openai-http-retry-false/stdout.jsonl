@@ -1,0 +1,2 @@
+{"type":"step_start","timestamp":1790535932678,"sessionID":"ses_f1bbde61cffeprCfHQMvhF0SRE","part":{"id":"prt_0e4421b06001oCMhPXLZx7Kzrr","sessionID":"ses_f1bbde61cffeprCfHQMvhF0SRE","messageID":"msg_0e4421a9b001Cm61cYkinhj9tE","type":"step-start","snapshot":"4b825dc642cb6eb9a060e54bf8d69288fbee4904"}}
+{"type":"error","timestamp":1790535932698,"sessionID":"ses_f1bbde61cffeprCfHQMvhF0SRE","error":{"type":"provider.transport","message":"Decode error (200 POST http://127.0.0.1:55546/v1/responses)","status":200}}

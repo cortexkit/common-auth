@@ -1,0 +1,12 @@
+{
+  "name": "opencode2-transport-spike",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ai-sdk/openai": "3.0.119",
+    "@opencode/cli": "2.0.18",
+    "@opencode/core": "2.0.18",
+    "@opencode/plugin": "2.0.18",
+    "ws": "8.22.0"
+  }
+}

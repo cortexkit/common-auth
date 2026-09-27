@@ -1,0 +1,28 @@
+{
+  "scenario": "file-factory-language",
+  "mode": "observe,sdk,language",
+  "model": "customaisdk/mock-model",
+  "exit": 0,
+  "signal": null,
+  "ms": 870,
+  "mockRequests": 0,
+  "pluginEvents": [
+    "setup",
+    "sdk-factory.create",
+    "aisdk.sdk",
+    "aisdk.sdk.installed",
+    "aisdk.language",
+    "sdk-factory.create",
+    "aisdk.sdk",
+    "aisdk.sdk.installed",
+    "session.title",
+    "aisdk.language",
+    "session.model.request",
+    "session.context",
+    "language.doStream",
+    "session.model.request",
+    "owned-fetch.call",
+    "language.doStream",
+    "owned-fetch.call"
+  ]
+}

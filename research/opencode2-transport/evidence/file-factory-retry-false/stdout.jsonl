@@ -1,0 +1,2 @@
+{"type":"step_start","timestamp":1790535939950,"sessionID":"ses_f1bbdc97bffekx1V34JlefcASq","part":{"id":"prt_0e442376e00175fUUU1SNp0cfR","sessionID":"ses_f1bbdc97bffekx1V34JlefcASq","messageID":"msg_0e4423737001kjZ46uaiZELHqg","type":"step-start","snapshot":"4b825dc642cb6eb9a060e54bf8d69288fbee4904"}}
+{"type":"error","timestamp":1790535939971,"sessionID":"ses_f1bbdc97bffekx1V34JlefcASq","error":{"type":"provider.internal","message":"mock: injected server error","status":500}}

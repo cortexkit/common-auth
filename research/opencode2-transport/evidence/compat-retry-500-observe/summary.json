@@ -1,0 +1,25 @@
+{
+  "scenario": "compat-retry-500-observe",
+  "mode": "observe,retry-observe",
+  "model": "mockcompat/mock-model",
+  "exit": 0,
+  "signal": null,
+  "ms": 3034,
+  "mockRequests": 4,
+  "pluginEvents": [
+    "setup",
+    "session.title",
+    "session.context",
+    "session.model.request",
+    "session.model.request",
+    "session.http.request",
+    "session.http.response",
+    "session.http.request",
+    "session.http.response",
+    "session.retry",
+    "session.context",
+    "session.model.request",
+    "session.http.request",
+    "session.http.response"
+  ]
+}

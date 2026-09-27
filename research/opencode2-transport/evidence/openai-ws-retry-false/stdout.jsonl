@@ -1,0 +1,2 @@
+{"type":"step_start","timestamp":1790535940713,"sessionID":"ses_f1bbdc67fffeSt1ZgtSWXtIqEd","part":{"id":"prt_0e4423a69001JEotfT2LHFhzBW","sessionID":"ses_f1bbdc67fffeSt1ZgtSWXtIqEd","messageID":"msg_0e4423a35001UJCIRYIUggPfKa","type":"step-start","snapshot":"4b825dc642cb6eb9a060e54bf8d69288fbee4904"}}
+{"type":"error","timestamp":1790535940732,"sessionID":"ses_f1bbdc67fffeSt1ZgtSWXtIqEd","error":{"type":"provider.transport","message":"WebSocket closed with code 1006"}}

@@ -1,0 +1,28 @@
+{
+  "scenario": "openai-default-observe",
+  "mode": "observe,sdk,language,retry-observe",
+  "model": "openai/mock-model",
+  "exit": 0,
+  "signal": null,
+  "ms": 701,
+  "mockRequests": 3,
+  "pluginEvents": [
+    "setup",
+    "session.context",
+    "session.title",
+    "session.model.request",
+    "session.model.request",
+    "session.http.request",
+    "session.http.response",
+    "session.ws.handshake",
+    "session.ws.send",
+    "session.ws.receive",
+    "session.ws.receive",
+    "session.ws.receive",
+    "session.ws.receive",
+    "session.ws.receive",
+    "session.ws.receive",
+    "session.ws.receive",
+    "session.ws.receive"
+  ]
+}

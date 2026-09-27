@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    "<spike>/plugin"
+  ],
+  "providers": {
+    "explicitaisdk": {
+      "name": "Explicit aisdk: prefix on @ai-sdk/openai",
+      "package": "aisdk:@ai-sdk/openai",
+      "settings": {
+        "baseURL": "http://127.0.0.1:55280/v1",
+        "apiKey": "sk-mock-not-a-real-key"
+      },
+      "models": {
+        "mock-model": {
+          "name": "Mock via aisdk:@ai-sdk/openai"
+        }
+      }
+    }
+  }
+}

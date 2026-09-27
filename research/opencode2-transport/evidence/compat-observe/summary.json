@@ -1,0 +1,20 @@
+{
+  "scenario": "compat-observe",
+  "mode": "observe,sdk,language,retry-observe",
+  "model": "mockcompat/mock-model",
+  "exit": 0,
+  "signal": null,
+  "ms": 712,
+  "mockRequests": 2,
+  "pluginEvents": [
+    "setup",
+    "session.title",
+    "session.context",
+    "session.model.request",
+    "session.model.request",
+    "session.http.request",
+    "session.http.response",
+    "session.http.request",
+    "session.http.response"
+  ]
+}

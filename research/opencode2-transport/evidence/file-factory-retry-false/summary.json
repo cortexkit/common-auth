@@ -1,0 +1,25 @@
+{
+  "scenario": "file-factory-retry-false",
+  "mode": "observe,retry-false",
+  "model": "customaisdk/mock-model",
+  "exit": 1,
+  "signal": null,
+  "ms": 705,
+  "mockRequests": 3,
+  "pluginEvents": [
+    "setup",
+    "sdk-factory.create",
+    "session.title",
+    "session.model.request",
+    "sdk-factory.create",
+    "session.context",
+    "session.model.request",
+    "owned-fetch.call",
+    "session.http.request",
+    "session.http.response",
+    "owned-fetch.call",
+    "session.http.request",
+    "session.http.response",
+    "session.retry"
+  ]
+}

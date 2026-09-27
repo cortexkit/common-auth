@@ -1,0 +1,20 @@
+{
+  "scenario": "file-factory-synth",
+  "mode": "observe",
+  "model": "customaisdk/mock-model",
+  "exit": 0,
+  "signal": null,
+  "ms": 739,
+  "mockRequests": 0,
+  "pluginEvents": [
+    "setup",
+    "sdk-factory.create",
+    "session.title",
+    "session.model.request",
+    "sdk-factory.create",
+    "session.context",
+    "session.model.request",
+    "owned-fetch.call",
+    "owned-fetch.call"
+  ]
+}

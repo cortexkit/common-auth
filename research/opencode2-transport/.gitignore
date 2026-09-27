@@ -1,0 +1,4 @@
+node_modules/
+run/
+# The repository ignores *.log; the host logs are part of the evidence.
+!evidence/*/stderr.log

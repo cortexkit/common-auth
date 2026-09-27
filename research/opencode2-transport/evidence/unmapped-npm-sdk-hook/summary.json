@@ -1,0 +1,12 @@
+{
+  "scenario": "unmapped-npm-sdk-hook",
+  "mode": "observe,sdk",
+  "model": "unmappednpm/mock-model",
+  "exit": 1,
+  "signal": null,
+  "ms": 71192,
+  "mockRequests": 0,
+  "pluginEvents": [
+    "setup"
+  ]
+}

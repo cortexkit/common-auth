@@ -1,0 +1,1 @@
+{"t":1790535849214,"event":"setup","modes":["observe","sdk"],"contextKeys":["agent","aisdk","app","command","event","experimental","generate","integration","location","mcp","model","options","permission","plugin","provider","reference","rpc","session","shell","skill","storage","tool","vcs","websearch","worktree"],"sdkPackage":"file://<spike>/plugin/sdk-factory.mjs"}

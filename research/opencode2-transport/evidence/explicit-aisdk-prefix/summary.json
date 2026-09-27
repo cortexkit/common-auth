@@ -1,0 +1,20 @@
+{
+  "scenario": "explicit-aisdk-prefix",
+  "mode": "observe,sdk,language",
+  "model": "explicitaisdk/mock-model",
+  "exit": 0,
+  "signal": null,
+  "ms": 706,
+  "mockRequests": 2,
+  "pluginEvents": [
+    "setup",
+    "session.title",
+    "session.context",
+    "session.model.request",
+    "session.model.request",
+    "session.http.request",
+    "session.http.response",
+    "session.http.request",
+    "session.http.response"
+  ]
+}
