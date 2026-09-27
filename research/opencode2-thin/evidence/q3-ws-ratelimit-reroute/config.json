@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    "<spike>/plugin"
+  ],
+  "providers": {
+    "openai": {
+      "settings": {
+        "baseURL": "http://127.0.0.1:50598/v1"
+      },
+      "models": {
+        "mock-model": {
+          "name": "Mock via openai, no configured key"
+        }
+      }
+    }
+  }
+}

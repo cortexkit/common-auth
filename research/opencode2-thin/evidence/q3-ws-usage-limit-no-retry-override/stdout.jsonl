@@ -1,0 +1,2 @@
+{"type":"step_start","timestamp":1790545485700,"sessionID":"ses_f1b2c2174ffeoDf0pAJJXi5cDo","part":{"id":"prt_0e4d3df84001ys1O9DJbmfv4wC","sessionID":"ses_f1b2c2174ffeoDf0pAJJXi5cDo","messageID":"msg_0e4d3df4e001hONYl8IMOJg01Q","type":"step-start","snapshot":"4b825dc642cb6eb9a060e54bf8d69288fbee4904"}}
+{"type":"error","timestamp":1790545485719,"sessionID":"ses_f1b2c2174ffeoDf0pAJJXi5cDo","error":{"type":"provider.quota","message":"The usage limit has been reached"}}

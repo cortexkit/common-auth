@@ -1,0 +1,28 @@
+{
+  "scenario": "q3-ws-after-output-veto",
+  "mode": "accounts,reroute",
+  "model": "openai/mock-model",
+  "exit": 1,
+  "turnExits": [
+    1
+  ],
+  "signal": null,
+  "ms": 697,
+  "mockRequests": 5,
+  "pluginEvents": [
+    "setup",
+    "acct.registered",
+    "acct.model.request",
+    "acct.http.request",
+    "acct.plugins",
+    "acct.model.request",
+    "acct.http.response",
+    "acct.output-seen",
+    "acct.ws.handshake",
+    "acct.ws.send",
+    "acct.ws.quota",
+    "acct.output-seen",
+    "acct.refusal-seen",
+    "acct.retry"
+  ]
+}

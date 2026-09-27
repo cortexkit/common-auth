@@ -1,0 +1,30 @@
+{
+  "scenario": "q1-http-model-request-apikey",
+  "mode": "accounts",
+  "model": "openai/mock-model",
+  "exit": 0,
+  "turnExits": [
+    0,
+    0
+  ],
+  "signal": null,
+  "ms": 669,
+  "mockRequests": 3,
+  "pluginEvents": [
+    "setup",
+    "acct.registered",
+    "acct.model.request",
+    "acct.http.request",
+    "acct.plugins",
+    "acct.model.request",
+    "acct.http.response",
+    "acct.output-seen",
+    "acct.http.request",
+    "acct.http.response",
+    "acct.output-seen",
+    "acct.model.request",
+    "acct.http.request",
+    "acct.http.response",
+    "acct.output-seen"
+  ]
+}

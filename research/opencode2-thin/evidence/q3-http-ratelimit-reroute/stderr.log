@@ -1,0 +1,93 @@
+timestamp=2026-09-27T21:44:38.906Z level=INFO run=fe35ad03 message="spawning process" command=<spike>/node_modules/@opencode/cli/bin/opencode.exe args="[\"serve\",\"--stdio\",\"--port\",\"0\"]" cwd=<run>/project role=cli
+timestamp=2026-09-27T21:44:38.936Z level=INFO run=69648622 message="cli starting" version=2.0.18 channel=latest local=false args="[\"serve\",\"--stdio\",\"--port\",\"0\"]" role=cli
+timestamp=2026-09-27T21:44:38.986Z level=INFO run=69648622 message="database schema bootstrap started" migrations=48 role=server
+timestamp=2026-09-27T21:44:38.990Z level=INFO run=69648622 message="database schema bootstrap completed" migrations=48 durationMs=4 role=server
+timestamp=2026-09-27T21:44:39.001Z level=INFO run=69648622 message="spawning process" command=git args="[\"rev-parse\",\"--git-dir\",\"--git-common-dir\",\"--show-toplevel\"]" cwd=<run>/project http.span=1 role=server
+timestamp=2026-09-27T21:44:39.011Z level=INFO run=69648622 message="spawning process" command=git args="[\"remote\",\"get-url\",\"origin\"]" cwd=<run>/project http.span=11 role=server
+timestamp=2026-09-27T21:44:39.019Z level=INFO run=69648622 message="spawning process" command=git args="[\"rev-list\",\"--max-parents=0\",\"HEAD\"]" cwd=<run>/project http.span=19 role=server
+timestamp=2026-09-27T21:44:39.035Z level=INFO run=69648622 message="watcher subscribe" path=<run>/xdg-config/opencode type=directory ignores=3 http.span=35 role=server
+timestamp=2026-09-27T21:44:39.097Z level=INFO run=69648622 message="watcher subscribe" path=/ type=entries ignores=0 http.span=97 role=server
+timestamp=2026-09-27T21:44:39.098Z level=INFO run=69648622 message="watcher started" path=/ type=entries backend=node ignores=0 http.span=98 role=server
+timestamp=2026-09-27T21:44:39.098Z level=INFO run=69648622 message="watcher subscribe" path=/private type=entries ignores=0 http.span=98 role=server
+timestamp=2026-09-27T21:44:39.098Z level=INFO run=69648622 message="watcher started" path=/private type=entries backend=node ignores=0 http.span=98 role=server
+timestamp=2026-09-27T21:44:39.098Z level=INFO run=69648622 message="watcher subscribe" path=/private/var type=entries ignores=0 http.span=98 role=server
+timestamp=2026-09-27T21:44:39.098Z level=INFO run=69648622 message="watcher started" path=/private/var type=entries backend=node ignores=0 http.span=98 role=server
+timestamp=2026-09-27T21:44:39.098Z level=INFO run=69648622 message="watcher subscribe" path=/private/var/folders type=entries ignores=0 http.span=98 role=server
+timestamp=2026-09-27T21:44:39.099Z level=INFO run=69648622 message="watcher started" path=/private/var/folders type=entries backend=node ignores=0 http.span=99 role=server
+timestamp=2026-09-27T21:44:39.099Z level=INFO run=69648622 message="watcher subscribe" path=/private/var/folders/18 type=entries ignores=0 http.span=99 role=server
+timestamp=2026-09-27T21:44:39.099Z level=INFO run=69648622 message="watcher started" path=/private/var/folders/18 type=entries backend=node ignores=0 http.span=99 role=server
+timestamp=2026-09-27T21:44:39.099Z level=INFO run=69648622 message="watcher subscribe" path=/private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn type=entries ignores=0 http.span=99 role=server
+timestamp=2026-09-27T21:44:39.099Z level=INFO run=69648622 message="watcher started" path=/private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn type=entries backend=node ignores=0 http.span=99 role=server
+timestamp=2026-09-27T21:44:39.099Z level=INFO run=69648622 message="watcher subscribe" path=<tmp> type=entries ignores=0 http.span=99 role=server
+timestamp=2026-09-27T21:44:39.099Z level=INFO run=69648622 message="watcher started" path=<tmp> type=entries backend=node ignores=0 http.span=99 role=server
+timestamp=2026-09-27T21:44:39.100Z level=INFO run=69648622 message="watcher subscribe" path=<tmp>/oc2-thin-spike type=entries ignores=0 http.span=100 role=server
+timestamp=2026-09-27T21:44:39.100Z level=INFO run=69648622 message="watcher started" path=<tmp>/oc2-thin-spike type=entries backend=node ignores=0 http.span=100 role=server
+timestamp=2026-09-27T21:44:39.100Z level=INFO run=69648622 message="watcher subscribe" path=<run> type=entries ignores=0 http.span=100 role=server
+timestamp=2026-09-27T21:44:39.100Z level=INFO run=69648622 message="watcher started" path=<run> type=entries backend=node ignores=0 http.span=100 role=server
+timestamp=2026-09-27T21:44:39.100Z level=INFO run=69648622 message="watcher subscribe" path=<run>/project type=entries ignores=0 http.span=100 role=server
+timestamp=2026-09-27T21:44:39.100Z level=INFO run=69648622 message="watcher started" path=<run>/project type=entries backend=node ignores=0 http.span=100 role=server
+timestamp=2026-09-27T21:44:39.100Z level=INFO run=69648622 message="watcher subscribe" path=<run>/home type=entries ignores=0 http.span=100 role=server
+timestamp=2026-09-27T21:44:39.101Z level=INFO run=69648622 message="watcher started" path=<run>/home type=entries backend=node ignores=0 http.span=101 role=server
+timestamp=2026-09-27T21:44:39.102Z level=INFO run=69648622 message="watcher started" path=<run>/xdg-config/opencode type=directory backend=fs-events ignores=3 http.span=102 role=server
+timestamp=2026-09-27T21:44:39.212Z level=INFO run=69648622 message="location services booted" directory=<run>/project workspaceID=undefined durationMs=211 http.span=212 role=server
+timestamp=2026-09-27T21:44:39.215Z level=INFO run=69648622 message="spawning process" command=git args="[\"rev-parse\",\"--git-dir\",\"--git-common-dir\",\"--show-toplevel\"]" cwd=<run>/project http.span=2 role=server
+timestamp=2026-09-27T21:44:39.216Z level=INFO run=69648622 message="watcher subscribe" path=<spike>/plugin type=directory ignores=0 http.span=216 role=server
+timestamp=2026-09-27T21:44:39.216Z level=INFO run=69648622 msg="loading plugin" id=<spike>/plugin entrypoint=file://<spike>/plugin/index.js http.span=216 role=server
+timestamp=2026-09-27T21:44:39.249Z level=INFO run=69648622 message="watcher started" path=<spike>/plugin type=directory backend=fs-events ignores=0 http.span=249 role=server
+timestamp=2026-09-27T21:44:39.249Z level=INFO run=69648622 message="watcher subscribe" path=<spike>/plugin/index.js type=file ignores=0 http.span=249 role=server
+timestamp=2026-09-27T21:44:39.249Z level=INFO run=69648622 message="watcher started" path=<spike>/plugin/index.js type=file backend=node ignores=0 http.span=249 role=server
+timestamp=2026-09-27T21:44:39.249Z level=INFO run=69648622 message="watcher subscribe" path=<spike>/plugin/accounts.js type=file ignores=0 http.span=249 role=server
+timestamp=2026-09-27T21:44:39.249Z level=INFO run=69648622 message="watcher started" path=<spike>/plugin/accounts.js type=file backend=node ignores=0 http.span=249 role=server
+timestamp=2026-09-27T21:44:39.312Z level=INFO run=69648622 message="spawning process" command=git args="[\"remote\",\"get-url\",\"origin\"]" cwd=<run>/project http.span=99 role=server
+timestamp=2026-09-27T21:44:39.316Z level=INFO run=69648622 message="watcher subscribe" path=<run>/xdg-config/opencode/AGENTS.md type=file ignores=0
+timestamp=2026-09-27T21:44:39.316Z level=INFO run=69648622 message="watcher started" path=<run>/xdg-config/opencode/AGENTS.md type=file backend=node ignores=0 http.span=316 role=server
+timestamp=2026-09-27T21:44:39.316Z level=INFO run=69648622 message="watcher subscribe" path=<run>/project/AGENTS.md type=file ignores=0
+timestamp=2026-09-27T21:44:39.316Z level=INFO run=69648622 message="watcher started" path=<run>/project/AGENTS.md type=file backend=node ignores=0 http.span=316 role=server
+timestamp=2026-09-27T21:44:39.320Z level=INFO run=69648622 message="watcher subscribe" path=<run>/xdg-config/opencode/skill type=file ignores=0
+timestamp=2026-09-27T21:44:39.320Z level=INFO run=69648622 message="watcher started" path=<run>/xdg-config/opencode/skill type=file backend=node ignores=0 http.span=320 role=server
+timestamp=2026-09-27T21:44:39.320Z level=INFO run=69648622 message="watcher subscribe" path=<run>/xdg-config/opencode/skills type=file ignores=0
+timestamp=2026-09-27T21:44:39.320Z level=INFO run=69648622 message="watcher started" path=<run>/xdg-config/opencode/skills type=file backend=node ignores=0 http.span=320 role=server
+timestamp=2026-09-27T21:44:39.330Z level=INFO run=69648622 message=event event.id=evt_0e4d3c6a2001rwffkreNtmXSi5 event.created=1790545479330 event.type=provider.updated event.location.directory=<run>/project event.location.workspaceID=undefined event.data={} http.span=330 role=server
+timestamp=2026-09-27T21:44:39.334Z level=INFO run=69648622 message=event event.id=evt_0e4d3c6a6001SuuOupvIo20jAp event.created=1790545479334 event.type=model.updated event.location.directory=<run>/project event.location.workspaceID=undefined event.data={} http.span=334 role=server
+timestamp=2026-09-27T21:44:39.334Z level=INFO run=69648622 message="spawning process" command=git args="[\"--no-optional-locks\",\"-c\",\"core.autocrlf=false\",\"-c\",\"core.fsmonitor=false\",\"-c\",\"core.longpaths=true\",\"-c\",\"core.symlinks=true\",\"-c\",\"core.quotepath=false\",\"symbolic-ref\",\"--quiet\",\"--short\",\"HEAD\"]" cwd=<run>/project http.span=334 role=server
+timestamp=2026-09-27T21:44:39.335Z level=INFO run=69648622 message="spawning process" command=git args="[\"--no-optional-locks\",\"-c\",\"core.autocrlf=false\",\"-c\",\"core.fsmonitor=false\",\"-c\",\"core.longpaths=true\",\"-c\",\"core.symlinks=true\",\"-c\",\"core.quotepath=false\",\"remote\"]" cwd=<run>/project http.span=335 role=server
+timestamp=2026-09-27T21:44:39.336Z level=INFO run=69648622 message="spawning process" command=git args="[\"rev-list\",\"--max-parents=0\",\"HEAD\"]" cwd=<run>/project http.span=123 role=server
+timestamp=2026-09-27T21:44:39.346Z level=INFO run=69648622 message="spawning process" command=git args="[\"--no-optional-locks\",\"-c\",\"core.autocrlf=false\",\"-c\",\"core.fsmonitor=false\",\"-c\",\"core.longpaths=true\",\"-c\",\"core.symlinks=true\",\"-c\",\"core.quotepath=false\",\"for-each-ref\",\"--format=%(refname:short)\",\"refs/heads\"]" cwd=<run>/project http.span=346 role=server
+timestamp=2026-09-27T21:44:39.356Z level=INFO run=69648622 message="spawning process" command=git args="[\"--no-optional-locks\",\"-c\",\"core.autocrlf=false\",\"-c\",\"core.fsmonitor=false\",\"-c\",\"core.longpaths=true\",\"-c\",\"core.symlinks=true\",\"-c\",\"core.quotepath=false\",\"config\",\"init.defaultBranch\"]" cwd=<run>/project http.span=356 role=server
+timestamp=2026-09-27T21:44:39.364Z level=INFO run=69648622 message=event event.id=evt_0e4d3c6c4002jU1I5PaRzp74E6 event.created=1790545479364 event.type=agent.updated event.location.directory=<run>/project event.location.workspaceID=undefined event.data={} http.span=364 role=server
+timestamp=2026-09-27T21:44:39.364Z level=INFO run=69648622 message=event event.id=evt_0e4d3c6c4003u55xdeji9SrVOp event.created=1790545479364 event.type=command.updated event.location.directory=<run>/project event.location.workspaceID=undefined event.data={} http.span=364 role=server
+timestamp=2026-09-27T21:44:39.367Z level=INFO run=69648622 message="spawning process" command=git args="[\"rev-parse\",\"--git-dir\",\"--git-common-dir\",\"--show-toplevel\"]" cwd=<run>/project http.span=367 role=server
+timestamp=2026-09-27T21:44:39.374Z level=INFO run=69648622 message="watcher subscribe" path=<run>/project/.git/HEAD type=file ignores=0 http.span=374 role=server
+timestamp=2026-09-27T21:44:39.374Z level=INFO run=69648622 message="watcher started" path=<run>/project/.git/HEAD type=file backend=node ignores=0 http.span=374 role=server
+timestamp=2026-09-27T21:44:39.408Z level=INFO run=69648622 message="spawning process" command=git args="[\"rev-parse\",\"--git-dir\",\"--git-common-dir\",\"--show-toplevel\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.417Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"init\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.429Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"diff-files\",\"--name-only\",\"-z\",\"--\",\".\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.429Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"ls-files\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\".\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.438Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"write-tree\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.457Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"diff-files\",\"--name-only\",\"-z\",\"--\",\".\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.458Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"ls-files\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\".\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.467Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"write-tree\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.480Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"diff-files\",\"--name-only\",\"-z\",\"--\",\".\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.480Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"ls-files\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\".\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.489Z level=INFO run=69648622 message="spawning process" command=git args="[\"--git-dir\",\"<run>/xdg-data/opencode/snapshot/global/b9c8354555527624ddc4a1e22af944649745e6f4\",\"--work-tree\",\"<run>/project\",\"write-tree\"]" cwd=<run>/project role=server
+timestamp=2026-09-27T21:44:39.501Z level=INFO run=69648622 cause="InterruptError: All fibers interrupted without error\n    at ServerProcess.start (/$bunfs/root/chunk-fegwzrys.js:2:6473)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-6bsz5sgg.js:447:23526) {\n  [cause]: InterruptCause: The fiber was interrupted by:\n      at fiber (#1)\n}" http.span=154 role=server http.method=GET http.url=/api/event http.status=200
+timestamp=2026-09-27T21:44:39.503Z level=INFO run=69648622 message="watcher stopped" path=<run>/project/.git/HEAD type=file http.span=503 role=server
+timestamp=2026-09-27T21:44:39.507Z level=INFO run=69648622 message="watcher stopped" path=<spike>/plugin/accounts.js type=file http.span=507 role=server
+timestamp=2026-09-27T21:44:39.507Z level=INFO run=69648622 message="watcher stopped" path=<spike>/plugin/index.js type=file http.span=507 role=server
+timestamp=2026-09-27T21:44:39.509Z level=INFO run=69648622 message="watcher stopped" path=<spike>/plugin type=directory http.span=509 role=server
+timestamp=2026-09-27T21:44:39.509Z level=INFO run=69648622 message="watcher stopped" path=<run>/xdg-config/opencode/skill type=file http.span=509 role=server
+timestamp=2026-09-27T21:44:39.509Z level=INFO run=69648622 message="watcher stopped" path=<run>/xdg-config/opencode/skills type=file http.span=509 role=server
+timestamp=2026-09-27T21:44:39.510Z level=INFO run=69648622 message="watcher stopped" path=<run>/project/AGENTS.md type=file http.span=510 role=server
+timestamp=2026-09-27T21:44:39.510Z level=INFO run=69648622 message="watcher stopped" path=<run>/xdg-config/opencode/AGENTS.md type=file http.span=510 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=/ type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=/private type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=/private/var type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=/private/var/folders type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=/private/var/folders/18 type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=/private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=<tmp> type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=<tmp>/oc2-thin-spike type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=<run> type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=<run>/project type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=<run>/home type=entries http.span=516 role=server
+timestamp=2026-09-27T21:44:39.516Z level=INFO run=69648622 message="watcher stopped" path=<run>/xdg-config/opencode type=directory http.span=516 role=server

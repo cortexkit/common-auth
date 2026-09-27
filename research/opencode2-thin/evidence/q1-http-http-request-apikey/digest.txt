@@ -1,0 +1,44 @@
+# q1-http-http-request-apikey
+summary: { "scenario": "q1-http-http-request-apikey", "mode": "accounts", "model": "openai/mock-model", "exit": 0, "turnExits": [ 0, 0 ], "signal": null, "ms": 682, "mockRequests": 3, "pluginEvents": [ "setup", "acct.registered", "acct.model.request", "acct.http.request", "acct.plugins", "acct.model.request"
+
+## mock.jsonl
+mock.jsonl:1 http title #1 account=A token=tok-A chatgpt-account-id=acct-A previous_response_id=- originator=-
+mock.jsonl:2 http primary #2 account=A token=tok-A chatgpt-account-id=acct-A previous_response_id=- originator=-
+mock.jsonl:3 http primary #3 account=B token=tok-B chatgpt-account-id=acct-B previous_response_id=- originator=-
+
+## plugin.jsonl
+plugin.jsonl:1 setup modes=["accounts"]
+plugin.jsonl:2 acct.registered {"plan":["A","B"],"titleAccount":"A","via":["http-request"],"scope":{"providerID":"openai"}}
+plugin.jsonl:3 acct.model.request provider=openai kind=title call=- account=A before={} after={} baseURL=http://127.0.0.1:50508/v1->http://127.0.0.1:50508/v1
+plugin.jsonl:4 acct.http.request {"kind":"title","account":"A","url":"http://127.0.0.1:50508/v1/responses","authorization":"tok-A","chatgptAccountID":"acct-A","originator":null}
+plugin.jsonl:5 acct.plugins {"count":89,"openai":[{"id":"opencode.provider.openai","status":"active"},{"id":"opencode.prompt.openai","status":"active"}]}
+plugin.jsonl:6 acct.model.request provider=openai kind=primary call=1 account=A before={} after={} baseURL=http://127.0.0.1:50508/v1->http://127.0.0.1:50508/v1
+plugin.jsonl:7 acct.http.response {"kind":"title","account":"A","status":200,"quota":{"x-codex-primary-used-percent":"11","x-codex-primary-window-minutes":"300","x-codex-primary-reset-at":"1790549075","x-codex-secondary-used-percent":"21","x-codex-secondary-window-minutes":"10080","x-codex-secondary-reset-at":"1790635475"}}
+plugin.jsonl:8 acct.output-seen {"kind":"title","account":"A","via":"http"}
+plugin.jsonl:9 acct.http.request {"kind":"primary","account":"A","url":"http://127.0.0.1:50508/v1/responses","authorization":"tok-A","chatgptAccountID":"acct-A","originator":null}
+plugin.jsonl:10 acct.http.response {"kind":"primary","account":"A","status":200,"quota":{"x-codex-primary-used-percent":"11","x-codex-primary-window-minutes":"300","x-codex-primary-reset-at":"1790549075","x-codex-secondary-used-percent":"21","x-codex-secondary-window-minutes":"10080","x-codex-secondary-reset-at":"1790635475"}}
+plugin.jsonl:11 acct.output-seen {"kind":"primary","account":"A","via":"http"}
+plugin.jsonl:12 acct.model.request provider=openai kind=primary call=2 account=B before={} after={} baseURL=http://127.0.0.1:50508/v1->http://127.0.0.1:50508/v1
+plugin.jsonl:13 acct.http.request {"kind":"primary","account":"B","url":"http://127.0.0.1:50508/v1/responses","authorization":"tok-B","chatgptAccountID":"acct-B","originator":null}
+plugin.jsonl:14 acct.http.response {"kind":"primary","account":"B","status":200,"quota":{"x-codex-primary-used-percent":"55","x-codex-primary-window-minutes":"300","x-codex-primary-reset-at":"1790549075","x-codex-secondary-used-percent":"65","x-codex-secondary-window-minutes":"10080","x-codex-secondary-reset-at":"1790635475"}}
+plugin.jsonl:15 acct.output-seen {"kind":"primary","account":"B","via":"http"}
+
+## stdout.jsonl
+stdout.jsonl:1 step_start message=msg_0e4d3b84b001pFUl0wCG7Lw3Yw
+stdout.jsonl:2 text "MOCK-HTTP-REPLY-2-acct-A" message=msg_0e4d3b84b001pFUl0wCG7Lw3Yw
+stdout.jsonl:3 step_start message=msg_0e4d3b8c5001wNcVpBfd61gBt2
+stdout.jsonl:4 text "MOCK-HTTP-REPLY-3-acct-B" message=msg_0e4d3b8c5001wNcVpBfd61gBt2
+
+## stderr.log (filtered)
+stderr.log:34 timestamp=2026-09-27T21:44:35.486Z level=INFO run=687b8320 message="watcher subscribe" path=<spike>/plugin type=directory ignores=0 http.span=259 role=server
+stderr.log:35 timestamp=2026-09-27T21:44:35.486Z level=INFO run=687b8320 msg="loading plugin" id=<spike>/plugin entrypoint=file://<spike>/plugin/index.js http.span=259 role=server
+stderr.log:36 timestamp=2026-09-27T21:44:35.520Z level=INFO run=687b8320 message="watcher started" path=<spike>/plugin type=directory backend=fs-events ignores=0 http.span=293 role=server
+stderr.log:37 timestamp=2026-09-27T21:44:35.520Z level=INFO run=687b8320 message="watcher subscribe" path=<spike>/plugin/index.js type=file ignores=0 http.span=293 role=server
+stderr.log:38 timestamp=2026-09-27T21:44:35.520Z level=INFO run=687b8320 message="watcher started" path=<spike>/plugin/index.js type=file backend=node ignores=0 http.span=293 role=server
+stderr.log:39 timestamp=2026-09-27T21:44:35.520Z level=INFO run=687b8320 message="watcher subscribe" path=<spike>/plugin/accounts.js type=file ignores=0 http.span=293 role=server
+stderr.log:40 timestamp=2026-09-27T21:44:35.520Z level=INFO run=687b8320 message="watcher started" path=<spike>/plugin/accounts.js type=file backend=node ignores=0 http.span=293 role=server
+stderr.log:70 timestamp=2026-09-27T21:44:35.735Z level=INFO run=687b8320 cause="InterruptError: All fibers interrupted without error\n    at ServerProcess.start (/$bunfs/root/chunk-fegwzrys.js:2:6473)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-6bsz5sgg.js:447:23526) {\n  [cause]: InterruptCause: The fiber was interrupted by:\n      at fiber (#1)\n}" http.span=118 role=server http.method=GET ht
+stderr.log:77 timestamp=2026-09-27T21:44:35.827Z level=INFO run=687b8320 cause="InterruptError: All fibers interrupted without error\n    at ServerProcess.start (/$bunfs/root/chunk-fegwzrys.js:2:6473)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-6bsz5sgg.js:447:23526) {\n  [cause]: InterruptCause: The fiber was interrupted by:\n      at fiber (#1)\n}" http.span=52 role=server http.method=GET htt
+stderr.log:79 timestamp=2026-09-27T21:44:35.835Z level=INFO run=687b8320 message="watcher stopped" path=<spike>/plugin/accounts.js type=file http.span=608 role=server
+stderr.log:80 timestamp=2026-09-27T21:44:35.835Z level=INFO run=687b8320 message="watcher stopped" path=<spike>/plugin/index.js type=file http.span=608 role=server
+stderr.log:81 timestamp=2026-09-27T21:44:35.835Z level=INFO run=687b8320 message="watcher stopped" path=<spike>/plugin type=directory http.span=608 role=server

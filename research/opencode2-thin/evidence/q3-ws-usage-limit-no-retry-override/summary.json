@@ -1,0 +1,27 @@
+{
+  "scenario": "q3-ws-usage-limit-no-retry-override",
+  "mode": "accounts",
+  "model": "openai/mock-model",
+  "exit": 1,
+  "turnExits": [
+    1
+  ],
+  "signal": null,
+  "ms": 705,
+  "mockRequests": 5,
+  "pluginEvents": [
+    "setup",
+    "acct.registered",
+    "acct.model.request",
+    "acct.http.request",
+    "acct.plugins",
+    "acct.model.request",
+    "acct.http.response",
+    "acct.output-seen",
+    "acct.ws.handshake",
+    "acct.ws.send",
+    "acct.ws.quota",
+    "acct.refusal-seen",
+    "acct.retry"
+  ]
+}

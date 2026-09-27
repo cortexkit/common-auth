@@ -1,0 +1,63 @@
+# q6-hook-scoping
+summary: { "scenario": "q6-hook-scoping", "mode": "accounts,probe", "model": "openai/mock-model", "exit": 0, "turnExits": [ 0, 0 ], "signal": null, "ms": 30689, "mockRequests": 8, "pluginEvents": [ "setup", "acct.registered", "acct.model.request", "probe.unscoped", "acct.plugins", "acct.model.request", "acct
+
+## mock.jsonl
+mock.jsonl:1 http title #1 account=A token=tok-A chatgpt-account-id=acct-A previous_response_id=- originator=-
+mock.jsonl:2 ws handshake conn=1 account=A token=tok-A chatgpt-account-id=acct-A originator=-
+mock.jsonl:3 ws frame-in conn=1 #2 account=A token=tok-A chatgpt-account-id=acct-A previous_response_id=- previousKnownOnConnection=- input_items=1
+mock.jsonl:4 http title #3 account=none token=sk-mock-not-a-real-key chatgpt-account-id=null previous_response_id=- originator=-
+mock.jsonl:5 http primary #4 account=none token=sk-mock-not-a-real-key chatgpt-account-id=null previous_response_id=- originator=-
+mock.jsonl:6 http injected-429-ratelimit account=none
+mock.jsonl:7 http primary #5 account=none token=sk-mock-not-a-real-key chatgpt-account-id=null previous_response_id=- originator=-
+mock.jsonl:8 ws closed conn=1 code=1000
+
+## plugin.jsonl
+plugin.jsonl:1 setup modes=["accounts","probe"]
+plugin.jsonl:2 acct.registered {"plan":["A"],"via":["model-request"],"scope":{"providerID":"openai"}}
+plugin.jsonl:3 acct.model.request provider=openai kind=title call=- account=A before={} after={"authorization":"tok-A","chatgpt-account-id":"acct-A"} baseURL=http://127.0.0.1:50829/v1->http://127.0.0.1:50829/v1
+plugin.jsonl:4 probe.unscoped {"hook":"model.request","providerID":"openai","kind":"title"}
+plugin.jsonl:5 acct.plugins {"count":89,"openai":[{"id":"opencode.provider.openai","status":"active"},{"id":"opencode.prompt.openai","status":"active"}]}
+plugin.jsonl:6 acct.model.request provider=openai kind=primary call=1 account=A before={} after={"authorization":"tok-A","chatgpt-account-id":"acct-A"} baseURL=http://127.0.0.1:50829/v1->http://127.0.0.1:50829/v1
+plugin.jsonl:7 acct.http.request {"kind":"title","account":"A","url":"http://127.0.0.1:50829/v1/responses","authorization":"tok-A","chatgptAccountID":"acct-A","originator":null}
+plugin.jsonl:8 probe.unscoped {"hook":"model.request","providerID":"openai","kind":"primary"}
+plugin.jsonl:9 probe.unscoped {"hook":"http.request","providerID":"openai","kind":"title"}
+plugin.jsonl:10 acct.http.response {"kind":"title","account":"A","status":200,"quota":{"x-codex-primary-used-percent":"11","x-codex-primary-window-minutes":"300","x-codex-primary-reset-at":"1790549096","x-codex-secondary-used-percent":"21","x-codex-secondary-window-minutes":"10080","x-codex-secondary-reset-at":"1790635496"}}
+plugin.jsonl:11 probe.unscoped {"hook":"http.response","providerID":"openai","kind":"title"}
+plugin.jsonl:12 acct.output-seen {"kind":"title","account":"A","via":"http"}
+plugin.jsonl:13 acct.ws.handshake kind=primary account=A before={"authorization":"tok-A","chatgpt-account-id":"acct-A"} after={"authorization":"tok-A","chatgpt-account-id":"acct-A"}
+plugin.jsonl:14 probe.unscoped {"hook":"experimental.ws.handshake","providerID":"openai","kind":"primary"}
+plugin.jsonl:15 acct.ws.send {"kind":"primary","account":"A","type":"response.create","input_items":1,"keys":["include","input","instructions","model","prompt_cache_key","store","tools","type"],"authorizationInFrame":false}
+plugin.jsonl:16 acct.ws.quota {"kind":"primary","account":"A","primary":11,"secondary":21}
+plugin.jsonl:17 acct.output-seen {"kind":"primary","account":"A","via":"ws"}
+plugin.jsonl:18 probe.unscoped {"hook":"model.request","providerID":"mockcompat","kind":"title"}
+plugin.jsonl:19 probe.unscoped {"hook":"model.request","providerID":"mockcompat","kind":"primary"}
+plugin.jsonl:20 probe.unscoped {"hook":"http.request","providerID":"mockcompat","kind":"title"}
+plugin.jsonl:21 probe.unscoped {"hook":"http.response","providerID":"mockcompat","kind":"title"}
+plugin.jsonl:22 probe.unscoped {"hook":"http.request","providerID":"mockcompat","kind":"primary"}
+plugin.jsonl:23 probe.unscoped {"hook":"http.response","providerID":"mockcompat","kind":"primary"}
+plugin.jsonl:24 probe.unscoped {"hook":"retry","providerID":"mockcompat"}
+plugin.jsonl:25 probe.unscoped {"hook":"model.request","providerID":"mockcompat","kind":"primary"}
+plugin.jsonl:26 probe.unscoped {"hook":"http.request","providerID":"mockcompat","kind":"primary"}
+plugin.jsonl:27 probe.unscoped {"hook":"http.response","providerID":"mockcompat","kind":"primary"}
+
+## stdout.jsonl
+stdout.jsonl:1 step_start message=msg_0e4d40aff001h5Z0nJUIQ3y5OS
+stdout.jsonl:2 text "MOCK-WS-REPLY-2-acct-A" message=msg_0e4d40aff001h5Z0nJUIQ3y5OS
+stdout.jsonl:3 step_start message=msg_0e4d40b9b001aAlLeMcQ2YfR2S
+stdout.jsonl:4 step_start message=msg_0e4d40b9b001aAlLeMcQ2YfR2S
+stdout.jsonl:5 text "MOCK-HTTP-REPLY-5-acct-none" message=msg_0e4d40b9b001aAlLeMcQ2YfR2S
+
+## stderr.log (filtered)
+stderr.log:34 timestamp=2026-09-27T21:44:56.648Z level=INFO run=75c1233f message="watcher subscribe" path=<spike>/plugin type=directory ignores=0 http.span=200 role=server
+stderr.log:35 timestamp=2026-09-27T21:44:56.649Z level=INFO run=75c1233f msg="loading plugin" id=<spike>/plugin entrypoint=file://<spike>/plugin/index.js http.span=201 role=server
+stderr.log:36 timestamp=2026-09-27T21:44:56.682Z level=INFO run=75c1233f message="watcher started" path=<spike>/plugin type=directory backend=fs-events ignores=0 http.span=234 role=server
+stderr.log:37 timestamp=2026-09-27T21:44:56.682Z level=INFO run=75c1233f message="watcher subscribe" path=<spike>/plugin/index.js type=file ignores=0 http.span=234 role=server
+stderr.log:38 timestamp=2026-09-27T21:44:56.682Z level=INFO run=75c1233f message="watcher started" path=<spike>/plugin/index.js type=file backend=node ignores=0 http.span=234 role=server
+stderr.log:39 timestamp=2026-09-27T21:44:56.682Z level=INFO run=75c1233f message="watcher subscribe" path=<spike>/plugin/accounts.js type=file ignores=0 http.span=234 role=server
+stderr.log:40 timestamp=2026-09-27T21:44:56.682Z level=INFO run=75c1233f message="watcher started" path=<spike>/plugin/accounts.js type=file backend=node ignores=0 http.span=234 role=server
+stderr.log:70 timestamp=2026-09-27T21:44:56.909Z level=INFO run=75c1233f cause="InterruptError: All fibers interrupted without error\n    at ServerProcess.start (/$bunfs/root/chunk-fegwzrys.js:2:6473)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-6bsz5sgg.js:447:23526) {\n  [cause]: InterruptCause: The fiber was interrupted by:\n      at fiber (#1)\n}" http.span=123 role=server http.method=GET ht
+stderr.log:77 timestamp=2026-09-27T21:44:57.279Z level=ERROR run=75c1233f message="Failed to fetch models.dev" cause="Cause([Fail(HttpClientError: Transport error (GET https://models.opencode.ai/api.json) (cause: TypeError: Unable to connect. Is the computer able to access the url?))])" http.span=831 role=server
+stderr.log:84 timestamp=2026-09-27T21:45:27.074Z level=INFO run=75c1233f cause="InterruptError: All fibers interrupted without error\n    at ServerProcess.start (/$bunfs/root/chunk-fegwzrys.js:2:6473)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-6bsz5sgg.js:447:23526) {\n  [cause]: InterruptCause: The fiber was interrupted by:\n      at fiber (#1)\n}" http.span=30099 role=server http.method=GET 
+stderr.log:86 timestamp=2026-09-27T21:45:27.082Z level=INFO run=75c1233f message="watcher stopped" path=<spike>/plugin/accounts.js type=file http.span=30634 role=server
+stderr.log:87 timestamp=2026-09-27T21:45:27.082Z level=INFO run=75c1233f message="watcher stopped" path=<spike>/plugin/index.js type=file http.span=30634 role=server
+stderr.log:88 timestamp=2026-09-27T21:45:27.082Z level=INFO run=75c1233f message="watcher stopped" path=<spike>/plugin type=directory http.span=30634 role=server

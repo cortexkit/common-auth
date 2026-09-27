@@ -1,0 +1,32 @@
+{
+  "scenario": "q5-host-credential-all-hooks",
+  "mode": "accounts",
+  "model": "openai/gpt-5.5",
+  "exit": 0,
+  "turnExits": [
+    0,
+    0
+  ],
+  "signal": null,
+  "ms": 601,
+  "mockRequests": 7,
+  "pluginEvents": [
+    "setup",
+    "acct.registered",
+    "acct.model.request",
+    "acct.http.request",
+    "acct.plugins",
+    "acct.model.request",
+    "acct.http.response",
+    "acct.output-seen",
+    "acct.ws.handshake",
+    "acct.ws.send",
+    "acct.ws.quota",
+    "acct.output-seen",
+    "acct.model.request",
+    "acct.ws.handshake",
+    "acct.ws.send",
+    "acct.ws.quota",
+    "acct.output-seen"
+  ]
+}

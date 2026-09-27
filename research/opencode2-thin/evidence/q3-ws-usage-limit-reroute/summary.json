@@ -1,0 +1,32 @@
+{
+  "scenario": "q3-ws-usage-limit-reroute",
+  "mode": "accounts,reroute",
+  "model": "openai/mock-model",
+  "exit": 0,
+  "turnExits": [
+    0
+  ],
+  "signal": null,
+  "ms": 795,
+  "mockRequests": 8,
+  "pluginEvents": [
+    "setup",
+    "acct.registered",
+    "acct.model.request",
+    "acct.http.request",
+    "acct.plugins",
+    "acct.model.request",
+    "acct.http.response",
+    "acct.output-seen",
+    "acct.ws.handshake",
+    "acct.ws.send",
+    "acct.ws.quota",
+    "acct.refusal-seen",
+    "acct.retry",
+    "acct.model.request",
+    "acct.ws.handshake",
+    "acct.ws.send",
+    "acct.ws.quota",
+    "acct.output-seen"
+  ]
+}

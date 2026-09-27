@@ -1,0 +1,44 @@
+# q5-builtin-removed
+summary: { "scenario": "q5-builtin-removed", "mode": "accounts", "model": "openai/gpt-5.5", "exit": 0, "turnExits": [ 0, 0 ], "signal": null, "ms": 681, "mockRequests": 3, "pluginEvents": [ "setup", "acct.registered", "acct.model.request", "acct.http.request", "acct.plugins", "acct.model.request", "acct.http
+
+## mock.jsonl
+mock.jsonl:1 http title #1 account=none token=tok-HOST chatgpt-account-id=acct-A previous_response_id=- originator=-
+mock.jsonl:2 http primary #2 account=none token=tok-HOST chatgpt-account-id=acct-A previous_response_id=- originator=-
+mock.jsonl:3 http primary #3 account=none token=tok-HOST chatgpt-account-id=acct-B previous_response_id=- originator=-
+
+## plugin.jsonl
+plugin.jsonl:1 setup modes=["accounts"]
+plugin.jsonl:2 acct.registered {"plan":["A","B"],"titleAccount":"A","via":["model-request"],"scope":{"providerID":"openai"}}
+plugin.jsonl:3 acct.model.request provider=openai kind=title call=- account=A before={} after={"authorization":"tok-A","chatgpt-account-id":"acct-A"} baseURL=http://127.0.0.1:50799/v1->http://127.0.0.1:50799/v1
+plugin.jsonl:4 acct.http.request {"kind":"title","account":"A","url":"http://127.0.0.1:50799/v1/responses","authorization":"tok-HOST","chatgptAccountID":"acct-A","originator":null}
+plugin.jsonl:5 acct.plugins {"count":88,"openai":[{"id":"opencode.prompt.openai","status":"active"}]}
+plugin.jsonl:6 acct.model.request provider=openai kind=primary call=1 account=A before={} after={"authorization":"tok-A","chatgpt-account-id":"acct-A"} baseURL=http://127.0.0.1:50799/v1->http://127.0.0.1:50799/v1
+plugin.jsonl:7 acct.http.response {"kind":"title","account":"A","status":200,"quota":{}}
+plugin.jsonl:8 acct.output-seen {"kind":"title","account":"A","via":"http"}
+plugin.jsonl:9 acct.http.request {"kind":"primary","account":"A","url":"http://127.0.0.1:50799/v1/responses","authorization":"tok-HOST","chatgptAccountID":"acct-A","originator":null}
+plugin.jsonl:10 acct.http.response {"kind":"primary","account":"A","status":200,"quota":{}}
+plugin.jsonl:11 acct.output-seen {"kind":"primary","account":"A","via":"http"}
+plugin.jsonl:12 acct.model.request provider=openai kind=primary call=2 account=B before={} after={"authorization":"tok-B","chatgpt-account-id":"acct-B"} baseURL=http://127.0.0.1:50799/v1->http://127.0.0.1:50799/v1
+plugin.jsonl:13 acct.http.request {"kind":"primary","account":"B","url":"http://127.0.0.1:50799/v1/responses","authorization":"tok-HOST","chatgptAccountID":"acct-B","originator":null}
+plugin.jsonl:14 acct.http.response {"kind":"primary","account":"B","status":200,"quota":{}}
+plugin.jsonl:15 acct.output-seen {"kind":"primary","account":"B","via":"http"}
+
+## stdout.jsonl
+stdout.jsonl:1 step_start message=msg_0e4d4073c001Bp9yk8dpvKOWS4
+stdout.jsonl:2 text "MOCK-HTTP-REPLY-2-acct-none" message=msg_0e4d4073c001Bp9yk8dpvKOWS4
+stdout.jsonl:3 step_start message=msg_0e4d407cb001Tjd8Z15yMugV6m
+stdout.jsonl:4 text "MOCK-HTTP-REPLY-3-acct-none" message=msg_0e4d407cb001Tjd8Z15yMugV6m
+
+## stderr.log (filtered)
+stderr.log:37 timestamp=2026-09-27T21:44:55.689Z level=INFO run=b0415184 message="watcher subscribe" path=<spike>/plugin type=directory ignores=0 http.span=237 role=server
+stderr.log:38 timestamp=2026-09-27T21:44:55.690Z level=INFO run=b0415184 msg="loading plugin" id=<spike>/plugin entrypoint=file://<spike>/plugin/index.js http.span=238 role=server
+stderr.log:39 timestamp=2026-09-27T21:44:55.725Z level=INFO run=b0415184 message="watcher started" path=<spike>/plugin type=directory backend=fs-events ignores=0 http.span=273 role=server
+stderr.log:40 timestamp=2026-09-27T21:44:55.725Z level=INFO run=b0415184 message="watcher subscribe" path=<spike>/plugin/index.js type=file ignores=0 http.span=273 role=server
+stderr.log:41 timestamp=2026-09-27T21:44:55.725Z level=INFO run=b0415184 message="watcher started" path=<spike>/plugin/index.js type=file backend=node ignores=0 http.span=273 role=server
+stderr.log:42 timestamp=2026-09-27T21:44:55.725Z level=INFO run=b0415184 message="watcher subscribe" path=<spike>/plugin/accounts.js type=file ignores=0 http.span=273 role=server
+stderr.log:43 timestamp=2026-09-27T21:44:55.725Z level=INFO run=b0415184 message="watcher started" path=<spike>/plugin/accounts.js type=file backend=node ignores=0 http.span=273 role=server
+stderr.log:73 timestamp=2026-09-27T21:44:55.958Z level=INFO run=b0415184 cause="InterruptError: All fibers interrupted without error\n    at ServerProcess.start (/$bunfs/root/chunk-fegwzrys.js:2:6473)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-6bsz5sgg.js:447:23526) {\n  [cause]: InterruptCause: The fiber was interrupted by:\n      at fiber (#1)\n}" http.span=134 role=server http.method=GET ht
+stderr.log:80 timestamp=2026-09-27T21:44:56.065Z level=INFO run=b0415184 cause="InterruptError: All fibers interrupted without error\n    at ServerProcess.start (/$bunfs/root/chunk-fegwzrys.js:2:6473)\n    at ServerProcess.start (definition) (/$bunfs/root/chunk-6bsz5sgg.js:447:23526) {\n  [cause]: InterruptCause: The fiber was interrupted by:\n      at fiber (#1)\n}" http.span=62 role=server http.method=GET htt
+stderr.log:82 timestamp=2026-09-27T21:44:56.074Z level=INFO run=b0415184 message="watcher stopped" path=<spike>/plugin/accounts.js type=file http.span=622 role=server
+stderr.log:83 timestamp=2026-09-27T21:44:56.074Z level=INFO run=b0415184 message="watcher stopped" path=<spike>/plugin/index.js type=file http.span=622 role=server
+stderr.log:84 timestamp=2026-09-27T21:44:56.074Z level=INFO run=b0415184 message="watcher stopped" path=<spike>/plugin type=directory http.span=622 role=server
