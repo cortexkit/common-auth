@@ -2,6 +2,8 @@
 
 This table records the behaviour preserved when extracting shared machinery from the openai-auth, anthropic-auth and antigravity-auth plugins. A reference/ origin identifies a historical file in a supplied plugin snapshot, not a runtime dependency. new (neither copy) identifies library-specific behaviour rather than copied machinery. Test cells are unchanged bun:test titles; multiple behaviours may share a test. The common redaction set covers credentials independently of plugin identity; moved identity-redaction tests explicitly pass extraSecretKeys for chatgptaccountid, email, orgname and organizationname. Their failures do not imply those identity keys belong in the common set.
 
+The quota and routing rows carry openai-auth titles from packages/opencode/src/tests/sticky-routing.test.ts, sidebar-state.test.ts and integration.test.ts at openai-auth 5809e38, rewritten as library-level tests over the quota projection (the integration titles went through the plugin request path; their equivalents call admission directly). Titles not carried, and carried titles whose assertions changed with the keyed quota model, are listed under the ./quota and ./routing adoption inputs in adoption-inventory.md.
+
 | component | behaviour | origin | test |
 | --- | --- | --- | --- |
 | tooling | Source checker excludes skipped, failed and errored synthetic cases | new (neither copy) | source checker excludes skipped, failed and errored synthetic cases |
@@ -171,3 +173,149 @@ This table records the behaviour preserved when extracting shared machinery from
 | rpc | Different directories are independent | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | does not serialize different project directories |
 | rpc | Stop removes its own matching port and token record | new (neither copy) | stop port-file identity fence: matching identity |
 | rpc | Root, prefix and registration each isolate queue scope | new (neither copy) | queue scope includes root, prefix and registration independently |
+| quota | An older covering observation keeps a reading and an equal one tombstones it | new (neither copy) | an older covering observation keeps a reading and an equal one tombstones it |
+| quota | A newer covering observation moves the tombstone and only a reading not older replaces it | new (neither copy) | a newer covering observation moves the tombstone and only a reading not older replaces it |
+| quota | Coverage of one pair never touches another pair | new (neither copy) | coverage of one pair never touches another pair |
+| quota | An omission older than a reading never deletes it | new (neither copy) | an omission older than a reading never deletes it |
+| quota | A header-shaped partial observation leaves the family limit and the budget intact | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a header-shaped partial observation leaves the family limit and the budget intact |
+| quota | An older budget clear does not erase a newer budget reading | reference/openai-auth/packages/opencode/src/sidebar-state.ts | an older budget clear does not erase a newer budget reading |
+| quota | An older budget reading does not undo a newer clear | reference/openai-auth/packages/opencode/src/sidebar-state.ts | an older budget reading does not undo a newer clear |
+| quota | An equal-time budget observation applies | reference/openai-auth/packages/opencode/src/sidebar-state.ts | an equal-time budget observation applies |
+| quota | A cleared budget clears only the budget | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a cleared budget clears only the budget |
+| quota | Covered absence records an unlimited key until a reading not older replaces it | new (neither copy) | covered absence records an unlimited key until a reading not older replaces it |
+| quota | On equal checkedAt the observation applied last wins | reference/openai-auth/packages/opencode/src/sidebar-state.ts | on equal checkedAt the observation applied last wins |
+| quota | Merge keeps reading metadata and preserves unknown top-level map keys | new (neither copy) | merge keeps reading metadata and preserves unknown top-level map keys |
+| quota | Merge refuses a malformed stored map or observation without modifying its input | new (neither copy) | merge refuses a malformed stored map or observation without modifying its input |
+| quota | Observation validation accepts the documented shape and rejects malformed parts | new (neither copy) | observation validation accepts the documented shape and rejects malformed parts |
+| quota | A family request sees only its own family and all-models keys | new (neither copy) | a family request sees only its own family and all-models keys |
+| quota | A family reading shadows the all-models entry per label, one entry per label | new (neither copy) | a family reading shadows the all-models entry per label, one entry per label |
+| quota | A family tombstone or absence record does not hide an all-models entry | new (neither copy) | a family tombstone or absence record does not hide an all-models entry |
+| quota | Limits are ordered longest stored length first with unknown lengths last | new (neither copy) | limits are ordered longest stored length first with unknown lengths last |
+| quota | Each limit carries its stored length and an unknown length stays unknown | new (neither copy) | each limit carries its stored length and an unknown length stays unknown |
+| quota | Mixed checkedAt projects the minimum reading time | new (neither copy) | mixed checkedAt projects the minimum reading time |
+| quota | A reading projects its remaining percent; evidence carries no figures | new (neither copy) | a reading projects its remaining percent; evidence carries no figures |
+| quota | A cleared budget projects no budget and a budget reading projects its signal | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a cleared budget projects no budget and a budget reading projects its signal |
+| quota | A quota map with every entry kind and a budget validates after a reload | new (neither copy) | a quota map with every entry kind and a budget validates after a reload |
+| quota | Validation rejects a duplicated key, a malformed entry and a malformed budget | new (neither copy) | validation rejects a duplicated key, a malformed entry and a malformed budget |
+| quota | The quota codec exposes validation and merge for the store | new (neither copy) | the quota codec exposes validation and merge for the store |
+| routing | Admission quota skips a fallback whose credit budget is spent | reference/openai-auth/packages/opencode/src/sidebar-state.ts | admission quota skips a fallback whose credit budget is spent |
+| routing | Admission quota preserves the last fallback when every credit budget is spent | reference/openai-auth/packages/opencode/src/index.ts | admission quota preserves the last fallback when every credit budget is spent |
+| routing | Admission quota retains an exhausted-looking fallback after its reset passes | reference/openai-auth/packages/opencode/src/sidebar-state.ts | admission quota retains an exhausted-looking fallback after its reset passes |
+| routing | A reached credit budget with a future reset exhausts the account | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a reached credit budget with a future reset exhausts the account |
+| routing | A healthy credit budget does not exhaust the account | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a healthy credit budget does not exhaust the account |
+| routing | Fails open on a reached credit budget with missing reset | reference/openai-auth/packages/opencode/src/sidebar-state.ts | fails open on a reached credit budget with missing reset |
+| routing | Fails open on a reached credit budget with malformed reset | reference/openai-auth/packages/opencode/src/sidebar-state.ts | fails open on a reached credit budget with malformed reset |
+| routing | Fails open on a reached credit budget with reset already past | reference/openai-auth/packages/opencode/src/sidebar-state.ts | fails open on a reached credit budget with reset already past |
+| routing | A spent budget plus a live exhausted limit stays refused as the last one standing | new (neither copy) | a spent budget plus a live exhausted limit stays refused as the last one standing |
+| routing | A spent budget whose only alternative has unknown quota is admitted as the last path | new (neither copy) | a spent budget whose only alternative has unknown quota is admitted as the last path |
+| routing | An api-key row is a surviving path, so a spent budget beside it is refused | new (neither copy) | an api-key row is a surviving path, so a spent budget beside it is refused |
+| routing | Gate 1: an api-key row is admitted without quota | new (neither copy) | gate 1: an api-key row is admitted without quota |
+| routing | Gate 2: an OAuth row with no evidence for the scope needs a first reading and requests a pull | new (neither copy) | gate 2: an OAuth row with no evidence for the scope needs a first reading and requests a pull |
+| routing | Gate 2: a no-reading sole OAuth candidate stays refused with its pull requested | new (neither copy) | gate 2: a no-reading sole OAuth candidate stays refused with its pull requested |
+| routing | Gate 2: a family-only map refuses an all-scope request as needing a first reading | new (neither copy) | gate 2: a family-only map refuses an all-scope request as needing a first reading |
+| routing | Gate 3: a missing required label is unknown for that window and the required-label input decides it | new (neither copy) | gate 3: a missing required label is unknown for that window and the required-label input decides it |
+| routing | An all-models primary reading admits a family request | new (neither copy) | an all-models primary reading admits a family request |
+| routing | Gate 4: an exhausted reading with a passed reset is refused unknown with a pull | new (neither copy) | gate 4: an exhausted reading with a passed reset is refused unknown with a pull |
+| routing | Gate 4: an exhausted reading with a missing reset is refused unknown with a pull | new (neither copy) | gate 4: an exhausted reading with a missing reset is refused unknown with a pull |
+| routing | Gate 4: an exhausted reading with an unparsable reset is refused unknown with a pull | new (neither copy) | gate 4: an exhausted reading with an unparsable reset is refused unknown with a pull |
+| routing | Gate 4 leaves a reading below 100% admitted whatever its reset says | new (neither copy) | gate 4 leaves a reading below 100% admitted whatever its reset says |
+| routing | Gate 5: an exhausted reading with a future reset is refused exhausted without a pull | new (neither copy) | gate 5: an exhausted reading with a future reset is refused exhausted without a pull |
+| routing | A third window reaches admission and alone drives a refusal | new (neither copy) | a third window reaches admission and alone drives a refusal |
+| routing | A reading older than the staleness threshold is admitted | new (neither copy) | a reading older than the staleness threshold is admitted |
+| routing | A map holding only a tombstone or absence record for the requested pairs is admitted | new (neither copy) | a map holding only a tombstone or absence record for the requested pairs is admitted |
+| routing | Covered absence admits as known-unlimited | new (neither copy) | covered absence admits as known-unlimited |
+| routing | Gates apply in precedence order | new (neither copy) | gates apply in precedence order |
+| routing | A rate-limit mark or refresh backoff excludes the row before the gates until it expires | new (neither copy) | a rate-limit mark or refresh backoff excludes the row before the gates until it expires |
+| routing | The pull request is synchronous and never awaited | new (neither copy) | the pull request is synchronous and never awaited |
+| routing | Fallback-first places the former main row last | reference/anthropic-auth/packages/core/src/routing.ts | fallback-first places the former main row last |
+| routing | Main-first places the former main row first | reference/anthropic-auth/packages/core/src/routing.ts | main-first places the former main row first |
+| routing | FormerMainId names the row the aliases move | new (neither copy) | formerMainId names the row the aliases move |
+| routing | An absent or unrecognised mode resolves to ordered in roster order | new (neither copy) | an absent or unrecognised mode resolves to ordered in roster order |
+| routing | Resolving a persisted routing mode leaves the persisted value unchanged | new (neither copy) | resolving a persisted routing mode leaves the persisted value unchanged |
+| routing | Ordered honours roster order with reactive retry on the configured statuses | new (neither copy) | ordered honours roster order with reactive retry on the configured statuses |
+| routing | Ordered stops on a status outside the configured retry set | new (neither copy) | ordered stops on a status outside the configured retry set |
+| routing | Ordered applies the placement to admitted rows | new (neither copy) | ordered applies the placement to admitted rows |
+| routing | Ordered refuses an exhausted row | new (neither copy) | ordered refuses an exhausted row |
+| routing | Ordered dispatches the api-key row in a mixed pool | new (neither copy) | ordered dispatches the api-key row in a mixed pool |
+| routing | A fresh healthy reading is dispatched end-to-end in ordered mode | new (neither copy) | a fresh healthy reading is dispatched end-to-end in ordered mode |
+| routing | Ordered excludes a rate-limited row until its mark expires, then readmits it in its roster position | new (neither copy) | ordered excludes a rate-limited row until its mark expires, then readmits it in its roster position |
+| routing | Ordered excludes a backed-off row until its retry time | new (neither copy) | ordered excludes a backed-off row until its retry time |
+| routing | Ordered drops a killswitch-killed row | new (neither copy) | ordered drops a killswitch-killed row |
+| routing | Keeps spendable capacity when the reset is unknown | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | keeps spendable capacity when the reset is unknown |
+| routing | Uses the minimum reset duration for near resets | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | uses the minimum reset duration for near resets |
+| routing | Keeps spendable capacity when the reset timestamp is past | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | keeps spendable capacity when the reset timestamp is past |
+| routing | Keeps spendable capacity when the reset timestamp is invalid | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | keeps spendable capacity when the reset timestamp is invalid |
+| routing | Returns zero at the reserve threshold | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | returns zero at the reserve threshold |
+| routing | Prefers the projection time, then the cache entry timestamp | new (neither copy) | prefers the projection time, then the cache entry timestamp |
+| routing | Migrates permanent authorization failures before quota ignorance | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | migrates permanent authorization failures before quota ignorance |
+| routing | Migrates forbidden responses permanently | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | migrates forbidden responses permanently |
+| routing | Retains an account with no quota snapshot | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | retains an account with no quota snapshot |
+| routing | Retains an account with a stale snapshot | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | retains an account with a stale snapshot |
+| routing | Retains an account with a malformed snapshot timestamp | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | retains an account with a malformed snapshot timestamp |
+| routing | Migrates an exhausted fresh window with diagnostic reset metadata | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | migrates an exhausted fresh window with diagnostic reset metadata |
+| routing | Treats a rate limit with healthy quota as transient | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | treats a rate limit with healthy quota as transient |
+| routing | Treats a rate limit with no present fresh quota windows as transient | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | treats a rate limit with no present fresh quota windows as transient |
+| routing | Treats server failures as transient | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | treats server failures as transient |
+| routing | Treats indeterminate transport failures as transient | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | treats indeterminate transport failures as transient |
+| routing | Retains a healthy account for non-routing client failures | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | retains a healthy account for non-routing client failures |
+| routing | Does not migrate malformed exhausted-looking percentages | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | does not migrate malformed exhausted-looking percentages |
+| routing | Does not migrate non-finite exhausted-looking percentages | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | does not migrate non-finite exhausted-looking percentages |
+| routing | Skips healthy windows when a longer window is exhausted | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | skips healthy windows when a longer window is exhausted |
+| routing | Reports the longest exhausted window when every window is exhausted | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | reports the longest exhausted window when every window is exhausted |
+| routing | Names the exhausted limit by its label rather than the slot it occupies | new (neither copy) | names the exhausted limit by its label rather than the slot it occupies |
+| routing | Omits non-string reset metadata from exhausted decisions | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | omits non-string reset metadata from exhausted decisions |
+| routing | Never returns a hold action | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | never returns a hold action |
+| routing | Migrates a fresh below-floor account when killswitchPasses is false | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | migrates a fresh below-floor account when killswitchPasses is false |
+| routing | Keeps a stale snapshot when killswitchPasses is false (stale wins) | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | keeps a stale snapshot when killswitchPasses is false (stale wins) |
+| routing | Keeps a no-quota account when killswitchPasses is false (unknown wins) | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | keeps a no-quota account when killswitchPasses is false (unknown wins) |
+| routing | Migrates before exhaustion when the killswitch and exhaustion both apply | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | migrates before exhaustion when the killswitch and exhaustion both apply |
+| routing | KillswitchPasses true is a no-op on the healthy path | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | killswitchPasses true is a no-op on the healthy path |
+| routing | KillswitchPasses undefined is a no-op (killswitch disabled / not opted in) | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | killswitchPasses undefined is a no-op (killswitch disabled / not opted in) |
+| routing | Tombstones and absence records never read exhausted | new (neither copy) | tombstones and absence records never read exhausted |
+| routing | Migrates a pin on an account with a reached credit budget | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | migrates a pin on an account with a reached credit budget |
+| routing | Retains a pin on a stale credit reading | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | retains a pin on a stale credit reading |
+| routing | Retains a pin on a reached credit budget with a malformed reset | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | retains a pin on a reached credit budget with a malformed reset |
+| routing | Retains a pin on a reached credit budget with a missing reset | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | retains a pin on a reached credit budget with a missing reset |
+| routing | Retains a pin on a reached credit budget with a lapsed reset | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | retains a pin on a reached credit budget with a lapsed reset |
+| routing | Decides a no-spend-control account exactly as today | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | decides a no-spend-control account exactly as today |
+| routing | Trusts the reached boolean over a spent-looking percentage | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | trusts the reached boolean over a spent-looking percentage |
+| routing | Admission and migration agree on a spent credit budget | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | admission and migration agree on a spent credit budget |
+| routing | Excludes candidates with missing quota | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | excludes candidates with missing quota |
+| routing | Excludes candidates with stale quota snapshots | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | excludes candidates with stale quota snapshots |
+| routing | Uses the tightest present quota window as the account weight | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | uses the tightest present quota window as the account weight |
+| routing | Selects the lower projected pressure | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | selects the lower projected pressure |
+| routing | Changes the next pick when pending bytes change | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | changes the next pick when pending bytes change |
+| routing | Resolves equal scores by configured order then account id | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | resolves equal scores by configured order then account id |
+| routing | Never selects zero capacity over positive capacity | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | never selects zero capacity over positive capacity |
+| routing | Falls back to configured order when every snapshot is stale | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | falls back to configured order when every snapshot is stale |
+| routing | Notifies the caller when no weighted candidate survives | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | notifies the caller when no weighted candidate survives |
+| routing | Prefers a positive optional reset-credit count in empty-set fallback | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | prefers a positive optional reset-credit count in empty-set fallback |
+| routing | Rejects an empty input candidate list | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | rejects an empty input candidate list |
+| routing | Excludes a killswitch-killed candidate from weighted placement | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | excludes a killswitch-killed candidate from weighted placement |
+| routing | Excludes a killswitch-killed candidate from mode-fallback fail-open | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | excludes a killswitch-killed candidate from mode-fallback fail-open |
+| routing | KillswitchPasses true is a no-op on placement | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | killswitchPasses true is a no-op on placement |
+| routing | KillswitchPasses undefined is a no-op on placement (killswitch disabled) | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | killswitchPasses undefined is a no-op on placement (killswitch disabled) |
+| routing | Tombstones and absence records add no weight | new (neither copy) | tombstones and absence records add no weight |
+| routing | A third window adds no weight | new (neither copy) | a third window adds no weight |
+| routing | Selection judges freshness by the minimum checkedAt of the projection | new (neither copy) | selection judges freshness by the minimum checkedAt of the projection |
+| routing | Deprioritises a nearly-spent credit budget in cold placement | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | deprioritises a nearly-spent credit budget in cold placement |
+| routing | Ignores a malformed credit reading instead of excluding the account | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | ignores a malformed credit reading instead of excluding the account |
+| routing | Routes a candidate with no spend control by its rate-limit windows alone | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | routes a candidate with no spend control by its rate-limit windows alone |
+| routing | Admission is not weighting: 95% used under a 10% reserve is admitted at zero weight via mode-fallback | new (neither copy) | admission is not weighting: 95% used under a 10% reserve is admitted at zero weight via mode-fallback |
+| routing | 50% used is admitted and weighted ahead of a zero-weight row | new (neither copy) | 50% used is admitted and weighted ahead of a zero-weight row |
+| routing | An all-unknown OAuth pool refuses every candidate while mode-fallback keeps returning one and ends as no admissible account | new (neither copy) | an all-unknown OAuth pool refuses every candidate while mode-fallback keeps returning one and ends as no admissible account |
+| routing | A refusal re-runs selection with the id excluded and the pin retained | new (neither copy) | a refusal re-runs selection with the id excluded and the pin retained |
+| routing | A pin whose quota turns unknown is refused but not deleted | new (neither copy) | a pin whose quota turns unknown is refused but not deleted |
+| routing | A mixed pool dispatches the api-key row | new (neither copy) | a mixed pool dispatches the api-key row |
+| routing | An exhausted row returned by mode-fallback is refused exhausted | new (neither copy) | an exhausted row returned by mode-fallback is refused exhausted |
+| routing | A fresh healthy reading is dispatched end-to-end in sticky-balanced mode | new (neither copy) | a fresh healthy reading is dispatched end-to-end in sticky-balanced mode |
+| routing | A supplied cross-process pending-bytes map changes the choice relative to the in-memory pins | new (neither copy) | a supplied cross-process pending-bytes map changes the choice relative to the in-memory pins |
+| routing | Sticky-balanced excludes a rate-limited row entirely and readmits it after the mark expires | new (neither copy) | sticky-balanced excludes a rate-limited row entirely and readmits it after the mark expires |
+| routing | Sticky-balanced excludes a backed-off row until its retry time | new (neither copy) | sticky-balanced excludes a backed-off row until its retry time |
+| routing | Sticky-balanced leaves an unmarked row's order and weight unchanged by another row's mark | new (neither copy) | sticky-balanced leaves an unmarked row's order and weight unchanged by another row's mark |
+| routing | A killed pinned row is routed around and its pin retained | new (neither copy) | a killed pinned row is routed around and its pin retained |
+| routing | A pin on a valid row with an unknown identity survives | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a pin on a valid row with an unknown identity survives |
+| routing | A pin whose known identities differ is invalidated | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a pin whose known identities differ is invalidated |
+| routing | A pin whose row left the valid set is invalidated | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a pin whose row left the valid set is invalidated |
+| routing | An invalidated pin is replaced by a new assignment or cleared | new (neither copy) | an invalidated pin is replaced by a new assignment or cleared |
+| routing | Pending bytes count only other sessions pinned on the current projection time | reference/openai-auth/packages/opencode/src/sidebar-state.ts | pending bytes count only other sessions pinned on the current projection time |
