@@ -1,0 +1,42 @@
+# pids 19732
+# forbidden prefixes: <home>/.config/opencode <home>/.local/share/opencode <home>/.config/cortexkit <home>/.local/share/cortexkit <home>/.cache/opencode <home>/.local/state/opencode
+# forbidden hits: 0
+
+# ---- full lsof ----
+COMMAND     PID        USER   FD     TYPE             DEVICE  SIZE/OFF                NODE NAME
+opencode. 19732 ufukaltinok  cwd      DIR               1,17        64          1985610420 <run>/project
+opencode. 19732 ufukaltinok  txt      REG               1,17 179948336          1985464275 <deps>/node_modules/@opencode/cli/bin/opencode.exe
+opencode. 19732 ufukaltinok  txt      REG               1,17     77368          1843163033 /private/var/db/diagnostics/logd/.plist-cache.QMWyKIeM
+opencode. 19732 ufukaltinok  txt      REG               1,17     32768          1985612433 <run>/xdg-data/opencode/opencode.db-shm
+opencode. 19732 ufukaltinok  txt      REG               1,17    234224           702363629 /private/var/db/timezone/tz/2026c.1.0/icutz/icutz44l.dat
+opencode. 19732 ufukaltinok  txt      REG               1,17     32768          1843164017 /private/var/db/mds/messages/501/se_SecurityMessages
+opencode. 19732 ufukaltinok  txt      REG               1,17    161875          1964276911 /private/var/db/analyticsd/events.allowlist
+opencode. 19732 ufukaltinok  txt      REG               1,17     32768          1985613385 <run>/mc-store/context.db-shm
+opencode. 19732 ufukaltinok  txt      REG               1,17    342608          1985612716 <run>/tmp/.bun-501-c22f2ef692948d9e.node
+opencode. 19732 ufukaltinok  txt      REG               1,17   4129840 1152921500312609216 /usr/lib/dyld
+opencode. 19732 ufukaltinok  txt      REG               1,17  36103568 1152921500312619766 /usr/share/icu/icudt78l.dat
+opencode. 19732 ufukaltinok  txt      REG               1,17   5543552          1985610897 <run>/tmp/.bun-501-580dfe60f7f73ad8.dylib
+opencode. 19732 ufukaltinok  txt      REG               1,17   9660064          1985612910 <run>/tmp/.bun-501-295fc1275a70d982.dylib
+opencode. 19732 ufukaltinok    0r     CHR                3,2       0t0                 336 /dev/null
+opencode. 19732 ufukaltinok    1u    unix 0xf3a39474e5cc031c       0t0                     ->0xb220c369a7379d24
+opencode. 19732 ufukaltinok    2u    unix 0x57eaac4dee090f8c       0t0                     ->0x36a0b626411df0db
+opencode. 19732 ufukaltinok    3u  KQUEUE                                                  count=0, state=0x12
+opencode. 19732 ufukaltinok    4u    unix 0xf3a39474e5cc031c       0t0                     ->0xb220c369a7379d24
+opencode. 19732 ufukaltinok    5w     REG               1,17     34233          1985610966 <run>/xdg-data/opencode/log/opencode.log
+opencode. 19732 ufukaltinok    6u    unix 0x57eaac4dee090f8c       0t0                     ->0x36a0b626411df0db
+opencode. 19732 ufukaltinok    7u    IPv4 0x7a5c62329368ae54       0t0                 TCP 127.0.0.1:64298 (LISTEN)
+opencode. 19732 ufukaltinok    8u     REG               1,17   6184960          1985611657 <run>/xdg-data/opencode/opencode.db
+opencode. 19732 ufukaltinok    9u     REG               1,17   1330792          1985612432 <run>/xdg-data/opencode/opencode.db-wal
+opencode. 19732 ufukaltinok   10u     REG               1,17     32768          1985612433 <run>/xdg-data/opencode/opencode.db-shm
+opencode. 19732 ufukaltinok   11u    IPv4 0x74f451ae320ab587       0t0                 TCP 127.0.0.1:64298->127.0.0.1:64303 (ESTABLISHED)
+opencode. 19732 ufukaltinok   13u  KQUEUE                                                  count=0, state=0x12
+opencode. 19732 ufukaltinok   15u     REG               1,17   1024000          1985613365 <run>/mc-store/context.db
+opencode. 19732 ufukaltinok   16u     REG               1,17     32768          1985613384 <run>/mc-store/context.db-wal
+opencode. 19732 ufukaltinok   17u     REG               1,17     32768          1985613385 <run>/mc-store/context.db-shm
+opencode. 19732 ufukaltinok   18r     REG               1,17   6184960          1985611657 <run>/xdg-data/opencode/opencode.db
+opencode. 19732 ufukaltinok   19u    unix 0x6a1e3e9a5ef5c9cc       0t0                     ->0xcf30a1edf10008ff
+opencode. 19732 ufukaltinok   20u    IPv4 0x5cdbad0def5ebf61       0t0                 TCP 192.168.1.36:64308->172.66.173.149:443 (ESTABLISHED)
+opencode. 19732 ufukaltinok   22u    IPv4 0xdc3146e4b4dfa37f       0t0                 TCP 127.0.0.1:64339 (LISTEN)
+opencode. 19732 ufukaltinok   23r     REG               1,17   6184960          1985611657 <run>/xdg-data/opencode/opencode.db
+opencode. 19732 ufukaltinok   27r     REG               1,17   6184960          1985611657 <run>/xdg-data/opencode/opencode.db
+opencode. 19732 ufukaltinok   29u    IPv4 0x4c7a95f51c8f7031       0t0                 TCP 192.168.1.36:64354->104.18.32.47:443 (ESTABLISHED)

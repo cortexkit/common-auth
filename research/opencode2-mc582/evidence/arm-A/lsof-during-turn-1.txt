@@ -1,0 +1,36 @@
+# pids 16828
+# forbidden prefixes: <home>/.config/opencode <home>/.local/share/opencode <home>/.config/cortexkit <home>/.local/share/cortexkit <home>/.cache/opencode <home>/.local/state/opencode
+# forbidden hits: 0
+
+# ---- full lsof ----
+COMMAND     PID        USER   FD     TYPE             DEVICE  SIZE/OFF                NODE NAME
+opencode. 16828 ufukaltinok  cwd      DIR               1,17        64          1985504820 <run>/project
+opencode. 16828 ufukaltinok  txt      REG               1,17 179948336          1985464275 <deps>/node_modules/@opencode/cli/bin/opencode.exe
+opencode. 16828 ufukaltinok  txt      REG               1,17     77368          1843163033 /private/var/db/diagnostics/logd/.plist-cache.QMWyKIeM
+opencode. 16828 ufukaltinok  txt      REG               1,17     32768          1985505234 <run>/xdg-data/opencode/opencode.db-shm
+opencode. 16828 ufukaltinok  txt      REG               1,17     32768          1843164017 /private/var/db/mds/messages/501/se_SecurityMessages
+opencode. 16828 ufukaltinok  txt      REG               1,17    234224           702363629 /private/var/db/timezone/tz/2026c.1.0/icutz/icutz44l.dat
+opencode. 16828 ufukaltinok  txt      REG               1,17    161875          1964276911 /private/var/db/analyticsd/events.allowlist
+opencode. 16828 ufukaltinok  txt      REG               1,17    342608          1985505238 <run>/tmp/.bun-501-c22f2ef692948d9e.node
+opencode. 16828 ufukaltinok  txt      REG               1,17   4129840 1152921500312609216 /usr/lib/dyld
+opencode. 16828 ufukaltinok  txt      REG               1,17  36103568 1152921500312619766 /usr/share/icu/icudt78l.dat
+opencode. 16828 ufukaltinok  txt      REG               1,17   5543552          1985504828 <run>/tmp/.bun-501-580dfe60f7f73ad8.dylib
+opencode. 16828 ufukaltinok  txt      REG               1,17   9660064          1985505284 <run>/tmp/.bun-501-295fc1275a70d982.dylib
+opencode. 16828 ufukaltinok    0r     CHR                3,2       0t0                 336 /dev/null
+opencode. 16828 ufukaltinok    1u    unix 0xd4dac99b4ea3b40a       0t0                     ->0xef7dbce95064f401
+opencode. 16828 ufukaltinok    2u    unix 0x19b60ae92680484d       0t0                     ->0xebf88ffa9ccd5107
+opencode. 16828 ufukaltinok    3u  KQUEUE                                                  count=0, state=0x12
+opencode. 16828 ufukaltinok    4u    unix 0xd4dac99b4ea3b40a       0t0                     ->0xef7dbce95064f401
+opencode. 16828 ufukaltinok    5w     REG               1,17     11952          1985504849 <run>/xdg-data/opencode/log/opencode.log
+opencode. 16828 ufukaltinok    6u    unix 0x19b60ae92680484d       0t0                     ->0xebf88ffa9ccd5107
+opencode. 16828 ufukaltinok    7u    IPv4 0x5d34e4c587ab695a       0t0                 TCP 127.0.0.1:63517 (LISTEN)
+opencode. 16828 ufukaltinok    8u     REG               1,17   6193152          1985504915 <run>/xdg-data/opencode/opencode.db
+opencode. 16828 ufukaltinok    9u     REG               1,17     32768          1985505233 <run>/xdg-data/opencode/opencode.db-wal
+opencode. 16828 ufukaltinok   10u     REG               1,17     32768          1985505234 <run>/xdg-data/opencode/opencode.db-shm
+opencode. 16828 ufukaltinok   11u    IPv4 0x9a133703b7e8a4bd       0t0                 TCP 127.0.0.1:63517->127.0.0.1:63519 (ESTABLISHED)
+opencode. 16828 ufukaltinok   12u    IPv4 0x4313c1859e3a371a       0t0                 TCP 127.0.0.1:63517->127.0.0.1:63520 (ESTABLISHED)
+opencode. 16828 ufukaltinok   13u  KQUEUE                                                  count=0, state=0x12
+opencode. 16828 ufukaltinok   14u    IPv4 0x46bebcd63003f77b       0t0                 TCP 127.0.0.1:63526->127.0.0.1:1234 (ESTABLISHED)
+opencode. 16828 ufukaltinok   18u    IPv4 0xf1e5ed84ace4d923       0t0                 TCP 192.168.1.36:63536->172.64.155.209:443 (ESTABLISHED)
+opencode. 16828 ufukaltinok   19u    unix  0xdba7ef597e3e74e       0t0                     ->0x79239e700327329c
+opencode. 16828 ufukaltinok   20u    IPv4 0x1d71d0cbcb9f77dd       0t0                 TCP 192.168.1.36:63523->172.66.173.149:443 (ESTABLISHED)

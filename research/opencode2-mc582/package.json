@@ -1,0 +1,12 @@
+{
+  "name": "opencode2-mc582-spike",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@opencode/cli": "2.0.20",
+    "@opencode/core": "2.0.20",
+    "@opencode/ai": "2.0.20",
+    "@opencode/plugin": "2.0.20",
+    "ws": "8.22.0"
+  }
+}

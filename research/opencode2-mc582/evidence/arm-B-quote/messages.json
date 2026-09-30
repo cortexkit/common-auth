@@ -1,0 +1,333 @@
+[
+  {
+    "id": "msg_0f16c2c8e001RCLFEGcDVY002V",
+    "time": {
+      "created": 1790756794323
+    },
+    "text": "First write one short sentence, then run `echo hi` with the shell tool.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f16c2fdd001hAyhu3PZR6kd4J",
+    "time": {
+      "created": 1790756794535,
+      "streamed": 1790756796924,
+      "completed": 1790756796925
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "",
+        "state": {
+          "itemId": "rs_037c8388221dfe13016abcc7bbef7087d284ab52c63515a1b4",
+          "reasoningEncryptedContent": "gAAAAABqvMe8kttREdWIDUTSg3yP0bQhB2tgZXO7Eli5T0P5nz3ASlt7uDmpkGnJ2w9KoTfa3j4h7WyTLp_s5wKxSzMjUl9FOCGETA3Dl3pUQQnyty13stQ8TzaMnj8K1v7adNa2wLsNJzxeu97OtCEbTpNjHCU8B8Ni_NkMkH1JBNExBSjo5W1eoFYMUHJEQAJ2Fl0NFJWlIer7wiQcUd7QxvSgUABbCtDaML50UseTmZmQZN-dJCCJEhVLCsmaT1CLBCUYQ28-PdWzM3KLw0UXjHcar-H_WNhsjVMeErFIObWIbmD_GazYRkJD--2T9pX6smdkNixILX0-lB9yVWFbaLiGZ-hQGNG-bpoilYFwUsONVtrOyqqwqFs7s1Td4wI_ttRZfvZYCWrFN2weEGq39B41tl_BuXiI_oJLDmYr4AE0jT52chx27Hl2TaN8ybcjrSVeV2AAGrC4mGve8kl0FWnwkecLoTQVHZjWzHJjxyxRvQAymz7se10sYUruX75pVZ2coRjl4RuIE87n-YpbtLbDqkwzCRcj7oGQPmsOOfLVYTlgx7-5WqKSo_0mScAXteOI-nQPPf1R2G8hcKhBkHRWtpG0LR8dQIHLDGqKe45QAEPbf2AHzMJv3CE7R5wTuyy_RlIAkLmryBYTyGm0WaeqlX-OYPQz1Qk8-AA17PEyC0tfWxF6daOxJOi6rK8T2QOq7I9hDr7zZ91t8K5BA3_CqYfsLzmTHxbZckC_LomlI72h4hdSW34saF0nuM5qKmtZYCkC7KtJssbW0DQQ00jKpvEOZTG7SkbnujPT7GlEa5lNEyRzHjZyJ2_qF_QQmk3WqbYXJ_G5QQ3F0UEdeG_GP9Ac1542CoHh0PakfsEMtPtDhazxRgoCW-kclwhBINSjbqg3gv80MM1_a-7P4v36_z3RCroqbll9PNa82kcGvAKRdExd_h-_FmxqRgmRgm39HFDA4XhV56Ok4dY9SnMkliDpD6SJrCagtsnKEENQgZ7_iPdfKsVPdV1pGyPZWOk6jKJIuiIg5EvFY5OEnPc3qzaMXfepyz8YEdZ27lXwK62t3nrIhSjzAhPlVEJeKnvcUt0wgCHfS8NiigLAd85L69FrnxUVvTHhBATBB0nPb1J0-gDjvcPwj3Drr7ojL3V7HryKjQUENc4joam-052ldDh1mt_Own_2xaCIvcD-57zFhVjpKP6-oJWKWoSf_GNXgtGwSAgaZJ-pSh3h6c5BiHX56gy59qP5LtgHw6hWA37UJ5k2QdVpqAZV9mAwlmDoF-HNEVHIU7ABgG81_lDFph7MP02lVisKqGRz_uDa-aOUdkbFeQDxFU90SlAcyWkkJdBfyJvaQyKZm3mqiFE8d0Du2w=="
+        },
+        "time": {
+          "created": 1790756795968,
+          "completed": 1790756796526
+        }
+      },
+      {
+        "type": "text",
+        "text": "I’ll run the requested command now.",
+        "state": {
+          "itemId": "msg_037c8388221dfe13016abcc7bc77a087d29586d4573a62f972",
+          "phase": "commentary"
+        }
+      },
+      {
+        "type": "tool",
+        "id": "call_FmcVQM1M1rffd1NA4WpzARhm",
+        "name": "shell",
+        "executed": false,
+        "providerState": {
+          "itemId": "fc_037c8388221dfe13016abcc7bca14087d2bf9f46c89ce9e8bb"
+        },
+        "state": {
+          "status": "completed",
+          "input": {
+            "command": "echo hi"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "hi\n"
+            }
+          ],
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          }
+        },
+        "time": {
+          "created": 1790756796663,
+          "ran": 1790756796840,
+          "completed": 1790756796868
+        }
+      }
+    ],
+    "finish": "tool-calls",
+    "providerState": {
+      "responseId": "resp_037c8388221dfe13016abcc7bb3fac87d2aeef97432be15c0a",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 8869,
+      "output": 35,
+      "reasoning": 13,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f16c3a06001FbiFbJJb4u2BL1",
+    "time": {
+      "created": 1790756796952,
+      "streamed": 1790756798729,
+      "completed": 1790756798730
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "The command output was `hi`.",
+        "state": {
+          "itemId": "msg_037c8388221dfe13016abcc7be6ca487d2969f55143d38ecfa",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_037c8388221dfe13016abcc7bda22487d2bde6ca2bba953571",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 231,
+      "output": 11,
+      "reasoning": 0,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f16c410c001IA2ul4xLS2u7CS",
+    "time": {
+      "created": 1790756798732
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  },
+  {
+    "id": "msg_0f16c4111001bBXUfh0Y4dCwNP",
+    "time": {
+      "created": 1790756798743
+    },
+    "text": "Thanks.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f16c411a001XhJizDzDOxa3XA",
+    "time": {
+      "created": 1790756798763,
+      "streamed": 1790756800523,
+      "completed": 1790756800524
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "§6§ You’re welcome!",
+        "state": {
+          "itemId": "msg_037c8388221dfe13016abcc7c03d4887d2a4b84931d050fb52",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_037c8388221dfe13016abcc7bf377087d288b164c6fd459a7f",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 256,
+      "output": 11,
+      "reasoning": 0,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f16c480e0017mqneXabA2NgAm",
+    "time": {
+      "created": 1790756800526
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  },
+  {
+    "id": "msg_0f16c4814001IssYYe4Cxtv5U4",
+    "time": {
+      "created": 1790756800538
+    },
+    "text": "Quote your previous assistant message verbatim, character for character, including any symbols at its start. Put the quote alone inside a fenced code block.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f16c481d001R47oitUaWmVsKd",
+    "time": {
+      "created": 1790756800555,
+      "streamed": 1790756804043,
+      "completed": 1790756804044
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "**Clarifying exact assistant message quoting**",
+        "state": {
+          "itemId": "rs_037c8388221dfe13016abcc7c1f5b887d2bffc9744a8bade80",
+          "reasoningEncryptedContent": "gAAAAABqvMfDVBkfgjQvGpnk-6wetBYWjxo5RzWN9tTxId-TmehS2lBhlZpwQHai6K-TUoDTMWrN8SLjZUXH4qzMPQTTbe_DL8zvCG5wmj41TH1qzJRZ0KqmAPuPcLxD9CT-dOMGRfpRP_if3kU6qo1iEEAlr8JoWJ9k-W45_EZR751B20CNTRdbMyLjShRWC7LTApYYnouUf2qUx0jdPIlQtO5rQovyvj_DhxbN28QTb2WjeOmOON4euqzctEBw2Jc0ii-TzpOcTrLGwig-HoFOaxKliS9vdW4-ZUHFMLq0qaECYfLKxy8vjnpzjCfkzalqHfHwbUvFGtao_OStA1Cp9OQgr4Dipo9IoBlwAvX3SafeKAupx9dS6PT9V4CRb48w5UZKP0qt7LPtldDwa973qYSAtIlCZscVdechWLUKAqk-7DfRfZc4vpMCgdln45GWmooLE6BEGVAHZzUfmcEQXMUILsG_7R0vq-65uRBdHFJFaKTbRoGEiBCLTVJdX4EO6Wn4j7FUdDAEyiafDyTKgEjdEK88EmzgljMzd4jypUL0ZDQLvoEr53bHTlf7CFyqXRFwz2dWBqWQenc03nEQgvnDg8UxZuJEW_dVFMwbob-v90hSQytOw-tAitrSiybBbOxItGm7BEYGMfCkaN7kOb5Yv2JwWcy8l-0ck8cu3eeSfQIEIuF-ruaIIi8kdIHFVM7dQWnoQ2fySFjyUeGMpA3U-tjXPV8AdOi6QIyox_N_PLjQJkr3b7LP2tJItiJvVCDmjxm7FemYiW6kVAQ5fP7yTUEqy2_Wqi61x0goTFRyLM3TGqwucbRNo_W6VcFHNf3Ls1xhmcRC0V241IuyFzaWJv-m-bv8z9d0vjG2c_G1_Yd7lYUSDpo49KdIPA8K0_bAwzthwRkOwRQ_vWDxwCYa4YXvIuVquLx2fOqRJvPv5T0qjmb_JeWdUfY8GHFqzzuyniwdFDI5rCxAhbtYDVW3VkN9FJv1BgUzpmJwaTZpGfFuIVBcfF5Cum4FOEDoHTgyWCVZd8Y0wf--uo-VAmwZuJaBvLl8AeAPn2i6Dpke0iiJP1XTG5WOmAWySZEXQfDamqYjhlZ5xPiTIX167MgV4IU6ug8WXwvDDpnRfDmOhd3NjpqQuSMigUt8mwZoXs0wxbYUZiUbOVwpuB_356Cf22GMHfcSXM7rarfIwd1dO12d11Go4wrLaeJ400o6pHDxVniWd_KGoJ3I8sXr8R8boQRPZ-199_RCJTcvGYyiqLlZ1RK1kRXSAC__f3UcImdF1Jf_jb8oa2eopP05JM9NU31iGq-weSPQmnbCpGVRTRg1l5vqoco8YGyKzQ-qD8-ZFYr3jVaSnxl9GtASwbBGrSZMJk-2p7c98pyYajvC1i2KodM0EKwmTnsAMFF0qE6NVbPD6fTfFM-o13sXYVelemEnXED0lqdZQr6NQmj9ebV3OmsAY0YhIaQXL_bKay8Fh-NBMdhgPhWWOrdRpjYnjQfGpVRXYkO8mxiQf-vJNNMUUWUdnGgXRvGIamwhSMt6-0WJ91e1wOb2cBZW7TZEwfKGmyHRS1PxqmKEjC16mbkROWhqLM2fFEeUp9tLWKWwUSO2oPb237a11UgoV7N2lEYNKf3MhILZ575PxE4lRBqiPIzWgUGVhMNLh7C3jHh2RhLNvkrgEeOo7FwhwSG8UjAdNSf98VBZ99h0pih0eDtCqlOijxh-llsDTH9awLO9hQggVXHcQ7sEo188xuw17ssKtMOem373issYPMz6E3t8720QWy9Ix_3rFhM5172sz0SmEC99Ql4sExhHvwneYNjAvwpdc5vOBEkn7VKdYQyBeDK3aOGk49sKiM7Tl41bfZ0ypWhSD2WNRbxsF6RmyBXr3dYnMs-r070rKN3Dtq1zrjg="
+        },
+        "time": {
+          "created": 1790756801995,
+          "completed": 1790756803959
+        }
+      },
+      {
+        "type": "text",
+        "text": "```text\n§6§ You’re welcome!\n```",
+        "state": {
+          "itemId": "msg_037c8388221dfe13016abcc7c3ed2887d293efb8744e20b777",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_037c8388221dfe13016abcc7c1221887d2bbbcc8253032fb85",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 305,
+      "output": 17,
+      "reasoning": 93,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f16c55cd002BmSpT4i5VPS1m0",
+    "time": {
+      "created": 1790756804045
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  },
+  {
+    "id": "msg_0f16c55d1001C1FnqgKHcr8o7H",
+    "time": {
+      "created": 1790756804055
+    },
+    "text": "Quote your previous assistant message verbatim, character for character, including any symbols at its start. Put the quote alone inside a fenced code block.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f16c55d9001Qe6yyvK0ypjH93",
+    "time": {
+      "created": 1790756804117,
+      "streamed": 1790756808484,
+      "completed": 1790756808485
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "**Preparing exact previous assistant code block**",
+        "state": {
+          "itemId": "rs_037c8388221dfe13016abcc7c5aae087d2b615a8fe429e1fcc",
+          "reasoningEncryptedContent": "gAAAAABqvMfIffg9WzrZGCBp25WCPAwxz9UCVuSo_GH6AdU-iFF3qDaIl6AKFgZnQvKYWiWHEZ9jP2NevDnzvuWlKhMHKLrK0qacDJm1Bi0GKNu1qU4yiwM3Rso-F6HN0_xI4agaaZOzM1dzLIfC301ZnA5ueN2ivAw5hJYFfivKdKblIbNMNuntfvoQIgm5xVBFmtEwSkeWJbqfE0VrMwygokAhXfOys-TQEhQR2KBWO2s0D1WYhsn_1KhOsmIfcZ8R-ezj7zqf2vaXxTEsUoShQ3hKTyayu53a9c8a0ikfm7uTSwhal8feZ9dfzeCoAOpgoSH2SCzOHFI7JNLRZQHalIA5DvoJkNMHgGg_ImlqpKo_Dpm4NFTQIbfHQCVgPj1oFO2XqZ72mh31VvZUj-W1lqcjgLyjfSFKBbq4m9nhg-5IXFtbaL_Twerus0HT_dqdD-D3qGx1a3GuETyBJYafE_PwsB1ggNBRjaGOprNuL5thk_AsGDSu1rSKKk28odNzT65J82A-mQ1tSAntLG34zYtrihEnwJg6UdbKusTyia_8swucbR12yoMBdLB1ar5deQC50lnGCGXAAJHE8hahgg2uqFwWhm_GI5JURxdn5APLZG10fPNrhMmKbCcJruVlxLkwE8YPEOuqTyqN0zAety6Z_g8SDp7mBnCpGXmyDfiOWE1B5hIT9aSMyqOfsUm6D45nr-oVdXGOjN2VigYuugW8zC0oYm4wFSqmAtiwZnGqGyu4srs_7OuWyqKvyTyE16BU_Jct4a-iT4UIVUX49XBaD9PXgggOS-AcLvb-ND_TdaYrarG5jKYXLSbOiMRG4wxM3RKbIW1x7kF3yDJNUs0qFpJFMei_eM14lBub2E_BH4wghPQ8DhCSFpS9YXkbLonHZxCzdDcF0L_NEKKurnU_Ymb0csKpBqbgQ9pJGdqbKPT-wbSo8RAHwhIClL9NHwVLVUDIB0X86wAOsjRX1SQGvd9HTZSd4fkKR6XF4Rr-ixs6T9USOrdqlB1RRXDNVhYI3ZlmLa13uIja48vuRT9huHEW9hUfEkB2PxJunmXqKtKCYCArXHT9NpjL_bmcSecm2cHi2BzV4f0VeqGSzJ3uQMaVzuM5IsizLY2ReBEoWw1BaxZw5r8DepT69TkyCHHTCZXnjbRqpTMM5a3v0Zw7l39XHLy2de4JpqUAZp_7wgwPob_sdW2lal9IYI9QIqk2euMmu8_UIZg-Nh48nIYN9tZ1g8F_bc-h7YG1lH_dQUXgD1OCd7rdzY8aNAsuElJ42DIuQQfm42TlKvKmgnerTskMkybOHzYpBGYkRVlO7DYx43U36czROPY7qQvPagpSrGLG1lNa5KEifBMz6IXGFjQCeGbJUI7k-hw8ygKptw43AugCae-f8ediVU2V2tAIM01y5gBwkq159cWhUpKSg0IfHBQbFYgQcoji3wOpjckp-1LWx_H_R-1jqkpg7LMsHL-MyVMbvkXkcS8WIz6Mw0eIKKWF3PFhktimEQrPfyKN4CYQfAaaVdRfMMInLGSnHJaPlzXeF4VILricxVpwtS-6x4RD4cSptZHJRiHqaVstaxl1UVcw0kgpUBRrggFGpn4DG6CRrWObzkJXKYvZZ62ZnGuDumPkNi2XOu1EXCiizdrXGxrRKgtbhWt0ATNS-EVMZvj1t1MYgZedhWeWfMdVv5pZIf4m9tY4mZYk4ufgeTcA5sx901fmbRNVVgXZEg1NDf9C_nxCm4OOp2m-Ol-NKYF0Y9nj-_qW0qBChD3mpOhCixeYE8J1IouB786yH2b1q4ZhY3EX8Ac3HWomfrA4BkzmPK2ixd75ZT0kCxey5BP6PNk0O1T6wM5SUKuQSe8qTKJieytQgyFLZPtos4K2BcRTH6wFhVpnjTS3pIK6izeqDJvy-hH-jQGi-3QIq1kzGJRutC0lZNh6J7B3s25F6blUcsaJf4BKlgbd2W8ugxKBYjZyOgiEcabdb00b9FEm8q3zcjEgBaU932HUQPLUBAiXBNT9OeJ7wUeHtyRUkchmfnZprz5H3kGiJZ1bv0iL"
+        },
+        "time": {
+          "created": 1790756805700,
+          "completed": 1790756808310
+        }
+      },
+      {
+        "type": "text",
+        "text": "§10§ ````text\n```text\n§6§ You’re welcome!\n```\n````",
+        "state": {
+          "itemId": "msg_037c8388221dfe13016abcc7c843b887d2b95d10aa19386b38",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_037c8388221dfe13016abcc7c4993487d29661d0f42e05ce52",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 456,
+      "output": 27,
+      "reasoning": 123,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f16c6728001XYsnNplmK41Wkz",
+    "time": {
+      "created": 1790756808488
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  }
+]

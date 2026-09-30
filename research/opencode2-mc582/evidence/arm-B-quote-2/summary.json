@@ -1,0 +1,13 @@
+{
+  "name": "arm-B-quote-2",
+  "arm": "B",
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "prompts": [
+    "First write one short sentence, then run `echo hi` with the shell tool.",
+    "Thanks.",
+    "Quote your previous assistant message verbatim, character for character, including any symbols at its start. Put the quote alone inside a fenced code block.",
+    "Quote your previous assistant message verbatim, character for character, including any symbols at its start. Put the quote alone inside a fenced code block."
+  ],
+  "sessionID": "ses_f0e932c37ffeOuLCVJMWQVwUYP"
+}

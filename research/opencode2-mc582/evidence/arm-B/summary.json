@@ -1,0 +1,11 @@
+{
+  "name": "arm-B",
+  "arm": "B",
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "prompts": [
+    "First write one short sentence, then run `echo hi` with the shell tool.",
+    "Thanks."
+  ],
+  "sessionID": "ses_f0e940292ffemPIYXZC8dumlP4"
+}

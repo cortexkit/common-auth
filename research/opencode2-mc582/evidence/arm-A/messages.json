@@ -1,0 +1,186 @@
+[
+  {
+    "id": "msg_0f16bda9a001Q17FSbwkEfMI7U",
+    "time": {
+      "created": 1790756772700
+    },
+    "text": "First write one short sentence, then run `echo hi` with the shell tool.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f16bdb70001f6LqbCBWP4I61P",
+    "time": {
+      "created": 1790756772730,
+      "streamed": 1790756776087,
+      "completed": 1790756776088
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "I’ll run the requested command now.",
+        "state": {
+          "itemId": "msg_063f77abe2da9661016abcc7a6aea087d2aaf9fa6dae4341d1",
+          "phase": "commentary"
+        }
+      },
+      {
+        "type": "tool",
+        "id": "call_qx8MxcA31LM5WMXyW6094kLp",
+        "name": "shell",
+        "executed": false,
+        "providerState": {
+          "itemId": "fc_063f77abe2da9661016abcc7a714e887d299ea5cd2e819a4da"
+        },
+        "state": {
+          "status": "completed",
+          "input": {
+            "command": "echo hi",
+            "workdir": "<run>/project"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "hi\n"
+            }
+          ],
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          }
+        },
+        "time": {
+          "created": 1790756775299,
+          "ran": 1790756776038,
+          "completed": 1790756776059
+        }
+      }
+    ],
+    "finish": "tool-calls",
+    "providerState": {
+      "responseId": "resp_063f77abe2da9661016abcc7a5b5b487d298e86a2739925013",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 5591,
+      "output": 75,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f16be89d001JvCEanpAMg7IJG",
+    "time": {
+      "created": 1790756776100,
+      "streamed": 1790756777740,
+      "completed": 1790756777741
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Done.",
+        "state": {
+          "itemId": "msg_063f77abe2da9661016abcc7a9948887d2af5ef4e53a40ba77",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_063f77abe2da9661016abcc7a89fb087d290b544c09a0dfcb6",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 5678,
+      "output": 6,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f16bef0e002eGXfLFILtRz8x0",
+    "time": {
+      "created": 1790756777742
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  },
+  {
+    "id": "msg_0f16bef13001n40Fd3PLAelX3X",
+    "time": {
+      "created": 1790756777753
+    },
+    "text": "Thanks.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f16bef1c001UdhEQ7ySLcAytz",
+    "time": {
+      "created": 1790756777762,
+      "streamed": 1790756779558,
+      "completed": 1790756779559
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "You’re welcome!",
+        "state": {
+          "itemId": "msg_063f77abe2da9661016abcc7ab527887d2bb8e42f5d0670ca9",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_063f77abe2da9661016abcc7aa4d7c87d2abca9c3521d63d89",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 5692,
+      "output": 8,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f16bf628002zEaC7hk4dOqsZk",
+    "time": {
+      "created": 1790756779560
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  }
+]

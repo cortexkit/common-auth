@@ -1,0 +1,111 @@
+# arm-B-quote-2: 5 response.create frames
+observer.jsonl:1 http.request kind=title POST https://chatgpt.com/backend-api/codex/responses
+observer.jsonl:2 ws.handshake kind=primary wss://chatgpt.com/backend-api/codex/responses
+observer.jsonl:3 ws.send #1 type=response.create model=gpt-5.6-luna reasoning={"effort":"low","summary":"auto"} previous_response_id=(absent) input_items=3
+    input[0] message user "<session-history></session-history>"
+    input[1] message user "<session-history-since>(no new content since last materialization)</session-history-since>"
+    input[2] message user "§1§ First write one short sentence, then run `echo hi` with the shell tool."
+observer.jsonl:7 ws.receive response.created id=resp_0dd98e28c797345f016abcc7e74d2087d2a16fa2af6db4505e
+observer.jsonl:9 ws.receive response.output_item.added output_index=0 reasoning id=rs_0dd98e28c797345f016abcc7e8b48487d28e5bcfaf2c9aa0c9  ""
+observer.jsonl:10 ws.receive response.output_item.done output_index=0 reasoning id=rs_0dd98e28c797345f016abcc7e8b48487d28e5bcfaf2c9aa0c9  ""
+observer.jsonl:11 ws.receive response.output_item.added output_index=1 message id=msg_0dd98e28c797345f016abcc7e923ac87d2a5c379518862b571 assistant ""
+observer.jsonl:15 ws.receive response.output_item.done output_index=1 message id=msg_0dd98e28c797345f016abcc7e923ac87d2a5c379518862b571 assistant "I’ll run the requested command now."
+observer.jsonl:16 ws.receive response.output_item.added output_index=2 function_call id=fc_0dd98e28c797345f016abcc7e959d887d2826bfe5cf5ab20d2 call_id=call_tctZ6aaYnAPdNYoBDZlMYEi1 shell()
+observer.jsonl:18 ws.receive response.output_item.done output_index=2 function_call id=fc_0dd98e28c797345f016abcc7e959d887d2826bfe5cf5ab20d2 call_id=call_tctZ6aaYnAPdNYoBDZlMYEi1 shell({"command":"echo hi"})
+observer.jsonl:20 ws.receive response.completed id=resp_0dd98e28c797345f016abcc7e74d2087d2a16fa2af6db4505e status=completed store=false input_tokens=8875 cached_tokens=3584
+    streamed done order : reasoning:rs_0dd98e28c797345f016abcc7e8b48487d28e5bcfaf2c9aa0c9, message:msg_0dd98e28c797345f016abcc7e923ac87d2a5c379518862b571, function_call:fc_0dd98e28c797345f016abcc7e959d887d2826bfe5cf5ab20d2
+    envelope order      : 
+    orders match        : false (envelope output is empty, so the host checkpoints the output_item.done items in stream order)
+observer.jsonl:21 ws.handshake kind=primary wss://chatgpt.com/backend-api/codex/responses
+observer.jsonl:22 ws.send #2 type=response.create model=gpt-5.6-luna reasoning={"effort":"low","summary":"auto"} previous_response_id=(absent) input_items=7
+    [continuation check vs previous checkpoint] invariant fields equal: true
+    [continuation check vs previous checkpoint] baseline = previous input 3 + previous output 3 = 6; new input 7
+    [continuation check vs previous checkpoint] first mismatch at index 4:
+    [continuation check vs previous checkpoint]     checkpoint: {"content":[{"text":"I’ll run the requested command now.","type":"output_text"}],"phase":"commentary","role":"assistant"}
+    [continuation check vs previous checkpoint]     new input : {"content":[{"text":"§2§ I’ll run the requested command now.","type":"output_text"}],"phase":"commentary","role":"assistant"}
+    [continuation check vs previous checkpoint] counterfactual, leading §N§ removed from assistant text in both requests: incremental possible = true
+    input[0] message user "<session-history></session-history>"
+    input[1] message user "<session-history-since>(no new content since last materialization)</session-history-since>"
+    input[2] message user "§1§ First write one short sentence, then run `echo hi` with the shell tool."
+    input[3] reasoning id=rs_0dd98e28c797345f016abcc7e8b48487d28e5bcfaf2c9aa0c9
+    input[4] message id=msg_0dd98e28c797345f016abcc7e923ac87d2a5c379518862b571 assistant "§2§ I’ll run the requested command now."
+    input[5] function_call id=fc_0dd98e28c797345f016abcc7e959d887d2826bfe5cf5ab20d2 call_id=call_tctZ6aaYnAPdNYoBDZlMYEi1 shell({"command":"echo hi"})
+    input[6] function_call_output call_id=call_tctZ6aaYnAPdNYoBDZlMYEi1 "§3§ hi\n"
+observer.jsonl:25 ws.receive response.created id=resp_0dd98e28c797345f016abcc7ea8ce487d294f74a145c32e567
+observer.jsonl:27 ws.receive response.output_item.added output_index=0 message id=msg_0dd98e28c797345f016abcc7ebc67087d287b8a9cdc8768cdf assistant ""
+observer.jsonl:31 ws.receive response.output_item.done output_index=0 message id=msg_0dd98e28c797345f016abcc7ebc67087d287b8a9cdc8768cdf assistant "Done."
+observer.jsonl:33 ws.receive response.completed id=resp_0dd98e28c797345f016abcc7ea8ce487d294f74a145c32e567 status=completed store=false input_tokens=8939 cached_tokens=3584
+    streamed done order : message:msg_0dd98e28c797345f016abcc7ebc67087d287b8a9cdc8768cdf
+    envelope order      : 
+    orders match        : false (envelope output is empty, so the host checkpoints the output_item.done items in stream order)
+observer.jsonl:34 ws.handshake kind=primary wss://chatgpt.com/backend-api/codex/responses
+observer.jsonl:35 ws.send #3 type=response.create model=gpt-5.6-luna reasoning={"effort":"low","summary":"auto"} previous_response_id=(absent) input_items=9
+    [continuation check vs previous checkpoint] invariant fields equal: true
+    [continuation check vs previous checkpoint] baseline = previous input 7 + previous output 1 = 8; new input 9
+    [continuation check vs previous checkpoint] first mismatch at index 7:
+    [continuation check vs previous checkpoint]     checkpoint: {"content":[{"text":"Done.","type":"output_text"}],"phase":"final_answer","role":"assistant"}
+    [continuation check vs previous checkpoint]     new input : {"content":[{"text":"§4§ Done.","type":"output_text"}],"phase":"final_answer","role":"assistant"}
+    [continuation check vs previous checkpoint] counterfactual, leading §N§ removed from assistant text in both requests: incremental possible = true
+    input[0] message user "<session-history></session-history>"
+    input[1] message user "<session-history-since>(no new content since last materialization)</session-history-since>"
+    input[2] message user "§1§ First write one short sentence, then run `echo hi` with the shell tool."
+    input[3] reasoning id=rs_0dd98e28c797345f016abcc7e8b48487d28e5bcfaf2c9aa0c9
+    input[4] message id=msg_0dd98e28c797345f016abcc7e923ac87d2a5c379518862b571 assistant "§2§ I’ll run the requested command now."
+    input[5] function_call id=fc_0dd98e28c797345f016abcc7e959d887d2826bfe5cf5ab20d2 call_id=call_tctZ6aaYnAPdNYoBDZlMYEi1 shell({"command":"echo hi"})
+    input[6] function_call_output call_id=call_tctZ6aaYnAPdNYoBDZlMYEi1 "§3§ hi\n"
+    input[7] message id=msg_0dd98e28c797345f016abcc7ebc67087d287b8a9cdc8768cdf assistant "§4§ Done."
+    input[8] message user "§5§ Thanks."
+observer.jsonl:38 ws.receive response.created id=resp_0dd98e28c797345f016abcc7eccce887d29a481c04570b87c6
+observer.jsonl:40 ws.receive response.output_item.added output_index=0 message id=msg_0dd98e28c797345f016abcc7ee1b5c87d2b8a12f786e8d4628 assistant ""
+observer.jsonl:44 ws.receive response.output_item.done output_index=0 message id=msg_0dd98e28c797345f016abcc7ee1b5c87d2b8a12f786e8d4628 assistant "§6§ You’re welcome!"
+observer.jsonl:46 ws.receive response.completed id=resp_0dd98e28c797345f016abcc7eccce887d29a481c04570b87c6 status=completed store=false input_tokens=8959 cached_tokens=8704
+    streamed done order : message:msg_0dd98e28c797345f016abcc7ee1b5c87d2b8a12f786e8d4628
+    envelope order      : 
+    orders match        : false (envelope output is empty, so the host checkpoints the output_item.done items in stream order)
+observer.jsonl:47 ws.handshake kind=primary wss://chatgpt.com/backend-api/codex/responses
+observer.jsonl:48 ws.send #4 type=response.create model=gpt-5.6-luna reasoning={"effort":"low","summary":"auto"} previous_response_id=resp_0dd98e28c797345f016abcc7eccce887d29a481c04570b87c6 input_items=1
+    [continuation check vs previous checkpoint] invariant fields equal: true
+    [continuation check vs previous checkpoint] baseline = previous input 9 + previous output 1 = 10; new input 11
+    [continuation check vs previous checkpoint] every baseline item matches the new input by index
+    [continuation check vs previous checkpoint] counterfactual, leading §N§ removed from assistant text in both requests: incremental possible = false
+    input[0] message user "§7§ Quote your previous assistant message verbatim, character for character, including any symbols at its start. Put the quote alone inside …(160)"
+observer.jsonl:51 ws.receive response.created id=resp_0dd98e28c797345f016abcc7eeeb3c87d2b4d2e3140fde9f04
+observer.jsonl:53 ws.receive response.output_item.added output_index=0 reasoning id=rs_0dd98e28c797345f016abcc7f026e887d2ba0f8c04a496addf  ""
+observer.jsonl:57 ws.receive response.output_item.done output_index=0 reasoning id=rs_0dd98e28c797345f016abcc7f026e887d2ba0f8c04a496addf  ""
+observer.jsonl:58 ws.receive response.output_item.added output_index=1 message id=msg_0dd98e28c797345f016abcc7f15d0087d295b6eb388d8bfddc assistant ""
+observer.jsonl:62 ws.receive response.output_item.done output_index=1 message id=msg_0dd98e28c797345f016abcc7f15d0087d295b6eb388d8bfddc assistant "```text\n§6§ You’re welcome!\n```"
+observer.jsonl:64 ws.receive response.completed id=resp_0dd98e28c797345f016abcc7eeeb3c87d2b4d2e3140fde9f04 status=completed store=false input_tokens=9008 cached_tokens=8704
+    streamed done order : reasoning:rs_0dd98e28c797345f016abcc7f026e887d2ba0f8c04a496addf, message:msg_0dd98e28c797345f016abcc7f15d0087d295b6eb388d8bfddc
+    envelope order      : 
+    orders match        : false (envelope output is empty, so the host checkpoints the output_item.done items in stream order)
+observer.jsonl:65 ws.handshake kind=primary wss://chatgpt.com/backend-api/codex/responses
+observer.jsonl:66 ws.send #5 type=response.create model=gpt-5.6-luna reasoning={"effort":"low","summary":"auto"} previous_response_id=(absent) input_items=14
+    [continuation check vs previous checkpoint] invariant fields equal: true
+    [continuation check vs previous checkpoint] baseline = previous input 11 + previous output 2 = 13; new input 14
+    [continuation check vs previous checkpoint] first mismatch at index 12:
+    [continuation check vs previous checkpoint]     checkpoint: {"content":[{"text":"```text\n§6§ You’re welcome!\n```","type":"output_text"}],"phase":"final_answer","role":"assistant"}
+    [continuation check vs previous checkpoint]     new input : {"content":[{"text":"§8§ ```text\n§6§ You’re welcome!\n```","type":"output_text"}],"phase":"final_answer","role":"assistant"}
+    [continuation check vs previous checkpoint] counterfactual, leading §N§ removed from assistant text in both requests: incremental possible = true
+    input[0] message user "<session-history></session-history>"
+    input[1] message user "<session-history-since>(no new content since last materialization)</session-history-since>"
+    input[2] message user "§1§ First write one short sentence, then run `echo hi` with the shell tool."
+    input[3] reasoning id=rs_0dd98e28c797345f016abcc7e8b48487d28e5bcfaf2c9aa0c9
+    input[4] message id=msg_0dd98e28c797345f016abcc7e923ac87d2a5c379518862b571 assistant "§2§ I’ll run the requested command now."
+    input[5] function_call id=fc_0dd98e28c797345f016abcc7e959d887d2826bfe5cf5ab20d2 call_id=call_tctZ6aaYnAPdNYoBDZlMYEi1 shell({"command":"echo hi"})
+    input[6] function_call_output call_id=call_tctZ6aaYnAPdNYoBDZlMYEi1 "§3§ hi\n"
+    input[7] message id=msg_0dd98e28c797345f016abcc7ebc67087d287b8a9cdc8768cdf assistant "§4§ Done."
+    input[8] message user "§5§ Thanks."
+    input[9] message id=msg_0dd98e28c797345f016abcc7ee1b5c87d2b8a12f786e8d4628 assistant "§6§ You’re welcome!"
+    input[10] message user "§7§ Quote your previous assistant message verbatim, character for character, including any symbols at its start. Put the quote alone inside …(160)"
+    input[11] reasoning id=rs_0dd98e28c797345f016abcc7f026e887d2ba0f8c04a496addf
+    input[12] message id=msg_0dd98e28c797345f016abcc7f15d0087d295b6eb388d8bfddc assistant "§8§ ```text\n§6§ You’re welcome!\n```"
+    input[13] message user "§9§ Quote your previous assistant message verbatim, character for character, including any symbols at its start. Put the quote alone inside …(160)"
+observer.jsonl:69 ws.receive response.created id=resp_0dd98e28c797345f016abcc7f2263487d2a194f47f56aa59fa
+observer.jsonl:71 ws.receive response.output_item.added output_index=0 reasoning id=rs_0dd98e28c797345f016abcc7f369c487d2bc6f14921152e8e7  ""
+observer.jsonl:75 ws.receive response.output_item.done output_index=0 reasoning id=rs_0dd98e28c797345f016abcc7f369c487d2bc6f14921152e8e7  ""
+observer.jsonl:76 ws.receive response.output_item.added output_index=1 message id=msg_0dd98e28c797345f016abcc7f46c9087d2a48b3ef930b00f79 assistant ""
+observer.jsonl:80 ws.receive response.output_item.done output_index=1 message id=msg_0dd98e28c797345f016abcc7f46c9087d2a48b3ef930b00f79 assistant "§10§ ````text\n§8§ ```text\n§6§ You’re welcome!\n```\n````"
+observer.jsonl:82 ws.receive response.completed id=resp_0dd98e28c797345f016abcc7f2263487d2a194f47f56aa59fa status=completed store=false input_tokens=9112 cached_tokens=8704
+    streamed done order : reasoning:rs_0dd98e28c797345f016abcc7f369c487d2bc6f14921152e8e7, message:msg_0dd98e28c797345f016abcc7f46c9087d2a48b3ef930b00f79
+    envelope order      : 
+    orders match        : false (envelope output is empty, so the host checkpoints the output_item.done items in stream order)

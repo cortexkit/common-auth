@@ -1,0 +1,42 @@
+# arm-A: 3 response.create frames
+observer.jsonl:1 http.request kind=title POST https://chatgpt.com/backend-api/codex/responses
+observer.jsonl:2 ws.handshake kind=primary wss://chatgpt.com/backend-api/codex/responses
+observer.jsonl:3 ws.send #1 type=response.create model=gpt-5.6-luna reasoning={"effort":"low","summary":"auto"} previous_response_id=(absent) input_items=1
+    input[0] message user "First write one short sentence, then run `echo hi` with the shell tool."
+observer.jsonl:7 ws.receive response.created id=resp_063f77abe2da9661016abcc7a5b5b487d298e86a2739925013
+observer.jsonl:9 ws.receive response.output_item.added output_index=0 message id=msg_063f77abe2da9661016abcc7a6aea087d2aaf9fa6dae4341d1 assistant ""
+observer.jsonl:13 ws.receive response.output_item.done output_index=0 message id=msg_063f77abe2da9661016abcc7a6aea087d2aaf9fa6dae4341d1 assistant "I’ll run the requested command now."
+observer.jsonl:14 ws.receive response.output_item.added output_index=1 function_call id=fc_063f77abe2da9661016abcc7a714e887d299ea5cd2e819a4da call_id=call_qx8MxcA31LM5WMXyW6094kLp shell()
+observer.jsonl:16 ws.receive response.output_item.done output_index=1 function_call id=fc_063f77abe2da9661016abcc7a714e887d299ea5cd2e819a4da call_id=call_qx8MxcA31LM5WMXyW6094kLp shell({"command":"echo hi","workdir":"<run>/project"})
+observer.jsonl:18 ws.receive response.completed id=resp_063f77abe2da9661016abcc7a5b5b487d298e86a2739925013 status=completed store=false input_tokens=5591 cached_tokens=0
+    streamed done order : message:msg_063f77abe2da9661016abcc7a6aea087d2aaf9fa6dae4341d1, function_call:fc_063f77abe2da9661016abcc7a714e887d299ea5cd2e819a4da
+    envelope order      : 
+    orders match        : false (envelope output is empty, so the host checkpoints the output_item.done items in stream order)
+observer.jsonl:19 ws.handshake kind=primary wss://chatgpt.com/backend-api/codex/responses
+observer.jsonl:20 ws.send #2 type=response.create model=gpt-5.6-luna reasoning={"effort":"low","summary":"auto"} previous_response_id=resp_063f77abe2da9661016abcc7a5b5b487d298e86a2739925013 input_items=1
+    [continuation check vs previous checkpoint] invariant fields equal: true
+    [continuation check vs previous checkpoint] baseline = previous input 1 + previous output 2 = 3; new input 4
+    [continuation check vs previous checkpoint] every baseline item matches the new input by index
+    [continuation check vs previous checkpoint] counterfactual, leading §N§ removed from assistant text in both requests: incremental possible = true
+    input[0] function_call_output call_id=call_qx8MxcA31LM5WMXyW6094kLp "hi\n"
+observer.jsonl:23 ws.receive response.created id=resp_063f77abe2da9661016abcc7a89fb087d290b544c09a0dfcb6
+observer.jsonl:25 ws.receive response.output_item.added output_index=0 message id=msg_063f77abe2da9661016abcc7a9948887d2af5ef4e53a40ba77 assistant ""
+observer.jsonl:29 ws.receive response.output_item.done output_index=0 message id=msg_063f77abe2da9661016abcc7a9948887d2af5ef4e53a40ba77 assistant "Done."
+observer.jsonl:31 ws.receive response.completed id=resp_063f77abe2da9661016abcc7a89fb087d290b544c09a0dfcb6 status=completed store=false input_tokens=5678 cached_tokens=0
+    streamed done order : message:msg_063f77abe2da9661016abcc7a9948887d2af5ef4e53a40ba77
+    envelope order      : 
+    orders match        : false (envelope output is empty, so the host checkpoints the output_item.done items in stream order)
+observer.jsonl:32 ws.handshake kind=primary wss://chatgpt.com/backend-api/codex/responses
+observer.jsonl:33 ws.send #3 type=response.create model=gpt-5.6-luna reasoning={"effort":"low","summary":"auto"} previous_response_id=resp_063f77abe2da9661016abcc7a89fb087d290b544c09a0dfcb6 input_items=1
+    [continuation check vs previous checkpoint] invariant fields equal: true
+    [continuation check vs previous checkpoint] baseline = previous input 4 + previous output 1 = 5; new input 6
+    [continuation check vs previous checkpoint] every baseline item matches the new input by index
+    [continuation check vs previous checkpoint] counterfactual, leading §N§ removed from assistant text in both requests: incremental possible = true
+    input[0] message user "Thanks."
+observer.jsonl:36 ws.receive response.created id=resp_063f77abe2da9661016abcc7aa4d7c87d2abca9c3521d63d89
+observer.jsonl:38 ws.receive response.output_item.added output_index=0 message id=msg_063f77abe2da9661016abcc7ab527887d2bb8e42f5d0670ca9 assistant ""
+observer.jsonl:42 ws.receive response.output_item.done output_index=0 message id=msg_063f77abe2da9661016abcc7ab527887d2bb8e42f5d0670ca9 assistant "You’re welcome!"
+observer.jsonl:44 ws.receive response.completed id=resp_063f77abe2da9661016abcc7aa4d7c87d2abca9c3521d63d89 status=completed store=false input_tokens=5692 cached_tokens=0
+    streamed done order : message:msg_063f77abe2da9661016abcc7ab527887d2bb8e42f5d0670ca9
+    envelope order      : 
+    orders match        : false (envelope output is empty, so the host checkpoints the output_item.done items in stream order)
