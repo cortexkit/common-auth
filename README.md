@@ -1,6 +1,6 @@
 # common-auth
 
-Shared libraries for the CortexKit auth plugins for OpenCode and Pi: openai-auth, anthropic-auth and antigravity-auth. Nothing is published yet.
+Shared libraries for the CortexKit auth plugins for OpenCode and Pi: openai-auth, anthropic-auth and antigravity-auth. Published on npm as `@cortexkit/common-auth`; each plugin bundles it at build time, so users never install it directly.
 
 `research/` holds the spike reports that inform the design:
 
