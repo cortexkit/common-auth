@@ -419,3 +419,4 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | Initialize turns a pending-migration config into an empty pool, dropping only the named keys | new (neither copy) | turns a pending-migration config into an empty pool, dropping only the named keys and leaving the state file alone |
 | store | Initialize leaves a ready pool untouched and refuses a load error | new (neither copy) | leaves a ready pool untouched and refuses a load error |
 | store | Initialize fails retryably with nothing written when its lease is lost | new (neither copy) | fails retryably with nothing written when its lease is lost before the write |
+| store | Row writes take extra locks after the row and provider-wide locks and before the store locks | new (neither copy) | add, replace, rotate and recordIdentity take extra locks after the row and provider-wide locks and before the store locks |

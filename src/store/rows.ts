@@ -40,6 +40,13 @@ export interface RowOperationOptions {
   onFailure?: FailureHook
   /** The provider-wide lock, when an operation may change identity keying. */
   providerLock?: PoolLockSpec
+  /**
+   * Further locks taken after the row lock and the provider-wide lock, in
+   * this order, before the store locks: the same place `refresh` takes its
+   * extra locks, so a caller holding legacy locks around a row write and a
+   * refresh of that row acquire them in one order and cannot deadlock.
+   */
+  extraLocks?: readonly PoolLockSpec[]
 }
 
 export interface AddInput {
@@ -182,6 +189,7 @@ export async function addRow(
       await locks.acquire(rowLockSpec(rt, { id, identity }))
       if (credential.type === 'oauth')
         await locks.acquire(options.providerLock ?? rt.providerLock)
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
       return withTransaction(
         ctx,
         locks,
@@ -297,6 +305,7 @@ export async function replaceRow(
       await locks.acquire(rowLockSpec(rt, seen))
       if (credential.type === 'oauth')
         await locks.acquire(options.providerLock ?? rt.providerLock)
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
       return withTransaction(
         ctx,
         locks,
@@ -361,6 +370,7 @@ export async function rotateRow(
       await locks.acquire(rowLockSpec(rt, seen))
       if (input.identity !== undefined && credential.type === 'oauth')
         await locks.acquire(options.providerLock ?? rt.providerLock)
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
       return withTransaction(
         ctx,
         locks,
@@ -442,6 +452,7 @@ export async function recordRowIdentity(
       const { row: seen } = await readRow(rt, 'recordIdentity', id)
       await locks.acquire(rowLockSpec(rt, seen))
       await locks.acquire(options.providerLock ?? rt.providerLock)
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
       return withTransaction(
         rt.ctx,
         locks,
