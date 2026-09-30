@@ -1,0 +1,102 @@
+evidence/armA-run1/lsof.turn1.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-a6380b115f68c6ae/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-a6380b115f68c6ae/io/sandbox-unavailable
+evidence/armA-run1/lsof.turn2.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-a6380b115f68c6ae/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-a6380b115f68c6ae/io/sandbox-unavailable
+evidence/armA-run2/lsof.turn1.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6af743cbeee6b875/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6af743cbeee6b875/io/sandbox-unavailable
+evidence/armA-run2/lsof.turn2.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6af743cbeee6b875/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6af743cbeee6b875/io/sandbox-unavailable
+evidence/armA-run3/lsof.turn1.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+evidence/armA-run3/lsof.turn2.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+evidence/armA-run4/lsof.turn1.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+evidence/armA-run4/lsof.turn2.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+evidence/armA-seq2000-run1/lsof.turn1.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/sandbox-unavailable
+evidence/armA-seq2000-run1/lsof.turn2.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/sandbox-unavailable
+evidence/armA-seq2000-run2/lsof.turn1.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/sandbox-unavailable
+evidence/armA-seq2000-run2/lsof.turn2.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/sandbox-unavailable
+evidence/armA-seq2000-run3/lsof.turn1.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-29a59ee7758efb0a/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-29a59ee7758efb0a/io/sandbox-unavailable
+evidence/armA-seq2000-run3/lsof.turn2.txt: 63 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-29a59ee7758efb0a/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-29a59ee7758efb0a/io/sandbox-unavailable
+evidence/armB-m3/lsof.turn1.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-a298a9bb94146f66/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-a298a9bb94146f66/io/sandbox-unavailable
+evidence/armB-m3/lsof.turn2.txt: 71 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-a298a9bb94146f66/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-a298a9bb94146f66/io/sandbox-unavailable
+evidence/armB-m3b/lsof.turn1.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-fb6e92ed3d5cc444/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-fb6e92ed3d5cc444/io/sandbox-unavailable
+evidence/armB-m3b/lsof.turn2.txt: 71 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-fb6e92ed3d5cc444/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-fb6e92ed3d5cc444/io/sandbox-unavailable
+evidence/armB-m3c/lsof.turn1.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6bf234dc6d3f12b5/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6bf234dc6d3f12b5/io/sandbox-unavailable
+evidence/armB-m3c/lsof.turn2.txt: 71 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6bf234dc6d3f12b5/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6bf234dc6d3f12b5/io/sandbox-unavailable
+evidence/armB-run1/lsof.turn1.txt: 75 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-038b3769d30d4a3a/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-038b3769d30d4a3a/io/sandbox-unavailable
+evidence/armB-run1/lsof.turn2.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-038b3769d30d4a3a/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-038b3769d30d4a3a/io/sandbox-unavailable
+evidence/armB-run2/lsof.turn1.txt: 75 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6af743cbeee6b875/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6af743cbeee6b875/io/sandbox-unavailable
+evidence/armB-run2/lsof.turn2.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6af743cbeee6b875/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-6af743cbeee6b875/io/sandbox-unavailable
+evidence/armB-run3/lsof.turn1.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+evidence/armB-run3/lsof.turn2.txt: 71 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+evidence/armB-run4/lsof.turn1.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+evidence/armB-run4/lsof.turn2.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+evidence/armB-seq2000-run1/lsof.turn1.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/sandbox-unavailable
+evidence/armB-seq2000-run1/lsof.turn2.txt: 71 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/sandbox-unavailable
+evidence/armB-seq2000-run2/lsof.turn1.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/sandbox-unavailable
+evidence/armB-seq2000-run2/lsof.turn2.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-530d9262a5813ec1/io/sandbox-unavailable
+evidence/armB-seq2000-run3/lsof.turn1.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-29a59ee7758efb0a/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-29a59ee7758efb0a/io/sandbox-unavailable
+evidence/armB-seq2000-run3/lsof.turn2.txt: 73 open files, 2 under real locations
+    fd 3u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-29a59ee7758efb0a/io/exit
+    fd 4u /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-29a59ee7758efb0a/io/sandbox-unavailable

@@ -1,0 +1,6 @@
+[0] message:user: identical to #2 input[0]
+[1] message:assistant: identical to model output
+[2] function_call: replayed provider output item (not in dumps; compare against arm A's cache attribution)
+[3] function_call_output: identical to #3 input[0]
+[4] message:assistant: identical to model output
+[5] message:user: new in turn 2

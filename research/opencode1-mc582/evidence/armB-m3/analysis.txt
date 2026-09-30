@@ -1,0 +1,81 @@
+## #1 prewarm  (2026-09-30T08-34-50-015Z-17297-00001-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_0c5d6a7c9386c805016abcc9aa5eac87d286d69ae243739414
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #2 main  (2026-09-30T08-34-50-583Z-17297-00002-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-main.body.json)
+previous_response_id: 'resp_0c5d6a7c9386c805016abcc9aa5eac87d286d69ae243739414'
+generate: '(absent)'
+input items: 3 -> ['message:user', 'message:user', 'message:user']
+assistant message in input: False
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence. Then run `seq 1 400` with the shell tool. After the tool result arrives, reply with nothing but your first sentence of this
+response: resp_0c5d6a7c9386c805016abcc9aaec0c87d2ab4c2dce276ede36
+usage: input_tokens=8840 cached_tokens=0 uncached=8840 output_tokens=75
+per-item attribution (provider item id: input / cached):
+    msg_0c5d6a7c9386c805016abcc9…  11 / 0
+    msg_0c5d6a7c9386c805016abcc9…  23 / 0
+    msg_0c5d6a7c9386c805016abcc9…  138 / 0
+    rs_0c5d6a7c9386c805016abcc9a…  2 / 0
+    msg_0c5d6a7c9386c805016abcc9…  0 / 0
+    fc_0c5d6a7c9386c805016abcc9a…  0 / 0
+
+## #3 main  (2026-09-30T08-34-53-055Z-17297-00003-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-main.body.json)
+previous_response_id: 'resp_0c5d6a7c9386c805016abcc9aaec0c87d2ab4c2dce276ede36'
+generate: '(absent)'
+input items: 1 -> ['function_call_output']
+assistant message in input: False
+  [0] function_call_output: call_id=call_nBV8YMoqiINUB7xNOldZ3pXn output[1496 chars]='§3§ 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n'
+response: resp_0c5d6a7c9386c805016abcc9adac4087d280d25a8997932dc4
+usage: input_tokens=9730 cached_tokens=8704 uncached=1026 output_tokens=15
+per-item attribution (provider item id: input / cached):
+    msg_0c5d6a7c9386c805016abcc9…  11 / 11
+    msg_0c5d6a7c9386c805016abcc9…  23 / 23
+    msg_0c5d6a7c9386c805016abcc9…  138 / 4
+    rs_0c5d6a7c9386c805016abcc9a…  39 / 0
+    msg_0c5d6a7c9386c805016abcc9…  14 / 0
+    fc_0c5d6a7c9386c805016abcc9a…  24 / 0
+    fc_0c5d6a7c9386c805016abcc9a…  813 / 0
+    msg_0c5d6a7c9386c805016abcc9…  2 / 0
+
+## #4 prewarm  (2026-09-30T08-34-56-581Z-17297-00004-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_08435c8bb8ea7df9016abcc9b0effc87d2bbb2f8512c7c431f
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #5 main  (2026-09-30T08-34-57-156Z-17297-00005-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-main.body.json)
+previous_response_id: 'resp_08435c8bb8ea7df9016abcc9b0effc87d2bbb2f8512c7c431f'
+generate: '(absent)'
+input items: 9 -> ['message:user', 'message:user', 'message:user', 'reasoning', 'message:assistant', 'function_call', 'function_call_output', 'message:assistant', 'message:user']
+assistant message in input: True
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence. Then run `seq 1 400` with the shell tool. After the tool result arrives, reply with nothing but your first sentence of this
+  [3] reasoning: 
+  [4] message:assistant: §2§ I will run the requested command.
+  [5] function_call: bash({"command":"seq 1 400"}) call_id=call_nBV8YMoqiINUB7xNOldZ3pXn
+  [6] function_call_output: call_id=call_nBV8YMoqiINUB7xNOldZ3pXn output[1496 chars]='§3§ 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n'
+  [7] message:assistant: §4§ ```text\nI will run the requested command.\n```
+  [8] message:user: §5§ "Quote verbatim, character for character, the sentence you wrote just before the tool call in your previous turn, including any symbols or markers at its ve
+response: resp_08435c8bb8ea7df9016abcc9b17efc87d28b03bbd43e40cd79
+usage: input_tokens=9820 cached_tokens=8704 uncached=1116 output_tokens=131
+per-item attribution (provider item id: input / cached):
+    msg_08435c8bb8ea7df9016abcc9…  11 / 11
+    msg_08435c8bb8ea7df9016abcc9…  23 / 23
+    msg_08435c8bb8ea7df9016abcc9…  138 / 4
+    rs_08435c8bb8ea7df9016abcc9b…  39 / 0
+    msg_08435c8bb8ea7df9016abcc9…  17 / 0
+    fc_08435c8bb8ea7df9016abcc9b…  24 / 0
+    fc_08435c8bb8ea7df9016abcc9b…  813 / 0
+    msg_08435c8bb8ea7df9016abcc9…  20 / 0
+    msg_08435c8bb8ea7df9016abcc9…  67 / 0
+    rs_08435c8bb8ea7df9016abcc9b…  2 / 0
+    msg_08435c8bb8ea7df9016abcc9…  0 / 0
+

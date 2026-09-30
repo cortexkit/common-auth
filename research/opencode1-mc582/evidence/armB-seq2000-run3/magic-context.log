@@ -1,0 +1,302 @@
+[2026-09-30T08:46:45.984Z] [magic-context] boot: entering pid=6689 dir=/private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/project
+[2026-09-30T08:46:45.999Z] [magic-context] conflict-detector: resolved config carried no explicit compaction.auto (absent); falling back to file-based detection
+[2026-09-30T08:46:45.999Z] [magic-context] resolved-config fetch failed; using file-based compaction detection (the running server's resolved config may differ — `opencode debug config` is authoritative)
+[2026-09-30T08:46:46.000Z] [magic-context] conflict-detector: no OpenCode config file carried an explicit compaction block; treating native compaction as inconclusive (not disabling the plugin)
+[2026-09-30T08:46:46.000Z] [magic-context] no conflicts detected, plugin enabled
+[2026-09-30T08:46:46.003Z] [magic-context] SQLite boot busy timeout: backend=Bun timeout=5000ms path=~/.local/share/cortexkit/magic-context/context.db
+[2026-09-30T08:46:46.074Z] [magic-context] Pi process scan: PID 26776 command line is ambiguous (image-name or missing Pi/OMP arc); treating as inconclusive
+[2026-09-30T08:46:46.074Z] [magic-context] Pi process scan: PID 25653 command line is ambiguous (image-name or missing Pi/OMP arc); treating as inconclusive
+[2026-09-30T08:46:46.075Z] [magic-context] storage warning: continuing migration for ~/.local/share/cortexkit/magic-context/context.db; Pi/OMP PID 25653, 26776 was not confirmed as a live harness because the process image or command line was ambiguous. No live Pi harness was confirmed.
+[2026-09-30T08:46:46.133Z] [migrations] migration lock check attempt 1/6
+[2026-09-30T08:46:46.134Z] [migrations] current upstream migration lane: 0, applying 91 migration(s)
+[2026-09-30T08:46:46.135Z] [migrations] applied v1: Merge session_notes + smart_notes into unified notes table
+[2026-09-30T08:46:46.135Z] [migrations] applied v2: Add plugin_messages table for TUI ↔ server communication
+[2026-09-30T08:46:46.136Z] [migrations] applied v3: Add user_memory_candidates and user_memories tables
+[2026-09-30T08:46:46.137Z] [migrations] applied v4: Add git_commits + git_commit_embeddings + git_commits_fts tables
+[2026-09-30T08:46:46.138Z] [migrations] applied v5: One-shot heal of NULL session_meta columns
+[2026-09-30T08:46:46.138Z] [migrations] applied v6: Heal session_meta.counter drift below MAX(tag_number)
+[2026-09-30T08:46:46.139Z] [migrations] applied v7: Add harness column to notes table for cross-harness sharing
+[2026-09-30T08:46:46.140Z] [migrations] applied v8: Add partial indexes on tags(session_id, tag_number) for active and dropped
+[2026-09-30T08:46:46.140Z] [migrations] applied v9: Persist tool_definition_measurements across plugin restarts
+[2026-09-30T08:46:46.140Z] [migrations] applied v10: Add tool_owner_message_id column to tags + composite identity indexes
+[2026-09-30T08:46:46.140Z] [migrations] applied v11: Add todo state synthesis columns to session_meta
+[2026-09-30T08:46:46.140Z] [migrations] v12 cleaned 0 orphan memory_embeddings row(s)
+[2026-09-30T08:46:46.140Z] [migrations] v12 cleaned 0 orphan git_commit_embeddings row(s)
+[2026-09-30T08:46:46.140Z] [migrations] applied v12: Clean orphan rows from FK-cascade embedding tables
+[2026-09-30T08:46:46.140Z] [migrations] applied v13: Add pending_compaction_marker_state column for deferred marker drain
+[2026-09-30T08:46:46.141Z] [migrations] applied v14: Add project-scoped key files and version counter
+[2026-09-30T08:46:46.141Z] [migrations] applied v15: Add the now-retired deferred_execute_state column
+[2026-09-30T08:46:46.141Z] [migrations] applied v16: Add context-limit cache regression sentinels
+[2026-09-30T08:46:46.141Z] [migrations] applied v17: Multi-anchor JSON storage for note-nudge and auto-search-hint persistence
+[2026-09-30T08:46:46.142Z] [migrations] applied v18: Add pending_pi_compaction_marker_state column for Pi deferred marker drain
+[2026-09-30T08:46:46.142Z] [migrations] applied v19: Add compartment state lease table
+[2026-09-30T08:46:46.142Z] [migrations] applied v20: Add subagent invocation token accounting
+[2026-09-30T08:46:46.142Z] [migrations] applied v21: Add session lifetime work metrics
+[2026-09-30T08:46:46.143Z] [migrations] applied v22: v2.0 cache architecture schema foundation
+[2026-09-30T08:46:46.144Z] [migrations] applied v23: v2 compartment events storage (causal_incident / trajectory_correction)
+[2026-09-30T08:46:46.144Z] [migrations] applied v24: historian_runs metrics (per-run quality/cost telemetry)
+[2026-09-30T08:46:46.144Z] [migrations] applied v25: pi_stable_id_scheme session_meta column (Pi message-id cutover gate)
+[2026-09-30T08:46:46.145Z] [migrations] applied v26: memory mutation log and atomic m[1] cache columns
+[2026-09-30T08:46:46.145Z] [migrations] applied v27: tags.entry_fingerprint for Pi fallback-tag adoption
+[2026-09-30T08:46:46.145Z] [migrations] applied v28: Add git commit sweep coordinator lease/cooldown table
+[2026-09-30T08:46:46.146Z] [migrations] applied v29: Add anchor_ordinal to notes (traceback to the conversation tail)
+[2026-09-30T08:46:46.147Z] [migrations] applied v30: HARD-bust m[0] markers: cached system/tool-set/model identity
+[2026-09-30T08:46:46.147Z] [migrations] applied v31: Nudge redesign: Channel 1 cadence (last_nudge_undropped) + Channel 2 ceiling lease (channel2_nudge_state); zero legacy ctx_reduce-nudge sticky/anchor state (startup heal)
+[2026-09-30T08:46:46.148Z] [migrations] applied v32: Protected tail boundary state, usage resolver fields, recovery escape, and drain quota
+[2026-09-30T08:46:46.148Z] [migrations] applied v33: Compartment chunk embeddings for semantic message-history search
+[2026-09-30T08:46:46.149Z] [migrations] applied v34: workspace tables and m[0] workspace fingerprint cache reset
+[2026-09-30T08:46:46.149Z] [migrations] applied v35: workspace per-category share defaults and epoch refresh
+[2026-09-30T08:46:46.149Z] [migrations] applied v36: session project ownership map for compartment chunk backfill scoping
+[2026-09-30T08:46:46.150Z] [migrations] applied v37: emergency drain catch-up latch + historian drain failure backoff
+[2026-09-30T08:46:46.150Z] [migrations] applied v38: durable transform decisions for cache-event cause attribution
+[2026-09-30T08:46:46.150Z] [migrations] applied v39: persist compaction marker target end message id
+[2026-09-30T08:46:46.151Z] [migrations] applied v40: index Pi fallback tool owners for stable-id cutover
+[2026-09-30T08:46:46.151Z] [migrations] applied v41: key detected context limits by model
+[2026-09-30T08:46:46.151Z] [migrations] applied v42: per-task dreamer scheduling state (Dreamer v2 A+B)
+[2026-09-30T08:46:46.151Z] [migrations] applied v43: memory verification side table and verify watermarks
+[2026-09-30T08:46:46.151Z] [migrations] applied v44: memory classification scope and shareability columns
+[2026-09-30T08:46:46.151Z] [migrations] applied v45: retrospective content watermark and processed-window idempotence
+[2026-09-30T08:46:46.152Z] [migrations] applied v46: Primers v1 candidate and promoted primer storage
+[2026-09-30T08:46:46.163Z] [migrations] applied v47: compiled smart-note checks and runtime policy state
+[2026-09-30T08:46:46.163Z] [migrations] applied v48: DreamerV2 rework: memory→file mapping vs verification split, classify marker
+[2026-09-30T08:46:46.172Z] [migrations] applied v49: per-model embedding coexistence and active identity tracking
+[2026-09-30T08:46:46.172Z] [migrations] applied v50: add durable ctx-wrapup session marker
+[2026-09-30T08:46:46.172Z] [migrations] applied v51: version tool-owner backfill state and repair legacy NULL session metadata
+[2026-09-30T08:46:46.173Z] [migrations] applied v52: persist emergency recovery origin
+[2026-09-30T08:46:46.173Z] [migrations] applied v53: add Synapse batch, shadow, and measurement storage
+[2026-09-30T08:46:46.175Z] [migrations] applied v54: add authority identity, managed-write guards, and mirror cursors
+[2026-09-30T08:46:46.176Z] [migrations] applied v55: make managed-write privilege connection-local
+[2026-09-30T08:46:46.177Z] [migrations] applied v56: record authority capture bounds and pending mirror references
+[2026-09-30T08:46:46.179Z] [migrations] applied v57: domain mutation epoch for authority capture bounds
+[2026-09-30T08:46:46.179Z] [migrations] applied v58: track live module memory identities during mirror replay
+[2026-09-30T08:46:46.180Z] [migrations] applied v59: stage paged live memory resnapshots before atomic replacement
+[2026-09-30T08:46:46.181Z] [migrations] applied v60: persist the owning live memory resnapshot generation
+[2026-09-30T08:46:46.183Z] [migrations] applied v61: retain complete memory snapshots for mirror healing
+[2026-09-30T08:46:46.184Z] [migrations] applied v62: durable row-level project identity merge audit log
+[2026-09-30T08:46:46.185Z] [migrations] applied v63: Add anchor_block_id to notes (module note mirror writes it)
+[2026-09-30T08:46:46.185Z] [migrations] applied v64: store project-scoped rendered memory mural
+[2026-09-30T08:46:46.185Z] [migrations] applied v65: Add per-memory mural cue columns for the deterministic cue-compression cutover
+[2026-09-30T08:46:46.186Z] [migrations] applied v66: bound per-session historian upgrade reminders
+[2026-09-30T08:46:46.186Z] [migrations] applied v67: persist the frozen mural payload with each cached m0 baseline
+[2026-09-30T08:46:46.186Z] [migrations] applied v68: converge message FTS deletions and same-ID source revisions
+[2026-09-30T08:46:46.187Z] [migrations] applied v69: index visibility mutation discovery and target loading
+[2026-09-30T08:46:46.187Z] [migrations] applied v70: heal legacy compartments stranded by mismatched tier closing tags (issue #246)
+[2026-09-30T08:46:46.188Z] [migrations] applied v71: rebuild authority guard triggers to the durable state-table form (issue #253)
+[2026-09-30T08:46:46.188Z] [migrations] applied v72: add per-session compaction mode record column (issue #266)
+[2026-09-30T08:46:46.189Z] [migrations] applied v73: persist the last successful todowrite permission verdict
+[2026-09-30T08:46:46.189Z] [migrations] applied v74: persist detected context-limit provenance
+[2026-09-30T08:46:46.189Z] [migrations] applied v75: persist mural cue validation rejection latches
+[2026-09-30T08:46:46.189Z] [migrations] applied v76: persist retina provider compilation for smart-note conditions
+[2026-09-30T08:46:46.189Z] [migrations] applied v77: persist scoped provenance for promoted user memories and primers
+[2026-09-30T08:46:46.190Z] [migrations] applied v78: add migration_pending journal for crash-safe cross-harness session migration
+[2026-09-30T08:46:46.190Z] [migrations] applied v79: record m[0] system-hash and model-key comparison telemetry
+[2026-09-30T08:46:46.190Z] [migrations] applied v80: record observed m[0] tool-set hash comparisons
+[2026-09-30T08:46:46.190Z] [migrations] applied v81: persist last-known-good transform snapshots across restarts
+[2026-09-30T08:46:46.191Z] [migrations] applied v82: record the origin of memory file-independent mappings
+[2026-09-30T08:46:46.191Z] [migrations] applied v83: add indexed rowid access for message FTS content
+[2026-09-30T08:46:46.191Z] [migrations] applied v84: persist protected-token floor state per session
+[2026-09-30T08:46:46.191Z] [migrations] applied v85: relabel OpenCode 1.x mis-tagged opencode2 session rows (inert; superseded by v87)
+[2026-09-30T08:46:46.192Z] [migrations] applied v86: track tag identity changes per session
+[2026-09-30T08:46:46.194Z] [migrations] applied v87: repair OpenCode harness labels from host-store evidence
+[2026-09-30T08:46:46.194Z] [migrations] applied v88: record the store projection each session's coordinates were derived against
+[2026-09-30T08:46:46.195Z] [migrations] applied v89: persist indexed message creation times for date-bounded search
+[2026-09-30T08:46:46.195Z] [migrations] applied v90: record compartment lease owner pids
+[2026-09-30T08:46:46.195Z] [migrations] applied v91: per-project embedding high-water mark for memories written outside this host
+[2026-09-30T08:46:46.196Z] [migrations] upstream migration lane now: 91
+[2026-09-30T08:46:46.197Z] [magic-context] upstream migration lane at boot: database=v91, supported_fence=v91
+[2026-09-30T08:46:46.205Z] [magic-context] boot phases: config=10ms conflict=2ms guard=72ms open=1ms migrate=122ms hooks=5ms rpc=0ms post=4ms total=221ms budget=15000ms deadline_phase=none
+[2026-09-30T08:46:46.208Z] [magic-context] OpenCode auto-compaction was not disabled in any config layer; turned it off for this instance because Magic Context manages compaction
+[2026-09-30T08:46:46.221Z] [dreamer] registered project dir:24a6d71f9912 (dreaming=false embeddings=true commits=false; total=1)
+[2026-09-30T08:46:46.221Z] [dreamer] started independent schedule timer (every 15m)
+[2026-09-30T08:46:46.228Z] [rpc] server listening on 127.0.0.1:56347
+[2026-09-30T08:46:46.228Z] [magic-context] boot deferred phase: rpc=7ms
+[2026-09-30T08:46:46.229Z] [magic-context] conflict-warning: Desktop state file not found at ~/Library/Application Support/ai.opencode.desktop/opencode.global.dat
+[2026-09-30T08:46:46.229Z] [magic-context] cleanup: no active Desktop session found
+[2026-09-30T08:46:46.472Z] [magic-context][global] models-dev-cache: API layer loaded 29 model metadata entries
+[2026-09-30T08:46:47.081Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=false tokens.input=0 cache.read=0 cache.write=0 message.id=msg_0f17eb117001j59ZAXt4vEStlr session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:47.082Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: skipping — no usage tokens and no known usage
+[2026-09-30T08:46:47.362Z] v2 setup() called on a host without session.hook; v1 server lane owns this host, v2 lane inert
+[2026-09-30T08:46:47.448Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] injected generic guidance into system prompt (ctxReduce=true, subagent=false, subagentReduceMode=false)
+[2026-09-30T08:46:47.448Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] system prompt hash initialized: 3bf420e8732618a17f401ed2deb24d1e (len=15541)
+[2026-09-30T08:46:47.455Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=findSessionId elapsed=0.8ms messages=1
+[2026-09-30T08:46:47.457Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=findLastUserMessageId elapsed=0.0ms
+[2026-09-30T08:46:47.461Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getOrCreateSessionMeta elapsed=3.8ms
+[2026-09-30T08:46:47.464Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=modelChangeDetection elapsed=0.1ms
+[2026-09-30T08:46:47.464Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=schedulerAndUsage elapsed=0.1ms
+[2026-09-30T08:46:47.466Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform scheduler: percentage=0.0% inputTokens=0 cacheTtl=30m lastResponseTime=0 decision=defer
+[2026-09-30T08:46:47.466Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=emergencyRecoveryBlock elapsed=1.8ms
+[2026-09-30T08:46:47.469Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] tag floor: 0 (full-scan fallback) — no leading wire message resolved a tag across 1 msgs
+[2026-09-30T08:46:47.473Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=prepareCompartmentInjection elapsed=3.8ms
+[2026-09-30T08:46:47.473Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=injectTemporalMarkers elapsed=0.1ms
+[2026-09-30T08:46:47.473Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.initFromDb elapsed=0.2ms
+[2026-09-30T08:46:47.474Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.inertWhitespace elapsed=0.1ms
+[2026-09-30T08:46:47.474Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.getSourceContents elapsed=0.1ms
+[2026-09-30T08:46:47.479Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.loop elapsed=4.7ms
+[2026-09-30T08:46:47.479Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.deriveOwner elapsed=0.0ms
+[2026-09-30T08:46:47.479Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.getToolTag elapsed=0.0ms
+[2026-09-30T08:46:47.479Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.assignTag elapsed=4.2ms
+[2026-09-30T08:46:47.479Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.assignToolTag elapsed=0.0ms
+[2026-09-30T08:46:47.479Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.saveSource elapsed=0.2ms
+[2026-09-30T08:46:47.479Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tagMessages elapsed=5.9ms
+[2026-09-30T08:46:47.479Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getActiveTagsBySession elapsed=0.3ms count=1
+[2026-09-30T08:46:47.480Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getDroppedTagsByNumbers elapsed=0.1ms targets=1 fetched=0
+[2026-09-30T08:46:47.480Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=applyFlushedStatuses elapsed=0.1ms
+[2026-09-30T08:46:47.480Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=batchFinalize:flushed elapsed=0.2ms
+[2026-09-30T08:46:47.480Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=stripStructuralNoise elapsed=0.0ms strippedParts=0
+[2026-09-30T08:46:47.480Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=stripClearedReasoning elapsed=0.0ms strippedParts=0
+[2026-09-30T08:46:47.480Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=compartmentPhase elapsed=0.4ms
+[2026-09-30T08:46:47.483Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform: unknown provider usage; using wire estimate for priced pass inputTokens=15973 percentage=4.7 trusted=true wireTokens=15973
+[2026-09-30T08:46:47.484Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] protected token floor snapshot: floor=16000 provenance=derived usableSoft=244000
+[2026-09-30T08:46:47.493Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] m[0] HARD fold decision: reason=first_render executed=true bustsServedPrefix=true
+[2026-09-30T08:46:47.496Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] heuristics WILL RUN — reason=m0_hard_fold (drain folded into executed m[0] bust, scheduler=defer), context=4.7%, turn=msg_0f17eb04f001ukegGAwQlO6gLe
+[2026-09-30T08:46:47.496Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] pending ops WILL APPLY — reason=m0_hard_fold (drain folded into executed m[0] bust, scheduler=defer), pendingOps=0, context=4.7%
+[2026-09-30T08:46:47.497Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=applyPendingOperations elapsed=0.5ms
+[2026-09-30T08:46:47.497Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=applyHeuristicCleanup elapsed=0.6ms droppedTools=0 deduplicatedTools=0 droppedInjections=0 compressedTextTags=0 mutatedTextTags=0
+[2026-09-30T08:46:47.498Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=clearOldReasoning elapsed=0.1ms
+[2026-09-30T08:46:47.500Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=batchFinalize:heuristics elapsed=0.0ms
+[2026-09-30T08:46:47.500Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.setupAndOperations elapsed=12.6ms
+[2026-09-30T08:46:47.501Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.replaySnapshot elapsed=0.5ms
+[2026-09-30T08:46:47.501Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform: injected m[0]/m[1] (rematerialized=true, reason=first_render)
+[2026-09-30T08:46:47.501Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.injectM0M1 elapsed=0.2ms
+[2026-09-30T08:46:47.501Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.placeholderNeutralize elapsed=0.1ms
+[2026-09-30T08:46:47.501Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.nudgeAndSticky elapsed=0.0ms
+[2026-09-30T08:46:47.501Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.markerReconcile elapsed=0.2ms
+[2026-09-30T08:46:47.505Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.noteAndTodoSynthesis elapsed=3.2ms
+[2026-09-30T08:46:47.511Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] auto-search: attached hint to msg_0f17eb04f001ukegGAwQlO6gLe (1 fragments, top score 1.000)
+[2026-09-30T08:46:47.511Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.autoSearchHint elapsed=6.4ms
+[2026-09-30T08:46:47.511Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.frozenDecisions elapsed=0.0ms
+[2026-09-30T08:46:47.512Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] final representation: clearedParts=0 mergedReasoningParts=0
+[2026-09-30T08:46:47.512Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=finalizeMessageRepresentation elapsed=0.2ms clearedParts=0 mergedReasoningParts=0
+[2026-09-30T08:46:47.512Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailReads elapsed=0.3ms
+[2026-09-30T08:46:47.514Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailMeasure elapsed=1.5ms
+[2026-09-30T08:46:47.515Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailState elapsed=1.0ms
+[2026-09-30T08:46:47.515Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailBaseline elapsed=2.9ms
+[2026-09-30T08:46:47.515Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailGuard elapsed=0.1ms
+[2026-09-30T08:46:47.515Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform: final-wire telemetry estimate=16075 trusted=true conversation=124 tools=0 system=3513 toolDefinitions=12437 tail=[user:text, user:text, user:text]
+[2026-09-30T08:46:47.516Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=postTransformPhase elapsed=31.7ms
+[2026-09-30T08:46:47.517Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] channel1 evaluation: ctx_reduce=callable U=94 T=94 ratio=1.0000 band=quiet grace_baseline_u=none grace_growth=0 growth_threshold=25000 sticky_floor_turns_remaining=4 dampening=none verdict=hold reason=tail-below-minimum
+[2026-09-30T08:46:47.517Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] channel2 evaluation: ctx_reduce=callable U=94 T=94 ratio=1.0000 band=quiet lease=empty->empty verdict=hold reason=tail-below-minimum
+[2026-09-30T08:46:47.517Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform completed in 62.9ms (3 messages, 1 targets, watermark: 0)
+[2026-09-30T08:46:51.211Z] [auto-update-checker] Local development mode
+[2026-09-30T08:46:51.552Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] channel1 evaluation: ctx_reduce=callable U=94 T=4207.48 ratio=0.0223 band=quiet grace_baseline_u=none grace_growth=0 growth_threshold=25000 sticky_floor_turns_remaining=4 dampening=none verdict=hold reason=tail-below-minimum
+[2026-09-30T08:46:51.580Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=true tokens.input=8798 cache.read=0 cache.write=0 message.id=msg_0f17eb117001j59ZAXt4vEStlr session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:51.581Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] context limit resolved: 244000 for openai/gpt-5.6-luna (catalog 244000, overflow-detected 0, proven accepted input 8798)
+[2026-09-30T08:46:51.581Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: totalInputTokens=8798 contextLimit=244000 percentage=3.6%
+[2026-09-30T08:46:51.584Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=true tokens.input=8798 cache.read=0 cache.write=0 message.id=msg_0f17eb117001j59ZAXt4vEStlr session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:51.585Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: totalInputTokens=8798 contextLimit=244000 percentage=3.6%
+[2026-09-30T08:46:51.585Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=false tokens.input=0 cache.read=0 cache.write=0 message.id=msg_0f17ec2bf001mPRPds7LyNCtx8 session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:51.593Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] injected generic guidance into system prompt (ctxReduce=true, subagent=false, subagentReduceMode=false)
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=findSessionId elapsed=0.3ms messages=2
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=findLastUserMessageId elapsed=0.0ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getOrCreateSessionMeta elapsed=0.1ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=modelChangeDetection elapsed=0.0ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=schedulerAndUsage elapsed=0.0ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform scheduler: percentage=3.6% inputTokens=8798 cacheTtl=30m lastResponseTime=1790758011584 decision=defer
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=emergencyRecoveryBlock elapsed=0.2ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] tag floor: 0 (full-scan fallback) — no leading wire message resolved a tag across 2 msgs
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=prepareCompartmentInjection elapsed=0.1ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=injectTemporalMarkers elapsed=0.0ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.initFromDb elapsed=0.0ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.inertWhitespace elapsed=0.0ms
+[2026-09-30T08:46:51.594Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.getSourceContents elapsed=0.1ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.loop elapsed=1.5ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.deriveOwner elapsed=0.1ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.getToolTag elapsed=0.0ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.assignTag elapsed=0.1ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.assignToolTag elapsed=1.1ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.saveSource elapsed=0.0ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tagMessages elapsed=1.7ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getActiveTagsBySession elapsed=0.0ms count=3
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getDroppedTagsByNumbers elapsed=0.0ms targets=3 fetched=0
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=applyFlushedStatuses elapsed=0.0ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=batchFinalize:flushed elapsed=0.0ms
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=stripStructuralNoise elapsed=0.0ms strippedParts=0
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=stripClearedReasoning elapsed=0.0ms strippedParts=0
+[2026-09-30T08:46:51.596Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=compartmentPhase elapsed=0.0ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] heuristics WILL NOT RUN — reason=scheduler_defer
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] pending ops WILL NOT APPLY — reason=scheduler_defer pendingOps=0 context=3.6%
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=batchFinalize:heuristics elapsed=0.0ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.setupAndOperations elapsed=0.1ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.replaySnapshot elapsed=0.1ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform: injected m[0]/m[1] (rematerialized=false, reason=cache_hit)
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.injectM0M1 elapsed=0.2ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.placeholderNeutralize elapsed=0.0ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.nudgeAndSticky elapsed=0.0ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.markerReconcile elapsed=0.0ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.noteAndTodoSynthesis elapsed=0.0ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.autoSearchHint elapsed=0.0ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.frozenDecisions elapsed=0.0ms
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] final representation: clearedParts=0 mergedReasoningParts=0
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=finalizeMessageRepresentation elapsed=0.1ms clearedParts=0 mergedReasoningParts=0
+[2026-09-30T08:46:51.597Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailReads elapsed=0.0ms
+[2026-09-30T08:46:51.598Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailMeasure elapsed=1.0ms
+[2026-09-30T08:46:51.598Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailState elapsed=0.2ms
+[2026-09-30T08:46:51.598Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailBaseline elapsed=1.2ms
+[2026-09-30T08:46:51.598Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailGuard elapsed=0.1ms
+[2026-09-30T08:46:51.598Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform: final-wire telemetry estimate=unavailable trusted=false conversation=unknown tools=unknown system=unknown toolDefinitions=unknown tail=[user:text, user:text, assistant:step-start+reasoning+text+tool+step-finish]
+[2026-09-30T08:46:51.599Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=postTransformPhase elapsed=2.0ms
+[2026-09-30T08:46:51.599Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] channel1 evaluation: ctx_reduce=callable U=107 T=4263.32 ratio=0.0251 band=quiet grace_baseline_u=none grace_growth=0 growth_threshold=25000 sticky_floor_turns_remaining=4 dampening=none verdict=hold reason=tail-below-minimum
+[2026-09-30T08:46:51.599Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] channel2 evaluation: ctx_reduce=callable U=107 T=4263.32 ratio=0.0251 band=quiet lease=empty->empty verdict=hold reason=tail-below-minimum
+[2026-09-30T08:46:51.599Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform completed in 5.5ms (4 messages, 3 targets, watermark: 0)
+[2026-09-30T08:46:53.815Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=true tokens.input=6303 cache.read=7680 cache.write=0 message.id=msg_0f17ec2bf001mPRPds7LyNCtx8 session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:53.816Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: totalInputTokens=13983 contextLimit=244000 percentage=5.7%
+[2026-09-30T08:46:53.827Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=true tokens.input=6303 cache.read=7680 cache.write=0 message.id=msg_0f17ec2bf001mPRPds7LyNCtx8 session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:53.827Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: totalInputTokens=13983 contextLimit=244000 percentage=5.7%
+[2026-09-30T08:46:54.320Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=false tokens.input=0 cache.read=0 cache.write=0 message.id=msg_0f17ecd6f001NJt8Xu5gKajkOX session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:54.323Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] injected generic guidance into system prompt (ctxReduce=true, subagent=false, subagentReduceMode=false)
+[2026-09-30T08:46:54.324Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=findSessionId elapsed=0.4ms messages=4
+[2026-09-30T08:46:54.324Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=findLastUserMessageId elapsed=0.0ms
+[2026-09-30T08:46:54.324Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getOrCreateSessionMeta elapsed=0.1ms
+[2026-09-30T08:46:54.324Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=modelChangeDetection elapsed=0.0ms
+[2026-09-30T08:46:54.324Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=schedulerAndUsage elapsed=0.0ms
+[2026-09-30T08:46:54.325Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform scheduler: percentage=5.7% inputTokens=13983 cacheTtl=30m lastResponseTime=1790758013827 decision=defer
+[2026-09-30T08:46:54.325Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=emergencyRecoveryBlock elapsed=0.2ms
+[2026-09-30T08:46:54.325Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] tag floor: 0 (full-scan fallback) — no leading wire message resolved a tag across 4 msgs
+[2026-09-30T08:46:54.325Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=prepareCompartmentInjection elapsed=0.0ms
+[2026-09-30T08:46:54.325Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=injectTemporalMarkers elapsed=0.1ms
+[2026-09-30T08:46:54.325Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.initFromDb elapsed=0.0ms
+[2026-09-30T08:46:54.325Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.inertWhitespace elapsed=0.0ms
+[2026-09-30T08:46:54.325Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.getSourceContents elapsed=0.0ms
+[2026-09-30T08:46:54.329Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.loop elapsed=4.4ms
+[2026-09-30T08:46:54.329Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.deriveOwner elapsed=0.0ms
+[2026-09-30T08:46:54.329Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.getToolTag elapsed=0.0ms
+[2026-09-30T08:46:54.329Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.assignTag elapsed=1.2ms
+[2026-09-30T08:46:54.329Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.assignToolTag elapsed=0.0ms
+[2026-09-30T08:46:54.329Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tag.saveSource elapsed=3.2ms
+[2026-09-30T08:46:54.329Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=tagMessages elapsed=4.6ms
+[2026-09-30T08:46:54.329Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getActiveTagsBySession elapsed=0.0ms count=5
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=getDroppedTagsByNumbers elapsed=0.1ms targets=5 fetched=0
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=applyFlushedStatuses elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=batchFinalize:flushed elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=stripStructuralNoise elapsed=0.0ms strippedParts=0
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=stripClearedReasoning elapsed=0.0ms strippedParts=0
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=compartmentPhase elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] heuristics WILL NOT RUN — reason=scheduler_defer
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] pending ops WILL NOT APPLY — reason=scheduler_defer pendingOps=0 context=5.7%
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=batchFinalize:heuristics elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.setupAndOperations elapsed=0.1ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.replaySnapshot elapsed=0.1ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform: injected m[0]/m[1] (rematerialized=false, reason=cache_hit)
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.injectM0M1 elapsed=0.1ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.placeholderNeutralize elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.nudgeAndSticky elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.markerReconcile elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.noteAndTodoSynthesis elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.autoSearchHint elapsed=0.2ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.frozenDecisions elapsed=0.0ms
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] final representation: clearedParts=0 mergedReasoningParts=0
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=finalizeMessageRepresentation elapsed=0.0ms clearedParts=0 mergedReasoningParts=0
+[2026-09-30T08:46:54.330Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailReads elapsed=0.0ms
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailMeasure elapsed=0.2ms
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailState elapsed=0.2ms
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailBaseline elapsed=0.4ms
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=pp.tailGuard elapsed=0.1ms
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform: final-wire telemetry estimate=unavailable trusted=false conversation=unknown tools=unknown system=unknown toolDefinitions=unknown tail=[assistant:step-start+reasoning+text+tool+step-finish, assistant:step-start+text+step-finish, user:text]
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform stage: stage=postTransformPhase elapsed=1.3ms
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] channel1 evaluation: ctx_reduce=callable U=120 T=4276.32 ratio=0.0281 band=quiet grace_baseline_u=none grace_growth=0 growth_threshold=25000 sticky_floor_turns_remaining=3 dampening=none verdict=hold reason=tail-below-minimum
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] channel2 evaluation: ctx_reduce=callable U=120 T=4276.32 ratio=0.0281 band=quiet lease=empty->empty verdict=hold reason=tail-below-minimum
+[2026-09-30T08:46:54.331Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] transform completed in 7.4ms (6 messages, 5 targets, watermark: 0)
+[2026-09-30T08:46:56.902Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=true tokens.input=6329 cache.read=7680 cache.write=0 message.id=msg_0f17ecd6f001NJt8Xu5gKajkOX session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:56.903Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: totalInputTokens=14009 contextLimit=244000 percentage=5.7%
+[2026-09-30T08:46:56.904Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: provider=openai model=gpt-5.6-luna hasUsageTokens=true tokens.input=6329 cache.read=7680 cache.write=0 message.id=msg_0f17ecd6f001NJt8Xu5gKajkOX session.id=ses_f0e814fd3ffeTgKOT3OKdMpobp
+[2026-09-30T08:46:56.905Z] [magic-context][ses_f0e814fd3ffeTgKOT3OKdMpobp] event message.updated: totalInputTokens=14009 contextLimit=244000 percentage=5.7%

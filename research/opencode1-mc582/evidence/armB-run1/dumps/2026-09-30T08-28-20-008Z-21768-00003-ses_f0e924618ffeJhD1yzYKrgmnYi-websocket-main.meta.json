@@ -1,0 +1,63 @@
+{
+  "id": "2026-09-30T08-28-20-008Z-21768-00003-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-main",
+  "createdAt": "2026-09-30T08:28:20.009Z",
+  "session": "ses_f0e92461…",
+  "transport": "websocket",
+  "phase": "main",
+  "bodyBytes": 44892,
+  "bodyHash": "a8a6cdbc1f37f3e4c72abbb7c682dd6eb38b3c6c71653a689f900341c9c692d0",
+  "diff": {
+    "changed": true,
+    "firstByte": 15819,
+    "lastPreviousByte": 43635,
+    "lastCurrentByte": 44888,
+    "changedPreviousBytes": 27817,
+    "changedCurrentBytes": 29070,
+    "previousBytes": 43639,
+    "currentBytes": 44892
+  },
+  "baselineSource": "memory",
+  "body": {
+    "parseable": true,
+    "model": "gpt-5.6-luna",
+    "stream": true,
+    "store": false,
+    "previousResponseID": "resp_0a326c0c4731dbfb016abcc821d49887d298af7446c56bd36c",
+    "promptCacheKey": "01a0f16d-be97-717c-8ba7-1570904439cf",
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "inputCount": 1,
+    "inputHash": "27037fc9e703b4a1c38420d05504dcd89e41c5ec84c889a0bd33239913a7dc7f",
+    "inputBytes": 1983,
+    "firstInputHash": "1b20abcbf313dff224e5f600f7074c25340122df47db0a8904025c56e5a0c3d2",
+    "toolsCount": 12,
+    "toolTypes": [
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function"
+    ],
+    "toolsHash": "396e4b644bcf5d772cea158cb85244ce48b6f22aad7096005766a5b4fdccf759",
+    "clientMetadataKeys": [
+      "x-codex-installation-id",
+      "x-codex-turn-metadata",
+      "x-codex-window-id",
+      "x-codex-ws-stream-request-start-ms"
+    ]
+  },
+  "files": {
+    "body": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/dumps/2026-09-30T08-28-20-008Z-21768-00003-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-main.body.json",
+    "metadata": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/dumps/2026-09-30T08-28-20-008Z-21768-00003-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-main.meta.json",
+    "request": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/dumps/2026-09-30T08-28-20-008Z-21768-00003-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-main.request.json"
+  }
+}

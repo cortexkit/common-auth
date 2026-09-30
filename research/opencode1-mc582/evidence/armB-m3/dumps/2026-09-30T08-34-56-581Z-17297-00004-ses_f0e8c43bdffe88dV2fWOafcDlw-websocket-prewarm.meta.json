@@ -1,0 +1,63 @@
+{
+  "id": "2026-09-30T08-34-56-581Z-17297-00004-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-prewarm",
+  "createdAt": "2026-09-30T08:34:56.581Z",
+  "session": "ses_f0e8c43b…",
+  "transport": "websocket",
+  "phase": "prewarm",
+  "bodyBytes": 42772,
+  "bodyHash": "73ff859aebefb53c448c789e3c771b5f0a90f10426563483b4075f5955951bfe",
+  "diff": {
+    "changed": true,
+    "firstByte": 15765,
+    "lastPreviousByte": 44888,
+    "lastCurrentByte": 42768,
+    "changedPreviousBytes": 29124,
+    "changedCurrentBytes": 27004,
+    "previousBytes": 44892,
+    "currentBytes": 42772
+  },
+  "baselineSource": "memory",
+  "body": {
+    "parseable": true,
+    "model": "gpt-5.6-luna",
+    "stream": true,
+    "generate": false,
+    "store": false,
+    "promptCacheKey": "01a0f173-be7c-71c5-99d0-4b02569b1ece",
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "inputCount": 0,
+    "inputHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "inputBytes": 2,
+    "firstInputHash": null,
+    "toolsCount": 12,
+    "toolTypes": [
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function"
+    ],
+    "toolsHash": "396e4b644bcf5d772cea158cb85244ce48b6f22aad7096005766a5b4fdccf759",
+    "clientMetadataKeys": [
+      "x-codex-installation-id",
+      "x-codex-turn-metadata",
+      "x-codex-window-id",
+      "x-codex-ws-stream-request-start-ms"
+    ]
+  },
+  "files": {
+    "body": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/dumps/2026-09-30T08-34-56-581Z-17297-00004-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-prewarm.body.json",
+    "metadata": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/dumps/2026-09-30T08-34-56-581Z-17297-00004-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-prewarm.meta.json",
+    "request": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/dumps/2026-09-30T08-34-56-581Z-17297-00004-ses_f0e8c43bdffe88dV2fWOafcDlw-websocket-prewarm.request.json"
+  }
+}

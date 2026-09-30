@@ -1,0 +1,64 @@
+COMMAND    PID        USER   FD     TYPE             DEVICE  SIZE/OFF                NODE NAME
+opencode 14123 ufukaltinok  cwd      DIR               1,17        64          1985873189 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/project
+opencode 14123 ufukaltinok  txt      REG               1,17 147395826          1375127520 /Users/ufukaltinok/.opencode/bin/opencode
+opencode 14123 ufukaltinok  txt      REG               1,17     77368          1843163033 /private/var/db/diagnostics/logd/.plist-cache.QMWyKIeM
+opencode 14123 ufukaltinok  txt      REG               1,17    234224           702363629 /private/var/db/timezone/tz/2026c.1.0/icutz/icutz44l.dat
+opencode 14123 ufukaltinok  txt      REG               1,17     32768          1985873215 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/home/.local/share/opencode/opencode.db-shm
+opencode 14123 ufukaltinok  txt      REG               1,17     32768          1843164017 /private/var/db/mds/messages/501/se_SecurityMessages
+opencode 14123 ufukaltinok  txt      REG               1,17    161875          1964276911 /private/var/db/analyticsd/events.allowlist
+opencode 14123 ufukaltinok  txt      REG               1,17    342608          1985877766 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/tmp/.bun-501-c22f2ef692948d9e.node
+opencode 14123 ufukaltinok  txt      REG               1,17   4129840 1152921500312609216 /usr/lib/dyld
+opencode 14123 ufukaltinok  txt      REG               1,17  36103568 1152921500312619766 /usr/share/icu/icudt78l.dat
+opencode 14123 ufukaltinok  txt      REG               1,17   4822976          1985877765 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/tmp/.bun-501-d87254fe3973b962.dylib
+opencode 14123 ufukaltinok    0r     CHR                3,2       0t0                 336 /dev/null
+opencode 14123 ufukaltinok    1w     REG               1,17       118          1985873200 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/runs/m1/serve.log
+opencode 14123 ufukaltinok    2w     REG               1,17       118          1985873200 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/runs/m1/serve.log
+opencode 14123 ufukaltinok    3u     REG               1,17         0          1985837459 /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+opencode 14123 ufukaltinok    4u     REG               1,17         0          1985837460 /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+opencode 14123 ufukaltinok    5u  KQUEUE                                                  count=0, state=0x12
+opencode 14123 ufukaltinok    6w     REG               1,17       118          1985873200 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/runs/m1/serve.log
+opencode 14123 ufukaltinok    7w     REG               1,17       118          1985873200 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/runs/m1/serve.log
+opencode 14123 ufukaltinok    8w     REG               1,17      5390          1985873211 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/home/.local/share/opencode/log/opencode.log
+opencode 14123 ufukaltinok    9u     REG               1,17    299008          1985873212 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/home/.local/share/opencode/opencode.db
+opencode 14123 ufukaltinok   10u     REG               1,17         0          1985873214 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/home/.local/share/opencode/opencode.db-wal
+opencode 14123 ufukaltinok   11u     REG               1,17     32768          1985873215 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/home/.local/share/opencode/opencode.db-shm
+opencode 14123 ufukaltinok   12u    IPv4 0x7fcc1fcd4b93811e       0t0                 TCP localhost:4771 (LISTEN)
+opencode 14123 ufukaltinok   13w     REG               1,17      5390          1985873211 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/home/.local/share/opencode/log/opencode.log
+opencode 14123 ufukaltinok   14u     REG               1,17    299008          1985873212 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/home/.local/share/opencode/opencode.db
+opencode 14123 ufukaltinok   15u     REG               1,17         0          1985873214 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/home/.local/share/opencode/opencode.db-wal
+opencode 14123 ufukaltinok   16u  KQUEUE                                                  count=0, state=0x12
+opencode 14123 ufukaltinok   17u    unix 0xef7dbce95064f401       0t0                     ->0xdba7ef597e3e74e
+opencode 14123 ufukaltinok   19u    IPv4 0x564c67efb8879b7f       0t0                 TCP 192.168.1.36:50591->172.66.173.149:https (ESTABLISHED)
+opencode 14123 ufukaltinok   20u    unix 0x79239e700327329c       0t0                     ->0x473f61e89c4cbf83
+opencode 14123 ufukaltinok   21u    IPv4  0x5d20c2ad7d23f42       0t0                 TCP 192.168.1.36:50594->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   22u    IPv4  0xed862093b7d5839       0t0                 TCP 192.168.1.36:50596->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   23u    IPv4 0x9a133703b7e8a4bd       0t0                 TCP 192.168.1.36:50598->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   24u    IPv4 0x7f8bd9abc5202c1c       0t0                 TCP 192.168.1.36:50600->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   25u    IPv4 0x6d41e778413f66cb       0t0                 TCP 192.168.1.36:50602->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   26u    IPv4 0xed174e848d738e29       0t0                 TCP 192.168.1.36:50604->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   27u    IPv4 0xa3e6402d1c60b8ab       0t0                 TCP 192.168.1.36:50606->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   28u    IPv4 0xe5686ee75b4af8fe       0t0                 TCP 192.168.1.36:50608->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   29u    IPv4 0x44877bb7bcd60508       0t0                 TCP 192.168.1.36:50610->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   30u    IPv4 0x5d4154476495d4cb       0t0                 TCP 192.168.1.36:50612->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   31u    IPv4 0x834d7b9365779637       0t0                 TCP 192.168.1.36:50614->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   32u    IPv4 0x6362f1114b86817c       0t0                 TCP 192.168.1.36:50616->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   34u    IPv4 0x6a9256f605fc3ae9       0t0                 TCP 192.168.1.36:50618->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   35u    IPv4 0x908c18c8ae68697f       0t0                 TCP 192.168.1.36:50620->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   36u    IPv4 0x8009030aedf53d85       0t0                 TCP 192.168.1.36:50622->104.16.6.34:https (ESTABLISHED)
+opencode 14123 ufukaltinok   37u    IPv4  0xe7aa5434c143315       0t0                 TCP localhost:50625 (LISTEN)
+opencode 14123 ufukaltinok   38u    IPv4 0xac58865c200f9d67       0t0                 TCP 192.168.1.36:50627->104.18.32.47:https (ESTABLISHED)
+opencode 14123 ufukaltinok   39u    IPv4 0x61cae0d540ebbaa6       0t0                 TCP 192.168.1.36:50631->104.18.32.47:https (ESTABLISHED)
+opencode 14123 ufukaltinok   40u  KQUEUE                                                  count=0, state=0x8
+opencode 14123 ufukaltinok   41r     DIR               1,17        64          1985873189 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/project
+opencode 14123 ufukaltinok   42r     DIR               1,17       288          1985873176 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA
+opencode 14123 ufukaltinok   43r     DIR               1,17       128          1985605658 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582
+opencode 14123 ufukaltinok   44r     DIR               1,17   1023936              328723 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T
+opencode 14123 ufukaltinok   45r     DIR               1,17       224              328720 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn
+opencode 14123 ufukaltinok   46r     DIR               1,17        96              328719 /private/var/folders/18
+opencode 14123 ufukaltinok   47r     DIR               1,17       160          1409450479 /private/var/folders
+opencode 14123 ufukaltinok   48r     DIR               1,17      1152          1409434782 /private/var
+opencode 14123 ufukaltinok   49r     DIR               1,17       192          1409434748 /private
+opencode 14123 ufukaltinok   50r     DIR               1,17       768 1152921500311879682 /System/Volumes/Data
+opencode 14123 ufukaltinok   51r     DIR               1,17       448 1152921500312580014 /System/Volumes
+opencode 14123 ufukaltinok   52r     DIR               1,17       384 1152921500311879703 /System
+opencode 14123 ufukaltinok   53u  KQUEUE                                                  count=0, state=0x8

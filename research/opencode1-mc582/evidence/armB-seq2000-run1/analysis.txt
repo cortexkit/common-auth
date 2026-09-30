@@ -1,0 +1,80 @@
+## #1 prewarm  (2026-09-30T08-38-46-392Z-87075-00001-ses_f0e88a995ffecHTnHACLMv5dVT-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_03e2bdd7c5a75780016abcca96ca1487d296d1fa868812a5f7
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #2 main  (2026-09-30T08-38-47-085Z-87075-00002-ses_f0e88a995ffecHTnHACLMv5dVT-websocket-main.body.json)
+previous_response_id: 'resp_03e2bdd7c5a75780016abcca96ca1487d296d1fa868812a5f7'
+generate: '(absent)'
+input items: 3 -> ['message:user', 'message:user', 'message:user']
+assistant message in input: False
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence, then run `seq 1 2000` with the shell tool."\n\n<ctx-search-hint>\nYour memory may contain 1 related fragment:\n- "First wri
+response: resp_03e2bdd7c5a75780016abcca97683887d280c85ff41654c086
+usage: input_tokens=8798 cached_tokens=7680 uncached=1118 output_tokens=59
+per-item attribution (provider item id: input / cached):
+    msg_03e2bdd7c5a75780016abcca…  11 / 0
+    msg_03e2bdd7c5a75780016abcca…  23 / 0
+    msg_03e2bdd7c5a75780016abcca…  96 / 0
+    rs_03e2bdd7c5a75780016abcca9…  2 / 0
+    msg_03e2bdd7c5a75780016abcca…  0 / 0
+    fc_03e2bdd7c5a75780016abcca9…  0 / 0
+
+## #3 main  (2026-09-30T08-38-52-519Z-87075-00003-ses_f0e88a995ffecHTnHACLMv5dVT-websocket-main.body.json)
+previous_response_id: 'resp_03e2bdd7c5a75780016abcca97683887d280c85ff41654c086'
+generate: '(absent)'
+input items: 1 -> ['function_call_output']
+assistant message in input: False
+  [0] function_call_output: call_id=call_7r6kWRNuYmDHkFkI8uYtrQBe output[9077 chars]='§3§ ...output truncated...\n\nFull output '
+response: resp_03e2bdd7c5a75780016abcca9d14c487d28958098c752a9ff8
+usage: input_tokens=13940 cached_tokens=8704 uncached=5236 output_tokens=8
+per-item attribution (provider item id: input / cached):
+    msg_03e2bdd7c5a75780016abcca…  11 / 11
+    msg_03e2bdd7c5a75780016abcca…  23 / 23
+    msg_03e2bdd7c5a75780016abcca…  96 / 4
+    rs_03e2bdd7c5a75780016abcca9…  20 / 0
+    msg_03e2bdd7c5a75780016abcca…  16 / 0
+    fc_03e2bdd7c5a75780016abcca9…  25 / 0
+    fc_03e2bdd7c5a75780016abcca9…  5081 / 0
+    msg_03e2bdd7c5a75780016abcca…  2 / 0
+
+## #4 prewarm  (2026-09-30T08-38-56-669Z-87075-00004-ses_f0e88a995ffecHTnHACLMv5dVT-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_0768a429462a2328016abccaa10f2487d299d2ce754931a1ed
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #5 main  (2026-09-30T08-38-57-450Z-87075-00005-ses_f0e88a995ffecHTnHACLMv5dVT-websocket-main.body.json)
+previous_response_id: 'resp_0768a429462a2328016abccaa10f2487d299d2ce754931a1ed'
+generate: '(absent)'
+input items: 9 -> ['message:user', 'message:user', 'message:user', 'reasoning', 'message:assistant', 'function_call', 'function_call_output', 'message:assistant', 'message:user']
+assistant message in input: True
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence, then run `seq 1 2000` with the shell tool."\n\n<ctx-search-hint>\nYour memory may contain 1 related fragment:\n- "First wri
+  [3] reasoning: 
+  [4] message:assistant: §2§ I will run the requested sequence command now.
+  [5] function_call: bash({"command":"seq 1 2000"}) call_id=call_7r6kWRNuYmDHkFkI8uYtrQBe
+  [6] function_call_output: call_id=call_7r6kWRNuYmDHkFkI8uYtrQBe output[9077 chars]='§3§ ...output truncated...\n\nFull output '
+  [7] message:assistant: §4§ Command completed successfully.
+  [8] message:user: §5§ Thanks.
+response: resp_0768a429462a2328016abccaa1d50487d2aecb4c12e3509bb3
+usage: input_tokens=13965 cached_tokens=7680 uncached=6285 output_tokens=8
+per-item attribution (provider item id: input / cached):
+    msg_0768a429462a2328016abcca…  11 / 0
+    msg_0768a429462a2328016abcca…  23 / 0
+    msg_0768a429462a2328016abcca…  96 / 0
+    rs_0768a429462a2328016abccaa…  20 / 0
+    msg_0768a429462a2328016abcca…  19 / 0
+    fc_0768a429462a2328016abccaa…  25 / 0
+    fc_0768a429462a2328016abccaa…  5081 / 0
+    msg_0768a429462a2328016abcca…  13 / 0
+    msg_0768a429462a2328016abcca…  9 / 0
+    msg_0768a429462a2328016abcca…  2 / 0
+

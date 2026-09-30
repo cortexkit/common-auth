@@ -1,0 +1,13 @@
+{
+  "webSockets": true,
+  "rawWebSocket": false,
+  "dump": true,
+  "dumpDir": "$TMPDIR/oc1-mc582/armB/dumps",
+  "version": 1,
+  "main": {
+    "type": "opencode",
+    "provider": "openai"
+  },
+  "mainAccountId": "[REDACTED_ACCOUNT_ID]",
+  "accounts": []
+}

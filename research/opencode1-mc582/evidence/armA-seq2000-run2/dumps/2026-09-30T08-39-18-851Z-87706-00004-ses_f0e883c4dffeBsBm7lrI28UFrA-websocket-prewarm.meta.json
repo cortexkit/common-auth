@@ -1,0 +1,58 @@
+{
+  "id": "2026-09-30T08-39-18-851Z-87706-00004-ses_f0e883c4dffeBsBm7lrI28UFrA-websocket-prewarm",
+  "createdAt": "2026-09-30T08:39:18.852Z",
+  "session": "ses_f0e883c4…",
+  "transport": "websocket",
+  "phase": "prewarm",
+  "bodyBytes": 27386,
+  "bodyHash": "89d42960342dac67469e37e742e3d578f3299b0525651732ef1d5966e5110635",
+  "diff": {
+    "changed": true,
+    "firstByte": 10553,
+    "lastPreviousByte": 38682,
+    "lastCurrentByte": 27382,
+    "changedPreviousBytes": 28130,
+    "changedCurrentBytes": 16830,
+    "previousBytes": 38686,
+    "currentBytes": 27386
+  },
+  "baselineSource": "memory",
+  "body": {
+    "parseable": true,
+    "model": "gpt-5.6-luna",
+    "stream": true,
+    "generate": false,
+    "store": false,
+    "promptCacheKey": "01a0f177-c5fc-7bce-8c54-c26b68addfe1",
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "inputCount": 0,
+    "inputHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "inputBytes": 2,
+    "firstInputHash": null,
+    "toolsCount": 7,
+    "toolTypes": [
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function"
+    ],
+    "toolsHash": "19701e221678bbbbe83bca5e8c1ca3f1d8d21478508182dcbcf9a656053451b3",
+    "clientMetadataKeys": [
+      "x-codex-installation-id",
+      "x-codex-turn-metadata",
+      "x-codex-window-id",
+      "x-codex-ws-stream-request-start-ms"
+    ]
+  },
+  "files": {
+    "body": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-39-18-851Z-87706-00004-ses_f0e883c4dffeBsBm7lrI28UFrA-websocket-prewarm.body.json",
+    "metadata": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-39-18-851Z-87706-00004-ses_f0e883c4dffeBsBm7lrI28UFrA-websocket-prewarm.meta.json",
+    "request": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-39-18-851Z-87706-00004-ses_f0e883c4dffeBsBm7lrI28UFrA-websocket-prewarm.request.json"
+  }
+}

@@ -1,0 +1,67 @@
+## #1 prewarm  (2026-09-30T08-28-16-827Z-21768-00001-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_0a326c0c4731dbfb016abcc821357887d28c73c340f6f7b16e
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #2 main  (2026-09-30T08-28-17-482Z-21768-00002-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-main.body.json)
+previous_response_id: 'resp_0a326c0c4731dbfb016abcc821357887d28c73c340f6f7b16e'
+generate: '(absent)'
+input items: 3 -> ['message:user', 'message:user', 'message:user']
+assistant message in input: False
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence, then run `seq 1 400` with the shell tool."\n\n<ctx-search-hint>\nYour memory may contain 1 related fragment:\n- "First writ
+response: resp_0a326c0c4731dbfb016abcc821d49887d298af7446c56bd36c
+usage: input_tokens=8796 cached_tokens=0 uncached=8796 output_tokens=59
+per-item attribution (provider item id: input / cached):
+    msg_0a326c0c4731dbfb016abcc8…  11 / 0
+    msg_0a326c0c4731dbfb016abcc8…  23 / 0
+    msg_0a326c0c4731dbfb016abcc8…  94 / 0
+    rs_0a326c0c4731dbfb016abcc82…  2 / 0
+    msg_0a326c0c4731dbfb016abcc8…  0 / 0
+    fc_0a326c0c4731dbfb016abcc82…  0 / 0
+
+## #3 main  (2026-09-30T08-28-20-008Z-21768-00003-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-main.body.json)
+previous_response_id: 'resp_0a326c0c4731dbfb016abcc821d49887d298af7446c56bd36c'
+generate: '(absent)'
+input items: 1 -> ['function_call_output']
+assistant message in input: False
+  [0] function_call_output: call_id=call_ORaHNsRT56WpMZFqiHRZ5mk1 output[1496 chars]='§3§ 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n'
+response: resp_0a326c0c4731dbfb016abcc824764087d299c0dbb39888471b
+usage: input_tokens=9670 cached_tokens=8704 uncached=966 output_tokens=13
+per-item attribution (provider item id: input / cached):
+    msg_0a326c0c4731dbfb016abcc8…  11 / 11
+    msg_0a326c0c4731dbfb016abcc8…  23 / 23
+    msg_0a326c0c4731dbfb016abcc8…  94 / 4
+    rs_0a326c0c4731dbfb016abcc82…  22 / 0
+    msg_0a326c0c4731dbfb016abcc8…  15 / 0
+    fc_0a326c0c4731dbfb016abcc82…  24 / 0
+    fc_0a326c0c4731dbfb016abcc82…  813 / 0
+    msg_0a326c0c4731dbfb016abcc8…  2 / 0
+
+## #4 prewarm  (2026-09-30T08-28-23-348Z-21768-00004-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_02dd6bcf5af3cb52016abcc827ac6887d2a02f63b22b22edd0
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #5 main  (2026-09-30T08-28-23-867Z-21768-00005-ses_f0e924618ffeJhD1yzYKrgmnYi-websocket-main.body.json)
+previous_response_id: 'resp_02dd6bcf5af3cb52016abcc827ac6887d2a02f63b22b22edd0'
+generate: '(absent)'
+input items: 9 -> ['message:user', 'message:user', 'message:user', 'reasoning', 'message:assistant', 'function_call', 'function_call_output', 'message:assistant', 'message:user']
+assistant message in input: True
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence, then run `seq 1 400` with the shell tool."\n\n<ctx-search-hint>\nYour memory may contain 1 related fragment:\n- "First writ
+  [3] reasoning: 
+  [4] message:assistant: §2§ I will print the requested sequence now.
+  [5] function_call: bash({"command":"seq 1 400"}) call_id=call_ORaHNsRT56WpMZFqiHRZ5mk1
+  [6] function_call_output: call_id=call_ORaHNsRT56WpMZFqiHRZ5mk1 output[1496 chars]='§3§ 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n'
+  [7] message:assistant: §4§ Sequence 1 through 400 printed successfully.
+  [8] message:user: §5§ Thanks.
+

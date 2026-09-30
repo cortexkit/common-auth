@@ -1,0 +1,81 @@
+## #1 prewarm  (2026-09-30T08-36-11-129Z-78618-00001-ses_f0e8b05c9ffeKf2H7GTRsaRSx5-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_0c10809c20004fbe016abcc9fbeec887d281a39dbd2fea6e2c
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #2 main  (2026-09-30T08-36-12-609Z-78618-00002-ses_f0e8b05c9ffeKf2H7GTRsaRSx5-websocket-main.body.json)
+previous_response_id: 'resp_0c10809c20004fbe016abcc9fbeec887d281a39dbd2fea6e2c'
+generate: '(absent)'
+input items: 3 -> ['message:user', 'message:user', 'message:user']
+assistant message in input: False
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence. Then run `seq 1 400` with the shell tool. After the tool result arrives, reply with just the word: done"\n\n<ctx-search-hin
+response: resp_0c10809c20004fbe016abcc9fd4d2487d2aefd81be814f3ca8
+usage: input_tokens=8813 cached_tokens=0 uncached=8813 output_tokens=58
+per-item attribution (provider item id: input / cached):
+    msg_0c10809c20004fbe016abcc9…  11 / 0
+    msg_0c10809c20004fbe016abcc9…  23 / 0
+    msg_0c10809c20004fbe016abcc9…  111 / 0
+    rs_0c10809c20004fbe016abcc9f…  2 / 0
+    msg_0c10809c20004fbe016abcc9…  0 / 0
+    fc_0c10809c20004fbe016abcc9f…  0 / 0
+
+## #3 main  (2026-09-30T08-36-16-400Z-78618-00003-ses_f0e8b05c9ffeKf2H7GTRsaRSx5-websocket-main.body.json)
+previous_response_id: 'resp_0c10809c20004fbe016abcc9fd4d2487d2aefd81be814f3ca8'
+generate: '(absent)'
+input items: 1 -> ['function_call_output']
+assistant message in input: False
+  [0] function_call_output: call_id=call_nNTarzYyuKf7RRYhH13stSM2 output[1496 chars]='§3§ 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n'
+response: resp_0c10809c20004fbe016abcca00e10087d2b13c847100f475cf
+usage: input_tokens=9686 cached_tokens=8704 uncached=982 output_tokens=5
+per-item attribution (provider item id: input / cached):
+    msg_0c10809c20004fbe016abcc9…  11 / 11
+    msg_0c10809c20004fbe016abcc9…  23 / 23
+    msg_0c10809c20004fbe016abcc9…  111 / 4
+    rs_0c10809c20004fbe016abcc9f…  21 / 0
+    msg_0c10809c20004fbe016abcc9…  15 / 0
+    fc_0c10809c20004fbe016abcc9f…  24 / 0
+    fc_0c10809c20004fbe016abcca0…  813 / 0
+    msg_0c10809c20004fbe016abcca…  2 / 0
+
+## #4 prewarm  (2026-09-30T08-36-18-613Z-78618-00004-ses_f0e8b05c9ffeKf2H7GTRsaRSx5-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_0d6b96cda975aec6016abcca02f65487d292c8530f1c81896b
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #5 main  (2026-09-30T08-36-19-598Z-78618-00005-ses_f0e8b05c9ffeKf2H7GTRsaRSx5-websocket-main.body.json)
+previous_response_id: 'resp_0d6b96cda975aec6016abcca02f65487d292c8530f1c81896b'
+generate: '(absent)'
+input items: 9 -> ['message:user', 'message:user', 'message:user', 'reasoning', 'message:assistant', 'function_call', 'function_call_output', 'message:assistant', 'message:user']
+assistant message in input: True
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence. Then run `seq 1 400` with the shell tool. After the tool result arrives, reply with just the word: done"\n\n<ctx-search-hin
+  [3] reasoning: 
+  [4] message:assistant: §2§ I will run the requested sequence command.
+  [5] function_call: bash({"command":"seq 1 400"}) call_id=call_nNTarzYyuKf7RRYhH13stSM2
+  [6] function_call_output: call_id=call_nNTarzYyuKf7RRYhH13stSM2 output[1496 chars]='§3§ 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n'
+  [7] message:assistant: §4§ done
+  [8] message:user: §5§ "Look at the sentence you wrote just before the tool call in your previous turn, exactly as it appears in your context. List the Unicode code points (U+XXXX
+response: resp_0d6b96cda975aec6016abcca03fb2487d2b3c44c9f1f55f9af
+usage: input_tokens=9773 cached_tokens=8704 uncached=1069 output_tokens=156
+per-item attribution (provider item id: input / cached):
+    msg_0d6b96cda975aec6016abcca…  11 / 11
+    msg_0d6b96cda975aec6016abcca…  23 / 23
+    msg_0d6b96cda975aec6016abcca…  111 / 4
+    rs_0d6b96cda975aec6016abcca0…  21 / 0
+    msg_0d6b96cda975aec6016abcca…  18 / 0
+    fc_0d6b96cda975aec6016abcca0…  24 / 0
+    fc_0d6b96cda975aec6016abcca0…  813 / 0
+    msg_0d6b96cda975aec6016abcca…  10 / 0
+    msg_0d6b96cda975aec6016abcca…  74 / 0
+    rs_0d6b96cda975aec6016abcca0…  2 / 0
+    msg_0d6b96cda975aec6016abcca…  0 / 0
+

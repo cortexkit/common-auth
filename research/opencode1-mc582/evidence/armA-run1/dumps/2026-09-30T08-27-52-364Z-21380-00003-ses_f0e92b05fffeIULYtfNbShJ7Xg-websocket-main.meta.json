@@ -1,0 +1,58 @@
+{
+  "id": "2026-09-30T08-27-52-364Z-21380-00003-ses_f0e92b05fffeIULYtfNbShJ7Xg-websocket-main",
+  "createdAt": "2026-09-30T08:27:52.365Z",
+  "session": "ses_f0e92b05…",
+  "transport": "websocket",
+  "phase": "main",
+  "bodyBytes": 29502,
+  "bodyHash": "8729d702863551b6ffa1a4af15ae2f109d02629366d20b5b03c0d7debb28d2c7",
+  "diff": {
+    "changed": true,
+    "firstByte": 10606,
+    "lastPreviousByte": 27673,
+    "lastCurrentByte": 29497,
+    "changedPreviousBytes": 17068,
+    "changedCurrentBytes": 18892,
+    "previousBytes": 27678,
+    "currentBytes": 29502
+  },
+  "baselineSource": "memory",
+  "body": {
+    "parseable": true,
+    "model": "gpt-5.6-luna",
+    "stream": true,
+    "store": false,
+    "previousResponseID": "resp_02049d50afad601a016abcc8068e1487d2b47b8bfb3450ab9f",
+    "promptCacheKey": "01a0f16d-534e-735a-bb46-df5fc63ec7ab",
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "inputCount": 1,
+    "inputHash": "4be1598e6a92414dd9c31659c84f7084b2999cead060306e613607f3f9f79d11",
+    "inputBytes": 1979,
+    "firstInputHash": "1254eb6b9f08b91d85ae47a069343cfb815187a6c22eb2b36788622406a0d198",
+    "toolsCount": 7,
+    "toolTypes": [
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function"
+    ],
+    "toolsHash": "19701e221678bbbbe83bca5e8c1ca3f1d8d21478508182dcbcf9a656053451b3",
+    "clientMetadataKeys": [
+      "x-codex-installation-id",
+      "x-codex-turn-metadata",
+      "x-codex-window-id",
+      "x-codex-ws-stream-request-start-ms"
+    ]
+  },
+  "files": {
+    "body": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-27-52-364Z-21380-00003-ses_f0e92b05fffeIULYtfNbShJ7Xg-websocket-main.body.json",
+    "metadata": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-27-52-364Z-21380-00003-ses_f0e92b05fffeIULYtfNbShJ7Xg-websocket-main.meta.json",
+    "request": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-27-52-364Z-21380-00003-ses_f0e92b05fffeIULYtfNbShJ7Xg-websocket-main.request.json"
+  }
+}

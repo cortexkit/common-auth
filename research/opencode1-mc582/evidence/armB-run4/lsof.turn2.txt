@@ -1,0 +1,74 @@
+COMMAND    PID        USER   FD     TYPE             DEVICE  SIZE/OFF                NODE NAME
+opencode 14938 ufukaltinok  cwd      DIR               1,17        64          1985882129 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/project
+opencode 14938 ufukaltinok  txt      REG               1,17 147395826          1375127520 /Users/ufukaltinok/.opencode/bin/opencode
+opencode 14938 ufukaltinok  txt      REG               1,17     77368          1843163033 /private/var/db/diagnostics/logd/.plist-cache.QMWyKIeM
+opencode 14938 ufukaltinok  txt      REG               1,17    234224           702363629 /private/var/db/timezone/tz/2026c.1.0/icutz/icutz44l.dat
+opencode 14938 ufukaltinok  txt      REG               1,17     32768          1985882164 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/opencode.db-shm
+opencode 14938 ufukaltinok  txt      REG               1,17     32768          1843164017 /private/var/db/mds/messages/501/se_SecurityMessages
+opencode 14938 ufukaltinok  txt      REG               1,17    161875          1964276911 /private/var/db/analyticsd/events.allowlist
+opencode 14938 ufukaltinok  txt      REG               1,17     32768          1985895609 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/cortexkit/magic-context/context.db-shm
+opencode 14938 ufukaltinok  txt      REG               1,17   4129840 1152921500312609216 /usr/lib/dyld
+opencode 14938 ufukaltinok  txt      REG               1,17  36103568 1152921500312619766 /usr/share/icu/icudt78l.dat
+opencode 14938 ufukaltinok  txt      REG               1,17    342608          1985896813 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/tmp/.bun-501-c22f2ef692948d9e.node
+opencode 14938 ufukaltinok  txt      REG               1,17   4822976          1985896770 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/tmp/.bun-501-d87254fe3973b962.dylib
+opencode 14938 ufukaltinok    0r     CHR                3,2       0t0                 336 /dev/null
+opencode 14938 ufukaltinok    1w     REG               1,17       118          1985882142 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/runs/m1/serve.log
+opencode 14938 ufukaltinok    2w     REG               1,17       118          1985882142 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/runs/m1/serve.log
+opencode 14938 ufukaltinok    3u     REG               1,17         0          1985837459 /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/exit
+opencode 14938 ufukaltinok    4u     REG               1,17         0          1985837460 /Users/ufukaltinok/.local/share/cortexkit/aft/opencode/bash-tasks/a890a263f7a17fa7/bash-bc3a7333580e4e2d/io/sandbox-unavailable
+opencode 14938 ufukaltinok    5u  KQUEUE                                                  count=0, state=0x12
+opencode 14938 ufukaltinok    6w     REG               1,17       118          1985882142 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/runs/m1/serve.log
+opencode 14938 ufukaltinok    7w     REG               1,17       118          1985882142 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/runs/m1/serve.log
+opencode 14938 ufukaltinok    8w     REG               1,17      6430          1985882160 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/log/opencode.log
+opencode 14938 ufukaltinok    9u     REG               1,17    307200          1985882161 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/opencode.db
+opencode 14938 ufukaltinok   10u     REG               1,17    424392          1985882163 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/opencode.db-wal
+opencode 14938 ufukaltinok   11u     REG               1,17     32768          1985882164 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/opencode.db-shm
+opencode 14938 ufukaltinok   12u    IPv4 0xcc0685a0dec9f5ac       0t0                 TCP localhost:4623 (LISTEN)
+opencode 14938 ufukaltinok   13w     REG               1,17      6430          1985882160 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/log/opencode.log
+opencode 14938 ufukaltinok   14u     REG               1,17    307200          1985882161 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/opencode.db
+opencode 14938 ufukaltinok   15u     REG               1,17    424392          1985882163 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/opencode.db-wal
+opencode 14938 ufukaltinok   16u  KQUEUE                                                  count=0, state=0x12
+opencode 14938 ufukaltinok   17u    unix 0x79239e700327329c       0t0                     ->0x36910e7d7c2c1bf4
+opencode 14938 ufukaltinok   18u    IPv4 0x89b475077121da16       0t0                 TCP localhost:4623->localhost:50954 (ESTABLISHED)
+opencode 14938 ufukaltinok   19u    IPv4 0x70234bba7fe4d1a6       0t0                 TCP 192.168.1.36:50748->172.66.173.149:https (ESTABLISHED)
+opencode 14938 ufukaltinok   20u    unix 0x33dab85df3d6d6c1       0t0                     ->0x605775dfcac63934
+opencode 14938 ufukaltinok   21u    IPv4 0x32f8d824b1c965a0       0t0                 TCP 192.168.1.36:50751->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   22u    IPv4 0xa4b102e6a1b0d782       0t0                 TCP 192.168.1.36:50756->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   23u    IPv4  0xe7aa5434c143315       0t0                 TCP 192.168.1.36:50758->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   24u    IPv4 0xa10791b7760d63b9       0t0                 TCP 192.168.1.36:50760->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   25u    IPv4 0x51df05335d184a8a       0t0                 TCP 192.168.1.36:50769->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   26u    IPv4 0x94bea406a2410a5e       0t0                 TCP 192.168.1.36:50771->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   27u    IPv4 0x8d4bfa655470fce9       0t0                 TCP 192.168.1.36:50773->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   28u    IPv4 0x8456894d1c1fa341       0t0                 TCP 192.168.1.36:50775->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   29u    IPv4 0xe20134ce68c0174d       0t0                 TCP 192.168.1.36:50777->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   30u    IPv4 0xc46fc03b92b87761       0t0                 TCP 192.168.1.36:50779->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   31u    IPv4 0x467c24d671ff74e5       0t0                 TCP 192.168.1.36:50781->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   32u    IPv4 0x8c29a4c8faeb7189       0t0                 TCP 192.168.1.36:50783->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   33u    IPv4 0xde5ae80042c0ce1b       0t0                 TCP 192.168.1.36:50925->104.16.11.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   34u    IPv4 0x2c2eac1f698db7f4       0t0                 TCP 192.168.1.36:50911->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   35u    IPv4 0x67d4513c2ab5ca5f       0t0                 TCP 192.168.1.36:50913->104.16.2.34:https (ESTABLISHED)
+opencode 14938 ufukaltinok   36u     REG               1,17   1015808          1985895380 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/cortexkit/magic-context/context.db
+opencode 14938 ufukaltinok   37u     REG               1,17    144232          1985895608 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/cortexkit/magic-context/context.db-wal
+opencode 14938 ufukaltinok   38u     REG               1,17     32768          1985895609 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/cortexkit/magic-context/context.db-shm
+opencode 14938 ufukaltinok   39r     REG               1,17    307200          1985882161 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/opencode.db
+opencode 14938 ufukaltinok   40u    IPv4 0x3763d6193204973f       0t0                 TCP localhost:50953 (LISTEN)
+opencode 14938 ufukaltinok   41u    IPv4 0x3cc988e038f4f5db       0t0                 TCP localhost:50954->localhost:4623 (ESTABLISHED)
+opencode 14938 ufukaltinok   42u    IPv4 0xa5fb8b82eba0321a       0t0                 TCP localhost:50958 (LISTEN)
+opencode 14938 ufukaltinok   43u    IPv4 0x96620024ded8c411       0t0                 TCP 192.168.1.36:50960->104.18.32.47:https (ESTABLISHED)
+opencode 14938 ufukaltinok   46r     REG               1,17    424392          1985882163 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/opencode/opencode.db-wal
+opencode 14938 ufukaltinok   47u  KQUEUE                                                  count=0, state=0x8
+opencode 14938 ufukaltinok   48r     DIR               1,17        64          1985882129 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/project
+opencode 14938 ufukaltinok   49r     DIR               1,17       288          1985882114 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB
+opencode 14938 ufukaltinok   50r     DIR               1,17       128          1985605658 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582
+opencode 14938 ufukaltinok   51r     DIR               1,17   1024224              328723 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T
+opencode 14938 ufukaltinok   52r     DIR               1,17       224              328720 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn
+opencode 14938 ufukaltinok   53r     DIR               1,17        96              328719 /private/var/folders/18
+opencode 14938 ufukaltinok   54r     DIR               1,17       160          1409450479 /private/var/folders
+opencode 14938 ufukaltinok   55r     DIR               1,17      1152          1409434782 /private/var
+opencode 14938 ufukaltinok   56r     DIR               1,17       192          1409434748 /private
+opencode 14938 ufukaltinok   57r     DIR               1,17       768 1152921500311879682 /System/Volumes/Data
+opencode 14938 ufukaltinok   58r     DIR               1,17       448 1152921500312580014 /System/Volumes
+opencode 14938 ufukaltinok   59r     DIR               1,17       384 1152921500311879703 /System
+opencode 14938 ufukaltinok   60u  KQUEUE                                                  count=0, state=0x8
+opencode 14938 ufukaltinok   63u    IPv4 0xfdf8e66461458e90       0t0                 TCP 192.168.1.36:50983->104.18.32.47:https (ESTABLISHED)
+opencode 14938 ufukaltinok   64u     REG               1,17   1015808          1985895380 /private/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armB/home/.local/share/cortexkit/magic-context/context.db

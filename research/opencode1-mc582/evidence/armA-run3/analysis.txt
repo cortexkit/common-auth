@@ -1,0 +1,70 @@
+## #1 prewarm  (2026-09-30T08-32-40-284Z-12764-00001-ses_f0e8e3eb9ffeTYVIWyouLSQS75-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_03241b8ebf637386016abcc928a1ac87d29eb6a5281e9842c8
+usage: input_tokens=5422 cached_tokens=0 uncached=5422 output_tokens=0
+
+## #2 main  (2026-09-30T08-32-40-808Z-12764-00002-ses_f0e8e3eb9ffeTYVIWyouLSQS75-websocket-main.body.json)
+previous_response_id: 'resp_03241b8ebf637386016abcc928a1ac87d29eb6a5281e9842c8'
+generate: '(absent)'
+input items: 1 -> ['message:user']
+assistant message in input: False
+  [0] message:user: "First write one short sentence, then run `seq 1 400` with the shell tool."
+response: resp_03241b8ebf637386016abcc9291b4087d2b513756c7efecc80
+usage: input_tokens=5447 cached_tokens=4608 uncached=839 output_tokens=60
+per-item attribution (provider item id: input / cached):
+    msg_03241b8ebf637386016abcc9…  25 / 0
+    rs_03241b8ebf637386016abcc92…  2 / 0
+    msg_03241b8ebf637386016abcc9…  0 / 0
+    fc_03241b8ebf637386016abcc92…  0 / 0
+
+## #3 main  (2026-09-30T08-32-43-348Z-12764-00003-ses_f0e8e3eb9ffeTYVIWyouLSQS75-websocket-main.body.json)
+previous_response_id: 'resp_03241b8ebf637386016abcc9291b4087d2b513756c7efecc80'
+generate: '(absent)'
+input items: 1 -> ['function_call_output']
+assistant message in input: False
+  [0] function_call_output: call_id=call_OMsZflDfm9gYzOTXWOYgVc5U output[1492 chars]='1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n1'
+response: resp_03241b8ebf637386016abcc92be0a487d2813d448bc8d6ee3e
+usage: input_tokens=6318 cached_tokens=4608 uncached=1710 output_tokens=9
+per-item attribution (provider item id: input / cached):
+    msg_03241b8ebf637386016abcc9…  25 / 0
+    rs_03241b8ebf637386016abcc92…  23 / 0
+    msg_03241b8ebf637386016abcc9…  15 / 0
+    fc_03241b8ebf637386016abcc92…  24 / 0
+    fc_03241b8ebf637386016abcc92…  809 / 0
+    msg_03241b8ebf637386016abcc9…  2 / 0
+
+## #4 prewarm  (2026-09-30T08-32-45-413Z-12764-00004-ses_f0e8e3eb9ffeTYVIWyouLSQS75-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_026d19311901632f016abcc92db24887d28ebf9ead590b70af
+usage: input_tokens=5422 cached_tokens=0 uncached=5422 output_tokens=0
+
+## #5 main  (2026-09-30T08-32-45-916Z-12764-00005-ses_f0e8e3eb9ffeTYVIWyouLSQS75-websocket-main.body.json)
+previous_response_id: 'resp_026d19311901632f016abcc92db24887d28ebf9ead590b70af'
+generate: '(absent)'
+input items: 7 -> ['message:user', 'reasoning', 'message:assistant', 'function_call', 'function_call_output', 'message:assistant', 'message:user']
+assistant message in input: True
+  [0] message:user: "First write one short sentence, then run `seq 1 400` with the shell tool."
+  [1] reasoning: 
+  [2] message:assistant: I will run the requested command now.
+  [3] function_call: bash({"command":"seq 1 400"}) call_id=call_OMsZflDfm9gYzOTXWOYgVc5U
+  [4] function_call_output: call_id=call_OMsZflDfm9gYzOTXWOYgVc5U output[1492 chars]='1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n1'
+  [5] message:assistant: The command completed successfully.
+  [6] message:user: Thanks.
+response: resp_026d19311901632f016abcc92e3d3487d2b30548b3e5643ceb
+usage: input_tokens=6335 cached_tokens=5632 uncached=703 output_tokens=8
+per-item attribution (provider item id: input / cached):
+    msg_026d19311901632f016abcc9…  25 / 25
+    rs_026d19311901632f016abcc92…  23 / 23
+    msg_026d19311901632f016abcc9…  15 / 15
+    fc_026d19311901632f016abcc92…  24 / 24
+    fc_026d19311901632f016abcc92…  809 / 125
+    msg_026d19311901632f016abcc9…  11 / 0
+    msg_026d19311901632f016abcc9…  6 / 0
+    msg_026d19311901632f016abcc9…  2 / 0
+

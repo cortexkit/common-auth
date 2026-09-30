@@ -1,0 +1,84 @@
+## #1 prewarm  (2026-09-30T08-35-35-360Z-78083-00001-ses_f0e8b918dffeYC7ryDg66QisEd-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_06a14f2166999446016abcc9d7c6ec87d284bc6662e9d1c07d
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #2 main  (2026-09-30T08-35-36-084Z-78083-00002-ses_f0e8b918dffeYC7ryDg66QisEd-websocket-main.body.json)
+previous_response_id: 'resp_06a14f2166999446016abcc9d7c6ec87d284bc6662e9d1c07d'
+generate: '(absent)'
+input items: 3 -> ['message:user', 'message:user', 'message:user']
+assistant message in input: False
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence. Then run `seq 1 400` with the shell tool. After the tool result arrives, look at your first sentence of this turn exactly a
+response: resp_06a14f2166999446016abcc9d86b0087d28c2b6d2f2e4fec62
+usage: input_tokens=8863 cached_tokens=7680 uncached=1183 output_tokens=83
+per-item attribution (provider item id: input / cached):
+    msg_06a14f2166999446016abcc9…  11 / 0
+    msg_06a14f2166999446016abcc9…  23 / 0
+    msg_06a14f2166999446016abcc9…  161 / 0
+    rs_06a14f2166999446016abcc9d…  2 / 0
+    msg_06a14f2166999446016abcc9…  0 / 0
+    fc_06a14f2166999446016abcc9d…  0 / 0
+
+## #3 main  (2026-09-30T08-35-39-048Z-78083-00003-ses_f0e8b918dffeYC7ryDg66QisEd-websocket-main.body.json)
+previous_response_id: 'resp_06a14f2166999446016abcc9d86b0087d28c2b6d2f2e4fec62'
+generate: '(absent)'
+input items: 1 -> ['function_call_output']
+assistant message in input: False
+  [0] function_call_output: call_id=call_Z1f8mgn0KW1VLsQUQg67OTWH output[1496 chars]='§3§ 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n'
+response: resp_06a14f2166999446016abcc9dbdda887d2b31cf6506a277aad
+usage: input_tokens=9761 cached_tokens=7680 uncached=2081 output_tokens=87
+per-item attribution (provider item id: input / cached):
+    msg_06a14f2166999446016abcc9…  11 / 0
+    msg_06a14f2166999446016abcc9…  23 / 0
+    msg_06a14f2166999446016abcc9…  161 / 0
+    rs_06a14f2166999446016abcc9d…  49 / 0
+    msg_06a14f2166999446016abcc9…  12 / 0
+    fc_06a14f2166999446016abcc9d…  24 / 0
+    fc_06a14f2166999446016abcc9d…  813 / 0
+    rs_06a14f2166999446016abcc9d…  2 / 0
+    msg_06a14f2166999446016abcc9…  0 / 0
+
+## #4 prewarm  (2026-09-30T08-35-42-944Z-78083-00004-ses_f0e8b918dffeYC7ryDg66QisEd-websocket-prewarm.body.json)
+previous_response_id: None
+generate: False
+input items: 0 -> []
+assistant message in input: False
+response: resp_01a3144f929d5180016abcc9df445087d2959b1e27e1f3f8af
+usage: input_tokens=8668 cached_tokens=0 uncached=8668 output_tokens=0
+
+## #5 main  (2026-09-30T08-35-43-495Z-78083-00005-ses_f0e8b918dffeYC7ryDg66QisEd-websocket-main.body.json)
+previous_response_id: 'resp_01a3144f929d5180016abcc9df445087d2959b1e27e1f3f8af'
+generate: '(absent)'
+input items: 10 -> ['message:user', 'message:user', 'message:user', 'reasoning', 'message:assistant', 'function_call', 'function_call_output', 'reasoning', 'message:assistant', 'message:user']
+assistant message in input: True
+  [0] message:user: <session-history></session-history>
+  [1] message:user: <session-history-since>(no new content since last materialization)</session-history-since>
+  [2] message:user: §1§ "First write one short sentence. Then run `seq 1 400` with the shell tool. After the tool result arrives, look at your first sentence of this turn exactly a
+  [3] reasoning: 
+  [4] message:assistant: §2§ The sequence is ready.
+  [5] function_call: bash({"command":"seq 1 400"}) call_id=call_Z1f8mgn0KW1VLsQUQg67OTWH
+  [6] function_call_output: call_id=call_Z1f8mgn0KW1VLsQUQg67OTWH output[1496 chars]='§3§ 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n'
+  [7] reasoning: 
+  [8] message:assistant: §4§ U+0054 U+0068 U+0065 U+0020 U+0073 U+0065 U+0071 U+0075\n\n```text\nThe sequence is ready.\n```
+  [9] message:user: §5§ "Look at the sentence you wrote just before the tool call in your previous turn, exactly as it appears in your context. List the Unicode code points (U+XXXX
+response: resp_01a3144f929d5180016abcc9dfd25487d284955ab1cef98788
+usage: input_tokens=9930 cached_tokens=8704 uncached=1226 output_tokens=184
+per-item attribution (provider item id: input / cached):
+    msg_01a3144f929d5180016abcc9…  11 / 11
+    msg_01a3144f929d5180016abcc9…  23 / 23
+    msg_01a3144f929d5180016abcc9…  161 / 4
+    rs_01a3144f929d5180016abcc9d…  49 / 0
+    msg_01a3144f929d5180016abcc9…  15 / 0
+    fc_01a3144f929d5180016abcc9d…  24 / 0
+    fc_01a3144f929d5180016abcc9d…  813 / 0
+    rs_01a3144f929d5180016abcc9d…  41 / 0
+    msg_01a3144f929d5180016abcc9…  51 / 0
+    msg_01a3144f929d5180016abcc9…  74 / 0
+    rs_01a3144f929d5180016abcc9e…  2 / 0
+    msg_01a3144f929d5180016abcc9…  0 / 0
+

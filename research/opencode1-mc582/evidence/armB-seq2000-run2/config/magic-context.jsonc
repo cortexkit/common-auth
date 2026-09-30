@@ -1,0 +1,6 @@
+{
+  // Only the main model requests should reach the provider during the measurement.
+  "historian": { "disable": true },
+  "dreamer": { "disable": true },
+  "embedding": { "provider": "off" }
+}

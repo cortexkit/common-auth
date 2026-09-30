@@ -1,0 +1,58 @@
+{
+  "id": "2026-09-30T08-46-30-947Z-2733-00004-ses_f0e81ab49ffeRG8owWks7bVkTt-websocket-prewarm",
+  "createdAt": "2026-09-30T08:46:30.949Z",
+  "session": "ses_f0e81ab4…",
+  "transport": "websocket",
+  "phase": "prewarm",
+  "bodyBytes": 27386,
+  "bodyHash": "ac7a54f6bcd5dbc6319d6323ea9e34dc34097f374e401fcda78c5edcadbb5f3b",
+  "diff": {
+    "changed": true,
+    "firstByte": 10553,
+    "lastPreviousByte": 38682,
+    "lastCurrentByte": 27382,
+    "changedPreviousBytes": 28130,
+    "changedCurrentBytes": 16830,
+    "previousBytes": 38686,
+    "currentBytes": 27386
+  },
+  "baselineSource": "memory",
+  "body": {
+    "parseable": true,
+    "model": "gpt-5.6-luna",
+    "stream": true,
+    "generate": false,
+    "store": false,
+    "promptCacheKey": "01a0f17e-5748-78cc-bb35-0159be3255d5",
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "inputCount": 0,
+    "inputHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "inputBytes": 2,
+    "firstInputHash": null,
+    "toolsCount": 7,
+    "toolTypes": [
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function"
+    ],
+    "toolsHash": "19701e221678bbbbe83bca5e8c1ca3f1d8d21478508182dcbcf9a656053451b3",
+    "clientMetadataKeys": [
+      "x-codex-installation-id",
+      "x-codex-turn-metadata",
+      "x-codex-window-id",
+      "x-codex-ws-stream-request-start-ms"
+    ]
+  },
+  "files": {
+    "body": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-46-30-947Z-2733-00004-ses_f0e81ab49ffeRG8owWks7bVkTt-websocket-prewarm.body.json",
+    "metadata": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-46-30-947Z-2733-00004-ses_f0e81ab49ffeRG8owWks7bVkTt-websocket-prewarm.meta.json",
+    "request": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-46-30-947Z-2733-00004-ses_f0e81ab49ffeRG8owWks7bVkTt-websocket-prewarm.request.json"
+  }
+}

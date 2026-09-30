@@ -1,0 +1,9 @@
+[0] message:user: identical to #2 input[0]
+[1] message:user: identical to #2 input[1]
+[2] message:user: identical to #2 input[2]
+[3] reasoning: replayed provider output item (not in dumps; compare against arm A's cache attribution)
+[4] message:assistant: DIFFERS from model output: sent '§2§ I will run the requested sequence command.' vs generated 'I will run the requested sequence command.'
+[5] function_call: replayed provider output item (not in dumps; compare against arm A's cache attribution)
+[6] function_call_output: identical to #3 input[0]
+[7] message:assistant: DIFFERS from model output: sent '§4§ The command completed successfully.' vs generated 'The command completed successfully.'
+[8] message:user: new in turn 2

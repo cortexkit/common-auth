@@ -1,0 +1,48 @@
+{
+  "id": "2026-09-30T08-27-49-316Z-21380-00001-ses_f0e92b05fffeIULYtfNbShJ7Xg-websocket-prewarm",
+  "createdAt": "2026-09-30T08:27:49.331Z",
+  "session": "ses_f0e92b05…",
+  "transport": "websocket",
+  "phase": "prewarm",
+  "bodyBytes": 27386,
+  "bodyHash": "7e69328a085a712c1df285b47e51c3b215e957a6e44acbf1ec8e707d85407eb7",
+  "diff": null,
+  "body": {
+    "parseable": true,
+    "model": "gpt-5.6-luna",
+    "stream": true,
+    "generate": false,
+    "store": false,
+    "promptCacheKey": "01a0f16d-534e-735a-bb46-df5fc63ec7ab",
+    "reasoning": {
+      "effort": "low",
+      "summary": "auto"
+    },
+    "inputCount": 0,
+    "inputHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "inputBytes": 2,
+    "firstInputHash": null,
+    "toolsCount": 7,
+    "toolTypes": [
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function",
+      "function"
+    ],
+    "toolsHash": "19701e221678bbbbe83bca5e8c1ca3f1d8d21478508182dcbcf9a656053451b3",
+    "clientMetadataKeys": [
+      "x-codex-installation-id",
+      "x-codex-turn-metadata",
+      "x-codex-window-id",
+      "x-codex-ws-stream-request-start-ms"
+    ]
+  },
+  "files": {
+    "body": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-27-49-316Z-21380-00001-ses_f0e92b05fffeIULYtfNbShJ7Xg-websocket-prewarm.body.json",
+    "metadata": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-27-49-316Z-21380-00001-ses_f0e92b05fffeIULYtfNbShJ7Xg-websocket-prewarm.meta.json",
+    "request": "/var/folders/18/257zzylx4h1gbkcvs4cnpqqc0000gn/T/oc1-mc582/armA/dumps/2026-09-30T08-27-49-316Z-21380-00001-ses_f0e92b05fffeIULYtfNbShJ7Xg-websocket-prewarm.request.json"
+  }
+}
