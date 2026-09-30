@@ -19,9 +19,10 @@ export interface SidebarFileOptions<T> {
   normalize: (parsed: unknown) => T
   timeoutMs?: number
   /**
-   * Create the parent directory private and tighten it to 0o700 before each
-   * write. Defaults to true. Pass false for a directory the user chose (an
-   * override path), whose permissions are theirs to set.
+   * Tighten an existing parent directory to 0o700 before each write. Defaults
+   * to true. Pass false for a directory the user chose (an override path),
+   * whose permissions are theirs to set. A parent this library has to create
+   * is always created private, either way.
    */
   secureDir?: boolean
   logger?: {
@@ -81,10 +82,7 @@ export function createSidebarFile<T>(
   ): Promise<void> => {
     const parent = dirname(path)
     const secureDir = options.secureDir ?? true
-    await mkdir(parent, {
-      recursive: true,
-      mode: secureDir ? 0o700 : undefined,
-    })
+    await mkdir(parent, { recursive: true, mode: 0o700 })
     if (secureDir) {
       await chmod(parent, 0o700).catch((error: unknown) => {
         options.logger?.warn(

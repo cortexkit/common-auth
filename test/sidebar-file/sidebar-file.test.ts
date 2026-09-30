@@ -177,6 +177,18 @@ test('secureDir false leaves a user-chosen parent at its own mode', async () => 
   expect(await fs.readFile(target, 'utf8')).toBe('1')
 })
 
+test('secureDir false still creates a missing parent private', async () => {
+  const nested = join(dir, 'chosen', 'state.json')
+  const file = createSidebarFile({
+    path: nested,
+    defaultValue: 0,
+    normalize: Number,
+    secureDir: false,
+  })
+  await file.write(1)
+  expect((await fs.stat(join(dir, 'chosen'))).mode & 0o777).toBe(0o700)
+})
+
 test('EPERM chmod warns once and still resolves the queued write', async () => {
   const warnings: unknown[] = []
   const file = createSidebarFile({

@@ -73,7 +73,7 @@ Type exports: `CaptureSink`, `LogTestRecord`, `InitLoggerOptions`, `Level`, `Red
 
 ### ./sidebar-file
 
-Runtime export: `createSidebarFile<T>({ path, defaultValue, normalize, timeoutMs?, secureDir?, logger? })` returns `read()`, `write(value, hooks?)`, `update(merge, hooks?)`. The caller owns schema, normalization, quota, routing and sticky pins; merge receives current state and may return undefined to skip writing. `secureDir` (default true, since 0.1.2) creates the parent directory private and tightens it to 0o700 before each write; pass false for a directory the user chose, such as an override path. Internal hooks `beforeRecheck?` and `beforeCommit?` are for tests, not plugin policy. Type exports: `SidebarFile`, `SidebarFileHooks`, `SidebarFileOptions`.
+Runtime export: `createSidebarFile<T>({ path, defaultValue, normalize, timeoutMs?, secureDir?, logger? })` returns `read()`, `write(value, hooks?)`, `update(merge, hooks?)`. The caller owns schema, normalization, quota, routing and sticky pins; merge receives current state and may return undefined to skip writing. `secureDir` (default true, since 0.1.2) tightens an existing parent directory to 0o700 before each write; pass false for a directory the user chose, such as an override path. A parent the library has to create is always created 0o700 (since 0.1.3). Internal hooks `beforeRecheck?` and `beforeCommit?` are for tests, not plugin policy. Type exports: `SidebarFile`, `SidebarFileHooks`, `SidebarFileOptions`.
 
 ### ./tui-prefs
 
