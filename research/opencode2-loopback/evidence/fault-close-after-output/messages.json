@@ -1,0 +1,178 @@
+{
+  "ses_f0f9b9cc7ffe5quzC4GtXKgWM2": [
+    {
+      "id": "msg_0f0646409001AJXpv4FCD2iUrD",
+      "time": {
+        "created": 1790739506371
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f06464c9001gBOXjAXGxYnWVT",
+      "time": {
+        "created": 1790739506447,
+        "streamed": 1790739506458,
+        "completed": 1790739506481
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-2-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_ws_c1_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "provider.transport",
+        "message": "WebSocket closed with code 1006",
+        "response": {
+          "body": "Connection ended"
+        }
+      },
+      "retry": {
+        "attempt": 2,
+        "at": 1790739508215,
+        "error": {
+          "type": "provider.transport",
+          "message": "WebSocket closed with code 1006",
+          "response": {
+            "body": "Connection ended"
+          }
+        }
+      }
+    },
+    {
+      "id": "msg_0f0646bf9001jIbVcgp5mkremZ",
+      "time": {
+        "created": 1790739508217
+      },
+      "text": "The previous response was interrupted. Continue from where you left off without repeating completed content.",
+      "type": "synthetic"
+    },
+    {
+      "id": "msg_0f0646bfa001s1e1Ywby3vFemQ",
+      "time": {
+        "created": 1790739508249,
+        "streamed": 1790739508257,
+        "completed": 1790739508276
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-3-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_ws_c2_3"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c2_3"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0646c36002IkJMB3NKkV3eoa",
+      "time": {
+        "created": 1790739508278
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0646c39001GSTc5ar3E1qB0f",
+      "time": {
+        "created": 1790739508284
+      },
+      "text": "Say it again.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0646c3e001xW3I8Q476IwwcY",
+      "time": {
+        "created": 1790739508311,
+        "streamed": 1790739508319,
+        "completed": 1790739508340
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-4-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_ws_c2_4"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c2_4"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0646c76001w0lgYZ60axlB36",
+      "time": {
+        "created": 1790739508342
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

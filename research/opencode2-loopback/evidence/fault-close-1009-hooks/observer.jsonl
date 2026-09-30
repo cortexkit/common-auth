@@ -1,0 +1,14 @@
+{"t":1790739499302.503,"wall":1790739499302,"plugin":"observer","event":"http.request","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"title","url":"http://127.0.0.1:51241/v1/responses"}
+{"t":1790739499312.648,"wall":1790739499312,"plugin":"observer","event":"http.response","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"title","url":"http://127.0.0.1:51241/v1/responses","status":200}
+{"t":1790739499313.079,"wall":1790739499313,"plugin":"observer","event":"http.body.first-chunk","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"title"}
+{"t":1790739499313.125,"wall":1790739499313,"plugin":"observer","event":"http.body.completed-seen","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"title","chunks":1}
+{"t":1790739499351.794,"wall":1790739499351,"plugin":"observer","event":"ws.handshake","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary","url":"ws://127.0.0.1:51241/v1/responses"}
+{"t":1790739499355.717,"wall":1790739499355,"plugin":"observer","event":"ws.send","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary","type":"response.create","input_items":1}
+{"t":1790739499356.953,"wall":1790739499356,"plugin":"observer","event":"http.request","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary","url":"http://127.0.0.1:51241/v1/responses"}
+{"t":1790739499358.565,"wall":1790739499358,"plugin":"observer","event":"http.response","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary","url":"http://127.0.0.1:51241/v1/responses","status":200}
+{"t":1790739499358.73,"wall":1790739499358,"plugin":"observer","event":"http.body.first-chunk","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary"}
+{"t":1790739499358.759,"wall":1790739499358,"plugin":"observer","event":"http.body.completed-seen","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary","chunks":1}
+{"t":1790739499415.203,"wall":1790739499415,"plugin":"observer","event":"http.request","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary","url":"http://127.0.0.1:51241/v1/responses"}
+{"t":1790739499416.711,"wall":1790739499416,"plugin":"observer","event":"http.response","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary","url":"http://127.0.0.1:51241/v1/responses","status":200}
+{"t":1790739499416.86,"wall":1790739499416,"plugin":"observer","event":"http.body.first-chunk","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary"}
+{"t":1790739499416.895,"wall":1790739499416,"plugin":"observer","event":"http.body.completed-seen","sessionID":"ses_f0f9bb86bffecbraCNAEeVlIoS","kind":"primary","chunks":1}

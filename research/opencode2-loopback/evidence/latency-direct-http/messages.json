@@ -1,0 +1,358 @@
+{
+  "ses_f0f9776d3ffeqjjUw1q4K5M5sZ": [
+    {
+      "id": "msg_0f06889f7001BEAzqw5NpyJJQi",
+      "time": {
+        "created": 1790739778188
+      },
+      "text": "Turn 1.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0688a92001knYTJpUNM23Ayb",
+      "time": {
+        "created": 1790739778248,
+        "streamed": 1790739778506,
+        "completed": 1790739778525
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-HTTP-2-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_http_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_2"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0688bde001gGqqSBuVugK7B8",
+      "time": {
+        "created": 1790739778526
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0688be0001ObZ7eE7QYx1pgT",
+      "time": {
+        "created": 1790739778532
+      },
+      "text": "Turn 2.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0688be6001rQDR4G2MyMPz61",
+      "time": {
+        "created": 1790739778559,
+        "streamed": 1790739778816,
+        "completed": 1790739778850
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-HTTP-3-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_http_3"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_3"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0688d23002dCu0G3Xle3q4r0",
+      "time": {
+        "created": 1790739778851
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0688d25001q7gzcOePoEh7Ao",
+      "time": {
+        "created": 1790739778857
+      },
+      "text": "Turn 3.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0688d2b0015PKeUrIdMhg4vB",
+      "time": {
+        "created": 1790739778882,
+        "streamed": 1790739779142,
+        "completed": 1790739779184
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-HTTP-4-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_http_4"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_4"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0688e71002UH5OE47N8SEFz1",
+      "time": {
+        "created": 1790739779185
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0688e740011Xn1JHPDEn7iM1",
+      "time": {
+        "created": 1790739779192
+      },
+      "text": "Turn 4.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0688e7a001m25FT7GH8jWw4B",
+      "time": {
+        "created": 1790739779219,
+        "streamed": 1790739779474,
+        "completed": 1790739779498
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-HTTP-5-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_http_5"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_5"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0688fab002HLfw80IIuUxoBb",
+      "time": {
+        "created": 1790739779499
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0688fad001HWeVeEeYl0W7v5",
+      "time": {
+        "created": 1790739779504
+      },
+      "text": "Turn 5.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0688fb2001zw78WameLS0CVP",
+      "time": {
+        "created": 1790739779528,
+        "streamed": 1790739779784,
+        "completed": 1790739779809
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-HTTP-6-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_http_6"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_6"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f06890e2002cWfBBZeYWX1fPE",
+      "time": {
+        "created": 1790739779810
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f06890e40015UIS0vz2Uacs4I",
+      "time": {
+        "created": 1790739779816
+      },
+      "text": "Turn 6.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f06890ea001Anskra0dpRSSyO",
+      "time": {
+        "created": 1790739779841,
+        "streamed": 1790739780101,
+        "completed": 1790739780134
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-HTTP-7-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_http_7"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_7"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0689227002NALt89w6rMx5EX",
+      "time": {
+        "created": 1790739780135
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
++     0 ms  harness.jsonl:1            event=api method=POST path=/api/session status=200 started=1790739516356.09 ms=38.6
++   317 ms  proxy.jsonl:1              side=proxy ev=listening url=http://127.0.0.1:51398 runtime=bun 1.4.2 plan=["A"] switchMode=expand fault=
++   318 ms  plugin.jsonl:1             event=setup point=provider-transform proxy=http://127.0.0.1:51398
++   328 ms  plugin.jsonl:2             event=provider.transform found=true after=http://127.0.0.1:51398/v1 transport=websocket package=@opencode/ai/providers/openai
++   338 ms  plugin.jsonl:3             event=provider.transform found=true after=http://127.0.0.1:51398/v1 transport=websocket package=@opencode/ai/providers/openai
++   391 ms  harness.jsonl:2            event=api method=POST path=/api/session/ses_f0f9b7439ffeyVpBjDoL7Kwo3U/prompt status=200 started=1790739516394.822 ms=391.2
++   413 ms  plugin.jsonl:4             event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++   414 ms  plugin.jsonl:5             event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=title modelID=gpt-6-luna baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++   415 ms  observer.jsonl:1           event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=title url=http://127.0.0.1:51398/v1/responses
++   423 ms  plugin.jsonl:6             event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=title modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++   424 ms  observer.jsonl:2           event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=title url=http://127.0.0.1:51398/v1/responses
++   485 ms  observer.jsonl:3           event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++   486 ms  observer.jsonl:4           event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=2 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":1875}
++  2373 ms  plugin.jsonl:7             event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++  2394 ms  observer.jsonl:5           event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++  2395 ms  observer.jsonl:6           event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=3 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":4597}
++  7004 ms  plugin.jsonl:8             event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++  7027 ms  observer.jsonl:7           event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++  7028 ms  observer.jsonl:8           event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=4 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":6712}
++ 13753 ms  plugin.jsonl:9             event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 13782 ms  observer.jsonl:9           event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 13783 ms  observer.jsonl:10          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=5 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":10055}
++ 23849 ms  plugin.jsonl:10            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 23870 ms  observer.jsonl:11          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 23870 ms  observer.jsonl:12          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=6 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":8548}
++ 32428 ms  plugin.jsonl:11            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 32449 ms  observer.jsonl:13          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 32449 ms  observer.jsonl:14          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=7 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":11325}
++ 43784 ms  plugin.jsonl:12            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 43805 ms  observer.jsonl:15          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 43805 ms  observer.jsonl:16          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=8 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":8158}
++ 51972 ms  plugin.jsonl:13            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 51992 ms  observer.jsonl:17          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 51993 ms  observer.jsonl:18          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=9 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":9674}
++ 61675 ms  plugin.jsonl:14            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 61695 ms  observer.jsonl:19          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 61695 ms  observer.jsonl:20          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=10 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":11632}
++ 73336 ms  plugin.jsonl:15            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 73355 ms  observer.jsonl:21          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 73356 ms  observer.jsonl:22          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=11 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":10044}
++ 83409 ms  plugin.jsonl:16            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 83430 ms  observer.jsonl:23          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 83452 ms  harness.jsonl:3            event=api method=POST path=/api/experimental/session/ses_f0f9b7439ffeyVpBjDoL7Kwo3U/wait status=204 started=1790739516786.167 ms=83060
++ 83455 ms  harness.jsonl:4            event=api method=POST path=/api/session/ses_f0f9b7439ffeyVpBjDoL7Kwo3U/prompt status=200 started=1790739599846.244 ms=2.9
++ 83463 ms  plugin.jsonl:17            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 83463 ms  plugin.jsonl:18            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=title modelID=gpt-6-luna baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 83464 ms  observer.jsonl:24          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=title url=http://127.0.0.1:51398/v1/responses
++ 83466 ms  plugin.jsonl:19            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=title modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 83467 ms  observer.jsonl:25          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=title url=http://127.0.0.1:51398/v1/responses
++ 83485 ms  observer.jsonl:26          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 83485 ms  observer.jsonl:27          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=2 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":1805}
++ 85300 ms  plugin.jsonl:20            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 85322 ms  observer.jsonl:28          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 85323 ms  observer.jsonl:29          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=3 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":4112}
++ 89442 ms  plugin.jsonl:21            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 89464 ms  observer.jsonl:30          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 89464 ms  observer.jsonl:31          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=4 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":9554}
++ 99029 ms  plugin.jsonl:22            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++ 99050 ms  observer.jsonl:32          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++ 99051 ms  observer.jsonl:33          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=5 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":9644}
++108705 ms  plugin.jsonl:23            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++108725 ms  observer.jsonl:34          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++108725 ms  observer.jsonl:35          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=6 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":11644}
++120379 ms  plugin.jsonl:24            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++120408 ms  observer.jsonl:36          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++120408 ms  observer.jsonl:37          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=7 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":8474}
++128895 ms  plugin.jsonl:25            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++128916 ms  observer.jsonl:38          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++128935 ms  observer.jsonl:39          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=8 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":8524}
++137468 ms  plugin.jsonl:26            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++137489 ms  observer.jsonl:40          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++137490 ms  observer.jsonl:41          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=9 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":9713}
++147212 ms  plugin.jsonl:27            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++147237 ms  observer.jsonl:42          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++147238 ms  observer.jsonl:43          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=10 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":10374}
++157634 ms  plugin.jsonl:28            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++157660 ms  observer.jsonl:44          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++157660 ms  observer.jsonl:45          event=retry sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U attempt=11 error={"type":"provider.transport","message":"ConnectionRefused: Unable to connect. Is the computer able to access the url?"} decision={"retry":true,"delay":9058}
++166729 ms  plugin.jsonl:29            event=model.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51398/v1 baseURLAfter=http://127.0.0.1:51398/v1
++166755 ms  observer.jsonl:46          event=http.request sessionID=ses_f0f9b7439ffeyVpBjDoL7Kwo3U kind=primary url=http://127.0.0.1:51398/v1/responses
++166787 ms  harness.jsonl:5            event=api method=POST path=/api/experimental/session/ses_f0f9b7439ffeyVpBjDoL7Kwo3U/wait status=204 started=1790739599849.208 ms=83332.8
++167291 ms  harness.jsonl:6            event=api method=GET path=/api/session/ses_f0f9b7439ffeyVpBjDoL7Kwo3U/message?limit=50&order=asc status=200 started=1790739683682.447 ms=3.6

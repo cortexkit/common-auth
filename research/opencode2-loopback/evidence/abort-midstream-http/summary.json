@@ -1,0 +1,14 @@
+{
+  "scenario": "abort-midstream-http",
+  "point": "provider-transform",
+  "transport": "http",
+  "ms": 16538,
+  "sessions": 1,
+  "lines": {
+    "mock": 36,
+    "proxy": 44,
+    "plugin": 10,
+    "observer": 23,
+    "harness": 24
+  }
+}

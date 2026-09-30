@@ -1,0 +1,45 @@
+{
+  "ses_f0f98e417ffe9jYmDq72qnqIK7": [
+    {
+      "id": "msg_0f0671cdb0015qdjCj0cC522EN",
+      "time": {
+        "created": 1790739684777
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0671db1001wjavFHC2fc8AK2",
+      "time": {
+        "created": 1790739767278,
+        "completed": 1790739767297
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "provider.transport",
+        "message": "ConnectionRefused: Unable to connect. Is the computer able to access the url?"
+      }
+    },
+    {
+      "id": "msg_0f0686002001jBEDd2vqO9xC77",
+      "time": {
+        "created": 1790739767298
+      },
+      "type": "idle",
+      "outcome": "failed"
+    }
+  ]
+}

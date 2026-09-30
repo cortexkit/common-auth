@@ -1,0 +1,153 @@
+{
+  "ses_f0f9df0e6ffeqfP3cMJztu74r1": [
+    {
+      "id": "msg_0f0621014001tAVUqJqp6s0sfH",
+      "time": {
+        "created": 1790739353817
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f06210e000142L7bALygtx1T4",
+      "time": {
+        "created": 1790739353892,
+        "streamed": 1790739353910,
+        "completed": 1790739353935
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-2-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_ws_c1_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_2"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0621151001v5sbdZdpqdTGkJ",
+      "time": {
+        "created": 1790739353937
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f06211540016djPJ65WdZE3Az",
+      "time": {
+        "created": 1790739353944
+      },
+      "text": "Say it again.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f062115b001I4PMv5R54akFPB",
+      "time": {
+        "created": 1790739353976,
+        "streamed": 1790739353984,
+        "completed": 1790739354011
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-3-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_ws_c1_3"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_3"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f062119f001aMpKOGfHohsoMZ",
+      "time": {
+        "created": 1790739354015
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "type": "compaction",
+      "id": "msg_0f06211a7001rCCBTc05n91oHD",
+      "time": {
+        "created": 1790739354026
+      },
+      "status": "failed",
+      "reason": "manual",
+      "error": {
+        "type": "compaction.failed",
+        "message": "Compaction summary did not match the required template"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 22,
+        "output": 6,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f06211bd001oUI0QrBiLC6RLM",
+      "time": {
+        "created": 1790739354045
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

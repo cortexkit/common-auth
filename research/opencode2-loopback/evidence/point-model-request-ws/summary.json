@@ -1,0 +1,14 @@
+{
+  "scenario": "point-model-request-ws",
+  "point": "model-request",
+  "transport": "websocket (host default)",
+  "ms": 1688,
+  "sessions": 1,
+  "lines": {
+    "mock": 18,
+    "proxy": 43,
+    "plugin": 6,
+    "observer": 38,
+    "harness": 9
+  }
+}

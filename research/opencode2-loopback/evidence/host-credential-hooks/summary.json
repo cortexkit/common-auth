@@ -1,0 +1,14 @@
+{
+  "scenario": "host-credential-hooks",
+  "point": "hooks",
+  "transport": "websocket (host default)",
+  "ms": 1453,
+  "sessions": 1,
+  "lines": {
+    "mock": 9,
+    "proxy": 31,
+    "plugin": 7,
+    "observer": 26,
+    "harness": 6
+  }
+}

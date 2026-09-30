@@ -1,0 +1,14 @@
+{
+  "scenario": "host-credential-provider-transform",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 1161,
+  "sessions": 1,
+  "lines": {
+    "mock": 9,
+    "proxy": 31,
+    "plugin": 6,
+    "observer": 26,
+    "harness": 6
+  }
+}

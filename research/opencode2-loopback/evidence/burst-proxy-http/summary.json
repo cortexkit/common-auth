@@ -1,0 +1,14 @@
+{
+  "scenario": "burst-proxy-http",
+  "point": "provider-transform",
+  "transport": "http",
+  "ms": 5063,
+  "sessions": 1,
+  "lines": {
+    "mock": 23,
+    "proxy": 21,
+    "plugin": 8,
+    "observer": 20,
+    "harness": 10
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "scenario": "abort-before-headers-http",
+  "point": "provider-transform",
+  "transport": "http",
+  "ms": 15994,
+  "sessions": 1,
+  "lines": {
+    "mock": 25,
+    "proxy": 34,
+    "plugin": 10,
+    "observer": 13,
+    "harness": 24
+  }
+}

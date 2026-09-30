@@ -1,0 +1,358 @@
+{
+  "ses_f0f9792d6ffepZ4j04vp52cfRq": [
+    {
+      "id": "msg_0f0686de5001cbp8v1Si3aMcsr",
+      "time": {
+        "created": 1790739771015
+      },
+      "text": "Turn 1.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0686e90001PF3ZGbDHKIRh3n",
+      "time": {
+        "created": 1790739771086,
+        "streamed": 1790739771353,
+        "completed": 1790739771384
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-WS-2-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_2"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0686ffa002h2gI2gPQ7Hm50b",
+      "time": {
+        "created": 1790739771386
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0686ffd0013wKP1nXbQ90Ca9",
+      "time": {
+        "created": 1790739771395
+      },
+      "text": "Turn 2.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0687006001ZtmrYEWrH1vXlI",
+      "time": {
+        "created": 1790739771430,
+        "streamed": 1790739771701,
+        "completed": 1790739771721
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-WS-3-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_3"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_3"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f068714b001jZUrldpqMrU9HD",
+      "time": {
+        "created": 1790739771723
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f068714d001CtVY9tM5U5i925",
+      "time": {
+        "created": 1790739771730
+      },
+      "text": "Turn 3.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0687155001UqZlHUyOzWcULT",
+      "time": {
+        "created": 1790739771757,
+        "streamed": 1790739772020,
+        "completed": 1790739772041
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-WS-4-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_4"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_4"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f068728a002LwUEMP5LpRqfPI",
+      "time": {
+        "created": 1790739772042
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f068728c001S7RmzpSZZC3Zxt",
+      "time": {
+        "created": 1790739772046
+      },
+      "text": "Turn 4.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f06872900013O9QAUqEtRz79o",
+      "time": {
+        "created": 1790739772076,
+        "streamed": 1790739772337,
+        "completed": 1790739772357
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-WS-5-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_5"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_5"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f06873c7001nSX1Z9hgnVwmiD",
+      "time": {
+        "created": 1790739772359
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f06873c90010raG868nYw5EPY",
+      "time": {
+        "created": 1790739772364
+      },
+      "text": "Turn 5.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f06873ce0015TW1Wf5yZk04XD",
+      "time": {
+        "created": 1790739772390,
+        "streamed": 1790739772649,
+        "completed": 1790739772670
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-WS-6-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_6"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_6"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f06874ff002zUjhbNP6BE8egc",
+      "time": {
+        "created": 1790739772671
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0687501001MJfGfpP6vJD5ok",
+      "time": {
+        "created": 1790739772677
+      },
+      "text": "Turn 6.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f06875070014EkWL6W9Z64esO",
+      "time": {
+        "created": 1790739772703,
+        "streamed": 1790739772961,
+        "completed": 1790739772982
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": ".......................................................................................................................................................................................................MOCK-WS-7-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_7"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_7"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f06876380015f0tOkVEiRBTCb",
+      "time": {
+        "created": 1790739772984
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

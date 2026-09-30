@@ -1,0 +1,14 @@
+{
+  "scenario": "fault-close-1009",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 1300,
+  "sessions": 1,
+  "lines": {
+    "mock": 9,
+    "proxy": 17,
+    "plugin": 6,
+    "observer": 14,
+    "harness": 6
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "ses_f0f9dd974ffehfZUHIVg3L1PbQ": [
+    {
+      "id": "msg_0f062279b0011sZuYbFTxgVDaZ",
+      "time": {
+        "created": 1790739359878
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f06228900014h8WQ4bJcw7o9o",
+      "time": {
+        "created": 1790739359971,
+        "streamed": 1790739359985,
+        "completed": 1790739360013
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-2-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_2"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f062290f001GlDvAloDDgOZhw",
+      "time": {
+        "created": 1790739360015
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0622913001EFN9AkKwJHPNwD",
+      "time": {
+        "created": 1790739360026
+      },
+      "text": "Say it again.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f062291e001Md1uCai31JA2g1",
+      "time": {
+        "created": 1790739360064,
+        "streamed": 1790739360076,
+        "completed": 1790739360105
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-3-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_3"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_3"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f062296b001h5WaqJJLSW4cYr",
+      "time": {
+        "created": 1790739360107
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

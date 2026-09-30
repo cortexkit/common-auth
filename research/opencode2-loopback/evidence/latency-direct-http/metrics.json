@@ -1,0 +1,97 @@
+{
+  "clockOffsetsMs": {
+    "node": {
+      "n": 47,
+      "min": -1.2,
+      "median": -0.6,
+      "max": -0.2
+    },
+    "host": {
+      "n": 37,
+      "min": 0,
+      "median": 0.3,
+      "max": 1
+    }
+  },
+  "aborts": {
+    "samples": []
+  },
+  "latency": {
+    "requests": [
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:4",
+        "turnMs": 660.6,
+        "upstreamStreamMs": 251.8,
+        "hostStreamMs": 251.4,
+        "requestToUpstreamWallMs": 1
+      },
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:9",
+        "turnMs": 325.4,
+        "upstreamStreamMs": 252.9,
+        "hostStreamMs": 252.6,
+        "requestToUpstreamWallMs": 0
+      },
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:14",
+        "turnMs": 334.1,
+        "upstreamStreamMs": 252.8,
+        "hostStreamMs": 252.5,
+        "requestToUpstreamWallMs": 0
+      },
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:19",
+        "turnMs": 313,
+        "upstreamStreamMs": 251,
+        "hostStreamMs": 250.7,
+        "requestToUpstreamWallMs": 1
+      },
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:24",
+        "turnMs": 311.3,
+        "upstreamStreamMs": 251.5,
+        "hostStreamMs": 251.1,
+        "requestToUpstreamWallMs": 1
+      },
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:29",
+        "turnMs": 324.7,
+        "upstreamStreamMs": 253,
+        "hostStreamMs": 252.7,
+        "requestToUpstreamWallMs": 1
+      }
+    ],
+    "summary": {
+      "turnMs": {
+        "n": 6,
+        "min": 311.3,
+        "median": 325.4,
+        "max": 660.6
+      },
+      "upstreamStreamMs": {
+        "n": 6,
+        "min": 251,
+        "median": 252.8,
+        "max": 253
+      },
+      "hostStreamMs": {
+        "n": 6,
+        "min": 250.7,
+        "median": 252.5,
+        "max": 252.7
+      },
+      "requestToUpstreamWallMs": {
+        "n": 6,
+        "min": 0,
+        "median": 1,
+        "max": 1
+      }
+    }
+  }
+}

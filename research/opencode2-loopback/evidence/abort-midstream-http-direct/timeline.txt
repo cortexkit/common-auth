@@ -1,0 +1,92 @@
++     0 ms  harness.jsonl:1            event=api method=POST path=/api/session status=200 started=1790739466508.84 ms=32.1
++   282 ms  proxy.jsonl:1              side=proxy ev=listening url=http://127.0.0.1:50314 runtime=bun 1.4.2 plan=["A"] switchMode=expand fault=
++   283 ms  plugin.jsonl:1             event=setup point=none proxy=http://127.0.0.1:50314
++   341 ms  harness.jsonl:2            event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/prompt status=200 started=1790739466541.1 ms=340.8
++   358 ms  plugin.jsonl:2             event=model.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:50112/v1 baseURLAfter=http://127.0.0.1:50112/v1
++   359 ms  plugin.jsonl:3             event=model.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=title modelID=gpt-6-luna baseURLBefore=http://127.0.0.1:50112/v1 baseURLAfter=http://127.0.0.1:50112/v1
++   360 ms  observer.jsonl:1           event=http.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=title url=http://127.0.0.1:50112/v1/responses
++   360 ms  mock.jsonl:1               transport=http action=request request=1 method=POST url=/v1/responses kind=title identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"model":"gpt-6-luna","keys":["include","input","instructions","model","prompt_cache_key","reasoning","store","stream","text"],"input_items":1,"prompt_cache_key…
++   361 ms  mock.jsonl:2               transport=http action=headers-sent request=1
++   361 ms  mock.jsonl:3               transport=http action=completed request=1 frames=8
++   365 ms  observer.jsonl:2           event=http.response sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=title url=http://127.0.0.1:50112/v1/responses status=200
++   366 ms  observer.jsonl:3           event=http.body.first-chunk sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=title
++   366 ms  observer.jsonl:4           event=http.body.completed-seen sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=title chunks=1
++   410 ms  observer.jsonl:5           event=http.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses
++   411 ms  observer.jsonl:6           event=http.response sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses status=200
++   411 ms  observer.jsonl:7           event=http.body.first-chunk sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary
++   411 ms  mock.jsonl:4               transport=http action=request request=2 method=POST url=/v1/responses kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":1,"prompt_cache_key":"ses_f0f9…
++   411 ms  mock.jsonl:5               transport=http action=plan request=2 plan={"slow":60,"every":100}
++   411 ms  mock.jsonl:6               transport=http action=headers-sent request=2
++   411 ms  mock.jsonl:7               transport=http action=first-delta-sent request=2
++   713 ms  harness.jsonl:3            event=interrupt-sent sid=ses_f0f9c36f1ffekk7zRUBJDETcLX
++   716 ms  harness.jsonl:4            event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/interrupt status=200 started=1790739467254.056 ms=2.7
++   716 ms  mock.jsonl:8               transport=http action=client-closed-early request=2 writableEnded=false
++   743 ms  harness.jsonl:5            event=api method=POST path=/api/experimental/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/wait status=204 started=1790739467256.8 ms=26.9
++   817 ms  mock.jsonl:9               transport=http action=stopped-streaming request=2 sent=7 total=67
++  2645 ms  harness.jsonl:6            event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/prompt status=200 started=1790739468285.493 ms=900.3
++  2654 ms  plugin.jsonl:4             event=model.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:50112/v1 baseURLAfter=http://127.0.0.1:50112/v1
++  2677 ms  observer.jsonl:8           event=http.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses
++  2678 ms  observer.jsonl:9           event=http.response sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses status=200
++  2678 ms  observer.jsonl:10          event=http.body.first-chunk sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary
++  2678 ms  mock.jsonl:10              transport=http action=request request=3 method=POST url=/v1/responses kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":3,"prompt_cache_key":"ses_f0f9…
++  2678 ms  mock.jsonl:11              transport=http action=plan request=3 plan={"slow":60,"every":100}
++  2678 ms  mock.jsonl:12              transport=http action=headers-sent request=3
++  2678 ms  mock.jsonl:13              transport=http action=first-delta-sent request=3
++  2979 ms  harness.jsonl:7            event=interrupt-sent sid=ses_f0f9c36f1ffekk7zRUBJDETcLX
++  2985 ms  harness.jsonl:8            event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/interrupt status=200 started=1790739469520.632 ms=5.6
++  2986 ms  mock.jsonl:14              transport=http action=client-closed-early request=3 writableEnded=false
++  3012 ms  harness.jsonl:9            event=api method=POST path=/api/experimental/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/wait status=204 started=1790739469526.358 ms=27
++  3084 ms  mock.jsonl:15              transport=http action=stopped-streaming request=3 sent=7 total=67
++  5994 ms  harness.jsonl:10           event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/prompt status=200 started=1790739470555.904 ms=1978.7
++  6002 ms  plugin.jsonl:5             event=model.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:50112/v1 baseURLAfter=http://127.0.0.1:50112/v1
++  6025 ms  observer.jsonl:11          event=http.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses
++  6026 ms  mock.jsonl:16              transport=http action=request request=4 method=POST url=/v1/responses kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":5,"prompt_cache_key":"ses_f0f9…
++  6026 ms  mock.jsonl:17              transport=http action=plan request=4 plan={"slow":60,"every":100}
++  6026 ms  mock.jsonl:18              transport=http action=headers-sent request=4
++  6027 ms  observer.jsonl:12          event=http.response sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses status=200
++  6027 ms  observer.jsonl:13          event=http.body.first-chunk sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary
++  6027 ms  mock.jsonl:19              transport=http action=first-delta-sent request=4
++  6329 ms  harness.jsonl:11           event=interrupt-sent sid=ses_f0f9c36f1ffekk7zRUBJDETcLX
++  6332 ms  harness.jsonl:12           event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/interrupt status=200 started=1790739472870.116 ms=3
++  6333 ms  mock.jsonl:20              transport=http action=client-closed-early request=4 writableEnded=false
++  6362 ms  harness.jsonl:13           event=api method=POST path=/api/experimental/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/wait status=204 started=1790739472873.213 ms=30
++  6432 ms  mock.jsonl:21              transport=http action=stopped-streaming request=4 sent=7 total=67
++  8131 ms  harness.jsonl:14           event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/prompt status=200 started=1790739473905.97 ms=766.2
++  8140 ms  plugin.jsonl:6             event=model.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:50112/v1 baseURLAfter=http://127.0.0.1:50112/v1
++  8167 ms  observer.jsonl:14          event=http.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses
++  8173 ms  mock.jsonl:22              transport=http action=request request=5 method=POST url=/v1/responses kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":7,"prompt_cache_key":"ses_f0f9…
++  8174 ms  observer.jsonl:15          event=http.response sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses status=200
++  8174 ms  mock.jsonl:23              transport=http action=plan request=5 plan={"slow":60,"every":100}
++  8174 ms  mock.jsonl:24              transport=http action=headers-sent request=5
++  8174 ms  mock.jsonl:25              transport=http action=first-delta-sent request=5
++  8175 ms  observer.jsonl:16          event=http.body.first-chunk sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary
++  8474 ms  harness.jsonl:15           event=interrupt-sent sid=ses_f0f9c36f1ffekk7zRUBJDETcLX
++  8483 ms  harness.jsonl:16           event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/interrupt status=200 started=1790739475015.406 ms=8.7
++  8484 ms  mock.jsonl:26              transport=http action=client-closed-early request=5 writableEnded=false
++  8539 ms  harness.jsonl:17           event=api method=POST path=/api/experimental/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/wait status=204 started=1790739475024.313 ms=56.1
++  8588 ms  mock.jsonl:27              transport=http action=stopped-streaming request=5 sent=7 total=67
++  9954 ms  harness.jsonl:18           event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/prompt status=200 started=1790739476082.706 ms=411.9
++  9962 ms  plugin.jsonl:7             event=model.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:50112/v1 baseURLAfter=http://127.0.0.1:50112/v1
++ 10017 ms  observer.jsonl:17          event=http.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses
++ 10018 ms  mock.jsonl:28              transport=http action=request request=6 method=POST url=/v1/responses kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":9,"prompt_cache_key":"ses_f0f9…
++ 10018 ms  mock.jsonl:29              transport=http action=plan request=6 plan={"slow":60,"every":100}
++ 10018 ms  mock.jsonl:30              transport=http action=headers-sent request=6
++ 10018 ms  mock.jsonl:31              transport=http action=first-delta-sent request=6
++ 10019 ms  observer.jsonl:18          event=http.response sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses status=200
++ 10019 ms  observer.jsonl:19          event=http.body.first-chunk sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary
++ 10321 ms  harness.jsonl:19           event=interrupt-sent sid=ses_f0f9c36f1ffekk7zRUBJDETcLX
++ 10323 ms  harness.jsonl:20           event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/interrupt status=200 started=1790739476862.309 ms=1.8
++ 10324 ms  mock.jsonl:32              transport=http action=client-closed-early request=6 writableEnded=false
++ 10361 ms  harness.jsonl:21           event=api method=POST path=/api/experimental/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/wait status=204 started=1790739476864.233 ms=37.7
++ 10423 ms  mock.jsonl:33              transport=http action=stopped-streaming request=6 sent=7 total=67
++ 11489 ms  harness.jsonl:22           event=api method=POST path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/prompt status=200 started=1790739477904.215 ms=125.6
++ 11500 ms  plugin.jsonl:8             event=model.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:50112/v1 baseURLAfter=http://127.0.0.1:50112/v1
++ 11536 ms  observer.jsonl:20          event=http.request sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses
++ 11537 ms  mock.jsonl:34              transport=http action=request request=7 method=POST url=/v1/responses kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":11,"prompt_cache_key":"ses_f0f…
++ 11538 ms  observer.jsonl:21          event=http.response sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary url=http://127.0.0.1:50112/v1/responses status=200
++ 11538 ms  observer.jsonl:22          event=http.body.first-chunk sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary
++ 11538 ms  mock.jsonl:35              transport=http action=headers-sent request=7
++ 11538 ms  mock.jsonl:36              transport=http action=completed request=7 frames=8
++ 11539 ms  observer.jsonl:23          event=http.body.completed-seen sessionID=ses_f0f9c36f1ffekk7zRUBJDETcLX kind=primary chunks=1
++ 11620 ms  harness.jsonl:23           event=api method=POST path=/api/experimental/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/wait status=204 started=1790739478029.92 ms=130.7
++ 12470 ms  harness.jsonl:24           event=api method=GET path=/api/session/ses_f0f9c36f1ffekk7zRUBJDETcLX/message?limit=50&order=asc status=200 started=1790739478662.401 ms=348.7

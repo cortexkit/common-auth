@@ -1,0 +1,14 @@
+{
+  "scenario": "switch-passthrough-ws",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 1541,
+  "sessions": 1,
+  "lines": {
+    "mock": 15,
+    "proxy": 44,
+    "plugin": 7,
+    "observer": 29,
+    "harness": 6
+  }
+}

@@ -1,0 +1,122 @@
++     0 ms  harness.jsonl:1            event=api method=POST path=/api/session status=200 started=1790739770662.671 ms=29.7
++   247 ms  plugin.jsonl:1             event=setup point=none proxy=http://127.0.0.1:57752
++   247 ms  proxy.jsonl:1              side=proxy ev=listening url=http://127.0.0.1:57752 runtime=bun 1.4.2 plan=["A"] switchMode=expand fault=
++   312 ms  harness.jsonl:2            event=api method=POST path=/api/session/ses_f0f9792d6ffepZ4j04vp52cfRq/prompt status=200 started=1790739770692.518 ms=311.4
++   336 ms  plugin.jsonl:2             event=model.request sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:57736/v1 baseURLAfter=http://127.0.0.1:57736/v1
++   337 ms  plugin.jsonl:3             event=model.request sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=title modelID=gpt-6-luna baseURLBefore=http://127.0.0.1:57736/v1 baseURLAfter=http://127.0.0.1:57736/v1
++   338 ms  observer.jsonl:1           event=http.request sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=title url=http://127.0.0.1:57736/v1/responses
++   339 ms  mock.jsonl:1               transport=http action=request request=1 method=POST url=/v1/responses kind=title identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"model":"gpt-6-luna","keys":["include","input","instructions","model","prompt_cache_key","reasoning","store","stream","text"],"input_items":1,"prompt_cache_key…
++   339 ms  mock.jsonl:2               transport=http action=headers-sent request=1
++   339 ms  mock.jsonl:3               transport=http action=completed request=1 frames=8
++   340 ms  observer.jsonl:2           event=http.response sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=title url=http://127.0.0.1:57736/v1/responses status=200
++   340 ms  observer.jsonl:3           event=http.body.first-chunk sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=title
++   340 ms  observer.jsonl:4           event=http.body.completed-seen sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=title chunks=1
++   395 ms  observer.jsonl:5           event=ws.handshake sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary url=ws://127.0.0.1:57736/v1/responses
++   396 ms  observer.jsonl:6           event=ws.send sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.create input_items=1
++   396 ms  mock.jsonl:4               transport=ws action=handshake connection=1 url=/v1/responses identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null}
++   397 ms  observer.jsonl:7           event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=codex.rate_limits
++   397 ms  observer.jsonl:8           event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.created
++   397 ms  observer.jsonl:9           event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.added
++   397 ms  mock.jsonl:5               transport=ws action=frame-in connection=1 request=2 kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} body={"type":"response.create","model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","tools","type"],"input_items":1,"prom…
++   397 ms  mock.jsonl:6               transport=ws action=plan connection=1 request=2 plan={"slow":200,"every":0}
++   397 ms  mock.jsonl:7               transport=ws action=first-delta-sent connection=1 request=2
++   398 ms  observer.jsonl:10          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.added
++   398 ms  observer.jsonl:11          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.delta
++   654 ms  observer.jsonl:12          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.done
++   655 ms  observer.jsonl:13          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.done
++   655 ms  observer.jsonl:14          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.done
++   655 ms  mock.jsonl:8               transport=ws action=completed connection=1 request=2 frames=207
++   659 ms  observer.jsonl:15          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.completed
++   695 ms  harness.jsonl:3            event=api method=POST path=/api/experimental/session/ses_f0f9792d6ffepZ4j04vp52cfRq/wait status=204 started=1790739771004.089 ms=383.2
++   698 ms  harness.jsonl:4            event=api method=POST path=/api/session/ses_f0f9792d6ffepZ4j04vp52cfRq/prompt status=200 started=1790739771387.383 ms=2.9
++   711 ms  plugin.jsonl:4             event=model.request sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:57736/v1 baseURLAfter=http://127.0.0.1:57736/v1
++   739 ms  observer.jsonl:16          event=ws.handshake sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary url=ws://127.0.0.1:57736/v1/responses
++   741 ms  observer.jsonl:17          event=ws.send sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.create previous_response_id=resp_ws_c1_2 input_items=1
++   742 ms  observer.jsonl:18          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=codex.rate_limits
++   742 ms  observer.jsonl:19          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.created
++   742 ms  mock.jsonl:9               transport=ws action=frame-in connection=1 request=3 kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} previousKnownOnConnection=true body={"type":"response.create","model":"mock-model","keys":["include","input","instructions","model","previous_response_id","prompt_cache_key","store","tools","type"…
++   742 ms  mock.jsonl:10              transport=ws action=plan connection=1 request=3 plan={"slow":200,"every":0}
++   742 ms  mock.jsonl:11              transport=ws action=first-delta-sent connection=1 request=3
++   743 ms  observer.jsonl:20          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.added
++   743 ms  observer.jsonl:21          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.added
++   743 ms  observer.jsonl:22          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.delta
++  1005 ms  observer.jsonl:23          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.done
++  1005 ms  observer.jsonl:24          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.done
++  1005 ms  mock.jsonl:12              transport=ws action=completed connection=1 request=3 frames=207
++  1006 ms  observer.jsonl:25          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.done
++  1007 ms  observer.jsonl:26          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.completed
++  1031 ms  harness.jsonl:5            event=api method=POST path=/api/experimental/session/ses_f0f9792d6ffepZ4j04vp52cfRq/wait status=204 started=1790739771390.41 ms=332.9
++  1034 ms  harness.jsonl:6            event=api method=POST path=/api/session/ses_f0f9792d6ffepZ4j04vp52cfRq/prompt status=200 started=1790739771723.469 ms=2.6
++  1044 ms  plugin.jsonl:5             event=model.request sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:57736/v1 baseURLAfter=http://127.0.0.1:57736/v1
++  1065 ms  observer.jsonl:27          event=ws.handshake sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary url=ws://127.0.0.1:57736/v1/responses
++  1067 ms  observer.jsonl:28          event=ws.send sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.create previous_response_id=resp_ws_c1_3 input_items=1
++  1067 ms  observer.jsonl:29          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=codex.rate_limits
++  1067 ms  mock.jsonl:13              transport=ws action=frame-in connection=1 request=4 kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} previousKnownOnConnection=true body={"type":"response.create","model":"mock-model","keys":["include","input","instructions","model","previous_response_id","prompt_cache_key","store","tools","type"…
++  1067 ms  mock.jsonl:14              transport=ws action=plan connection=1 request=4 plan={"slow":200,"every":0}
++  1067 ms  mock.jsonl:15              transport=ws action=first-delta-sent connection=1 request=4
++  1068 ms  observer.jsonl:30          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.created
++  1068 ms  observer.jsonl:31          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.added
++  1068 ms  observer.jsonl:32          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.added
++  1068 ms  observer.jsonl:33          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.delta
++  1326 ms  observer.jsonl:34          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.done
++  1326 ms  observer.jsonl:35          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.done
++  1326 ms  observer.jsonl:36          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.done
++  1326 ms  mock.jsonl:16              transport=ws action=completed connection=1 request=4 frames=207
++  1327 ms  observer.jsonl:37          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.completed
++  1350 ms  harness.jsonl:7            event=api method=POST path=/api/experimental/session/ses_f0f9792d6ffepZ4j04vp52cfRq/wait status=204 started=1790739771726.155 ms=315.9
++  1352 ms  harness.jsonl:8            event=api method=POST path=/api/session/ses_f0f9792d6ffepZ4j04vp52cfRq/prompt status=200 started=1790739772042.188 ms=1.7
++  1358 ms  plugin.jsonl:6             event=model.request sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:57736/v1 baseURLAfter=http://127.0.0.1:57736/v1
++  1384 ms  observer.jsonl:38          event=ws.handshake sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary url=ws://127.0.0.1:57736/v1/responses
++  1385 ms  observer.jsonl:39          event=ws.send sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.create previous_response_id=resp_ws_c1_4 input_items=1
++  1386 ms  observer.jsonl:40          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=codex.rate_limits
++  1386 ms  observer.jsonl:41          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.created
++  1386 ms  observer.jsonl:42          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.added
++  1386 ms  mock.jsonl:17              transport=ws action=frame-in connection=1 request=5 kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} previousKnownOnConnection=true body={"type":"response.create","model":"mock-model","keys":["include","input","instructions","model","previous_response_id","prompt_cache_key","store","tools","type"…
++  1386 ms  mock.jsonl:18              transport=ws action=plan connection=1 request=5 plan={"slow":200,"every":0}
++  1386 ms  mock.jsonl:19              transport=ws action=first-delta-sent connection=1 request=5
++  1387 ms  observer.jsonl:43          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.added
++  1387 ms  observer.jsonl:44          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.delta
++  1641 ms  observer.jsonl:45          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.done
++  1641 ms  observer.jsonl:46          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.done
++  1641 ms  mock.jsonl:20              transport=ws action=completed connection=1 request=5 frames=207
++  1642 ms  observer.jsonl:47          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.done
++  1643 ms  observer.jsonl:48          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.completed
++  1667 ms  harness.jsonl:9            event=api method=POST path=/api/experimental/session/ses_f0f9792d6ffepZ4j04vp52cfRq/wait status=204 started=1790739772043.993 ms=315.1
++  1669 ms  harness.jsonl:10           event=api method=POST path=/api/session/ses_f0f9792d6ffepZ4j04vp52cfRq/prompt status=200 started=1790739772359.253 ms=2.1
++  1677 ms  plugin.jsonl:7             event=model.request sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:57736/v1 baseURLAfter=http://127.0.0.1:57736/v1
++  1698 ms  observer.jsonl:49          event=ws.handshake sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary url=ws://127.0.0.1:57736/v1/responses
++  1700 ms  observer.jsonl:50          event=ws.send sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.create previous_response_id=resp_ws_c1_5 input_items=1
++  1700 ms  mock.jsonl:21              transport=ws action=frame-in connection=1 request=6 kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} previousKnownOnConnection=true body={"type":"response.create","model":"mock-model","keys":["include","input","instructions","model","previous_response_id","prompt_cache_key","store","tools","type"…
++  1701 ms  observer.jsonl:51          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=codex.rate_limits
++  1701 ms  observer.jsonl:52          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.created
++  1701 ms  observer.jsonl:53          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.added
++  1701 ms  observer.jsonl:54          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.added
++  1701 ms  observer.jsonl:55          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.delta
++  1701 ms  mock.jsonl:22              transport=ws action=plan connection=1 request=6 plan={"slow":200,"every":0}
++  1701 ms  mock.jsonl:23              transport=ws action=first-delta-sent connection=1 request=6
++  1954 ms  observer.jsonl:56          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.done
++  1954 ms  observer.jsonl:57          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.done
++  1954 ms  observer.jsonl:58          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.done
++  1954 ms  mock.jsonl:24              transport=ws action=completed connection=1 request=6 frames=207
++  1955 ms  observer.jsonl:59          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.completed
++  1979 ms  harness.jsonl:11           event=api method=POST path=/api/experimental/session/ses_f0f9792d6ffepZ4j04vp52cfRq/wait status=204 started=1790739772361.45 ms=309.9
++  1982 ms  harness.jsonl:12           event=api method=POST path=/api/session/ses_f0f9792d6ffepZ4j04vp52cfRq/prompt status=200 started=1790739772671.49 ms=2.4
++  1989 ms  plugin.jsonl:8             event=model.request sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:57736/v1 baseURLAfter=http://127.0.0.1:57736/v1
++  2012 ms  observer.jsonl:60          event=ws.handshake sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary url=ws://127.0.0.1:57736/v1/responses
++  2013 ms  observer.jsonl:61          event=ws.send sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.create previous_response_id=resp_ws_c1_6 input_items=1
++  2013 ms  mock.jsonl:25              transport=ws action=frame-in connection=1 request=7 kind=primary identity={"account":"none","token":"sk-mock-not-a-real-key","accountHeader":null} previousKnownOnConnection=true body={"type":"response.create","model":"mock-model","keys":["include","input","instructions","model","previous_response_id","prompt_cache_key","store","tools","type"…
++  2014 ms  observer.jsonl:62          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=codex.rate_limits
++  2014 ms  observer.jsonl:63          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.created
++  2014 ms  observer.jsonl:64          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.added
++  2014 ms  observer.jsonl:65          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.added
++  2014 ms  observer.jsonl:66          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.delta
++  2014 ms  mock.jsonl:26              transport=ws action=plan connection=1 request=7 plan={"slow":200,"every":0}
++  2014 ms  mock.jsonl:27              transport=ws action=first-delta-sent connection=1 request=7
++  2266 ms  observer.jsonl:67          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_text.done
++  2266 ms  observer.jsonl:68          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.content_part.done
++  2266 ms  observer.jsonl:69          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.output_item.done
++  2266 ms  mock.jsonl:28              transport=ws action=completed connection=1 request=7 frames=207
++  2268 ms  observer.jsonl:70          event=ws.receive sessionID=ses_f0f9792d6ffepZ4j04vp52cfRq kind=primary type=response.completed
++  2291 ms  harness.jsonl:13           event=api method=POST path=/api/experimental/session/ses_f0f9792d6ffepZ4j04vp52cfRq/wait status=204 started=1790739772673.96 ms=309.8
++  2995 ms  harness.jsonl:14           event=api method=GET path=/api/session/ses_f0f9792d6ffepZ4j04vp52cfRq/message?limit=50&order=asc status=200 started=1790739773483.388 ms=203.8
++  3005 ms  mock.jsonl:29              transport=ws action=closed connection=1 code=1000 reason= busy=false

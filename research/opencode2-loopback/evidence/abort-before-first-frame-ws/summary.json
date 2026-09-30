@@ -1,0 +1,14 @@
+{
+  "scenario": "abort-before-first-frame-ws",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 18792,
+  "sessions": 1,
+  "lines": {
+    "mock": 31,
+    "proxy": 56,
+    "plugin": 10,
+    "observer": 25,
+    "harness": 24
+  }
+}

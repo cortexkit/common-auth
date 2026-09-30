@@ -1,0 +1,49 @@
+{
+  "ses_f0f9bc402ffeVuZLj6l6Y0rav5": [
+    {
+      "id": "msg_0f0643cc3001zUDWzSy5uVhz8t",
+      "time": {
+        "created": 1790739496290
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0643d68001uteOqq8dy1x8Gk",
+      "time": {
+        "created": 1790739496352,
+        "completed": 1790739496382
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "provider.invalid-request",
+        "message": "mock: bad request body",
+        "status": 400,
+        "response": {
+          "body": "{\"error\":{\"type\":\"invalid_request_error\",\"code\":\"mock_bad_request\",\"message\":\"mock: bad request body\",\"param\":\"input\"}}"
+        }
+      }
+    },
+    {
+      "id": "msg_0f0643dc3001bYYEaMyUSsRxpm",
+      "time": {
+        "created": 1790739496387
+      },
+      "type": "idle",
+      "outcome": "failed"
+    }
+  ]
+}

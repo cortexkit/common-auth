@@ -1,0 +1,14 @@
+{
+  "scenario": "latency-proxy-ws",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 3061,
+  "sessions": 1,
+  "lines": {
+    "mock": 29,
+    "proxy": 65,
+    "plugin": 10,
+    "observer": 70,
+    "harness": 14
+  }
+}

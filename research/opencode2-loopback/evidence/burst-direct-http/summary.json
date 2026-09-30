@@ -1,0 +1,14 @@
+{
+  "scenario": "burst-direct-http",
+  "point": "none",
+  "transport": "http",
+  "ms": 4295,
+  "sessions": 1,
+  "lines": {
+    "mock": 23,
+    "proxy": 1,
+    "plugin": 6,
+    "observer": 20,
+    "harness": 10
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "scenario": "burst-proxy-ws",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 1689,
+  "sessions": 1,
+  "lines": {
+    "mock": 21,
+    "proxy": 47,
+    "plugin": 8,
+    "observer": 48,
+    "harness": 10
+  }
+}

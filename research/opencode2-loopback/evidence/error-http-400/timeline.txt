@@ -1,0 +1,31 @@
++     0 ms  harness.jsonl:1            event=api method=POST path=/api/session status=200 started=1790739495931.99 ms=34.1
++   247 ms  plugin.jsonl:1             event=setup point=provider-transform proxy=http://127.0.0.1:51209
++   247 ms  proxy.jsonl:1              side=proxy ev=listening url=http://127.0.0.1:51209 runtime=bun 1.4.2 plan=["A"] switchMode=expand fault=
++   257 ms  plugin.jsonl:2             event=provider.transform found=true after=http://127.0.0.1:51209/v1 transport=websocket package=@opencode/ai/providers/openai
++   266 ms  plugin.jsonl:3             event=provider.transform found=true after=http://127.0.0.1:51209/v1 transport=websocket package=@opencode/ai/providers/openai
++   314 ms  harness.jsonl:2            event=api method=POST path=/api/session/ses_f0f9bc402ffeVuZLj6l6Y0rav5/prompt status=200 started=1790739495966.281 ms=313.7
++   334 ms  plugin.jsonl:4             event=model.request sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:51209/v1 baseURLAfter=http://127.0.0.1:51209/v1
++   335 ms  plugin.jsonl:5             event=model.request sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 kind=title modelID=gpt-6-luna baseURLBefore=http://127.0.0.1:51209/v1 baseURLAfter=http://127.0.0.1:51209/v1
++   336 ms  observer.jsonl:1           event=http.request sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 kind=title url=http://127.0.0.1:51209/v1/responses
++   343 ms  proxy.jsonl:2              side=host transport=http ev=request id=1 method=POST url=/v1/responses kindFromBody=title session={"x-opencode-session":"ses_f0f9bc402ffeVuZLj6l6Y0rav5","x-session-id":"ses_f0f9bc402ffeVuZLj6l6Y0rav5","x-session-affinity":"ses_f0f9bc402ffeVuZLj6l6Y0rav5","se… account=A bytes=2535 input_items=1
++   345 ms  proxy.jsonl:3              side=upstream transport=http ev=response-headers id=1 status=200
++   345 ms  proxy.jsonl:4              side=upstream transport=http ev=response-end id=1 chunks=8
++   345 ms  mock.jsonl:1               transport=http action=request request=1 method=POST url=/v1/responses kind=title identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} viaProxy=1 body={"model":"gpt-6-luna","keys":["include","input","instructions","model","prompt_cache_key","reasoning","store","stream","text"],"input_items":1,"prompt_cache_key…
++   345 ms  mock.jsonl:2               transport=http action=headers-sent request=1
++   345 ms  mock.jsonl:3               transport=http action=completed request=1 frames=8
++   346 ms  observer.jsonl:2           event=http.response sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 kind=title url=http://127.0.0.1:51209/v1/responses status=200
++   346 ms  observer.jsonl:3           event=http.body.first-chunk sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 kind=title
++   346 ms  proxy.jsonl:5              side=upstream transport=http ev=upstream-closed id=1
++   347 ms  observer.jsonl:4           event=http.body.completed-seen sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 kind=title chunks=1
++   387 ms  observer.jsonl:5           event=http.request sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 kind=primary url=http://127.0.0.1:51209/v1/responses
++   390 ms  proxy.jsonl:6              side=host transport=http ev=request id=2 method=POST url=/v1/responses kindFromBody=primary session={"x-opencode-session":"ses_f0f9bc402ffeVuZLj6l6Y0rav5","x-session-id":"ses_f0f9bc402ffeVuZLj6l6Y0rav5","x-session-affinity":"ses_f0f9bc402ffeVuZLj6l6Y0rav5","se… account=A bytes=25951 input_items=1
++   391 ms  proxy.jsonl:7              side=upstream transport=http ev=response-headers id=2 status=400
++   391 ms  proxy.jsonl:8              side=upstream transport=http ev=response-end id=2 chunks=1
++   391 ms  proxy.jsonl:9              side=upstream transport=http ev=upstream-closed id=2
++   391 ms  mock.jsonl:4               transport=http action=request request=2 method=POST url=/v1/responses kind=primary identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} viaProxy=1 body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":1,"prompt_cache_key":"ses_f0f9…
++   391 ms  mock.jsonl:5               transport=http action=plan request=2 plan={"status":400}
++   391 ms  mock.jsonl:6               transport=http action=sent-400 request=2
++   392 ms  observer.jsonl:6           event=http.response sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 kind=primary url=http://127.0.0.1:51209/v1/responses status=400 body={"error":{"type":"invalid_request_error","code":"mock_bad_request","message":"mock: bad request body","param":"input"}} contentType=application/json
++   393 ms  observer.jsonl:7           event=retry sessionID=ses_f0f9bc402ffeVuZLj6l6Y0rav5 attempt=2 error={"type":"provider.invalid-request","message":"mock: bad request body","status":400,"response":{"body":"{\"error\":{\"type\":\"invalid_request_error\",\"code\":\… decision={"retry":false}
++   424 ms  harness.jsonl:3            event=api method=POST path=/api/experimental/session/ses_f0f9bc402ffeVuZLj6l6Y0rav5/wait status=204 started=1790739496280.13 ms=110.1
++   967 ms  harness.jsonl:4            event=api method=GET path=/api/session/ses_f0f9bc402ffeVuZLj6l6Y0rav5/message?limit=50&order=asc status=200 started=1790739496892.305 ms=40.5

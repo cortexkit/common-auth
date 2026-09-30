@@ -1,0 +1,86 @@
+{
+  "ses_f0f9b7439ffeyVpBjDoL7Kwo3U": [
+    {
+      "id": "msg_0f0648cbc001EP6U5M99Vb439h",
+      "time": {
+        "created": 1790739516796
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0648d84001vvYV1ysEltxUTy",
+      "time": {
+        "created": 1790739599824,
+        "completed": 1790739599844
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "provider.transport",
+        "message": "ConnectionRefused: Unable to connect. Is the computer able to access the url?"
+      }
+    },
+    {
+      "id": "msg_0f065d1e5001ZA1A78y8EjEIui",
+      "time": {
+        "created": 1790739599845
+      },
+      "type": "idle",
+      "outcome": "failed"
+    },
+    {
+      "id": "msg_0f065d1e8001BTvw13xF6Vg4xu",
+      "time": {
+        "created": 1790739599852
+      },
+      "text": "Say it again.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f065d1ef001ggOJ8VOJK4lltJ",
+      "time": {
+        "created": 1790739683148,
+        "completed": 1790739683175
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "provider.transport",
+        "message": "ConnectionRefused: Unable to connect. Is the computer able to access the url?"
+      }
+    },
+    {
+      "id": "msg_0f0671769001D3pQVRZAzA1Uya",
+      "time": {
+        "created": 1790739683177
+      },
+      "type": "idle",
+      "outcome": "failed"
+    }
+  ]
+}

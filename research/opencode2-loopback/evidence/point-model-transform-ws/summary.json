@@ -1,0 +1,14 @@
+{
+  "scenario": "point-model-transform-ws",
+  "point": "model-transform",
+  "transport": "websocket (host default)",
+  "ms": 1669,
+  "sessions": 1,
+  "lines": {
+    "mock": 18,
+    "proxy": 43,
+    "plugin": 64,
+    "observer": 38,
+    "harness": 9
+  }
+}

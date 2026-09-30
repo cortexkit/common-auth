@@ -1,0 +1,12 @@
+{"t":1790739370371.103,"wall":1790739370371,"plugin":"observer","event":"http.request","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"title","url":"http://127.0.0.1:49627/v1/responses"}
+{"t":1790739370382.491,"wall":1790739370382,"plugin":"observer","event":"http.response","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"title","url":"http://127.0.0.1:49627/v1/responses","status":200}
+{"t":1790739370383.775,"wall":1790739370383,"plugin":"observer","event":"http.body.first-chunk","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"title"}
+{"t":1790739370383.945,"wall":1790739370383,"plugin":"observer","event":"http.body.completed-seen","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"title","chunks":1}
+{"t":1790739370465.445,"wall":1790739370465,"plugin":"observer","event":"http.request","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"primary","url":"http://127.0.0.1:49627/v1/responses"}
+{"t":1790739370469.298,"wall":1790739370469,"plugin":"observer","event":"http.response","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"primary","url":"http://127.0.0.1:49627/v1/responses","status":200}
+{"t":1790739370469.801,"wall":1790739370469,"plugin":"observer","event":"http.body.first-chunk","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"primary"}
+{"t":1790739370469.929,"wall":1790739370469,"plugin":"observer","event":"http.body.completed-seen","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"primary","chunks":1}
+{"t":1790739370613.504,"wall":1790739370613,"plugin":"observer","event":"http.request","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"primary","url":"http://127.0.0.1:49627/v1/responses"}
+{"t":1790739370617.554,"wall":1790739370617,"plugin":"observer","event":"http.response","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"primary","url":"http://127.0.0.1:49627/v1/responses","status":200}
+{"t":1790739370618.092,"wall":1790739370618,"plugin":"observer","event":"http.body.first-chunk","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"primary"}
+{"t":1790739370618.198,"wall":1790739370618,"plugin":"observer","event":"http.body.completed-seen","sessionID":"ses_f0f9db156ffeCMu7KhWTaP6RK4","kind":"primary","chunks":1}

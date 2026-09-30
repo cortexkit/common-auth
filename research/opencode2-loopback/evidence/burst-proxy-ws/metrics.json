@@ -1,0 +1,91 @@
+{
+  "clockOffsetsMs": {
+    "node": {
+      "n": 31,
+      "min": -1.1,
+      "median": -0.9,
+      "max": -0.3
+    },
+    "host": {
+      "n": 103,
+      "min": 0,
+      "median": 0.4,
+      "max": 1
+    }
+  },
+  "aborts": {
+    "samples": []
+  },
+  "latency": {
+    "requests": [
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:5",
+        "turnMs": 470.7,
+        "upstreamStreamMs": 13,
+        "hostStreamMs": 56.7,
+        "hostToProxyMs": 0.4,
+        "requestToUpstreamWallMs": 2
+      },
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:9",
+        "turnMs": 103,
+        "upstreamStreamMs": 13.3,
+        "hostStreamMs": 50,
+        "hostToProxyMs": 0.3,
+        "requestToUpstreamWallMs": 1
+      },
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:13",
+        "turnMs": 97.4,
+        "upstreamStreamMs": 12,
+        "hostStreamMs": 48,
+        "hostToProxyMs": 0.3,
+        "requestToUpstreamWallMs": 1
+      },
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:17",
+        "turnMs": 94.7,
+        "upstreamStreamMs": 11.7,
+        "hostStreamMs": 47.4,
+        "hostToProxyMs": 0.3,
+        "requestToUpstreamWallMs": 0
+      }
+    ],
+    "summary": {
+      "turnMs": {
+        "n": 4,
+        "min": 94.7,
+        "median": 103,
+        "max": 470.7
+      },
+      "upstreamStreamMs": {
+        "n": 4,
+        "min": 11.7,
+        "median": 13,
+        "max": 13.3
+      },
+      "hostStreamMs": {
+        "n": 4,
+        "min": 47.4,
+        "median": 50,
+        "max": 56.7
+      },
+      "hostToProxyMs": {
+        "n": 4,
+        "min": 0.3,
+        "median": 0.3,
+        "max": 0.4
+      },
+      "requestToUpstreamWallMs": {
+        "n": 4,
+        "min": 0,
+        "median": 1,
+        "max": 2
+      }
+    }
+  }
+}

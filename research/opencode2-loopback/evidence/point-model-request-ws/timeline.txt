@@ -1,0 +1,114 @@
++     0 ms  harness.jsonl:1            event=api method=POST path=/api/session status=200 started=1790739353368.395 ms=38.4
++   309 ms  plugin.jsonl:1             event=setup point=model-request proxy=http://127.0.0.1:49418
++   309 ms  proxy.jsonl:1              side=proxy ev=listening url=http://127.0.0.1:49418 runtime=bun 1.4.2 plan=["A"] switchMode=expand fault=
++   401 ms  harness.jsonl:2            event=api method=POST path=/api/session/ses_f0f9df0e6ffeqfP3cMJztu74r1/prompt status=200 started=1790739353407.034 ms=400.5
++   422 ms  plugin.jsonl:2             event=model.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:49409/v1 baseURLAfter=http://127.0.0.1:49418/v1
++   423 ms  plugin.jsonl:3             event=model.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=title modelID=gpt-6-luna baseURLBefore=http://127.0.0.1:49409/v1 baseURLAfter=http://127.0.0.1:49418/v1
++   424 ms  observer.jsonl:1           event=http.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=title url=http://127.0.0.1:49418/v1/responses
++   426 ms  proxy.jsonl:2              side=host transport=http ev=request id=1 method=POST url=/v1/responses kindFromBody=title session={"x-opencode-session":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-id":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-affinity":"ses_f0f9df0e6ffeqfP3cMJztu74r1","se… account=A bytes=2535 input_items=1
++   429 ms  proxy.jsonl:3              side=upstream transport=http ev=response-headers id=1 status=200
++   429 ms  mock.jsonl:1               transport=http action=request request=1 method=POST url=/v1/responses kind=title identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} viaProxy=1 body={"model":"gpt-6-luna","keys":["include","input","instructions","model","prompt_cache_key","reasoning","store","stream","text"],"input_items":1,"prompt_cache_key…
++   429 ms  mock.jsonl:2               transport=http action=headers-sent request=1
++   429 ms  mock.jsonl:3               transport=http action=completed request=1 frames=8
++   430 ms  observer.jsonl:2           event=http.response sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=title url=http://127.0.0.1:49418/v1/responses status=200
++   430 ms  proxy.jsonl:4              side=upstream transport=http ev=response-end id=1 chunks=8
++   430 ms  proxy.jsonl:5              side=upstream transport=http ev=upstream-closed id=1
++   431 ms  observer.jsonl:3           event=http.body.first-chunk sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=title
++   431 ms  observer.jsonl:4           event=http.body.completed-seen sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=title chunks=1
++   488 ms  observer.jsonl:5           event=ws.handshake sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary url=ws://127.0.0.1:49418/v1/responses
++   489 ms  observer.jsonl:6           event=ws.send sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.create input_items=1
++   489 ms  proxy.jsonl:6              side=host transport=ws ev=handshake conn=1 url=/v1/responses session={"x-opencode-session":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-id":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-affinity":"ses_f0f9df0e6ffeqfP3cMJztu74r1","se…
++   494 ms  proxy.jsonl:7              side=h2u transport=ws ev=response.create conn=1 kind=primary account=A input_items=1 prompt_cache_key=ses_f0f9df0e6ffeqfP3cMJztu74r1
++   495 ms  proxy.jsonl:8              side=upstream transport=ws ev=upstream-connecting conn=1 upstreamID=1.A.1790739353901 account=A
++   496 ms  proxy.jsonl:9              side=upstream transport=ws ev=upstream-open conn=1 upstreamID=1.A.1790739353901
++   496 ms  proxy.jsonl:10             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=codex.rate_limits
++   496 ms  proxy.jsonl:11             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.created response=resp_ws_c1_2
++   496 ms  proxy.jsonl:12             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.output_item.added
++   496 ms  mock.jsonl:4               transport=ws action=handshake connection=1 url=/v1/responses identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} viaProxy=1
++   496 ms  mock.jsonl:5               transport=ws action=frame-in connection=1 request=2 kind=primary identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} body={"type":"response.create","model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","tools","type"],"input_items":1,"prom…
++   496 ms  mock.jsonl:6               transport=ws action=completed connection=1 request=2 frames=8
++   497 ms  observer.jsonl:7           event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=codex.rate_limits
++   497 ms  observer.jsonl:8           event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.created
++   497 ms  observer.jsonl:9           event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.output_item.added
++   497 ms  proxy.jsonl:13             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.content_part.added
++   497 ms  proxy.jsonl:14             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.output_text.delta
++   497 ms  proxy.jsonl:15             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.output_text.done
++   497 ms  proxy.jsonl:16             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.content_part.done
++   497 ms  proxy.jsonl:17             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.output_item.done
++   497 ms  proxy.jsonl:18             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.completed response=resp_ws_c1_2
++   498 ms  observer.jsonl:10          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.content_part.added
++   498 ms  observer.jsonl:11          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.output_text.delta
++   501 ms  observer.jsonl:12          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.output_text.done
++   501 ms  observer.jsonl:13          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.content_part.done
++   501 ms  observer.jsonl:14          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.output_item.done
++   503 ms  observer.jsonl:15          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.completed
++   533 ms  harness.jsonl:3            event=api method=POST path=/api/experimental/session/ses_f0f9df0e6ffeqfP3cMJztu74r1/wait status=204 started=1790739353807.648 ms=131.4
++   536 ms  harness.jsonl:4            event=api method=POST path=/api/session/ses_f0f9df0e6ffeqfP3cMJztu74r1/prompt status=200 started=1790739353939.283 ms=2.9
++   545 ms  plugin.jsonl:4             event=model.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary modelID=mock-model baseURLBefore=http://127.0.0.1:49409/v1 baseURLAfter=http://127.0.0.1:49418/v1
++   571 ms  observer.jsonl:16          event=ws.handshake sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary url=ws://127.0.0.1:49418/v1/responses
++   573 ms  observer.jsonl:17          event=ws.send sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.create previous_response_id=resp_ws_c1_2 input_items=1
++   573 ms  proxy.jsonl:19             side=h2u transport=ws ev=response.create conn=1 kind=primary account=A previous_response_id=resp_ws_c1_2 input_items=1 prompt_cache_key=ses_f0f9df0e6ffeqfP3cMJztu74r1
++   574 ms  proxy.jsonl:20             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=codex.rate_limits
++   574 ms  proxy.jsonl:21             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.created response=resp_ws_c1_3
++   574 ms  proxy.jsonl:22             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.output_item.added
++   574 ms  proxy.jsonl:23             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.content_part.added
++   574 ms  proxy.jsonl:24             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.output_text.delta
++   574 ms  proxy.jsonl:25             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.output_text.done
++   574 ms  mock.jsonl:7               transport=ws action=frame-in connection=1 request=3 kind=primary identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} previousKnownOnConnection=true body={"type":"response.create","model":"mock-model","keys":["include","input","instructions","model","previous_response_id","prompt_cache_key","store","tools","type"…
++   574 ms  mock.jsonl:8               transport=ws action=completed connection=1 request=3 frames=8
++   575 ms  observer.jsonl:18          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=codex.rate_limits
++   575 ms  observer.jsonl:19          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.created
++   575 ms  observer.jsonl:20          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.output_item.added
++   575 ms  observer.jsonl:21          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.content_part.added
++   575 ms  observer.jsonl:22          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.output_text.delta
++   575 ms  proxy.jsonl:26             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.content_part.done
++   575 ms  proxy.jsonl:27             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.output_item.done
++   575 ms  proxy.jsonl:28             side=u2h transport=ws ev=frame conn=1 upstreamID=1.A.1790739353901 type=response.completed response=resp_ws_c1_3
++   577 ms  observer.jsonl:23          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.output_text.done
++   577 ms  observer.jsonl:24          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.content_part.done
++   577 ms  observer.jsonl:25          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.output_item.done
++   578 ms  observer.jsonl:26          event=ws.receive sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=primary type=response.completed
++   612 ms  harness.jsonl:5            event=api method=POST path=/api/experimental/session/ses_f0f9df0e6ffeqfP3cMJztu74r1/wait status=204 started=1790739353942.38 ms=76.1
++   619 ms  harness.jsonl:6            event=api method=POST path=/api/session/ses_f0f9df0e6ffeqfP3cMJztu74r1/compact status=200 started=1790739354021.827 ms=3.2
++   627 ms  plugin.jsonl:5             event=model.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction modelID=mock-model baseURLBefore=http://127.0.0.1:49409/v1 baseURLAfter=http://127.0.0.1:49418/v1
++   629 ms  observer.jsonl:27          event=http.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction url=http://127.0.0.1:49418/v1/responses
++   630 ms  proxy.jsonl:29             side=host transport=http ev=request id=2 method=POST url=/v1/responses kindFromBody=primary session={"x-opencode-session":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-id":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-affinity":"ses_f0f9df0e6ffeqfP3cMJztu74r1","se… account=A bytes=28990 input_items=3
++   630 ms  mock.jsonl:9               transport=http action=request request=4 method=POST url=/v1/responses kind=primary identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} viaProxy=1 body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":3,"prompt_cache_key":"ses_f0f9…
++   631 ms  observer.jsonl:28          event=http.response sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction url=http://127.0.0.1:49418/v1/responses status=200
++   631 ms  proxy.jsonl:30             side=upstream transport=http ev=response-headers id=2 status=200
++   631 ms  proxy.jsonl:31             side=upstream transport=http ev=response-end id=2 chunks=8
++   631 ms  proxy.jsonl:32             side=upstream transport=http ev=upstream-closed id=2
++   631 ms  mock.jsonl:10              transport=http action=headers-sent request=4
++   631 ms  mock.jsonl:11              transport=http action=completed request=4 frames=8
++   632 ms  observer.jsonl:29          event=http.body.first-chunk sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction
++   632 ms  observer.jsonl:30          event=http.body.completed-seen sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction chunks=1
++   634 ms  observer.jsonl:31          event=http.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction url=http://127.0.0.1:49418/v1/responses
++   635 ms  proxy.jsonl:33             side=host transport=http ev=request id=3 method=POST url=/v1/responses kindFromBody=primary session={"x-opencode-session":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-id":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-affinity":"ses_f0f9df0e6ffeqfP3cMJztu74r1","se… account=A bytes=29233 input_items=4
++   636 ms  observer.jsonl:32          event=http.response sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction url=http://127.0.0.1:49418/v1/responses status=200
++   636 ms  proxy.jsonl:34             side=upstream transport=http ev=response-headers id=3 status=200
++   636 ms  proxy.jsonl:35             side=upstream transport=http ev=response-end id=3 chunks=8
++   636 ms  proxy.jsonl:36             side=upstream transport=http ev=upstream-closed id=3
++   636 ms  mock.jsonl:12              transport=http action=request request=5 method=POST url=/v1/responses kind=primary identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} viaProxy=1 body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":4,"prompt_cache_key":"ses_f0f9…
++   636 ms  mock.jsonl:13              transport=http action=headers-sent request=5
++   636 ms  mock.jsonl:14              transport=http action=completed request=5 frames=8
++   637 ms  observer.jsonl:33          event=http.body.first-chunk sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction
++   637 ms  observer.jsonl:34          event=http.body.completed-seen sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=compaction chunks=1
++   640 ms  harness.jsonl:7            event=api method=POST path=/api/experimental/session/ses_f0f9df0e6ffeqfP3cMJztu74r1/wait status=204 started=1790739354025.147 ms=21.5
++   648 ms  plugin.jsonl:6             event=model.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=generate modelID=mock-model baseURLBefore=http://127.0.0.1:49409/v1 baseURLAfter=http://127.0.0.1:49418/v1
++   650 ms  observer.jsonl:35          event=http.request sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=generate url=http://127.0.0.1:49418/v1/responses
++   650 ms  proxy.jsonl:37             side=host transport=http ev=request id=4 method=POST url=/v1/responses kindFromBody=primary session={"x-opencode-session":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-id":"ses_f0f9df0e6ffeqfP3cMJztu74r1","x-session-affinity":"ses_f0f9df0e6ffeqfP3cMJztu74r1","se… account=A bytes=26464 input_items=5
++   651 ms  proxy.jsonl:38             side=upstream transport=http ev=response-headers id=4 status=200
++   651 ms  proxy.jsonl:39             side=upstream transport=http ev=response-end id=4 chunks=8
++   651 ms  mock.jsonl:15              transport=http action=request request=6 method=POST url=/v1/responses kind=primary identity={"account":"A","token":"tok-A","accountHeader":"acct-A"} viaProxy=1 body={"model":"mock-model","keys":["include","input","instructions","model","prompt_cache_key","store","stream","tools"],"input_items":5,"prompt_cache_key":"ses_f0f9…
++   651 ms  mock.jsonl:16              transport=http action=headers-sent request=6
++   651 ms  mock.jsonl:17              transport=http action=completed request=6 frames=8
++   652 ms  observer.jsonl:36          event=http.response sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=generate url=http://127.0.0.1:49418/v1/responses status=200
++   652 ms  observer.jsonl:37          event=http.body.first-chunk sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=generate
++   652 ms  observer.jsonl:38          event=http.body.completed-seen sessionID=ses_f0f9df0e6ffeqfP3cMJztu74r1 kind=generate chunks=1
++   652 ms  proxy.jsonl:40             side=upstream transport=http ev=upstream-closed id=4
++   654 ms  harness.jsonl:8            event=api method=POST path=/api/session/ses_f0f9df0e6ffeqfP3cMJztu74r1/generate status=200 started=1790739354046.729 ms=13.5
++  1600 ms  harness.jsonl:9            event=api method=GET path=/api/session/ses_f0f9df0e6ffeqfP3cMJztu74r1/message?limit=50&order=asc status=200 started=1790739354562.884 ms=443.2
++  1632 ms  proxy.jsonl:42             side=host transport=ws ev=host-closed conn=1 code=1000 reason= framesRelayed=18 relayMicrosMean=14.5 relayMicrosMax=35.9
++  1632 ms  proxy.jsonl:41             side=upstream transport=ws ev=upstream-close-called conn=1 reason=host closed 1000 readyState=1
++  1632 ms  proxy.jsonl:43             side=upstream transport=ws ev=upstream-closed conn=1 upstreamID=1.A.1790739353901 code=1000 reason=host closed 1000 byProxy=true
++  1632 ms  mock.jsonl:18              transport=ws action=closed connection=1 code=1000 reason=host closed 1000 busy=false

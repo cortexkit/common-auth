@@ -1,0 +1,4 @@
+{"t":1790739359765,"wall":1790739359765,"plugin":"proxy","event":"setup","point":"none","proxy":"http://127.0.0.1:49513"}
+{"t":1790739359894,"wall":1790739359894,"plugin":"proxy","event":"model.request","sessionID":"ses_f0f9dd974ffehfZUHIVg3L1PbQ","kind":"primary","modelID":"mock-model","baseURLBefore":"http://127.0.0.1:49504/v1","baseURLAfter":"http://127.0.0.1:49504/v1"}
+{"t":1790739359895,"wall":1790739359895,"plugin":"proxy","event":"model.request","sessionID":"ses_f0f9dd974ffehfZUHIVg3L1PbQ","kind":"title","modelID":"gpt-6-luna","baseURLBefore":"http://127.0.0.1:49504/v1","baseURLAfter":"http://127.0.0.1:49504/v1"}
+{"t":1790739360035,"wall":1790739360035,"plugin":"proxy","event":"model.request","sessionID":"ses_f0f9dd974ffehfZUHIVg3L1PbQ","kind":"primary","modelID":"mock-model","baseURLBefore":"http://127.0.0.1:49504/v1","baseURLAfter":"http://127.0.0.1:49504/v1"}

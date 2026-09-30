@@ -1,0 +1,313 @@
+{
+  "ses_f0f9c62e7ffeb0ul7b3fTzxFoN": [
+    {
+      "id": "msg_0f0639def001K847LoAJIyLRU2",
+      "time": {
+        "created": 1790739455621
+      },
+      "text": "Say hello slowly (1).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0639e8b001bbnHoHstdBBlm5",
+      "time": {
+        "created": 1790739455678,
+        "streamed": 1790739455989,
+        "completed": 1790739456009
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "...",
+          "state": {
+            "itemId": "msg_resp_ws_c1_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f063a00a001hb3KXiQntiGvBb",
+      "time": {
+        "created": 1790739456010
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f063a59f001f8K4tNQExNGBFO",
+      "time": {
+        "created": 1790739457443
+      },
+      "text": "Say hello slowly (2).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f063a5a5001Z0e8C7oWr6lw2x",
+      "time": {
+        "created": 1790739457469,
+        "streamed": 1790739457776,
+        "completed": 1790739457795
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "...",
+          "state": {
+            "itemId": "msg_resp_ws_c2_3"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f063a704001O9xsbYHj05Cow4",
+      "time": {
+        "created": 1790739457796
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f063b027001E9IEbdU56nvOBt",
+      "time": {
+        "created": 1790739460139
+      },
+      "text": "Say hello slowly (3).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f063b02d0014nTJm1GbDLZ2qY",
+      "time": {
+        "created": 1790739460162,
+        "streamed": 1790739460470,
+        "completed": 1790739460488
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "...",
+          "state": {
+            "itemId": "msg_resp_ws_c3_4"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f063b188002873vWu4UCEjp9k",
+      "time": {
+        "created": 1790739460488
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f063b604001peHtseGLSxmngz",
+      "time": {
+        "created": 1790739461640
+      },
+      "text": "Say hello slowly (4).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f063b60b001KoTeZQhQoKiGYE",
+      "time": {
+        "created": 1790739461667,
+        "streamed": 1790739461975,
+        "completed": 1790739461995
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "...",
+          "state": {
+            "itemId": "msg_resp_ws_c4_5"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f063b76c001ViqfJPWjYt8BYy",
+      "time": {
+        "created": 1790739461996
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f063bbfd001Fcq4lQ3Pm41Qo6",
+      "time": {
+        "created": 1790739463169
+      },
+      "text": "Say hello slowly (5).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f063bc03001YYB16N8o0GN6Y3",
+      "time": {
+        "created": 1790739463194,
+        "streamed": 1790739463501,
+        "completed": 1790739463520
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "...",
+          "state": {
+            "itemId": "msg_resp_ws_c5_6"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f063bd61001EYXgKhmBzT5X1Z",
+      "time": {
+        "created": 1790739463521
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f063c328001kY1EFoEaSCnotn",
+      "time": {
+        "created": 1790739465003
+      },
+      "text": "Say it again.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f063c32d001d0xK01LGdo5TIQ",
+      "time": {
+        "created": 1790739465038,
+        "streamed": 1790739465044,
+        "completed": 1790739465061
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-7-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c6_7"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c6_7"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f063c366002xkqq78hbGOb7SM",
+      "time": {
+        "created": 1790739465062
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

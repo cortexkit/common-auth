@@ -1,0 +1,14 @@
+{
+  "scenario": "point-hooks-ws",
+  "point": "hooks",
+  "transport": "websocket (host default)",
+  "ms": 1655,
+  "sessions": 1,
+  "lines": {
+    "mock": 18,
+    "proxy": 43,
+    "plugin": 12,
+    "observer": 38,
+    "harness": 9
+  }
+}

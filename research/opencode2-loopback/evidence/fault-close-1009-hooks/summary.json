@@ -1,0 +1,14 @@
+{
+  "scenario": "fault-close-1009-hooks",
+  "point": "hooks",
+  "transport": "websocket (host default)",
+  "ms": 1134,
+  "sessions": 1,
+  "lines": {
+    "mock": 9,
+    "proxy": 17,
+    "plugin": 8,
+    "observer": 14,
+    "harness": 6
+  }
+}

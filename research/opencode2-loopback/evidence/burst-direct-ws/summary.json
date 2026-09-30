@@ -1,0 +1,14 @@
+{
+  "scenario": "burst-direct-ws",
+  "point": "none",
+  "transport": "websocket (host default)",
+  "ms": 1764,
+  "sessions": 1,
+  "lines": {
+    "mock": 21,
+    "proxy": 1,
+    "plugin": 6,
+    "observer": 48,
+    "harness": 10
+  }
+}

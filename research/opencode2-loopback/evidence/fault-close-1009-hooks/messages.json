@@ -1,0 +1,122 @@
+{
+  "ses_f0f9bb86bffecbraCNAEeVlIoS": [
+    {
+      "id": "msg_0f064487e001a8LcYp3OKg7bk6",
+      "time": {
+        "created": 1790739499290
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0644920001AJ7syIJ4Y3YlTo",
+      "time": {
+        "created": 1790739499350,
+        "streamed": 1790739499362,
+        "completed": 1790739499382
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-HTTP-2-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_http_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_2"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0644977002WzFA0dN8VQcoMA",
+      "time": {
+        "created": 1790739499383
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0644979001YKuvwoQXx3Rq3H",
+      "time": {
+        "created": 1790739499389
+      },
+      "text": "Say it again.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f064497f001YzWmyzX0SC2PoS",
+      "time": {
+        "created": 1790739499414,
+        "streamed": 1790739499419,
+        "completed": 1790739499436
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-HTTP-3-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_http_3"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_3"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f06449ad002jWIaaLD8d55D1b",
+      "time": {
+        "created": 1790739499437
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

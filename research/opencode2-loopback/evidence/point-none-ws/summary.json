@@ -1,0 +1,14 @@
+{
+  "scenario": "point-none-ws",
+  "point": "none",
+  "transport": "websocket (host default)",
+  "ms": 1754,
+  "sessions": 1,
+  "lines": {
+    "mock": 9,
+    "proxy": 1,
+    "plugin": 4,
+    "observer": 26,
+    "harness": 6
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "clockOffsetsMs": {
+    "node": {
+      "n": 60,
+      "min": -0.2,
+      "median": 0.4,
+      "max": 0.8
+    },
+    "host": {
+      "n": 77,
+      "min": 0,
+      "median": 0.4,
+      "max": 0.9
+    }
+  },
+  "aborts": {
+    "samples": [
+      {
+        "interruptSent": "harness.jsonl:3",
+        "interruptApiMs": 3,
+        "hostClosedProxySideMs": 15,
+        "hostCloseVia": "res.close",
+        "upstreamSawCloseMs": 15.6,
+        "upstreamSawClose": "mock.jsonl:8",
+        "proxyHostCloseToCloseCalledMs": 0.5,
+        "proxyHostCloseToUpstreamClosedMs": 1.2
+      },
+      {
+        "interruptSent": "harness.jsonl:7",
+        "interruptApiMs": 3,
+        "hostClosedProxySideMs": 11,
+        "hostCloseVia": "res.close",
+        "upstreamSawCloseMs": 11.5,
+        "upstreamSawClose": "mock.jsonl:14",
+        "proxyHostCloseToCloseCalledMs": 0.2,
+        "proxyHostCloseToUpstreamClosedMs": 0.6
+      },
+      {
+        "interruptSent": "harness.jsonl:11",
+        "interruptApiMs": 6.9,
+        "hostClosedProxySideMs": 14,
+        "hostCloseVia": "res.close",
+        "upstreamSawCloseMs": 14.1,
+        "upstreamSawClose": "mock.jsonl:20",
+        "proxyHostCloseToCloseCalledMs": 0.1,
+        "proxyHostCloseToUpstreamClosedMs": 0.6
+      },
+      {
+        "interruptSent": "harness.jsonl:15",
+        "interruptApiMs": 5.5,
+        "hostClosedProxySideMs": 7,
+        "hostCloseVia": "res.close",
+        "upstreamSawCloseMs": 7.9,
+        "upstreamSawClose": "mock.jsonl:26",
+        "proxyHostCloseToCloseCalledMs": 0.1,
+        "proxyHostCloseToUpstreamClosedMs": 3.5
+      },
+      {
+        "interruptSent": "harness.jsonl:19",
+        "interruptApiMs": 103.3,
+        "hostClosedProxySideMs": 107,
+        "hostCloseVia": "res.close",
+        "upstreamSawCloseMs": 107.4,
+        "upstreamSawClose": "mock.jsonl:32",
+        "proxyHostCloseToCloseCalledMs": 0.1,
+        "proxyHostCloseToUpstreamClosedMs": 0.4
+      }
+    ],
+    "summary": {
+      "interruptApiMs": {
+        "n": 5,
+        "min": 3,
+        "median": 5.5,
+        "max": 103.3
+      },
+      "hostClosedProxySideMs": {
+        "n": 5,
+        "min": 7,
+        "median": 14,
+        "max": 107
+      },
+      "upstreamSawCloseMs": {
+        "n": 5,
+        "min": 7.9,
+        "median": 14.1,
+        "max": 107.4
+      },
+      "proxyHostCloseToCloseCalledMs": {
+        "n": 5,
+        "min": 0.1,
+        "median": 0.1,
+        "max": 0.5
+      },
+      "proxyHostCloseToUpstreamClosedMs": {
+        "n": 5,
+        "min": 0.4,
+        "median": 0.6,
+        "max": 3.5
+      }
+    }
+  }
+}

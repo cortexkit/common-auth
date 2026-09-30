@@ -1,0 +1,14 @@
+{
+  "scenario": "error-http-429",
+  "point": "provider-transform",
+  "transport": "http",
+  "ms": 3254,
+  "sessions": 1,
+  "lines": {
+    "mock": 9,
+    "proxy": 13,
+    "plugin": 6,
+    "observer": 11,
+    "harness": 4
+  }
+}

@@ -1,0 +1,15 @@
+{"t":1790739350354.512,"wall":1790739350354,"plugin":"observer","event":"http.request","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"title","url":"http://127.0.0.1:49369/v1/responses"}
+{"t":1790739350357.262,"wall":1790739350357,"plugin":"observer","event":"http.response","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"title","url":"http://127.0.0.1:49369/v1/responses","status":200}
+{"t":1790739350362.145,"wall":1790739350362,"plugin":"observer","event":"http.body.first-chunk","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"title"}
+{"t":1790739350362.321,"wall":1790739350362,"plugin":"observer","event":"http.body.completed-seen","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"title","chunks":1}
+{"t":1790739350418.817,"wall":1790739350418,"plugin":"observer","event":"ws.handshake","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","url":"ws://127.0.0.1:49369/v1/responses"}
+{"t":1790739350420.276,"wall":1790739350420,"plugin":"observer","event":"ws.send","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.create","input_items":1}
+{"t":1790739350421.143,"wall":1790739350421,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"codex.rate_limits"}
+{"t":1790739350421.384,"wall":1790739350421,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.created"}
+{"t":1790739350421.526,"wall":1790739350421,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.output_item.added"}
+{"t":1790739350421.636,"wall":1790739350421,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.content_part.added"}
+{"t":1790739350421.728,"wall":1790739350421,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.output_text.delta"}
+{"t":1790739350424.576,"wall":1790739350424,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.output_text.done"}
+{"t":1790739350424.715,"wall":1790739350424,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.content_part.done"}
+{"t":1790739350424.909,"wall":1790739350424,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.output_item.done"}
+{"t":1790739350426.875,"wall":1790739350426,"plugin":"observer","event":"ws.receive","sessionID":"ses_f0f9dfe4cffekCesgYZHIIDdGs","kind":"primary","type":"response.completed"}

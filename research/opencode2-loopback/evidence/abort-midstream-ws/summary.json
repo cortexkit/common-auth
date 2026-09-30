@@ -1,0 +1,14 @@
+{
+  "scenario": "abort-midstream-ws",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 19046,
+  "sessions": 1,
+  "lines": {
+    "mock": 37,
+    "proxy": 96,
+    "plugin": 10,
+    "observer": 60,
+    "harness": 24
+  }
+}

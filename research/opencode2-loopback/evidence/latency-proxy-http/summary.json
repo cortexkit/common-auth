@@ -1,0 +1,14 @@
+{
+  "scenario": "latency-proxy-http",
+  "point": "provider-transform",
+  "transport": "http",
+  "ms": 2884,
+  "sessions": 1,
+  "lines": {
+    "mock": 33,
+    "proxy": 29,
+    "plugin": 10,
+    "observer": 28,
+    "harness": 14
+  }
+}

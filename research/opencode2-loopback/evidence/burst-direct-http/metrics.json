@@ -1,0 +1,81 @@
+{
+  "clockOffsetsMs": {
+    "node": {
+      "n": 33,
+      "min": -1.2,
+      "median": -0.5,
+      "max": -0.3
+    },
+    "host": {
+      "n": 27,
+      "min": 0,
+      "median": 0.4,
+      "max": 0.9
+    }
+  },
+  "aborts": {
+    "samples": []
+  },
+  "latency": {
+    "requests": [
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:4",
+        "turnMs": 1206.1,
+        "upstreamStreamMs": 2.5,
+        "hostStreamMs": 783.9,
+        "requestToUpstreamWallMs": 0
+      },
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:9",
+        "turnMs": 867.8,
+        "upstreamStreamMs": 2,
+        "hostStreamMs": 815.6,
+        "requestToUpstreamWallMs": 0
+      },
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:14",
+        "turnMs": 853.8,
+        "upstreamStreamMs": 2,
+        "hostStreamMs": 801.8,
+        "requestToUpstreamWallMs": 0
+      },
+      {
+        "transport": "http",
+        "mock": "mock.jsonl:19",
+        "turnMs": 750.5,
+        "upstreamStreamMs": 1.5,
+        "hostStreamMs": 160.2,
+        "requestToUpstreamWallMs": 1
+      }
+    ],
+    "summary": {
+      "turnMs": {
+        "n": 4,
+        "min": 750.5,
+        "median": 867.8,
+        "max": 1206.1
+      },
+      "upstreamStreamMs": {
+        "n": 4,
+        "min": 1.5,
+        "median": 2,
+        "max": 2.5
+      },
+      "hostStreamMs": {
+        "n": 4,
+        "min": 160.2,
+        "median": 801.8,
+        "max": 815.6
+      },
+      "requestToUpstreamWallMs": {
+        "n": 4,
+        "min": 0,
+        "median": 0,
+        "max": 1
+      }
+    }
+  }
+}

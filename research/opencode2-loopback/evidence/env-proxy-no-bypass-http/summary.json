@@ -1,0 +1,14 @@
+{
+  "scenario": "env-proxy-no-bypass-http",
+  "point": "provider-transform",
+  "transport": "http",
+  "ms": 167388,
+  "sessions": 1,
+  "lines": {
+    "mock": 0,
+    "proxy": 1,
+    "plugin": 29,
+    "observer": 46,
+    "harness": 6
+  }
+}

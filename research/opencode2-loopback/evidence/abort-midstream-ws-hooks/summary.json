@@ -1,0 +1,14 @@
+{
+  "scenario": "abort-midstream-ws-hooks",
+  "point": "hooks",
+  "transport": "websocket (host default)",
+  "ms": 10321,
+  "sessions": 1,
+  "lines": {
+    "mock": 37,
+    "proxy": 96,
+    "plugin": 15,
+    "observer": 61,
+    "harness": 24
+  }
+}

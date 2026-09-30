@@ -1,0 +1,19 @@
+{
+  "clockOffsetsMs": {
+    "node": {
+      "n": 4,
+      "min": -1,
+      "median": -0.4,
+      "max": 0.1
+    },
+    "host": {
+      "n": 38,
+      "min": -0.2,
+      "median": 0.2,
+      "max": 0.9
+    }
+  },
+  "aborts": {
+    "samples": []
+  }
+}

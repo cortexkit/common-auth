@@ -1,0 +1,14 @@
+{
+  "scenario": "point-provider-transform-ws-config-baseurl",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 1114,
+  "sessions": 1,
+  "lines": {
+    "mock": 7,
+    "proxy": 1,
+    "plugin": 5,
+    "observer": 15,
+    "harness": 4
+  }
+}

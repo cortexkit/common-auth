@@ -1,0 +1,14 @@
+{
+  "scenario": "switch-expand-ws",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 1699,
+  "sessions": 1,
+  "lines": {
+    "mock": 11,
+    "proxy": 37,
+    "plugin": 6,
+    "observer": 26,
+    "harness": 6
+  }
+}

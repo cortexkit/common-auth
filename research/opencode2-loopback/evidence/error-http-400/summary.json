@@ -1,0 +1,14 @@
+{
+  "scenario": "error-http-400",
+  "point": "provider-transform",
+  "transport": "http",
+  "ms": 1033,
+  "sessions": 1,
+  "lines": {
+    "mock": 6,
+    "proxy": 9,
+    "plugin": 5,
+    "observer": 7,
+    "harness": 4
+  }
+}

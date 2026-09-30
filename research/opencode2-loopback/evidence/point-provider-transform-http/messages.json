@@ -1,0 +1,153 @@
+{
+  "ses_f0f9de13fffe03UDjycy4mbaLX": [
+    {
+      "id": "msg_0f0621fa80010z0lhH5AjQJbGK",
+      "time": {
+        "created": 1790739357815
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f062208300108MHDttlDdRz1T",
+      "time": {
+        "created": 1790739357912,
+        "streamed": 1790739357923,
+        "completed": 1790739357951
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-HTTP-2-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_http_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_2"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f06221010023lIlIpvGjDnQh7",
+      "time": {
+        "created": 1790739357954
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0f0622105001CdmAOniFYvAFjt",
+      "time": {
+        "created": 1790739357963
+      },
+      "text": "Say it again.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f062210d0017u946BDC5xfWn7",
+      "time": {
+        "created": 1790739357999,
+        "streamed": 1790739358007,
+        "completed": 1790739358034
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-HTTP-3-primary-acct-A",
+          "state": {
+            "itemId": "msg_resp_http_3"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_3"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0622155001WbvUhL19Ca8wrs",
+      "time": {
+        "created": 1790739358037
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "type": "compaction",
+      "id": "msg_0f06221580013Ft7xfE547Olx2",
+      "time": {
+        "created": 1790739358043
+      },
+      "status": "failed",
+      "reason": "manual",
+      "error": {
+        "type": "compaction.failed",
+        "message": "Compaction summary did not match the required template"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 22,
+        "output": 6,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0622170001bmy5Rw93fX54QE",
+      "time": {
+        "created": 1790739358064
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

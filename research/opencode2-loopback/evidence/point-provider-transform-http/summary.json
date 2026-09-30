@@ -1,0 +1,14 @@
+{
+  "scenario": "point-provider-transform-http",
+  "point": "provider-transform",
+  "transport": "http",
+  "ms": 1664,
+  "sessions": 1,
+  "lines": {
+    "mock": 18,
+    "proxy": 25,
+    "plugin": 8,
+    "observer": 24,
+    "harness": 9
+  }
+}

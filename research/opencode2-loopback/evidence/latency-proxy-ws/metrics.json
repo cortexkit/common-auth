@@ -1,0 +1,109 @@
+{
+  "clockOffsetsMs": {
+    "node": {
+      "n": 43,
+      "min": -1.2,
+      "median": -0.7,
+      "max": -0.2
+    },
+    "host": {
+      "n": 145,
+      "min": -2,
+      "median": 0.5,
+      "max": 1
+    }
+  },
+  "aborts": {
+    "samples": []
+  },
+  "latency": {
+    "requests": [
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:5",
+        "turnMs": 646.3,
+        "upstreamStreamMs": 254.5,
+        "hostStreamMs": 252.7,
+        "hostToProxyMs": 0.4,
+        "requestToUpstreamWallMs": 1
+      },
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:9",
+        "turnMs": 318.5,
+        "upstreamStreamMs": 257.6,
+        "hostStreamMs": 260.3,
+        "hostToProxyMs": 0.4,
+        "requestToUpstreamWallMs": 1
+      },
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:13",
+        "turnMs": 313.4,
+        "upstreamStreamMs": 249,
+        "hostStreamMs": 252.3,
+        "hostToProxyMs": 0.3,
+        "requestToUpstreamWallMs": 1
+      },
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:17",
+        "turnMs": 313.3,
+        "upstreamStreamMs": 258.1,
+        "hostStreamMs": 259.4,
+        "hostToProxyMs": 0.3,
+        "requestToUpstreamWallMs": 0
+      },
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:21",
+        "turnMs": 313.7,
+        "upstreamStreamMs": 254.1,
+        "hostStreamMs": 254.9,
+        "hostToProxyMs": 0.4,
+        "requestToUpstreamWallMs": 0
+      },
+      {
+        "transport": "ws",
+        "mock": "mock.jsonl:25",
+        "turnMs": 319,
+        "upstreamStreamMs": 258.7,
+        "hostStreamMs": 259.8,
+        "hostToProxyMs": 0.4,
+        "requestToUpstreamWallMs": 0
+      }
+    ],
+    "summary": {
+      "turnMs": {
+        "n": 6,
+        "min": 313.3,
+        "median": 318.5,
+        "max": 646.3
+      },
+      "upstreamStreamMs": {
+        "n": 6,
+        "min": 249,
+        "median": 257.6,
+        "max": 258.7
+      },
+      "hostStreamMs": {
+        "n": 6,
+        "min": 252.3,
+        "median": 259.4,
+        "max": 260.3
+      },
+      "hostToProxyMs": {
+        "n": 6,
+        "min": 0.3,
+        "median": 0.4,
+        "max": 0.4
+      },
+      "requestToUpstreamWallMs": {
+        "n": 6,
+        "min": 0,
+        "median": 1,
+        "max": 1
+      }
+    }
+  }
+}

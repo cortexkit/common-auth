@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    "<spike>/plugin-proxy",
+    "<spike>/plugin-observer"
+  ],
+  "providers": {
+    "openai": {
+      "settings": {
+        "baseURL": "http://127.0.0.1:50112/v1",
+        "apiKey": "sk-mock-not-a-real-key",
+        "transport": "http"
+      },
+      "models": {
+        "mock-model": {
+          "name": "Mock mock-model"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "scenario": "fault-conn-limit",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 1614,
+  "sessions": 1,
+  "lines": {
+    "mock": 9,
+    "proxy": 35,
+    "plugin": 7,
+    "observer": 29,
+    "harness": 6
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "scenario": "env-proxy-no-bypass-ws",
+  "point": "provider-transform",
+  "transport": "websocket (host default)",
+  "ms": 2301,
+  "sessions": 1,
+  "lines": {
+    "mock": 6,
+    "proxy": 27,
+    "plugin": 9,
+    "observer": 26,
+    "harness": 6
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "ses_f0f9dfe4cffekCesgYZHIIDdGs": [
+    {
+      "id": "msg_0f0620288001pR8sl5khjeSJuA",
+      "time": {
+        "created": 1790739350340
+      },
+      "text": "Say hello.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f062034b001iVouuf4vfhZvXt",
+      "time": {
+        "created": 1790739350416,
+        "streamed": 1790739350427,
+        "completed": 1790739350451
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-WS-2-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_ws_c1_2"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_ws_c1_2"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f06203b5001N40G3Zey21asFI",
+      "time": {
+        "created": 1790739350453
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

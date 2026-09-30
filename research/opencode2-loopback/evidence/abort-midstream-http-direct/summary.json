@@ -1,0 +1,14 @@
+{
+  "scenario": "abort-midstream-http-direct",
+  "point": "none",
+  "transport": "http",
+  "ms": 12573,
+  "sessions": 1,
+  "lines": {
+    "mock": 36,
+    "proxy": 1,
+    "plugin": 8,
+    "observer": 23,
+    "harness": 24
+  }
+}

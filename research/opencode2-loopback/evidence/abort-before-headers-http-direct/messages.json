@@ -1,0 +1,268 @@
+{
+  "ses_f0f9c0471ffeF3ZRRvXbRzJMRQ": [
+    {
+      "id": "msg_0f063fc800017yERMkqhcjIAXM",
+      "time": {
+        "created": 1790739479838
+      },
+      "text": "Say hello slowly (1).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f063fd26001cR34Of9mTZP4aS",
+      "time": {
+        "created": 1790739479905,
+        "completed": 1790739480438
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f063ff77001awETPO40ga1eho",
+      "time": {
+        "created": 1790739480439
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f06403ea001Mh9DNdr25lCDnT",
+      "time": {
+        "created": 1790739481588
+      },
+      "text": "Say hello slowly (2).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f06403f8001s5uJPV6rNJjZJZ",
+      "time": {
+        "created": 1790739481615,
+        "completed": 1790739482388
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f0640715001QQ4EkbmtY2eNG4",
+      "time": {
+        "created": 1790739482389
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f0640d0700109aMY7jyw7cOm6",
+      "time": {
+        "created": 1790739483918
+      },
+      "text": "Say hello slowly (3).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0640d10001sr2wmVY4kwYE7E",
+      "time": {
+        "created": 1790739483955,
+        "completed": 1790739485003
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f064114c001h1J94viuiCud3u",
+      "time": {
+        "created": 1790739485004
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f064154c001QxAAc4O4WsaFhc",
+      "time": {
+        "created": 1790739486033
+      },
+      "text": "Say hello slowly (4).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0641553001ygN2gspYfPKvl6",
+      "time": {
+        "created": 1790739486063,
+        "completed": 1790739487037
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f064193e001pLSnh86XSRAZX2",
+      "time": {
+        "created": 1790739487038
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f0641e5b001ZP7fwHvyjaIqNS",
+      "time": {
+        "created": 1790739488352
+      },
+      "text": "Say hello slowly (5).",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0641e62001OGjJx5eeYOAY7u",
+      "time": {
+        "created": 1790739488377,
+        "completed": 1790739489426
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "error",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      }
+    },
+    {
+      "id": "msg_0f064229b001F7XaQyBzW1TCPw",
+      "time": {
+        "created": 1790739489435
+      },
+      "type": "idle",
+      "outcome": "interrupted"
+    },
+    {
+      "id": "msg_0f064291c001tOuQ3QOaPDLIJ9",
+      "time": {
+        "created": 1790739491104
+      },
+      "text": "Say it again.",
+      "type": "user"
+    },
+    {
+      "id": "msg_0f0642922001sj6pfBU1hnZn2H",
+      "time": {
+        "created": 1790739491129,
+        "streamed": 1790739491135,
+        "completed": 1790739491153
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mock-model",
+        "providerID": "openai",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "MOCK-HTTP-7-primary-acct-none",
+          "state": {
+            "itemId": "msg_resp_http_7"
+          }
+        }
+      ],
+      "snapshot": {
+        "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "files": []
+      },
+      "finish": "stop",
+      "providerState": {
+        "responseId": "resp_http_7"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 11,
+        "output": 3,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_0f0642953002xzchlZqyO3ComX",
+      "time": {
+        "created": 1790739491155
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    }
+  ]
+}

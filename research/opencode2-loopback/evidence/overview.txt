@@ -1,0 +1,123 @@
+abort-before-first-frame-ws
+    provider-transform / websocket (host default), 18792 ms
+    assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"MOCK-WS-7-primary-acct-A"  idle:succeeded
+abort-before-headers-http
+    provider-transform / http, 15994 ms
+    assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"MOCK-HTTP-7-primary-acct-A"  idle:succeeded
+abort-before-headers-http-direct
+    none / http, 12603 ms
+    assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"" error=aborted  idle:interrupted  assistant:"MOCK-HTTP-7-primary-acct-none"  idle:succeeded
+abort-midstream-http
+    provider-transform / http, 16538 ms
+    assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<4 dots>" error=aborted  idle:interrupted  assistant:"MOCK-HTTP-7-primary-acct-A"  idle:succeeded
+abort-midstream-http-direct
+    none / http, 12573 ms
+    assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"MOCK-HTTP-7-primary-acct-none"  idle:succeeded
+abort-midstream-ws
+    provider-transform / websocket (host default), 19046 ms
+    assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"MOCK-WS-7-primary-acct-A"  idle:succeeded
+abort-midstream-ws-direct
+    none / websocket (host default), 10949 ms
+    assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"MOCK-WS-7-primary-acct-none"  idle:succeeded
+abort-midstream-ws-hooks
+    hooks / websocket (host default), 10321 ms
+    assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<3 dots>" error=aborted  idle:interrupted  assistant:"<4 dots>" error=aborted  idle:interrupted  assistant:"MOCK-WS-7-primary-acct-A"  idle:succeeded
+burst-direct-http
+    none / http, 4295 ms
+    assistant:"<1999 dots>MOCK-HTTP-2-primary-acct-none"  idle:succeeded  assistant:"<1999 dots>MOCK-HTTP-3-primary-acct-none"  idle:succeeded  assistant:"<1999 dots>MOCK-HTTP-4-primary-acct-none"  idle:succeeded  assistant:"<1999 dots>MOCK-HTTP-5-primary-acct-none"  idle:succeeded
+burst-direct-ws
+    none / websocket (host default), 1764 ms
+    assistant:"<1999 dots>MOCK-WS-2-primary-acct-none"  idle:succeeded  assistant:"<1999 dots>MOCK-WS-3-primary-acct-none"  idle:succeeded  assistant:"<1999 dots>MOCK-WS-4-primary-acct-none"  idle:succeeded  assistant:"<1999 dots>MOCK-WS-5-primary-acct-none"  idle:succeeded
+burst-proxy-http
+    provider-transform / http, 5063 ms
+    assistant:"<1999 dots>MOCK-HTTP-2-primary-acct-A"  idle:succeeded  assistant:"<1999 dots>MOCK-HTTP-3-primary-acct-A"  idle:succeeded  assistant:"<1999 dots>MOCK-HTTP-4-primary-acct-A"  idle:succeeded  assistant:"<1999 dots>MOCK-HTTP-5-primary-acct-A"  idle:succeeded
+burst-proxy-ws
+    provider-transform / websocket (host default), 1689 ms
+    assistant:"<1999 dots>MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"<1999 dots>MOCK-WS-3-primary-acct-A"  idle:succeeded  assistant:"<1999 dots>MOCK-WS-4-primary-acct-A"  idle:succeeded  assistant:"<1999 dots>MOCK-WS-5-primary-acct-A"  idle:succeeded
+env-proxy-no-bypass-direct-http
+    none / http, 83513 ms
+    assistant:"" error=provider.transport  idle:failed
+env-proxy-no-bypass-http
+    provider-transform / http, 167388 ms
+    assistant:"" error=provider.transport  idle:failed  assistant:"" error=provider.transport  idle:failed
+env-proxy-no-bypass-http-patched
+    provider-transform / http, 2197 ms
+    assistant:"MOCK-HTTP-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-HTTP-3-primary-acct-A"  idle:succeeded
+env-proxy-no-bypass-ws
+    provider-transform / websocket (host default), 2301 ms
+    assistant:"MOCK-WS-1-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded
+error-http-400
+    provider-transform / http, 1033 ms
+    assistant:"" error=provider.invalid-request  idle:failed
+error-http-429
+    provider-transform / http, 3254 ms
+    assistant:"MOCK-HTTP-3-primary-acct-A"  idle:succeeded
+fault-close-1009
+    provider-transform / websocket (host default), 1300 ms
+    assistant:"MOCK-HTTP-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-HTTP-3-primary-acct-A"  idle:succeeded
+fault-close-1009-hooks
+    hooks / websocket (host default), 1134 ms
+    assistant:"MOCK-HTTP-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-HTTP-3-primary-acct-A"  idle:succeeded
+fault-close-after-output
+    provider-transform / websocket (host default), 3421 ms
+    assistant:"MOCK-WS-2-primary-acct-A" error=provider.transport  synthetic  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-4-primary-acct-A"  idle:succeeded
+fault-close-before-output
+    provider-transform / websocket (host default), 3376 ms
+    assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-4-primary-acct-A"  idle:succeeded
+fault-conn-limit
+    provider-transform / websocket (host default), 1614 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded
+host-credential-hooks
+    hooks / websocket (host default), 1453 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded
+host-credential-provider-transform
+    provider-transform / websocket (host default), 1161 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded
+latency-direct-http
+    none / http, 3022 ms
+    assistant:"<199 dots>MOCK-HTTP-2-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-3-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-4-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-5-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-6-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-7-primary-acct-none"  idle:succeeded
+latency-direct-ws
+    none / websocket (host default), 3063 ms
+    assistant:"<199 dots>MOCK-WS-2-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-WS-3-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-WS-4-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-WS-5-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-WS-6-primary-acct-none"  idle:succeeded  assistant:"<199 dots>MOCK-WS-7-primary-acct-none"  idle:succeeded
+latency-proxy-http
+    provider-transform / http, 2884 ms
+    assistant:"<199 dots>MOCK-HTTP-2-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-3-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-4-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-5-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-6-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-HTTP-7-primary-acct-A"  idle:succeeded
+latency-proxy-ws
+    provider-transform / websocket (host default), 3061 ms
+    assistant:"<199 dots>MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-WS-3-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-WS-4-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-WS-5-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-WS-6-primary-acct-A"  idle:succeeded  assistant:"<199 dots>MOCK-WS-7-primary-acct-A"  idle:succeeded
+point-config-ws
+    config / websocket (host default), 1481 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded  compaction  idle:succeeded
+point-hooks-ws
+    hooks / websocket (host default), 1655 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded  compaction  idle:succeeded
+point-model-request-ws
+    model-request / websocket (host default), 1688 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded  compaction  idle:succeeded
+point-model-transform-ws
+    model-transform / websocket (host default), 1669 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded  compaction  idle:succeeded
+point-none-ws
+    none / websocket (host default), 1754 ms
+    assistant:"MOCK-WS-2-primary-acct-none"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-none"  idle:succeeded
+point-provider-transform-http
+    provider-transform / http, 1664 ms
+    assistant:"MOCK-HTTP-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-HTTP-3-primary-acct-A"  idle:succeeded  compaction  idle:succeeded
+point-provider-transform-ws
+    provider-transform / websocket (host default), 1250 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-A"  idle:succeeded  compaction  idle:succeeded
+point-provider-transform-ws-config-baseurl
+    provider-transform / websocket (host default), 1114 ms
+    assistant:"MOCK-WS-2-primary-acct-none"  idle:succeeded
+switch-close-host-ws
+    provider-transform / websocket (host default), 3642 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-B"  idle:succeeded
+switch-expand-ws
+    provider-transform / websocket (host default), 1699 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-3-primary-acct-B"  idle:succeeded
+switch-http
+    provider-transform / http, 1642 ms
+    assistant:"MOCK-HTTP-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-HTTP-3-primary-acct-B"  idle:succeeded
+switch-passthrough-ws
+    provider-transform / websocket (host default), 1541 ms
+    assistant:"MOCK-WS-2-primary-acct-A"  idle:succeeded  assistant:"MOCK-WS-4-primary-acct-B"  idle:succeeded
