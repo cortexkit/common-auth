@@ -416,3 +416,6 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | A pull issued during a live replace captures the credential and its epoch in one locked read | new (neither copy) | a pull issued during a live replace captures the credential and its epoch in one locked read |
 | store | Quota recording refuses a stale epoch with a retryable attribution failure | new (neither copy) | recordQuota refuses a stale epoch with a retryable attribution failure |
 | store | The store persists observations through the quota codec and admission reads them back | new (neither copy) | the store persists observations through the quota codec and admission reads them back |
+| store | Initialize turns a pending-migration config into an empty pool, dropping only the named keys | new (neither copy) | turns a pending-migration config into an empty pool, dropping only the named keys and leaving the state file alone |
+| store | Initialize leaves a ready pool untouched and refuses a load error | new (neither copy) | leaves a ready pool untouched and refuses a load error |
+| store | Initialize fails retryably with nothing written when its lease is lost | new (neither copy) | fails retryably with nothing written when its lease is lost before the write |

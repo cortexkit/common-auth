@@ -1,7 +1,13 @@
 import { type Attribution, recordQuota } from './attribution.js'
 import type { PoolOperationError } from './errors.js'
 import type { PoolLogger } from './hooks.js'
-import { type HoldPoint, readPool, type StoreContext } from './mutate.js'
+import {
+  type HoldPoint,
+  type InitializeOutcome,
+  initializePool,
+  readPool,
+  type StoreContext,
+} from './mutate.js'
 import { type PullHook, PullScheduler } from './pull.js'
 import {
   type ProviderRefresh,
@@ -79,6 +85,15 @@ export interface PoolStore {
   load(): Promise<PoolLoad>
   /** Reads the pool without firing anything. */
   read(): Promise<PoolLoad>
+  /**
+   * Turns a pending-migration config into an empty pool (the pool key with no
+   * row entries) in one locked config write, dropping the named top-level
+   * keys and keeping the rest. The start of a plugin's migration; a ready
+   * pool is left alone. Failures carry operation `initialize`.
+   */
+  initialize(input?: {
+    dropKeys?: readonly string[]
+  }): Promise<{ status: InitializeOutcome }>
   add(input: AddInput, options?: RowOperationOptions): Promise<AddResult>
   replace(
     id: string,
@@ -214,6 +229,9 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     },
     async read() {
       return toLoad(await readPool(ctx))
+    },
+    async initialize(input = {}) {
+      return { status: await initializePool(ctx, input.dropKeys ?? []) }
     },
     add: (input, callOptions) => addRow(rt, input, callOptions),
     replace: (id, credential, input, callOptions) =>

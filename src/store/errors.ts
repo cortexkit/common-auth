@@ -2,6 +2,7 @@ import type { StoredCredential } from './schema.js'
 
 /** Every library operation that can fail, as named in the failure value. */
 export type PoolOperation =
+  | 'initialize'
   | 'add'
   | 'replace'
   | 'rotate'

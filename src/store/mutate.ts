@@ -287,6 +287,53 @@ export class Transaction {
   }
 }
 
+/** What `initializePool` did. */
+export type InitializeOutcome = 'initialized' | 'already-ready'
+
+/**
+ * Adds the pool key to a config that holds a legacy roster without one, under
+ * the store-lock list, in one config write: `commonAuthPool` with the schema
+ * version and no row entries, the legacy roster and every other top-level key
+ * kept, except the keys named in `dropKeys`. The state file is not touched.
+ * This is the only write the store makes to a pending-migration config; it is
+ * where a plugin's migration starts, and every later row goes through the
+ * ordinary operations. A config that is already a pool is left alone; a load
+ * error refuses.
+ */
+export async function initializePool(
+  ctx: StoreContext,
+  dropKeys: readonly string[],
+): Promise<InitializeOutcome> {
+  const locks = new LockStack(ctx.lockDefaults, ctx.lockEnv)
+  const progress: Progress = { writes: 0 }
+  try {
+    for (const spec of ctx.storeLocks) await locks.acquire(spec)
+    const result = await readPool(ctx)
+    if (result.status === 'error')
+      throw notReadyError(result, 'initialize', undefined)
+    if (result.status === 'ready') return 'already-ready'
+    const next: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(result.config))
+      if (!dropKeys.includes(key)) next[key] = value
+    next.version = LEGACY_STORE_VERSION
+    next[POOL_KEY] = { schemaVersion: POOL_SCHEMA_VERSION, [POOL_ROWS_KEY]: {} }
+    const info = { operation: 'initialize' as const, rowId: undefined }
+    await writeJsonAtomic(ctx.configPath, next, {
+      beforeRename: async () => {
+        await ctx.onStep?.('before-config-write', info)
+        await locks.assertAll()
+      },
+    })
+    progress.writes++
+    await ctx.onStep?.('after-config-write', info)
+    return 'initialized'
+  } catch (error) {
+    throw toFailure(error, 'initialize', undefined, progress)
+  } finally {
+    await locks.releaseAll()
+  }
+}
+
 /**
  * Runs `fn` under the store-lock list. The pool must be ready: a pending
  * migration or a load error refuses before anything is written.

@@ -10,7 +10,7 @@ export {
   countUnknownIdentityRows,
   DUPLICATE_IDENTITY_REASON,
 } from './identity.js'
-export type { HoldPoint, WriteStep } from './mutate.js'
+export type { HoldPoint, InitializeOutcome, WriteStep } from './mutate.js'
 export type {
   OpenPoolStoreOptions,
   PoolLoad,
