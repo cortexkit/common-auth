@@ -1,0 +1,10 @@
+{
+  "name": "inline-default",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./module.ts",
+    "./alias": "./module.ts",
+    "./missing": "./absent.ts"
+  }
+}
