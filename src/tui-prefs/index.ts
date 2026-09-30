@@ -1,13 +1,13 @@
 export {
   createTuiPreferenceWriter,
+  type PreferenceValue,
   readTuiPreferences,
   readTuiPreferencesFile,
-  type PreferenceValue,
   type TuiPreferencesReaderOptions,
   type TuiPreferenceWriter,
   type TuiPreferenceWriterOptions,
 } from './tui-preferences.js'
 export {
-  watchTuiPreferences,
   type TuiPreferencesWatchOptions,
+  watchTuiPreferences,
 } from './watcher.js'

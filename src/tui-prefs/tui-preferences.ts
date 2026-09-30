@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser'
+import { applyEdits, modify, type ParseError, parse } from 'jsonc-parser'
 import { writeJsonAtomic } from '../fs/atomic-write.js'
 import { WRITER_LOCK_CONSTANTS } from '../fs/lock-constants.js'
 import { withLock } from '../fs/with-lock.js'
