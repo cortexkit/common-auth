@@ -1,0 +1,413 @@
+import { readFile } from 'node:fs/promises'
+import { writeJsonAtomic } from '../fs/atomic-write.js'
+import { LockContentionError, LockOwnershipError } from '../fs/with-lock.js'
+import {
+  type PoolFailurePhase,
+  type PoolOperation,
+  PoolOperationError,
+} from './errors.js'
+import { callFailureHook, type PoolLogger } from './hooks.js'
+import {
+  type LockEnvironment,
+  LockStack,
+  type PoolLockOptions,
+  type PoolLockSpec,
+} from './refresh-lock.js'
+import {
+  buildRows,
+  classifyConfig,
+  classifyState,
+  type FileRead,
+  isRecord,
+  LEGACY_STORE_VERSION,
+  POOL_KEY,
+  POOL_ROWS_KEY,
+  POOL_SCHEMA_VERSION,
+  type PoolRow,
+  type QuotaCodec,
+  type StoredCredential,
+} from './schema.js'
+
+/** Named points on the write path, for crash and ownership injection. */
+export type WriteStep =
+  | 'before-config-write'
+  | 'after-config-write'
+  | 'before-state-write'
+  | 'after-state-write'
+
+/** Awaitable pause points on the pull and refresh paths. */
+export type HoldPoint = 'refresh-before-provider' | 'pull-before-request'
+
+export interface StoreContext {
+  provider: string
+  configPath: string
+  statePath: string
+  codec: QuotaCodec
+  now: () => number
+  storeLocks: readonly PoolLockSpec[]
+  lockDefaults: PoolLockOptions
+  lockEnv: LockEnvironment
+  logger?: PoolLogger
+  onStep?: (
+    step: WriteStep,
+    info: { operation: PoolOperation; rowId: string | undefined },
+  ) => void | Promise<void>
+  hold?: (point: HoldPoint, rowId: string) => void | Promise<void>
+  /** Ids whose per-row entry a library write dropped in this process. */
+  removedIds: Set<string>
+}
+
+export interface Snapshot {
+  configExists: boolean
+  stateExists: boolean
+  config: Record<string, unknown>
+  state: Record<string, unknown>
+  rows: PoolRow[]
+}
+
+export type ReadResult =
+  | ({ status: 'ready' } & Snapshot)
+  | { status: 'pending-migration'; config: Record<string, unknown> }
+  | { status: 'error'; file: 'config' | 'state'; reason: string }
+
+async function readJson(path: string): Promise<FileRead> {
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      return { exists: false }
+    throw error
+  }
+  try {
+    return { exists: true, value: JSON.parse(text) }
+  } catch (parseError) {
+    return { exists: true, parseError }
+  }
+}
+
+/** Reads and classifies both files. Never writes. */
+export async function readPool(ctx: StoreContext): Promise<ReadResult> {
+  const config = classifyConfig(await readJson(ctx.configPath))
+  if (config.status === 'error')
+    return { status: 'error', file: 'config', reason: config.reason }
+  const state = classifyState(await readJson(ctx.statePath))
+  if (state.status === 'error')
+    return { status: 'error', file: 'state', reason: state.reason }
+  if (config.status === 'pending-migration')
+    return { status: 'pending-migration', config: config.config }
+  return {
+    status: 'ready',
+    configExists: config.exists,
+    stateExists: state.exists,
+    config: config.config,
+    state: state.state,
+    rows: buildRows(config.config, state.state, ctx.codec),
+  }
+}
+
+/** The refusal for a pool that is not ready, as a failure value. */
+export function notReadyError(
+  result: Exclude<ReadResult, { status: 'ready' }>,
+  operation: PoolOperation,
+  rowId: string | undefined,
+  phase: PoolFailurePhase = 'before-first-write',
+): PoolOperationError {
+  return new PoolOperationError({
+    operation,
+    ...(rowId !== undefined ? { rowId } : {}),
+    phase,
+    retryable: false,
+    kind:
+      result.status === 'pending-migration'
+        ? 'pending-migration'
+        : 'load-error',
+    message:
+      result.status === 'pending-migration'
+        ? 'the config holds a legacy roster that has not been migrated into the pool'
+        : `${result.file} file cannot be loaded: ${result.reason}`,
+  })
+}
+
+/** What an operation has written so far; decides the failure phase. */
+export interface Progress {
+  writes: number
+  /** The credential the operation's state write put on disk, once it has. */
+  committed?: StoredCredential
+}
+
+/**
+ * One locked read-modify-write. The store locks are pushed onto the caller's
+ * lock stack, so the ownership assertion before each write covers the outer
+ * row, provider-wide and extra locks as well; they are released when the
+ * transaction ends, whatever happens.
+ */
+export class Transaction {
+  config: Record<string, unknown>
+  state: Record<string, unknown>
+
+  constructor(
+    private readonly ctx: StoreContext,
+    readonly snapshot: Snapshot,
+    private readonly locks: LockStack,
+    private readonly progress: Progress,
+    private readonly info: {
+      operation: PoolOperation
+      rowId: string | undefined
+    },
+  ) {
+    this.config = structuredClone(snapshot.config)
+    this.state = structuredClone(snapshot.state)
+  }
+
+  rows(): PoolRow[] {
+    return buildRows(this.config, this.state, this.ctx.codec)
+  }
+
+  row(id: string): PoolRow | undefined {
+    return this.rows().find((row) => row.id === id)
+  }
+
+  roster(): unknown[] {
+    if (!Array.isArray(this.config.accounts)) this.config.accounts = []
+    return this.config.accounts as unknown[]
+  }
+
+  /** The first roster row with this id (the one the pool loads). */
+  rosterRow(id: string): Record<string, unknown> | undefined {
+    return this.roster().find(
+      (raw): raw is Record<string, unknown> => isRecord(raw) && raw.id === id,
+    )
+  }
+
+  entries(): Record<string, unknown> {
+    if (!isRecord(this.config[POOL_KEY])) this.config[POOL_KEY] = {}
+    const pool = this.config[POOL_KEY] as Record<string, unknown>
+    if (!isRecord(pool[POOL_ROWS_KEY])) pool[POOL_ROWS_KEY] = {}
+    return pool[POOL_ROWS_KEY] as Record<string, unknown>
+  }
+
+  entry(id: string): Record<string, unknown> | undefined {
+    const entries = this.entries()
+    const entry = Object.hasOwn(entries, id) ? entries[id] : undefined
+    return isRecord(entry) ? entry : undefined
+  }
+
+  setEntry(id: string, entry: Record<string, unknown>): void {
+    Object.defineProperty(this.entries(), id, {
+      value: entry,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+  }
+
+  stateAccount(id: string): Record<string, unknown> | undefined {
+    const accounts = isRecord(this.state.accounts) ? this.state.accounts : {}
+    const entry = Object.hasOwn(accounts, id) ? accounts[id] : undefined
+    return isRecord(entry) ? entry : undefined
+  }
+
+  setStateAccount(id: string, fields: Record<string, unknown>): void {
+    if (!isRecord(this.state.accounts)) this.state.accounts = {}
+    Object.defineProperty(this.state.accounts, id, {
+      value: fields,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+  }
+
+  /**
+   * Writes the config: legacy `version: 1` and the legacy roster beside
+   * `commonAuthPool`, every other top-level key and every unrecognised pool
+   * key untouched. Entries for ids no longer in the roster are dropped here,
+   * and remembered so the id is not reused in this process.
+   */
+  async commitConfig(): Promise<void> {
+    const roster = this.roster()
+    const rosterIds = new Set<string>()
+    for (const raw of roster)
+      if (isRecord(raw) && typeof raw.id === 'string') rosterIds.add(raw.id)
+    const entries = this.entries()
+    const kept: Record<string, unknown> = {}
+    for (const [id, entry] of Object.entries(entries)) {
+      if (rosterIds.has(id)) {
+        Object.defineProperty(kept, id, {
+          value: entry,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        })
+      } else {
+        this.ctx.removedIds.add(id)
+      }
+    }
+    const pool = this.config[POOL_KEY] as Record<string, unknown>
+    const next: Record<string, unknown> = {
+      ...this.config,
+      version: LEGACY_STORE_VERSION,
+      accounts: roster,
+      [POOL_KEY]: {
+        ...pool,
+        schemaVersion: POOL_SCHEMA_VERSION,
+        [POOL_ROWS_KEY]: kept,
+      },
+    }
+    await this.write(this.ctx.configPath, next, 'config')
+    this.config = next
+  }
+
+  /** Writes the state: every unrecognised top-level and per-row key kept. */
+  async commitState(committed?: StoredCredential): Promise<void> {
+    const next: Record<string, unknown> = {
+      ...this.state,
+      version: LEGACY_STORE_VERSION,
+      accounts: isRecord(this.state.accounts) ? this.state.accounts : {},
+    }
+    await this.write(this.ctx.statePath, next, 'state')
+    this.state = next
+    if (committed) this.progress.committed = committed
+  }
+
+  private async write(
+    path: string,
+    value: unknown,
+    file: 'config' | 'state',
+  ): Promise<void> {
+    await writeJsonAtomic(path, value, {
+      beforeRename: async () => {
+        await this.ctx.onStep?.(`before-${file}-write`, this.info)
+        // Ownership is proved immediately before the rename, on every lease.
+        await this.locks.assertAll()
+      },
+    })
+    this.progress.writes++
+    await this.ctx.onStep?.(`after-${file}-write`, this.info)
+  }
+}
+
+/**
+ * Runs `fn` under the store-lock list. The pool must be ready: a pending
+ * migration or a load error refuses before anything is written.
+ */
+export async function withTransaction<T>(
+  ctx: StoreContext,
+  locks: LockStack,
+  progress: Progress,
+  info: { operation: PoolOperation; rowId: string | undefined },
+  fn: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  const mark = locks.held.length
+  try {
+    for (const spec of ctx.storeLocks) await locks.acquire(spec)
+    const result = await readPool(ctx)
+    if (result.status !== 'ready')
+      throw notReadyError(
+        result,
+        info.operation,
+        info.rowId,
+        progress.writes > 0 ? 'after-first-write' : 'before-first-write',
+      )
+    return await fn(new Transaction(ctx, result, locks, progress, info))
+  } finally {
+    await locks.releaseTo(mark)
+  }
+}
+
+/** Maps anything thrown inside an operation onto the one failure value. */
+export function toFailure(
+  error: unknown,
+  operation: PoolOperation,
+  rowId: string | undefined,
+  progress: Progress,
+): PoolOperationError {
+  const phase: PoolFailurePhase =
+    operation === 'pull'
+      ? 'pull'
+      : progress.writes > 0
+        ? 'after-first-write'
+        : 'before-first-write'
+  const committed =
+    phase === 'after-first-write' ? progress.committed : undefined
+  if (error instanceof PoolOperationError) {
+    if (
+      error.phase === phase &&
+      error.rowId === rowId &&
+      error.operation === operation &&
+      error.committed === committed
+    )
+      return error
+    return new PoolOperationError({
+      operation,
+      ...(rowId !== undefined ? { rowId } : {}),
+      phase: error.kind === 'after-persist-hook' ? error.phase : phase,
+      retryable: error.retryable,
+      kind: error.kind,
+      ...((error.committed ?? committed)
+        ? { committed: error.committed ?? committed }
+        : {}),
+      message: error.message,
+      ...(error.cause !== undefined ? { cause: error.cause } : {}),
+    })
+  }
+  const base = {
+    operation,
+    ...(rowId !== undefined ? { rowId } : {}),
+    phase,
+    ...(committed ? { committed } : {}),
+    cause: error,
+  }
+  if (error instanceof LockOwnershipError)
+    return new PoolOperationError({
+      ...base,
+      retryable: true,
+      kind: 'lock-ownership',
+      message:
+        phase === 'after-first-write'
+          ? `${operation} lost a lease after its first write; the intermediate stays on disk`
+          : `${operation} lost a lease before writing; nothing was written`,
+    })
+  if (error instanceof LockContentionError)
+    return new PoolOperationError({
+      ...base,
+      retryable: true,
+      kind: 'lock-contention',
+      message: error.message,
+    })
+  return new PoolOperationError({
+    ...base,
+    retryable: false,
+    kind: 'unexpected',
+    message: error instanceof Error ? error.message : String(error),
+  })
+}
+
+/**
+ * The frame every lock-holding operation runs in: failures are mapped onto
+ * the failure value, handed to the failure hook while the outer locks are
+ * still held (the store locks are already released), and rethrown; every
+ * lock is released afterwards.
+ */
+export async function runOperation<T>(
+  ctx: StoreContext,
+  operation: PoolOperation,
+  rowId: string,
+  onFailure:
+    | ((rowId: string, error: PoolOperationError) => void | Promise<void>)
+    | undefined,
+  body: (locks: LockStack, progress: Progress) => Promise<T>,
+): Promise<T> {
+  const locks = new LockStack(ctx.lockDefaults, ctx.lockEnv)
+  const progress: Progress = { writes: 0 }
+  try {
+    return await body(locks, progress)
+  } catch (error) {
+    const failure = toFailure(error, operation, rowId, progress)
+    if (failure.kind !== 'after-persist-hook')
+      await callFailureHook(operation, onFailure, rowId, failure, ctx.logger)
+    throw failure
+  } finally {
+    await locks.releaseAll()
+  }
+}
