@@ -1,0 +1,38 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "formatter": { "indentStyle": "space", "indentWidth": 2 },
+  "javascript": {
+    "formatter": {
+      "semicolons": "asNeeded",
+      "jsxQuoteStyle": "single",
+      "trailingCommas": "all",
+      "quoteStyle": "single"
+    }
+  },
+  "linter": { "enabled": true },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "src/**",
+      "test/**",
+      "scripts/check-installed-ranges.mjs",
+      "scripts/check-sources.mjs",
+      "package.json",
+      "!!dist",
+      "!!.cortexkit",
+      "!!test/.scratch"
+    ]
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noExplicitAny": "off" },
+          "style": { "noNonNullAssertion": "off" },
+          "correctness": { "noUnusedFunctionParameters": "off" }
+        }
+      }
+    }
+  ]
+}
