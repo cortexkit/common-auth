@@ -1,0 +1,106 @@
+import type { StoredCredential } from './schema.js'
+
+/** Every library operation that can fail, as named in the failure value. */
+export type PoolOperation =
+  | 'add'
+  | 'replace'
+  | 'rotate'
+  | 'disable'
+  | 'recordIdentity'
+  | 'refresh'
+  | 'pull'
+
+/**
+ * How far an operation got before it failed.
+ *
+ * `before-first-write`: nothing was written; both files are as they were.
+ * `after-first-write`: the operation's first file write landed and a later one
+ * did not; the operation's documented intermediate is on disk and is never
+ * rolled back. `pull`: a quota pull, or the recording of its result, failed.
+ */
+export type PoolFailurePhase =
+  | 'before-first-write'
+  | 'after-first-write'
+  | 'pull'
+
+/**
+ * Why an operation failed. `lock-contention` and `lock-ownership` are the two
+ * lock outcomes (a wait that ran out, and a lease found lost); the rest are
+ * refusals and failures of the operation itself.
+ */
+export type PoolFailureKind =
+  | 'lock-contention'
+  | 'lock-ownership'
+  | 'pending-migration'
+  | 'load-error'
+  | 'unknown-row'
+  | 'invalid-row'
+  | 'invalid-input'
+  | 'id-exists'
+  | 'id-removed'
+  | 'type-mismatch'
+  | 'no-credential'
+  | 'row-disabled'
+  | 'row-key-changed'
+  | 'refresh-stamp-ahead'
+  | 'attribution'
+  | 'provider'
+  | 'pull'
+  | 'invalid-quota'
+  | 'after-persist-hook'
+  | 'unexpected'
+
+/**
+ * The single failure value of every store operation. `committed` is present
+ * only when the operation had already written a credential to the state file
+ * before it failed (a partial rotation or refresh): it is the credential now
+ * on disk, so a caller never has to re-read the files to learn it.
+ */
+export class PoolOperationError extends Error {
+  readonly operation: PoolOperation
+  readonly rowId: string | undefined
+  readonly phase: PoolFailurePhase
+  readonly retryable: boolean
+  readonly kind: PoolFailureKind
+  readonly committed: StoredCredential | undefined
+
+  constructor(details: {
+    operation: PoolOperation
+    rowId?: string
+    phase: PoolFailurePhase
+    retryable: boolean
+    kind: PoolFailureKind
+    committed?: StoredCredential
+    message?: string
+    cause?: unknown
+  }) {
+    super(
+      details.message ??
+        `${details.operation} failed (${details.kind}, ${details.phase})`,
+      details.cause === undefined ? undefined : { cause: details.cause },
+    )
+    this.name = 'PoolOperationError'
+    this.operation = details.operation
+    this.rowId = details.rowId
+    this.phase = details.phase
+    this.retryable = details.retryable
+    this.kind = details.kind
+    this.committed = details.committed
+  }
+}
+
+/**
+ * Thrown when a row operation or a refresh is called from inside a hook of a
+ * lock-holding operation (or from any continuation created inside one). It is
+ * thrown before any lock is taken or waited for.
+ */
+export class PoolReentryError extends Error {
+  readonly operation: PoolOperation
+  constructor(operation: PoolOperation) {
+    super(
+      `${operation} was called from inside a store hook; hand it to the caller's continuation instead`,
+    )
+    this.name = 'PoolReentryError'
+    this.operation = operation
+  }
+}
