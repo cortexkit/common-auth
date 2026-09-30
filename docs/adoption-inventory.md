@@ -45,7 +45,7 @@ Component legend: 1 rpc, 2 tui-build, 3 tui-preferences, 4 fs, 5 logger, 6 sideb
 
 ## Adoption inputs: public exports and parameters
 
-All seven subpaths are ESM, with `dist/<subpath>/index.js` and adjacent `index.d.ts` targets. No extra package subpath exposes the unwrapped lock or test clock. The adopting plugin supplies its file paths, directory prefixes, registry key, preferences key, logger channels and schema/merge policy.
+All seven subpaths are ESM, with `dist/<subpath>/index.js` and adjacent `index.d.ts` targets. Since 0.1.1, `/fs` also exports the try-once lock underneath `withLock`, `acquireRefreshFileLock({name, ttlMs, path, now?, renew?, renewIntervalMs?, onStep?})`, which returns a `{release, assertOwned}` handle or `null` when the lock is held, and `isLostMarkerRaceError`. It is for callers that hold a lock across several steps or poll rather than wait; openai-auth's refresh leases use it. The adopting plugin supplies its file paths, directory prefixes, registry key, preferences key, logger channels and schema/merge policy.
 
 ### ./rpc
 

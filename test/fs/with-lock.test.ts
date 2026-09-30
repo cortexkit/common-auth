@@ -42,6 +42,32 @@ test('lock paths and frozen writer constants preserve writer defaults', () => {
   expect(Object.isFrozen(WRITER_LOCK_CONSTANTS.preferences)).toBe(true)
 })
 
+test('the fs subpath exports the try-once lock: a held lock returns null until released', async () => {
+  const publicApi = await import('../../src/fs/index.js')
+  const first = await publicApi.acquireRefreshFileLock({
+    name,
+    ttlMs: 10000,
+    path: target,
+  })
+  expect(first).not.toBeNull()
+  expect(
+    await publicApi.acquireRefreshFileLock({
+      name,
+      ttlMs: 10000,
+      path: target,
+    }),
+  ).toBeNull()
+  await first?.release()
+  const again = await publicApi.acquireRefreshFileLock({
+    name,
+    ttlMs: 10000,
+    path: target,
+  })
+  expect(again).not.toBeNull()
+  await again?.release()
+  expect(publicApi.isLostMarkerRaceError({ code: 'EINVAL' })).toBe(true)
+})
+
 test('classifies ENOENT EINVAL and ENOTDIR as lost marker races', () => {
   for (const code of ['ENOENT', 'EINVAL', 'ENOTDIR'])
     expect(isLostMarkerRaceError({ code })).toBe(true)
