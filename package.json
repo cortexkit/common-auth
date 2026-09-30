@@ -8,17 +8,42 @@
     "url": "git+https://github.com/cortexkit/common-auth.git"
   },
   "type": "module",
-  "workspaces": ["test/fixtures/*"],
+  "workspaces": [
+    "test/fixtures/*"
+  ],
   "exports": {
-    "./rpc": { "types": "./dist/rpc/index.d.ts", "import": "./dist/rpc/index.js" },
-    "./fs": { "types": "./dist/fs/index.d.ts", "import": "./dist/fs/index.js" },
-    "./logger": { "types": "./dist/logger/index.d.ts", "import": "./dist/logger/index.js" },
-    "./sidebar-file": { "types": "./dist/sidebar-file/index.d.ts", "import": "./dist/sidebar-file/index.js" },
-    "./tui-prefs": { "types": "./dist/tui-prefs/index.d.ts", "import": "./dist/tui-prefs/index.js" },
-    "./tui-build": { "types": "./dist/tui-build/index.d.ts", "import": "./dist/tui-build/index.js" },
-    "./tui": { "types": "./dist/tui/index.d.ts", "import": "./dist/tui/index.js" }
+    "./rpc": {
+      "types": "./dist/rpc/index.d.ts",
+      "import": "./dist/rpc/index.js"
+    },
+    "./fs": {
+      "types": "./dist/fs/index.d.ts",
+      "import": "./dist/fs/index.js"
+    },
+    "./logger": {
+      "types": "./dist/logger/index.d.ts",
+      "import": "./dist/logger/index.js"
+    },
+    "./sidebar-file": {
+      "types": "./dist/sidebar-file/index.d.ts",
+      "import": "./dist/sidebar-file/index.js"
+    },
+    "./tui-prefs": {
+      "types": "./dist/tui-prefs/index.d.ts",
+      "import": "./dist/tui-prefs/index.js"
+    },
+    "./tui-build": {
+      "types": "./dist/tui-build/index.d.ts",
+      "import": "./dist/tui-build/index.js"
+    },
+    "./tui": {
+      "types": "./dist/tui/index.d.ts",
+      "import": "./dist/tui/index.js"
+    }
   },
-  "files": ["dist/"],
+  "files": [
+    "dist/"
+  ],
   "scripts": {
     "build": "bun scripts/check-installed-ranges.mjs && tsc -p tsconfig.build.json",
     "test": "bun test",
@@ -30,16 +55,24 @@
     "prepublishOnly": "bun run build",
     "check:ranges": "bun scripts/check-installed-ranges.mjs"
   },
-  "dependencies": { "jsonc-parser": "^3.3.1" },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
+  },
   "peerDependencies": {
     "@opentui/core": ">=0.5.12",
     "@opentui/solid": ">=0.5.12",
     "solid-js": "1.9.12"
   },
   "peerDependenciesMeta": {
-    "@opentui/core": { "optional": true },
-    "@opentui/solid": { "optional": true },
-    "solid-js": { "optional": true }
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
