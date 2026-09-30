@@ -13,6 +13,8 @@ const runtimeEntry = pathToFileURL(
   resolve('test/fixtures/tui/runtime-entry.mjs'),
 ).href
 
+// Runs a real `npm pack` of this repository; npm's start-up alone can exceed
+// bun's 5-second default on a loaded machine.
 test('packed tui selector probes the exact id and imports only the selected absolute entry', async () => {
   const root = await makeRepoScratchDir()
   try {
@@ -70,7 +72,7 @@ test('packed tui selector probes the exact id and imports only the selected abso
   } finally {
     await rm(root, { recursive: true, force: true })
   }
-})
+}, 60_000)
 
 test('default importer loads caller file URLs outside the library directory', async () => {
   expect(await loadTui({ rawEntry, runtimeEntry })).toBe('raw fixture')
