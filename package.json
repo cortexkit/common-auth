@@ -39,6 +39,18 @@
     "./tui": {
       "types": "./dist/tui/index.d.ts",
       "import": "./dist/tui/index.js"
+    },
+    "./store": {
+      "types": "./dist/store/index.d.ts",
+      "import": "./dist/store/index.js"
+    },
+    "./quota": {
+      "types": "./dist/quota/index.d.ts",
+      "import": "./dist/quota/index.js"
+    },
+    "./routing": {
+      "types": "./dist/routing/index.d.ts",
+      "import": "./dist/routing/index.js"
     }
   },
   "files": [
