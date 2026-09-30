@@ -1,0 +1,173 @@
+# Behaviour provenance
+
+This table records the behaviour preserved when extracting shared machinery from the openai-auth, anthropic-auth and antigravity-auth plugins. A reference/ origin identifies a historical file in a supplied plugin snapshot, not a runtime dependency. new (neither copy) identifies library-specific behaviour rather than copied machinery. Test cells are unchanged bun:test titles; multiple behaviours may share a test. The common redaction set covers credentials independently of plugin identity; moved identity-redaction tests explicitly pass extraSecretKeys for chatgptaccountid, email, orgname and organizationname. Their failures do not imply those identity keys belong in the common set.
+
+| component | behaviour | origin | test |
+| --- | --- | --- | --- |
+| tooling | Source checker excludes skipped, failed and errored synthetic cases | new (neither copy) | source checker excludes skipped, failed and errored synthetic cases |
+| tooling | Source checker decodes XML titles and strips describe prefixes | new (neither copy) | source checker decodes XML titles and strips describe prefixes |
+| tooling | Source checker rejects empty tables and unmatched cells | new (neither copy) | source checker rejects empty tables and unmatched cells |
+| tooling | Source checker matches exactly two cells from the real four-test JUnit fixture | new (neither copy) | source checker matches exactly two cells from the real four-test JUnit fixture |
+| tooling | Installed range checker enumerates root and workspace globs and rejects drift | reference/openai-auth/scripts/check-installed-ranges.mjs | installed range checker enumerates root and workspace globs and rejects drift |
+| fs | Classifies ENOENT EINVAL and ENOTDIR as lost marker races | reference/openai-auth/packages/core/src/refresh-file-lock.ts | classifies ENOENT EINVAL and ENOTDIR as lost marker races |
+| fs | Acquisition writes private newline-terminated owner bytes | reference/openai-auth/packages/core/src/refresh-file-lock.ts | acquisition writes private newline-terminated owner bytes |
+| fs | Eviction marker has a private distinct evicter identity | reference/openai-auth/packages/core/src/refresh-file-lock.ts | eviction marker has a private distinct evicter identity |
+| fs | Reads expired legacy owner.json despite a fresh directory mtime | reference/openai-auth/packages/core/src/refresh-file-lock.ts | reads expired legacy owner.json despite a fresh directory mtime |
+| fs | Creates a missing parent directory before acquiring the lock | reference/openai-auth/packages/core/src/refresh-file-lock.ts | creates a missing parent directory before acquiring the lock |
+| fs | Allows only one contender when the parent directory is missing | reference/openai-auth/packages/core/src/refresh-file-lock.ts | allows only one contender when the parent directory is missing |
+| fs | Does not let a stalled renewal overwrite a successor that stole its marker | reference/openai-auth/packages/core/src/refresh-file-lock.ts | does not let a stalled renewal overwrite a successor that stole its marker |
+| fs | Does not let a stalled release remove a successor that stole its marker | reference/openai-auth/packages/core/src/refresh-file-lock.ts | does not let a stalled release remove a successor that stole its marker |
+| fs | Waits for an in-flight renewal before release can remove the lock | reference/openai-auth/packages/core/src/refresh-file-lock.ts | waits for an in-flight renewal before release can remove the lock |
+| fs | Rechecks ownership after the injected pre-write test hook before renewal writes | reference/openai-auth/packages/core/src/refresh-file-lock.ts | re-checks ownership after the renewal write seam before writing |
+| fs | Relinquishes the lock when its marker is stolen after the final renewal check | reference/openai-auth/packages/core/src/refresh-file-lock.ts | relinquishes the lock when its marker is stolen after the final renewal check |
+| fs | Preserves a successor record during post-write relinquish | reference/openai-auth/packages/core/src/refresh-file-lock.ts | preserves a successor record during post-write relinquish |
+| fs | Reschedules after marker contention and advances the lease | reference/openai-auth/packages/core/src/refresh-file-lock.ts | reschedules after marker contention and advances the lease |
+| fs | Reschedules after a renewal marker failure throws | reference/openai-auth/packages/core/src/refresh-file-lock.ts | reschedules after a renewal marker failure throws |
+| fs | Retries release after recovering a stale marker | reference/openai-auth/packages/core/src/refresh-file-lock.ts | retries release after recovering a stale marker |
+| fs | Elects one owner across 512 plain stale-lock contentions | reference/openai-auth/packages/core/src/refresh-file-lock.ts | elects one owner across 512 plain stale-lock contentions |
+| fs | Lock paths and frozen writer constants preserve writer defaults | new (neither copy) | lock paths and frozen writer constants preserve writer defaults |
+| fs | Contention waits and reports lock identity | new (neither copy) | contention waits and reports lock identity |
+| fs | Newline-free live payload beats backdated mtime | new (neither copy) | newline-free live payload beats backdated mtime |
+| fs | WithLock releases and stops renewal after fulfilment | new (neither copy) | withLock releases and stops renewal after fulfilment |
+| fs | WithLock releases and stops renewal after rejection | new (neither copy) | withLock releases and stops renewal after rejection |
+| fs | WithLock defaults to no renewal | new (neither copy) | withLock defaults to no renewal |
+| fs | AssertOwned rejects foreign ownership | new (neither copy) | assertOwned rejects foreign ownership |
+| fs | AssertOwned rejects expired ownership | new (neither copy) | assertOwned rejects expired ownership |
+| fs | AssertOwned rejects unreadable ownership | new (neither copy) | assertOwned rejects unreadable ownership |
+| fs | Atomic writer supports compact serialization | new (neither copy) | atomic writer supports compact serialization |
+| fs | BeforeRename runs after staging and before commit | new (neither copy) | beforeRename runs after staging and before commit |
+| fs | Renewal stages private owner bytes and atomically renames while assertOwned remains valid | reference/antigravity-auth/packages/core/src/file-lock.ts | renewal stages private owner bytes and atomically renames while assertOwned remains valid |
+| fs | Atomic writer defaults to pretty JSON with newline and private mode | reference/openai-auth/packages/core/src/atomic-write.ts | atomic writer defaults to pretty JSON with newline and private mode |
+| fs | Atomic writer cleans staging after write failure | reference/antigravity-auth/packages/core/src/atomic-write.ts | atomic writer cleans staging after write failure |
+| fs | Atomic writer cleans staging after rename failure | reference/antigravity-auth/packages/core/src/atomic-write.ts | atomic writer cleans staging after rename failure |
+| logger | Scrubs embedded eyJabc in place, preserving surrounding message text | reference/openai-auth/packages/core/src/logger.ts | scrubs embedded eyJabc in place while preserving surrounding message text |
+| logger | Case-insensitive full-key redaction plus normalized apikey substring and secret/password/token suffix rules, preserving token counts | reference/openai-auth/packages/core/src/logger.ts | redacts the full case-insensitive key set and normalized secret key families |
+| logger | Base leaves plugin identity keys visible; extraSecretKeys receives normalized keys and opts in to redaction | new (neither copy) | base redaction leaves plugin identity keys visible and extras receive normalized keys |
+| logger | Tool schemas receive string scrubbing only, preserving secret-shaped property names | reference/openai-auth/packages/core/src/logger.ts | tool schemas scrub strings without redacting schema property names |
+| logger | extraValuePatterns scrub matches in place without sharing caller regexp state | new (neither copy) | extra value patterns scrub every match in place without mutable regexp state |
+| logger | Capture receives already-scrubbed message and payload | reference/anthropic-auth/packages/core/src/logger.ts | capture sink receives only scrubbed messages and payloads |
+| logger | Rotates at 5 MiB, retains three generations and applies 0o600 to active and rotated files | reference/openai-auth/packages/core/src/logger.ts | rotates at 5 MiB keeping three private generations |
+| logger | Flushes after fifty lines or the 500 ms deadline | reference/openai-auth/packages/core/src/logger.ts | buffers until fifty lines or the 500 ms flush deadline |
+| logger | Resolves path and level providers dynamically, respecting the operator override | reference/openai-auth/packages/core/src/logger.ts | resolves host path and level providers at runtime with operator override |
+| logger | Host-installed exit handler drains buffered lines synchronously | reference/openai-auth/packages/opencode/src/logger.ts | host-installed exit handler synchronously flushes buffered logs |
+| logger | Redacts stable-ID variants while preserving internal accountId; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | redacts only the ChatGPT stable id, not the internal accountId key |
+| logger | Redacts served identity; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | redacts served identity email and organization values from emitted log lines |
+| logger | Redacts every credential shape while preserving internal accountId; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | writes no credential value when a command logs every secret shape at once |
+| sidebar-file | Tolerant reads hand parsed JSON to the supplied normalizer | reference/openai-auth/packages/opencode/src/sidebar-state.ts | tolerant reads hand parsed JSON to the supplied normalizer |
+| sidebar-file | Writes state atomically and cleans up temp files | reference/openai-auth/packages/opencode/src/sidebar-state.ts | writes state atomically and cleans up temp files |
+| sidebar-file | Five concurrent writes are serialized; the final queued state wins | reference/openai-auth/packages/opencode/src/sidebar-state.ts | 5 concurrent writes with different lastUpdated values — last-chained state wins |
+| sidebar-file | Rejects the failed operation but keeps the write queue usable | reference/openai-auth/packages/opencode/src/sidebar-state.ts | rejects the failed operation but keeps the write queue usable |
+| sidebar-file | Merge rechecks new bytes and never writes the first result | reference/openai-auth/packages/opencode/src/sidebar-state.ts | merge rechecks new bytes and never writes the first result |
+| sidebar-file | Merge retries three times then performs one final merge and write | reference/openai-auth/packages/opencode/src/sidebar-state.ts | merge retries three times then performs one final merge and write |
+| sidebar-file | Supplied parent is hardened from 0755 to 0700 | new (neither copy) | supplied parent is hardened from 0755 to 0700 |
+| sidebar-file | EPERM chmod warns once and still resolves the queued write | new (neither copy) | EPERM chmod warns once and still resolves the queued write |
+| sidebar-file | Lost ownership before commit rejects the queue and leaves target and staging unchanged | new (neither copy) | lost ownership before commit rejects the queue and leaves target and staging unchanged |
+| sidebar-file | Sidebar lock TTL is observed before commit | new (neither copy) | sidebar lock TTL is observed before commit |
+| sidebar-file | Sidebar lock renews with unchanged owner and private mode | new (neither copy) | sidebar lock renews with unchanged owner and private mode |
+| sidebar-file | Sidebar contention override rejects and queue recovers | new (neither copy) | sidebar contention override rejects and queue recovers |
+| sidebar-file | Sidebar default contention waits 15000 ms | new (neither copy) | sidebar default contention waits 15000 ms |
+| tui-prefs | Missing file returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | missing file returns empty object |
+| tui-prefs | Parses JSONC with comments and trailing commas | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | parses JSONC with comments and trailing commas |
+| tui-prefs | Malformed file returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | malformed file returns empty object |
+| tui-prefs | Unterminated object returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | unterminated object returns empty object |
+| tui-prefs | Trailing garbage after object returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | trailing garbage after object returns empty object |
+| tui-prefs | Non-object root returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | non-object root returns empty object |
+| tui-prefs | Creates file with template on first write | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | creates file with template on first write |
+| tui-prefs | Preserves comments and unrelated keys on update | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | preserves comments and unrelated keys on update |
+| tui-prefs | Writes nested paths | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | writes nested paths |
+| tui-prefs | Rapid sequential updates land the final value | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | rapid sequential updates land the final value |
+| tui-prefs | No temp files are left behind | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | no temp files are left behind |
+| tui-prefs | Fires after the file changes | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | fires after the file changes |
+| tui-prefs | Observes a change after watcher return; test waits 25 ms, and the slice reported that an immediate asynchronous baseline regression was not caught | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | observes a change made immediately after the watcher returns |
+| tui-prefs | Polls when directory watcher construction fails | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | polls when directory watcher construction fails |
+| tui-prefs | Debounces bursts into few callbacks | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | debounces bursts into few callbacks |
+| tui-prefs | Missing directory returns a no-op disposer | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | missing directory returns a no-op disposer |
+| tui-prefs | Dispose stops callbacks | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | dispose stops callbacks |
+| tui-prefs | Ignores sibling files that share the preferences name as a prefix | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | ignores sibling files that share the preferences name as a prefix |
+| tui-prefs | Does not fire when the file is rewritten with identical content | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | does not fire when the file is rewritten with identical content |
+| tui-prefs | Reader delegates plugin schema and defaults to the caller | new (neither copy) | reader delegates plugin schema and defaults to the caller |
+| tui-prefs | Independent writers preserve both plugin updates under the shared lock | new (neither copy) | independent writers preserve both plugin updates under the shared lock |
+| tui-prefs | Creates a caller supplied missing parent directory | new (neither copy) | creates a caller supplied missing parent directory |
+| tui-prefs | Preferences contention waits 2000 ms, rejects, and the same queue recovers | new (neither copy) | preferences contention waits 2000 ms, rejects, and the same queue recovers |
+| tui-prefs | Preferences TTL is 10000 ms in the staged write lease | new (neither copy) | preferences TTL is 10000 ms in the staged write lease |
+| tui-prefs | Preferences renews its lease while a staged write is held | new (neither copy) | preferences renews its lease while a staged write is held |
+| tui-prefs | Preferences ownership loss after staging rejects without committing or leaking a temp file | new (neither copy) | preferences ownership loss after staging rejects without committing or leaking a temp file |
+| tui-build | Walk static imports, re-exports and literal dynamic imports without treating comments or ordinary strings as edges | new (neither copy) | walker parses static, re-export and literal dynamic imports while ignoring comments |
+| tui-build | Ignore regex bodies and walk imports inside template expressions | new (neither copy) | walker distinguishes regex bodies and traverses template expressions |
+| tui-build | Reject non-literal dynamic imports with file and specifier context | new (neither copy) | walker rejects non-literal dynamic imports and missing inline export targets with context |
+| tui-build | Reject missing or unmapped inline export targets with subpath and resolved-target context | new (neither copy) | walker rejects non-literal dynamic imports and missing inline export targets with context |
+| tui-build | Emit exactly the reachable closure, shared copies and selector; map every emitted file to an existing absolute source; preserve the earlier variant destination | new (neither copy) | linking emits the exact closure and compiles runtime JSX through the encoded Solid runtime |
+| tui-build | Resolve inline subpaths directly through package exports and preserve named and default exports | new (neither copy) | linking emits the exact closure and compiles runtime JSX through the encoded Solid runtime |
+| tui-build | Copy shared fs sources once and preserve LockContentionError identity across entry and sidebar consumers | new (neither copy) | inlined fs and sidebar consumers share one LockContentionError identity |
+| tui-build | Never invoke the injected Solid-transform loader during a raw build | new (neither copy) | linking emits the exact closure and compiles runtime JSX through the encoded Solid runtime |
+| tui-build | Compile runtime JSX through the encoded OpenTUI Solid runtime and load its transform once | reference/openai-auth/packages/opencode/scripts/build-tui.ts | linking emits the exact closure and compiles runtime JSX through the encoded Solid runtime |
+| tui-build | Rewrite runtime-set imports in entry-closure and shared .ts files while retaining raw solid-js/store imports | new (neither copy) | linking emits the exact closure and compiles runtime JSX through the encoded Solid runtime |
+| tui-build | Report the literal surviving external sets, excluding node: and encoded runtime ids | new (neither copy) | linking emits the exact closure and compiles runtime JSX through the encoded Solid runtime |
+| tui-build | Resolve jsonc-parser from repo-scratch destinations and import an emitted non-TSX entry-reachable module and copied selector under bare Bun | new (neither copy) | linking emits the exact closure and compiles runtime JSX through the encoded Solid runtime |
+| tui-build | Compare all emitted destination files with npm's actual publish list, respecting package.json files restrictions | new (neither copy) | publish-list compares the entire emitted destination including shared copies and selector |
+| tui-build | Packed selector probes the exact encoded id, selects raw only for missing-registry errors, rethrows other errors without importing either entry, and returns default | reference/openai-auth/packages/opencode/src/tui/entry.mjs | packed tui selector probes the exact id and imports only the selected absolute entry |
+| tui-build | Default selector importer loads caller-supplied absolute file URLs outside the library directory | new (neither copy) | default importer loads caller file URLs outside the library directory |
+| tui-build | Reject relative entries before importing and name the offending option | new (neither copy) | selector rejects relative entries naming the offending option before importing |
+| logger | Configured level and private log permissions | reference/openai-auth/packages/core/src/logger.ts | suppresses debug when level=info, includes warn |
+| logger | Cycles preserve other fields | reference/openai-auth/packages/core/src/logger.ts | circular payload preserves non-circular fields and marks [Circular] |
+| logger | Shared references are not cycles | reference/openai-auth/packages/core/src/logger.ts | diamond shared ref (no cycle) serializes fully without [Circular] |
+| logger | Serialization failure does not throw | reference/openai-auth/packages/core/src/logger.ts | degrade-catch net still catches non-cycle throws (BigInt) and emits [unserializable] |
+| logger | Compound credential keys are redacted | reference/openai-auth/packages/core/src/logger.ts | redacts compound secret keys (accessToken, apiKey, clientSecret, bearerToken, refreshToken) |
+| logger | Safe camel-case fields remain visible | reference/openai-auth/packages/core/src/logger.ts | keeps non-secret camelCase keys (sessionKey, cacheKey, lastAccessAt) |
+| logger | Token counts remain visible | reference/openai-auth/packages/core/src/logger.ts | keeps token COUNT keys (input_tokens, cached_tokens, output_tokens) unredacted |
+| logger | No output before host initialization | reference/openai-auth/packages/core/src/logger.ts | writes nothing at all before a host calls initLogger |
+| logger | Common credential fields are redacted | reference/openai-auth/packages/core/src/logger.ts | redacts simple secret keys (authorization, x-api-key, cookie, refresh, token) |
+| logger | Scrubs structured tokens and keys | reference/openai-auth/packages/core/src/logger.ts | masks token-shaped values and secret keys in structured data |
+| logger | Long manifest handles are scrubbed, short diagnostics preserved | reference/openai-auth/packages/core/src/logger.ts | redacts manifest handles embedded in messages without masking short ckh tokens |
+| rpc | Writes and discovers live entry | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | writePortFile then discover returns the entry for a live pid |
+| rpc | Ignores dead processes | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | discover ignores dead pids |
+| rpc | Newest startedAt wins | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | discover picks the newest startedAt among live entries |
+| rpc | Expected live PID wins over newer entry | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | discover returns live entry matching the expected pid instead of newer live entry |
+| rpc | Missing expected PID falls back to newest | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | discover falls back to newest live entry when expected pid matches none |
+| rpc | No expected PID selects newest | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | discover still picks newest live entry when expected pid is undefined |
+| rpc | Dead expected PID is never selected | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | discover never returns a dead pid even when it matches expected pid |
+| rpc | Preserves PID for discovery matching | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | writePortFile keeps the liveness pid available for matching |
+| rpc | Sweep preserves usable live entries | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState removes a dead port file but leaves a live one untouched |
+| rpc | Sweep removes unusable entries even with live PID | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState removes a port file that has a pid but no port |
+| rpc | Sweep removes empty directories except active directory | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState removes an emptied project dir but never its active dir |
+| rpc | Sweep supports legacy directory names | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState collects dead legacy state but preserves live legacy state |
+| rpc | Sweep removes corrupt port records | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState removes a corrupt port file |
+| rpc | Corrupt sibling does not endanger live record | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState leaves a valid live port file in a directory with a corrupt file |
+| rpc | Corrupt-record unlink failure is tolerated | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState ignores an unlink failure for a corrupt port file |
+| rpc | One ENOENT retry recovers concurrent directory removal | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | writePortFile recovers when the directory is removed between mkdir and write |
+| rpc | Persistent ENOENT stops after one retry | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | writePortFile does not retry forever on a persistent ENOENT |
+| rpc | Sweep continues through siblings | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState removes unusable entries and continues through sibling directories |
+| rpc | Numeric startedAt is written and used; non-numeric values sort last rather than being rejected | new (neither copy) | numeric startedAt is written; non-numeric startedAt sorts last without rejection |
+| rpc | Discovery unlinks dead usable records only | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | discovery unlinks usable dead entries, ignores missing finite ports and preserves usable live entries |
+| rpc | Directory prefix is escaped and legacy unprefixed names match | new (neither copy) | managed directory predicate treats prefixes literally and preserves unprefixed legacy names |
+| rpc | Session reaches apply unchanged; health open and RPC authenticated | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | apply callback receives sessionId unchanged; health is open and pending-notifications drains |
+| rpc | Sessionless drain returns every notice without pruning | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | a session-less notification drain delivers every notice but cannot prune another session |
+| rpc | Stale server stop preserves successor; own matching record is removed | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | stopping a stale server leaves its successor port file and health endpoint live |
+| rpc | Body limit is one MiB | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | rejects body exceeding 1 MB byte limit |
+| rpc | Body limit counts bytes | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | rejects multibyte body where byte length exceeds limit but string length does not |
+| rpc | Stalled socket is reclaimed | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | destroys a socket that stalls part-way through sending a request |
+| rpc | Failed sweep does not block startup | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | starts when the state sweep fails |
+| rpc | Startup sweeps stale project state | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | startup sweeps stale project state outside the active directory |
+| rpc | secureDir true hardens RPC directory to 0700 | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | creates a managed RPC directory with 0700 permissions |
+| rpc | secureDir false preserves existing override permissions | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | does not chmod a foreign RPC override directory |
+| rpc | Slow apply survives the default inactivity period | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | default timeout lets a slow apply handler respond before the socket is destroyed |
+| rpc | Sessionless HTTP delivers both scopes, filters acknowledged IDs and prunes nothing | new (neither copy) | sessionless HTTP oracle retains every notice, filters acknowledged IDs and warns once |
+| rpc | Two sessionless HTTP calls warn exactly once through logger capture | new (neither copy) | sessionless HTTP oracle retains every notice, filters acknowledged IDs and warns once |
+| rpc | Stop independently checks token identity | new (neither copy) | stop port-file identity fence: different token |
+| rpc | Stop independently checks port identity | new (neither copy) | stop port-file identity fence: different port |
+| rpc | Registered servers isolate queue scope | new (neither copy) | two servers isolate notification queue scope |
+| rpc | Client preserves wire session | reference/openai-auth/packages/opencode/src/rpc/rpc-client.ts | RPC client preserves sessionId through the server apply callback |
+| rpc | Default client timeout is two seconds | reference/openai-auth/packages/opencode/src/rpc/rpc-client.ts | keeps the default call timeout at two seconds |
+| rpc | Per-call timeout overrides default | reference/openai-auth/packages/opencode/src/rpc/rpc-client.ts | apply honors a per-call timeout override |
+| rpc | Socket inactivity 90 s and request receipt 2 s are independent | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | server wires 90 second inactivity and separate 2 second receipt defaults |
+| rpc | Ordered one-time wire delivery | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | push then drain returns the item once, ordered |
+| rpc | Wire session receives own and global notices | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | session scoping: a session only drains its own + global |
+| rpc | Recent scoped drain indicates connection | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | isTuiConnected reflects a recent drain within the window |
+| rpc | Scoped drain does not connect an unscoped probe | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | a drain for one session does not make an unscoped probe connected |
+| rpc | Queue cap evicts oldest beyond 100 | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | queue cap evicts oldest beyond 100 |
+| rpc | Global notices survive one session acknowledgement | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | a global notification reaches every session and is not pruned by one ack |
+| rpc | Same-directory replacement serialized | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | serializes same-directory replacement and fences predecessor release |
+| rpc | Stale registry release is identity-fenced | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | serializes same-directory replacement and fences predecessor release |
+| rpc | Different directories are independent | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | does not serialize different project directories |
+| rpc | Stop removes its own matching port and token record | new (neither copy) | stop port-file identity fence: matching identity |
+| rpc | Root, prefix and registration each isolate queue scope | new (neither copy) | queue scope includes root, prefix and registration independently |
