@@ -4,9 +4,9 @@ import { LockStack } from './refresh-lock.js'
 import { refusal, type StoreRuntime, unknownRow } from './runtime.js'
 
 /**
- * The tuple a pull or refresh captured when it was issued. A result applies
- * only while the row still has this id, this credential epoch and this
- * recorded identity; a replaced credential bumps the epoch, so work issued
+ * What a pull or refresh captured about its row (named by id alongside) when
+ * it was issued. A result applies only while the row with that id still has
+ * this credential epoch and this recorded identity; a replaced credential bumps the epoch, so work issued
  * for the old one is discarded.
  */
 export interface Attribution {

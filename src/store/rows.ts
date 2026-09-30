@@ -216,7 +216,8 @@ export async function addRow(
                 'type-mismatch',
                 `row ${id} is a ${existing.type} row`,
               )
-            // Completes an add interrupted between its two writes.
+            // An earlier add wrote this row's config and stopped before the
+            // state write; writing the credential now completes it at epoch 1.
             if (!existing.hasEntry) {
               tx.setEntry(id, {
                 credentialEpoch: 1,

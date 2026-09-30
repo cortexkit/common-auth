@@ -224,9 +224,10 @@ describe('crash windows, with the observer surviving', () => {
       },
     )
     await entered.promise
-    // The intermediate a replace leaves after its config write: bumped epoch,
-    // cleared quota, prior credential. A cooperating replace cannot write it
-    // while this refresh holds the row lock, so an uncontrolled writer does.
+    // Plant what an interrupted replace leaves after its config write: bumped
+    // epoch, cleared quota, prior credential. The library's own replace cannot
+    // write it while this refresh holds the row lock, so the test writes the
+    // config directly under the store lock.
     await withLock(
       s.configPath,
       { name: 'save', ttlMs: 10_000, timeoutMs: 5_000 },

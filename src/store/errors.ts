@@ -15,8 +15,9 @@ export type PoolOperation =
  *
  * `before-first-write`: nothing was written; both files are as they were.
  * `after-first-write`: the operation's first file write landed and a later one
- * did not; the operation's documented intermediate is on disk and is never
- * rolled back. `pull`: a quota pull, or the recording of its result, failed.
+ * did not; what that first write left is on disk and is never rolled back
+ * (add: a row with no credential; replace: the bumped epoch beside the prior
+ * credential; rotate: the rotated credential beside the old per-row entry). `pull`: a quota pull, or the recording of its result, failed.
  */
 export type PoolFailurePhase =
   | 'before-first-write'

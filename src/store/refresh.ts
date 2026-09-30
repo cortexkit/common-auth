@@ -125,8 +125,9 @@ export async function refreshRow(
         )
         await locks.acquire(options.providerLock ?? rt.providerLock)
         for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
-        // A capture-only progress: giving a row its entry is not the
-        // refresh's first write, so it never turns a later failure partial.
+        // The capture may write the config once, to give a row its per-row
+        // entry. That write is setup, not the rotation, so it is counted apart
+        // and never makes a later failure report `after-first-write`.
         const captureProgress: Progress = { writes: 0 }
         const read = await withTransaction(
           ctx,

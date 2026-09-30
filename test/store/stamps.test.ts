@@ -8,8 +8,9 @@ import { oauth, rejectionOf, type Scenario, scenario } from './helpers.js'
 
 let s: Scenario
 // The injected clock is pinned at the real clock when each test starts and
-// only advanced while no vendored writer runs, so the vendored comparator's
-// own Date.now() stays within a few milliseconds of it.
+// only advanced while no vendored legacy writer runs, so the Date.now() the
+// legacy token comparison (applyNewerTokenState) reads stays within a few
+// milliseconds of it.
 let T0: number
 let clock: number
 beforeEach(async () => {
