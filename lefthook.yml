@@ -3,4 +3,6 @@ pre-commit:
     lint:
       run: bun run lint
     typecheck:
-      run: bun run typecheck
+      # The test fixtures import the package by name, which resolves to the
+      # declarations in dist/, so the build must run before the typecheck.
+      run: bun run build && bun run typecheck
