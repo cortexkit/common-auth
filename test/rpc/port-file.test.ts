@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   chmod,
   mkdir,
-  mkdtemp,
   readdir,
   rm,
   rmdir,
@@ -10,7 +9,6 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   createManagedRpcStateDirPredicate,
@@ -19,6 +17,7 @@ import {
   sweepRpcState,
   writePortFile,
 } from '../../src/rpc/port-file.js'
+import { makeTempDir } from '../fixtures/scratch'
 
 const sweepFixture = (root: string, active: string) =>
   sweepRpcState(root, active, (name) => isManagedRpcStateDir(name, 'fixture-'))
@@ -27,7 +26,7 @@ const childProcesses: Array<ReturnType<typeof Bun.spawn>> = []
 const permissionTest = process.getuid?.() === 0 ? test.skip : test
 
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'fixture-rpc-'))
+  dir = await makeTempDir('fixture-rpc-')
 })
 afterEach(async () => {
   for (const child of childProcesses.splice(0)) {

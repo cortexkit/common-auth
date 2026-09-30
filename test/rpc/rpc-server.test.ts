@@ -2,7 +2,6 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   chmod,
   mkdir,
-  mkdtemp,
   readdir,
   readFile,
   rm,
@@ -10,7 +9,6 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import http, * as httpNamed from 'node:http'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   createCaptureSink,
@@ -33,6 +31,7 @@ import {
   DEFAULT_RPC_TIMEOUT_MS,
 } from '../../src/rpc/rpc-client.js'
 import { startRpcServer as start } from '../../src/rpc/rpc-server.js'
+import { makeTempDir } from '../fixtures/scratch'
 
 const scope = {
   rpcRoot: '/fixture',
@@ -66,7 +65,7 @@ afterEach(async () => {
 describe('rpc-server', () => {
   test('apply callback receives sessionId unchanged; health is open and pending-notifications drains', async () => {
     resetNotificationsForTest(scope)
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     let receivedApply: unknown
     const server = await startRpcServer({
       dir,
@@ -132,7 +131,7 @@ describe('rpc-server', () => {
   })
 
   test('a session-less notification drain delivers every notice but cannot prune another session', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     const server = await startRpcServer({
       dir,
       drain: drainNotifications,
@@ -228,7 +227,7 @@ describe('rpc-server', () => {
   })
 
   test('stopping a stale server leaves its successor port file and health endpoint live', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     const first = await startRpcServer({
       dir,
       drain: drainNotifications,
@@ -252,7 +251,7 @@ describe('rpc-server', () => {
   })
 
   test('rejects body exceeding 1 MB byte limit', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     const server = await startRpcServer({
       dir,
       drain: drainNotifications,
@@ -280,7 +279,7 @@ describe('rpc-server', () => {
   })
 
   test('rejects multibyte body where byte length exceeds limit but string length does not', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     const server = await startRpcServer({
       dir,
       drain: drainNotifications,
@@ -317,7 +316,7 @@ describe('rpc-server', () => {
   })
 
   test('destroys a socket that stalls part-way through sending a request', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     const server = await startRpcServer({
       dir,
       drain: drainNotifications,
@@ -363,7 +362,7 @@ describe('rpc-server', () => {
   })
 
   test('starts when the state sweep fails', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     const badSweepRoot = join(dir, 'not-a-directory')
     initLogger({ file: join(dir, 'rpc.log'), captureSink: capture.sink })
     await writeFile(badSweepRoot, 'x')
@@ -384,7 +383,7 @@ describe('rpc-server', () => {
   })
 
   test('startup sweeps stale project state outside the active directory', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     const root = join(dir, 'state')
     const staleDir = join(root, 'fixture-deadbeefdeadbeef')
     await mkdir(staleDir, { recursive: true })
@@ -406,7 +405,7 @@ describe('rpc-server', () => {
   })
 
   test('creates a managed RPC directory with 0700 permissions', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     const managedDir = join(dir, 'managed', 'rpc')
     await mkdir(managedDir, { recursive: true, mode: 0o755 })
     await chmod(managedDir, 0o755)
@@ -423,7 +422,7 @@ describe('rpc-server', () => {
   })
 
   test('does not chmod a foreign RPC override directory', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     await chmod(dir, 0o755)
 
     const server = await startRpcServer({
@@ -438,7 +437,7 @@ describe('rpc-server', () => {
   })
 
   test('default timeout lets a slow apply handler respond before the socket is destroyed', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcsrv-'))
+    dir = await makeTempDir('fixture-rpcsrv-')
     // The handler below waits three seconds; the default socket timeout must
     // let it respond without an explicit timeout override.
     const server = await startRpcServer({
@@ -466,7 +465,7 @@ describe('rpc-server', () => {
 })
 
 test('sessionless HTTP oracle retains every notice, filters acknowledged IDs and warns once', async () => {
-  dir = await mkdtemp(join(tmpdir(), 'fixture-rpc-'))
+  dir = await makeTempDir('fixture-rpc-')
   initLogger({ file: join(dir, 'rpc.log'), captureSink: capture.sink })
   const server = await startRpcServer({
     dir,
@@ -512,7 +511,7 @@ for (const fixture of [
   'matching identity',
 ] as const) {
   test(`stop port-file identity fence: ${fixture}`, async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpc-'))
+    dir = await makeTempDir('fixture-rpc-')
     const server = await startRpcServer({
       dir,
       drain: drainNotifications,
@@ -535,7 +534,7 @@ for (const fixture of [
 }
 
 test('two servers isolate notification queue scope', async () => {
-  dir = await mkdtemp(join(tmpdir(), 'fixture-rpc-'))
+  dir = await makeTempDir('fixture-rpc-')
   const otherScope = { ...scope, registrationSessionId: 'other-registration' }
   const first = await startRpcServer({
     dir: join(dir, 'a'),
@@ -579,7 +578,7 @@ test('two servers isolate notification queue scope', async () => {
 })
 
 test('RPC client preserves sessionId through the server apply callback', async () => {
-  dir = await mkdtemp(join(tmpdir(), 'fixture-rpcclient-'))
+  dir = await makeTempDir('fixture-rpcclient-')
   const received: Array<{ sessionId?: string }> = []
   const server = await startRpcServer({
     dir,
@@ -617,7 +616,7 @@ describe('rpc-client', () => {
   })
 
   test('apply honors a per-call timeout override', async () => {
-    dir = await mkdtemp(join(tmpdir(), 'fixture-rpcclient-'))
+    dir = await makeTempDir('fixture-rpcclient-')
     const localServer = await startRpcServer({
       dir,
       timeoutMs: 2_000,
@@ -646,7 +645,7 @@ describe('rpc-client', () => {
 })
 
 test('server wires 90 second inactivity and separate 2 second receipt defaults', async () => {
-  dir = await mkdtemp(join(tmpdir(), 'fixture-rpc-'))
+  dir = await makeTempDir('fixture-rpc-')
   const originalCreate = http.createServer
   let observed: http.Server | undefined
   const createSpy = spyOn(httpNamed, 'createServer').mockImplementation(((
