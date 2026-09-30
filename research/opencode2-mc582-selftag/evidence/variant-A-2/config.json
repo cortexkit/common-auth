@@ -1,0 +1,62 @@
+{
+  "opencode": {
+    "$schema": "https://opencode.ai/config.json",
+    "plugins": [
+      "<run>/plugin-observer",
+      "<home>/Work/Projects/CortexKit/magic-context/packages/plugin",
+      "<run>/plugin-selftag"
+    ],
+    "providers": {
+      "openai": {
+        "models": {
+          "gpt-5.6-luna": {
+            "name": "gpt-5.6-luna",
+            "settings": {
+              "reasoningEffort": "low"
+            }
+          }
+        }
+      }
+    }
+  },
+  "opencodeCli": "2.0.20",
+  "magicContext": {
+    "branch": "master",
+    "commit": "d8a6963308f750f3c0959bacfd995d2fa0a81eb7",
+    "dirty": false,
+    "version": "0.44.4",
+    "distMtime": "2026-09-30T19:46:45.851Z",
+    "lastSrcCommit": "2026-09-30T21:45:52+02:00"
+  },
+  "magicContextConfig": {
+    "historian": {
+      "disable": true
+    },
+    "dreamer": {
+      "disable": true
+    },
+    "embedding": {
+      "provider": "off"
+    },
+    "auto_update": false
+  },
+  "variantCLine": null,
+  "env": {
+    "PATH": "<home>/.local/share/cortexkit/aft/shims:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:<home>/.local/bin:<home>/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/opt/zerobrew/bin:/opt/zerobrew/sbin:<home>/.antigravity-ide/antigravity-ide/bin:<home>/.grok/bin:<home>/.opencode/bin:<home>/.antigravity/antigravity/bin:<home>/.cargo/bin:<home>/.avm/bin:<home>/.local/share/solana/install/active_release/bin:/opt/local/bin:/opt/homebrew/anaconda3/bin:/opt/homebrew/opt/php@7.4/sbin:/opt/homebrew/opt/php@7.4/bin:<home>/google-cloud-sdk/bin:<home>/.yarn/bin:/System/Cryptexes/App/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Wireshark.app/Contents/MacOS:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/2be5fae243ecd1a69e8a0e26ef5da711b9e2a4b8e31fc3ea5735634ccc2a602f/bg_4227e8e3f2fc2afc/packages/opencode-plugin/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/2be5fae243ecd1a69e8a0e26ef5da711b9e2a4b8e31fc3ea5735634ccc2a602f/bg_4227e8e3f2fc2afc/packages/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/2be5fae243ecd1a69e8a0e26ef5da711b9e2a4b8e31fc3ea5735634ccc2a602f/bg_4227e8e3f2fc2afc/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/2be5fae243ecd1a69e8a0e26ef5da711b9e2a4b8e31fc3ea5735634ccc2a602f/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/worktrees/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/node_modules/.bin:<home>/.local/share/cortexkit/node_modules/.bin:<home>/.local/share/node_modules/.bin:<home>/.local/node_modules/.bin:<home>/node_modules/.bin:/Users/node_modules/.bin:/node_modules/.bin:<home>/Work/Projects/CortexKit/aft/packages/opencode-plugin/node_modules/.bin:<home>/Work/Projects/CortexKit/aft/packages/node_modules/.bin:<home>/Work/Projects/CortexKit/aft/node_modules/.bin:<home>/Work/Projects/CortexKit/node_modules/.bin:<home>/Work/Projects/node_modules/.bin:<home>/Work/node_modules/.bin:/opt/zerobrew/opt/mise/bin:<home>/.zerobrew/bin:<home>/Library/pnpm:<home>/.local/share/mise/shims:<home>/Library/pnpm/bin:<home>/.lmstudio/bin:<home>/.foundry/bin:<home>/.orbstack/bin:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/2be5fae243ecd1a69e8a0e26ef5da711b9e2a4b8e31fc3ea5735634ccc2a602f/bg_68e744027cb32d7b/packages/pi-plugin/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/2be5fae243ecd1a69e8a0e26ef5da711b9e2a4b8e31fc3ea5735634ccc2a602f/bg_68e744027cb32d7b/packages/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/2be5fae243ecd1a69e8a0e26ef5da711b9e2a4b8e31fc3ea5735634ccc2a602f/bg_68e744027cb32d7b/node_modules/.bin:<home>/.local/share/cortexkit/alfonso/worktrees/6d75dd56448a4a9c/2be5fae243ecd1a69e8a0e26ef5da711b9e2a4b8e31fc3ea5735634ccc2a602f/bg_68e744027cb32d7b/packages/opencode-plugin/node_modules/.bin:<home>/.local/share/mise/installs/node/24.16.0/bin:<home>/.local/share/mise/installs/python/3.11.15/bin",
+    "HOME": "<run>/home",
+    "XDG_CONFIG_HOME": "<run>/xdg-config",
+    "XDG_DATA_HOME": "<run>/xdg-data",
+    "XDG_STATE_HOME": "<run>/xdg-state",
+    "XDG_CACHE_HOME": "<run>/xdg-cache",
+    "XDG_RUNTIME_DIR": "<run>/xdg-runtime",
+    "TMPDIR": "<run>/tmp",
+    "OPENCODE_DB": "<run>/xdg-data/opencode/opencode.db",
+    "OPENCODE_CONFIG_DIR": "<run>/xdg-config/opencode",
+    "MAGIC_CONTEXT_STORAGE_DIR": "<run>/mc-store",
+    "MAGIC_CONTEXT_LOG_PATH": "<run>/raw/magic-context.log",
+    "OPENCODE_SERVER_PASSWORD": "<local>",
+    "SPIKE_OBSERVER_LOG": "<run>/raw/observer.jsonl",
+    "SELF_TAG_VARIANT": "A",
+    "SELF_TAG_CAPTURE": "<run>/raw/capture.jsonl"
+  }
+}

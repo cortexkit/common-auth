@@ -1,0 +1,42 @@
+# pids 8979
+# forbidden prefixes: <home>/.config/opencode <home>/.local/share/opencode <home>/.config/cortexkit <home>/.local/share/cortexkit <home>/.cache/opencode <home>/.local/state/opencode
+# forbidden hits: 0
+
+# ---- full lsof ----
+COMMAND    PID        USER   FD     TYPE             DEVICE  SIZE/OFF                NODE NAME
+opencode. 8979 ufukaltinok  cwd      DIR               1,17       128          2012480235 <run>/project
+opencode. 8979 ufukaltinok  txt      REG               1,17 179948336          1985464275 <deps>/node_modules/@opencode/cli/bin/opencode.exe
+opencode. 8979 ufukaltinok  txt      REG               1,17     77368          1843163033 /private/var/db/diagnostics/logd/.plist-cache.QMWyKIeM
+opencode. 8979 ufukaltinok  txt      REG               1,17     32768          2012481274 <run>/xdg-data/opencode/opencode.db-shm
+opencode. 8979 ufukaltinok  txt      REG               1,17     32768          1843164017 /private/var/db/mds/messages/501/se_SecurityMessages
+opencode. 8979 ufukaltinok  txt      REG               1,17    234224           702363629 /private/var/db/timezone/tz/2026c.1.0/icutz/icutz44l.dat
+opencode. 8979 ufukaltinok  txt      REG               1,17    161875          1964276911 /private/var/db/analyticsd/events.allowlist
+opencode. 8979 ufukaltinok  txt      REG               1,17     32768          2012483770 <run>/mc-store/context.db-shm
+opencode. 8979 ufukaltinok  txt      REG               1,17    342608          2012481451 <run>/tmp/.bun-501-c22f2ef692948d9e.node
+opencode. 8979 ufukaltinok  txt      REG               1,17   4129840 1152921500312609216 /usr/lib/dyld
+opencode. 8979 ufukaltinok  txt      REG               1,17  36103568 1152921500312619766 /usr/share/icu/icudt78l.dat
+opencode. 8979 ufukaltinok  txt      REG               1,17   5543552          2012480315 <run>/tmp/.bun-501-580dfe60f7f73ad8.dylib
+opencode. 8979 ufukaltinok  txt      REG               1,17   9660064          2012481591 <run>/tmp/.bun-501-295fc1275a70d982.dylib
+opencode. 8979 ufukaltinok    0r     CHR                3,2       0t0                 336 /dev/null
+opencode. 8979 ufukaltinok    1u    unix  0x77996ae2a674f36       0t0                     ->0x9f1dbc218e338b41
+opencode. 8979 ufukaltinok    2u    unix 0x3b9a79b580e5e7dd       0t0                     ->0x653bacbad292045d
+opencode. 8979 ufukaltinok    3u  KQUEUE                                                  count=0, state=0x12
+opencode. 8979 ufukaltinok    4u    unix  0x77996ae2a674f36       0t0                     ->0x9f1dbc218e338b41
+opencode. 8979 ufukaltinok    5w     REG               1,17     38985          2012480482 <run>/xdg-data/opencode/log/opencode.log
+opencode. 8979 ufukaltinok    6u    unix 0x3b9a79b580e5e7dd       0t0                     ->0x653bacbad292045d
+opencode. 8979 ufukaltinok    7u    IPv4 0xe020020e0a32ce8f       0t0                 TCP 127.0.0.1:49914 (LISTEN)
+opencode. 8979 ufukaltinok    8u     REG               1,17   6197248          2012480598 <run>/xdg-data/opencode/opencode.db
+opencode. 8979 ufukaltinok    9u     REG               1,17   1821072          2012481272 <run>/xdg-data/opencode/opencode.db-wal
+opencode. 8979 ufukaltinok   10u     REG               1,17     32768          2012481274 <run>/xdg-data/opencode/opencode.db-shm
+opencode. 8979 ufukaltinok   11u    IPv4  0x3bbdaedf3a5222f       0t0                 TCP 127.0.0.1:49914->127.0.0.1:49920 (ESTABLISHED)
+opencode. 8979 ufukaltinok   13u  KQUEUE                                                  count=0, state=0x12
+opencode. 8979 ufukaltinok   15u     REG               1,17   1028096          2012483660 <run>/mc-store/context.db
+opencode. 8979 ufukaltinok   16u     REG               1,17    259592          2012483767 <run>/mc-store/context.db-wal
+opencode. 8979 ufukaltinok   17u     REG               1,17     32768          2012483770 <run>/mc-store/context.db-shm
+opencode. 8979 ufukaltinok   18r     REG               1,17   6197248          2012480598 <run>/xdg-data/opencode/opencode.db
+opencode. 8979 ufukaltinok   19u    unix 0x4f1d6e0061f30897       0t0                     ->0x2b5a5c6003069de7
+opencode. 8979 ufukaltinok   20u    IPv4 0x5b9e793cd8067a84       0t0                 TCP 192.168.1.36:49924->172.66.173.149:443 (ESTABLISHED)
+opencode. 8979 ufukaltinok   22u    IPv4 0x408bfa9433115607       0t0                 TCP 127.0.0.1:49954 (LISTEN)
+opencode. 8979 ufukaltinok   23r     REG               1,17   6197248          2012480598 <run>/xdg-data/opencode/opencode.db
+opencode. 8979 ufukaltinok   24r     REG               1,17   6197248          2012480598 <run>/xdg-data/opencode/opencode.db
+opencode. 8979 ufukaltinok   25u    IPv4 0x71c2cf3c7b42370f       0t0                 TCP 192.168.1.36:49966->104.18.32.47:443 (ESTABLISHED)

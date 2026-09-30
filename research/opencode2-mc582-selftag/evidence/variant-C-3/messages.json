@@ -1,0 +1,549 @@
+[
+  {
+    "id": "msg_0f3f859ed001WSDGbEIK9VH2rZ",
+    "time": {
+      "created": 1790799538509
+    },
+    "text": "Write one short sentence saying what you are about to do, then in the same reply call the shell tool twice in parallel: `echo alpha` and `echo beta`. After both results arrive, reply with one short sentence.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f3f86964001P8FVz4hagW60Gu",
+    "time": {
+      "created": 1790799539197,
+      "streamed": 1790799542474,
+      "completed": 1790799542517
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "**Planning tagging and parallel shell calls**",
+        "state": {
+          "itemId": "rs_0ca76980b51f4630016abd6eb4a4b087d2ab614981c75f4657",
+          "reasoningEncryptedContent":"<redacted 1400 chars sha256:e6e231873d8b585b>"
+        },
+        "time": {
+          "created": 1790799540677,
+          "completed": 1790799541303
+        }
+      },
+      {
+        "type": "text",
+        "text": "§2§ I’m about to run both echo commands in parallel.",
+        "state": {
+          "itemId": "msg_0ca76980b51f4630016abd6eb5370487d28f5721058d056b91",
+          "phase": "commentary"
+        }
+      },
+      {
+        "type": "tool",
+        "id": "call_4ztSpRy4EaEsRhmS8xkEGwUA",
+        "name": "shell",
+        "executed": false,
+        "providerState": {
+          "itemId": "fc_0ca76980b51f4630016abd6eb6572887d283236b66ea7433ad"
+        },
+        "state": {
+          "status": "completed",
+          "input": {
+            "command": "echo alpha"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "alpha\n"
+            }
+          ],
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          }
+        },
+        "time": {
+          "created": 1790799542392,
+          "ran": 1790799542412,
+          "completed": 1790799542510
+        }
+      },
+      {
+        "type": "tool",
+        "id": "call_yClCDva8S0fFLPVtZjdN4Xhl",
+        "name": "shell",
+        "executed": false,
+        "providerState": {
+          "itemId": "fc_0ca76980b51f4630016abd6eb6573487d2940c36e51121de26"
+        },
+        "state": {
+          "status": "completed",
+          "input": {
+            "command": "echo beta"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "beta\n"
+            }
+          ],
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          }
+        },
+        "time": {
+          "created": 1790799542416,
+          "ran": 1790799542430,
+          "completed": 1790799542503
+        }
+      }
+    ],
+    "finish": "tool-calls",
+    "providerState": {
+      "responseId": "resp_0ca76980b51f4630016abd6eb3fcd487d2951fe8063669b26e",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 9046,
+      "output": 71,
+      "reasoning": 20,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f3f87902001zwIYRXwTeLSsvm",
+    "time": {
+      "created": 1790799542573,
+      "streamed": 1790799544145,
+      "completed": 1790799544149
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "**Determining final tag 5**",
+        "state": {
+          "itemId": "rs_0ca76980b51f4630016abd6eb7631c87d2a2c87f3087eb39f4",
+          "reasoningEncryptedContent":"<redacted 1336 chars sha256:b7b29a5b25efd0d9>"
+        },
+        "time": {
+          "created": 1790799543428,
+          "completed": 1790799544014
+        }
+      },
+      {
+        "type": "text",
+        "text": "§5§ Both commands completed successfully.",
+        "state": {
+          "itemId": "msg_0ca76980b51f4630016abd6eb7fb4087d2b7bbc6edddac44dd",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_0ca76980b51f4630016abd6eb6e40c87d2a6e2f79a73f7735b",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 461,
+      "output": 14,
+      "reasoning": 10,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f3f87f5a001fjSNEDghVUcb4u",
+    "time": {
+      "created": 1790799544154
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  },
+  {
+    "id": "msg_0f3f87f690017AvoumGqTCrPwv",
+    "time": {
+      "created": 1790799544187
+    },
+    "text": "Now write one short sentence, then in the same reply read fixture.txt and notes.txt in parallel with the read tool. After both results arrive, tell me in one sentence how many apples fixture.txt lists.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f3f87f8600156t2tfpjaa3qBa",
+    "time": {
+      "created": 1790799544233,
+      "streamed": 1790799546911,
+      "completed": 1790799546923
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "**Inspecting files for tag7 compliance**",
+        "state": {
+          "itemId": "rs_0ca76980b51f4630016abd6eb92a7887d2b149f837bd21d634",
+          "reasoningEncryptedContent":"<redacted 1400 chars sha256:38b8bab5b53d98d6>"
+        },
+        "time": {
+          "created": 1790799545219,
+          "completed": 1790799546000
+        }
+      },
+      {
+        "type": "text",
+        "text": "§7§ I’m about to read both files in parallel.",
+        "state": {
+          "itemId": "msg_0ca76980b51f4630016abd6eb9ef1087d2ac61c4f95dfb22d3",
+          "phase": "commentary"
+        }
+      },
+      {
+        "type": "tool",
+        "id": "call_7qfTeyKXEGxIzpdEmc9Fmro3",
+        "name": "read",
+        "executed": false,
+        "providerState": {
+          "itemId": "fc_0ca76980b51f4630016abd6ebac40887d2920d012c8c2c4fe4"
+        },
+        "state": {
+          "status": "completed",
+          "input": {
+            "path": "fixture.txt"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Read file fixture.txt, lines 1-2\n1: apples: 3\n2: pears: 5"
+            }
+          ],
+          "metadata": {
+            "truncated": false
+          }
+        },
+        "time": {
+          "created": 1790799546811,
+          "ran": 1790799546828,
+          "completed": 1790799546860
+        }
+      },
+      {
+        "type": "tool",
+        "id": "call_km3oSBeDtKU8CfzsDolU9Uyx",
+        "name": "read",
+        "executed": false,
+        "providerState": {
+          "itemId": "fc_0ca76980b51f4630016abd6ebac41c87d282975fa8ce744ebc"
+        },
+        "state": {
+          "status": "completed",
+          "input": {
+            "path": "notes.txt"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Read file notes.txt, lines 1-1\n1: These notes are only here to be read."
+            }
+          ],
+          "metadata": {
+            "truncated": false
+          }
+        },
+        "time": {
+          "created": 1790799546837,
+          "ran": 1790799546853,
+          "completed": 1790799546867
+        }
+      }
+    ],
+    "finish": "tool-calls",
+    "providerState": {
+      "responseId": "resp_0ca76980b51f4630016abd6eb8922887d2ac553c2941ce83e1",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 535,
+      "output": 70,
+      "reasoning": 20,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f3f88a39001uD9SwKs5JAcrjY",
+    "time": {
+      "created": 1790799546977,
+      "streamed": 1790799549001,
+      "completed": 1790799549008
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "",
+        "state": {
+          "itemId": "rs_0ca76980b51f4630016abd6ebc2b4c87d28140feac0d448a1b",
+          "reasoningEncryptedContent":"<redacted 1356 chars sha256:3fd9eca03e2f0bcd>"
+        },
+        "time": {
+          "created": 1790799548219,
+          "completed": 1790799548841
+        }
+      },
+      {
+        "type": "text",
+        "text": "§10§ fixture.txt lists 3 apples.",
+        "state": {
+          "itemId": "msg_0ca76980b51f4630016abd6ebccd2887d291565ee8f6906cf2",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_0ca76980b51f4630016abd6ebbabb887d28ce792225ecc7ba2",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 695,
+      "output": 16,
+      "reasoning": 14,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f3f89259001QycxAeMzNurL1V",
+    "time": {
+      "created": 1790799549017
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  },
+  {
+    "id": "msg_0f3f8926a001km3hqofa6YMMYV",
+    "time": {
+      "created": 1790799549050
+    },
+    "text": "Run `echo gamma` with the shell tool, then reply with one short sentence.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f3f89288001rYv7qqQvJsKSvl",
+    "time": {
+      "created": 1790799549239,
+      "streamed": 1790799551714,
+      "completed": 1790799551806
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "reasoning",
+        "text": "",
+        "state": {
+          "itemId": "rs_0ca76980b51f4630016abd6ebecb4c87d2ba73aa57020c5add",
+          "reasoningEncryptedContent":"<redacted 1380 chars sha256:99a12a48ff89bebc>"
+        },
+        "time": {
+          "created": 1790799550896,
+          "completed": 1790799551550
+        }
+      },
+      {
+        "type": "tool",
+        "id": "call_n1bF0a5OV29j4nlQX5pimhAA",
+        "name": "shell",
+        "executed": false,
+        "providerState": {
+          "itemId": "fc_0ca76980b51f4630016abd6ebf7d2487d2b49c75c99ea95610"
+        },
+        "state": {
+          "status": "completed",
+          "input": {
+            "command": "echo gamma"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "gamma\n"
+            }
+          ],
+          "metadata": {
+            "status": "completed",
+            "truncated": false,
+            "exit": 0
+          }
+        },
+        "time": {
+          "created": 1790799551583,
+          "ran": 1790799551660,
+          "completed": 1790799551784
+        }
+      }
+    ],
+    "finish": "tool-calls",
+    "providerState": {
+      "responseId": "resp_0ca76980b51f4630016abd6ebe171487d2ab4e71d1e5355155",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 751,
+      "output": 20,
+      "reasoning": 18,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f3f89d66001TXD86CZnyBZRFZ",
+    "time": {
+      "created": 1790799551952,
+      "streamed": 1790799554333,
+      "completed": 1790799554375
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "§13§ The command printed gamma.",
+        "state": {
+          "itemId": "msg_0ca76980b51f4630016abd6ec1f42487d2a4213925a5a35ae8",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_0ca76980b51f4630016abd6ec16e3087d2a550c905ec05d4e9",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 804,
+      "output": 12,
+      "reasoning": 0,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f3f8a75d002Fko9wC9LtLsLjU",
+    "time": {
+      "created": 1790799554397
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  },
+  {
+    "id": "msg_0f3f8a7a3001gRTtD05zavaPFj",
+    "time": {
+      "created": 1790799554522
+    },
+    "text": "Thanks.",
+    "type": "user"
+  },
+  {
+    "id": "msg_0f3f8a829001cSAahq7zoe43zs",
+    "time": {
+      "created": 1790799554677,
+      "streamed": 1790799556036,
+      "completed": 1790799556063
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+      "id": "gpt-5.6-luna",
+      "providerID": "openai",
+      "variant": "default"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "§15§ You’re welcome!",
+        "state": {
+          "itemId": "msg_0ca76980b51f4630016abd6ec3a99887d2bf096313154e3fbb",
+          "phase": "final_answer"
+        }
+      }
+    ],
+    "finish": "stop",
+    "providerState": {
+      "responseId": "resp_0ca76980b51f4630016abd6ec3060087d2ae9700a3d5639675",
+      "serviceTier": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 827,
+      "output": 11,
+      "reasoning": 0,
+      "cache": {
+        "read": 8704,
+        "write": 0
+      }
+    }
+  },
+  {
+    "id": "msg_0f3f8ae07001YWTf5c1dL7k7j8",
+    "time": {
+      "created": 1790799556103
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+  }
+]

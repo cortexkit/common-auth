@@ -1,0 +1,13 @@
+{
+  "name": "variant-C-2",
+  "variant": "C",
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "prompts": [
+    "Write one short sentence saying what you are about to do, then in the same reply call the shell tool twice in parallel: `echo alpha` and `echo beta`. After both results arrive, reply with one short sentence.",
+    "Now write one short sentence, then in the same reply read fixture.txt and notes.txt in parallel with the read tool. After both results arrive, tell me in one sentence how many apples fixture.txt lists.",
+    "Run `echo gamma` with the shell tool, then reply with one short sentence.",
+    "Thanks."
+  ],
+  "sessionID": "ses_f0c0879b6ffepyJ1qTqXr3PJ0a"
+}
