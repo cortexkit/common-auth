@@ -1,6 +1,12 @@
 {
   "name": "@cortexkit/common-auth",
   "version": "0.1.0",
+  "description": "Shared plumbing for the CortexKit auth plugins: loopback RPC, file locks and atomic writes, logger, sidebar state file, TUI preferences and TUI build.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cortexkit/common-auth.git"
+  },
   "type": "module",
   "workspaces": ["test/fixtures/*"],
   "exports": {
