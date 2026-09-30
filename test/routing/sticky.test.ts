@@ -689,6 +689,16 @@ describe('selectStickyCandidate', () => {
     expect(select([candidate('evidence', evidenceOnly, 0)]).source).toBe(
       'mode-fallback',
     )
+    // Beside a reading, a tombstone neither adds nor removes weight.
+    const readingAndTombstone = projectQuota(
+      quotaMap([reading('primary', 50), retired('secondary', now)]),
+    )
+    expect(
+      select([
+        candidate('mixed', readingAndTombstone, 1),
+        candidate('plain', quota(40), 0),
+      ]),
+    ).toEqual({ accountId: 'mixed', quotaCheckedAt: now, source: 'weighted' })
   })
 
   test('a third window adds no weight', () => {

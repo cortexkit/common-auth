@@ -35,6 +35,16 @@ describe('routing mode aliases', () => {
     expect(aliasOrder(undefined)).toEqual(['main', 'a', 'b'])
     expect(aliasOrder('garbage')).toEqual(['main', 'a', 'b'])
     expect(aliasOrder('ordered')).toEqual(['main', 'a', 'b'])
+    // A roster whose former main row is not first shows roster order is kept
+    // rather than the legacy main-first default.
+    for (const mode of [undefined, 'garbage']) {
+      const { placement } = resolveRoutingMode(mode)
+      expect(orderForPlacement(['a', 'main', 'b'], placement)).toEqual([
+        'a',
+        'main',
+        'b',
+      ])
+    }
     expect(resolveRoutingMode('sticky-balanced')).toEqual({
       mode: 'sticky-balanced',
       placement: 'roster',
