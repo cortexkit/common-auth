@@ -4,6 +4,9 @@ import { join } from 'node:path'
 import { assertEmittedPublishList } from '@cortexkit/common-auth/tui-build'
 import { makeRepoScratchDir } from '../fixtures/scratch.js'
 
+// Each assertEmittedPublishList call runs `npm pack --dry-run`, five in this
+// test; npm's own start-up dominates, and on a loaded machine the five spawns
+// alone exceed bun's 5-second default (measured 15.8 s at load average 69).
 test('publish-list compares the entire emitted destination including shared copies and selector', async () => {
   const root = await makeRepoScratchDir()
   try {
@@ -45,4 +48,4 @@ test('publish-list compares the entire emitted destination including shared copi
   } finally {
     await rm(root, { recursive: true, force: true })
   }
-})
+}, 60_000)
