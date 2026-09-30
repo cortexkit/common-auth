@@ -18,6 +18,12 @@ export interface SidebarFileOptions<T> {
   defaultValue: T
   normalize: (parsed: unknown) => T
   timeoutMs?: number
+  /**
+   * Create the parent directory private and tighten it to 0o700 before each
+   * write. Defaults to true. Pass false for a directory the user chose (an
+   * override path), whose permissions are theirs to set.
+   */
+  secureDir?: boolean
   logger?: {
     warn: (message: string, payload?: unknown) => void
     debug: (message: string, payload?: unknown) => void
@@ -74,12 +80,19 @@ export function createSidebarFile<T>(
     hooks?: SidebarFileHooks,
   ): Promise<void> => {
     const parent = dirname(path)
-    await mkdir(parent, { recursive: true, mode: 0o700 })
-    await chmod(parent, 0o700).catch((error: unknown) => {
-      options.logger?.warn('sidebar directory permission remediation failed', {
-        error: error instanceof Error ? error.message : String(error),
-      })
+    const secureDir = options.secureDir ?? true
+    await mkdir(parent, {
+      recursive: true,
+      mode: secureDir ? 0o700 : undefined,
     })
+    if (secureDir) {
+      await chmod(parent, 0o700).catch((error: unknown) => {
+        options.logger?.warn(
+          'sidebar directory permission remediation failed',
+          { error: error instanceof Error ? error.message : String(error) },
+        )
+      })
+    }
     await withLock(
       path,
       {

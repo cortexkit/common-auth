@@ -164,6 +164,19 @@ test('supplied parent is hardened from 0755 to 0700', async () => {
   expect((await fs.stat(dir)).mode & 0o777).toBe(0o700)
 })
 
+test('secureDir false leaves a user-chosen parent at its own mode', async () => {
+  await fs.chmod(dir, 0o755)
+  const file = createSidebarFile({
+    path: target,
+    defaultValue: 0,
+    normalize: Number,
+    secureDir: false,
+  })
+  await file.write(1)
+  expect((await fs.stat(dir)).mode & 0o777).toBe(0o755)
+  expect(await fs.readFile(target, 'utf8')).toBe('1')
+})
+
 test('EPERM chmod warns once and still resolves the queued write', async () => {
   const warnings: unknown[] = []
   const file = createSidebarFile({
