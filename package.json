@@ -1,0 +1,49 @@
+{
+  "name": "@cortexkit/common-auth",
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["test/fixtures/*"],
+  "exports": {
+    "./rpc": { "types": "./dist/rpc/index.d.ts", "import": "./dist/rpc/index.js" },
+    "./fs": { "types": "./dist/fs.d.ts", "import": "./dist/fs.js" },
+    "./logger": { "types": "./dist/logger.d.ts", "import": "./dist/logger.js" },
+    "./sidebar-file": { "types": "./dist/sidebar-file.d.ts", "import": "./dist/sidebar-file.js" },
+    "./tui-prefs": { "types": "./dist/tui-prefs.d.ts", "import": "./dist/tui-prefs.js" },
+    "./tui-build": { "types": "./dist/tui-build.d.ts", "import": "./dist/tui-build.js" },
+    "./tui": { "types": "./dist/tui.d.ts", "import": "./dist/tui.js" }
+  },
+  "files": ["dist/"],
+  "scripts": {
+    "build": "bun scripts/check-installed-ranges.mjs && tsc -p tsconfig.build.json",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "types": "bun run typecheck",
+    "format": "biome check --write --unsafe .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "prepublishOnly": "bun run build",
+    "check:ranges": "bun scripts/check-installed-ranges.mjs"
+  },
+  "dependencies": { "jsonc-parser": "^3.3.1" },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.12",
+    "@opentui/solid": ">=0.5.12",
+    "solid-js": "1.9.12"
+  },
+  "peerDependenciesMeta": {
+    "@opentui/core": { "optional": true },
+    "@opentui/solid": { "optional": true },
+    "solid-js": { "optional": true }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@opentui/core": ">=0.5.12",
+    "@opentui/solid": ">=0.5.12",
+    "@tsconfig/bun": "1.0.11",
+    "@types/bun": "1.4.2",
+    "bun-types": "1.4.2",
+    "lefthook": "2.1.14",
+    "solid-js": "1.9.12",
+    "typescript": "7.0.2"
+  }
+}
