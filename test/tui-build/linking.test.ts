@@ -183,3 +183,29 @@ test('walker distinguishes regex bodies and traverses template expressions', () 
     parseImports(`const value = \`text \${import(variable)}\`;`, 'template.ts'),
   ).toThrow('template.ts: variable')
 })
+
+test('inlined fs and sidebar consumers share one LockContentionError identity', async () => {
+  const root = await makeRepoScratchDir()
+  try {
+    const result = await buildTui(entry, 'raw', root, { inline })
+    const store = await import(pathToFileURL(join(root, 'store-user.js')).href)
+    const sidebar = join(root, sharedName('dist/sidebar-file/sidebar-file.js'))
+    const imports = parseImports(await readFile(sidebar, 'utf8'), sidebar)
+    const fsImport = imports.find((reference) =>
+      reference.specifier.startsWith('.'),
+    )
+    if (!fsImport)
+      throw new Error('Sidebar module has no inlined fs dependency')
+    const sidebarFs = await import(
+      pathToFileURL(resolve(dirname(sidebar), fsImport.specifier)).href
+    )
+    expect(sidebarFs.LockContentionError).toBe(store.LockContentionError)
+    expect(
+      result.sources.filter(
+        (source) => source === resolve('dist/fs/with-lock.js'),
+      ),
+    ).toHaveLength(1)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

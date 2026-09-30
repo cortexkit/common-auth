@@ -27,6 +27,21 @@ test('publish-list compares the entire emitted destination including shared copi
     await expect(
       assertEmittedPublishList(root, destination, [...emitted, 'absent.js']),
     ).rejects.toThrow('Published destination differs')
+    await writeFile(
+      join(root, 'package.json'),
+      JSON.stringify({
+        name: 'publish-fixture',
+        version: '1.0.0',
+        files: ['output/entry.js', 'output/selector.js'],
+      }),
+    )
+    await expect(
+      assertEmittedPublishList(root, destination, emitted),
+    ).rejects.toThrow('Published destination differs')
+    await assertEmittedPublishList(root, destination, [
+      'entry.js',
+      'selector.js',
+    ])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
