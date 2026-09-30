@@ -148,8 +148,9 @@ export interface ExhaustionReset {
 }
 
 /**
- * The credit budget's own exhaustion signal, shared by admission and pin
- * migration so both agree on what "spent" means. `reached` is the provider's
+ * The credit budget's own exhaustion signal. Admission and the sticky
+ * routing decision to move a session off its pinned row both use it, so the
+ * two agree on what "spent" means. `reached` is the provider's
  * verdict (the percentage is only a display value), and the check fails open
  * on a missing, unparsable or already-passed reset.
  */

@@ -7,9 +7,10 @@ export interface QuotaCodec {
 }
 
 /**
- * The codec a pool store is opened with: it validates a stored per-row quota
- * map and merges an observation into one, so the store persists the map
- * without interpreting it.
+ * The quota codec the account-pool store (the `/store` subpath) takes when it
+ * is opened: `validate` checks a stored per-row quota map and `merge` applies
+ * an observation to one, so the store persists the map without interpreting
+ * it.
  */
 export const quotaCodec: QuotaCodec = Object.freeze({
   validate: isQuotaMap,

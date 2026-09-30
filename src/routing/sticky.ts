@@ -355,7 +355,7 @@ export type StickyRoute =
       source: 'pin' | 'weighted' | 'mode-fallback'
       quotaCheckedAt?: number
       pin: PinAction
-      /** Rows selection chose that admission then refused, in order. */
+      /** Rows that selection chose and admission then refused, in selection order. */
       refusedSelections: AdmissionRefusal[]
       admission: AdmissionResult
     }
