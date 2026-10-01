@@ -28,10 +28,10 @@ export interface PoolLogger {
  * Runs a failure hook. A hook that throws never replaces the failure it was
  * handed: its exception is logged and discarded.
  */
-export async function callFailureHook<E>(
+export async function callFailureHook<E, R extends string | undefined>(
   operation: PoolOperation,
-  hook: ((rowId: string, error: E) => void | Promise<void>) | undefined,
-  rowId: string,
+  hook: ((rowId: R, error: E) => void | Promise<void>) | undefined,
+  rowId: R,
   error: E,
   logger: PoolLogger | undefined,
 ): Promise<void> {

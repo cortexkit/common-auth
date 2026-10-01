@@ -29,10 +29,13 @@ import {
   enableRow,
   type RemoveOptions,
   type RemoveResult,
+  type ReorderOptions,
+  type ReorderResult,
   type RowOperationOptions,
   type RowToggleOptions,
   recordRowIdentity,
   removeRow,
+  reorderRows,
   replaceRow,
   rotateRow,
 } from './rows.js'
@@ -137,6 +140,16 @@ export interface PoolStore {
    * (since 0.2.3). Locks as `disable`; `protect` can refuse the id.
    */
   remove(id: string, options?: RemoveOptions): Promise<RemoveResult>
+  /**
+   * Sets the roster order (since 0.2.4) in one config write. `ids` must name
+   * every roster id exactly once; anything else refuses with `invalid-order`
+   * and writes nothing. Takes `extraLocks`, then the store locks; no row or
+   * provider-wide lock. Roster rows and their entries are left unchanged.
+   */
+  reorder(
+    ids: readonly string[],
+    options?: ReorderOptions,
+  ): Promise<ReorderResult>
   recordIdentity(
     id: string,
     identity: string,
@@ -263,6 +276,7 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
       disableRow(rt, id, reason, callOptions),
     enable: (id, callOptions) => enableRow(rt, id, callOptions),
     remove: (id, callOptions) => removeRow(rt, id, callOptions),
+    reorder: (ids, callOptions) => reorderRows(rt, ids, callOptions),
     recordIdentity: (id, identity, callOptions) =>
       recordRowIdentity(rt, id, identity, callOptions),
     refresh: (id, provider, callOptions) =>

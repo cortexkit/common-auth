@@ -37,6 +37,8 @@ export type {
   RemoveOptions,
   RemoveResult,
   RemoveView,
+  ReorderOptions,
+  ReorderResult,
   RowOperationOptions,
   RowToggleOptions,
 } from './rows.js'

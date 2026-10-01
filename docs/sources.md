@@ -438,3 +438,8 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | A refresh holding the row lock makes remove wait and writes no credential for the removed row | new (neither copy) | a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row |
 | store | Enable clears enabled false and the disabled reason | new (neither copy) | enable clears enabled false and the disabled reason |
 | store | Enable refuses a duplicate identity, writing nothing | new (neither copy) | enable refuses a row whose identity another enabled row holds, with both files unchanged |
+| store | Reorder sets the roster order, leaves every row byte-identical, and the legacy reader loads the new order | reference/openai-auth/packages/core/src/accounts.ts | reorder sets the roster order, leaves every row byte-identical, and the legacy reader loads the new order |
+| store | Reorder refuses an order that is not a permutation of the roster, writing nothing | new (neither copy) | reorder refuses a missing id, an unknown id, a duplicate id and a non-string id with both files unchanged |
+| store | Reorder takes extra locks before the store locks and waits on a held extra lock | new (neither copy) | reorder takes extra locks before the store locks, waits on a held extra lock and completes once it is released |
+| store | A crash before the config write of reorder leaves the old order | new (neither copy) | a crash at before-config-write of reorder leaves the whole old order or the whole new one |
+| store | A crash after the config write of reorder leaves the new order | new (neither copy) | a crash at after-config-write of reorder leaves the whole old order or the whole new one |

@@ -12,8 +12,9 @@ import { CRASH_EXIT_CODE, listCodec } from './helpers.js'
 type Task = {
   configPath: string
   statePath: string
-  op: 'add' | 'replace' | 'rotate' | 'remove' | 'addMany'
+  op: 'add' | 'replace' | 'rotate' | 'remove' | 'reorder' | 'addMany'
   id: string
+  ids?: string[]
   credential?: PoolCredential
   identity?: string
   count?: number
@@ -50,6 +51,8 @@ try {
     await store.rotate(task.id, task.credential as PoolCredential, identity)
   } else if (task.op === 'remove') {
     await store.remove(task.id)
+  } else if (task.op === 'reorder') {
+    await store.reorder(task.ids ?? [])
   } else if (task.op === 'addMany') {
     for (let index = 0; index < (task.count ?? 1); index++) {
       await store.add({

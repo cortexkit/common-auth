@@ -1,4 +1,4 @@
-import type { PoolOperationError } from './errors.js'
+import { PoolOperationError } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
 import {
   DUPLICATE_IDENTITY_REASON,
@@ -103,6 +103,25 @@ export type RemoveResult = {
    * between its config and state writes, and it is now dropped.
    */
   outcome: 'removed' | 'completed'
+}
+
+/**
+ * Options of `reorder`. It names no row, so its failure hook is handed only
+ * the failure; it takes no row lock and no provider-wide lock, so the extra
+ * locks are taken first, then the store locks.
+ */
+export interface ReorderOptions {
+  /** Called once, awaited, on every non-success path, before the extra locks release. */
+  onFailure?: (error: PoolOperationError) => void | Promise<void>
+  /** Locks taken, in this order, before the store locks. */
+  extraLocks?: readonly PoolLockSpec[]
+}
+
+export type ReorderResult = {
+  /** The roster order now on disk. */
+  ids: string[]
+  /** `unchanged` when the roster was already in this order; nothing was written. */
+  outcome: 'reordered' | 'unchanged'
 }
 
 export interface AddInput {
@@ -646,6 +665,117 @@ export async function removeRow(
 function hasStateAccount(state: Record<string, unknown>, id: string): boolean {
   const accounts = state.accounts
   return isRecord(accounts) && Object.hasOwn(accounts, id)
+}
+
+/** The id a roster row carries, or undefined for a row that names none. */
+function rosterIdOf(raw: unknown): string | undefined {
+  return isRecord(raw) && typeof raw.id === 'string' ? raw.id : undefined
+}
+
+/**
+ * Why `ids` is not an order of this roster: it must name every distinct
+ * roster id exactly once and nothing else.
+ */
+function orderProblem(
+  roster: readonly unknown[],
+  ids: readonly unknown[],
+): string | undefined {
+  if (!Array.isArray(ids)) return 'ids must be an array of roster ids'
+  const rosterIds = new Set<string>()
+  for (const raw of roster) {
+    const id = rosterIdOf(raw)
+    if (id !== undefined) rosterIds.add(id)
+  }
+  const given = new Set<string>()
+  for (const id of ids) {
+    if (typeof id !== 'string') return 'ids must be an array of roster ids'
+    if (given.has(id)) return `id ${id} appears more than once`
+    if (!rosterIds.has(id)) return `id ${id} is not in the roster`
+    given.add(id)
+  }
+  const missing = [...rosterIds].filter((id) => !given.has(id))
+  if (missing.length > 0)
+    return `the order leaves out roster id(s) ${missing.join(', ')}`
+  return undefined
+}
+
+/**
+ * The roster in the new order. Every roster row is kept as the same object,
+ * so its serialized bytes are unchanged. Rows that carry an id fill the
+ * positions such rows held before, in the order of `ids`; a second row with
+ * an already-seen id (invalid, but preserved) travels right after the first.
+ * A row that names no id cannot be ordered by id, so it keeps its position.
+ */
+function reorderedRoster(
+  roster: readonly unknown[],
+  ids: readonly string[],
+): unknown[] {
+  const byId = new Map<string, unknown[]>()
+  for (const raw of roster) {
+    const id = rosterIdOf(raw)
+    if (id === undefined) continue
+    const group = byId.get(id)
+    if (group) group.push(raw)
+    else byId.set(id, [raw])
+  }
+  const sequence = ids.flatMap((id) => byId.get(id) ?? [])
+  let next = 0
+  return roster.map((raw) =>
+    rosterIdOf(raw) === undefined ? raw : sequence[next++],
+  )
+}
+
+/**
+ * Sets the roster order in one config write. `ids` must name every roster id
+ * exactly once; anything else refuses (`invalid-order`) before writing. The
+ * roster rows, the per-row entries and the state file are left as they are:
+ * only the order of the legacy `accounts` array changes, which older readers
+ * load as is. It takes the extra locks, then the store locks, and no row or
+ * provider-wide lock, since no row's credential, identity or quota changes.
+ * An order equal to the current one writes nothing.
+ */
+export async function reorderRows(
+  rt: StoreRuntime,
+  ids: readonly string[],
+  options: ReorderOptions = {},
+): Promise<ReorderResult> {
+  assertNotInsideHook('reorder')
+  const { ctx } = rt
+  const onFailure = options.onFailure
+  return runOperation(
+    ctx,
+    'reorder',
+    undefined,
+    onFailure && ((_rowId, error) => onFailure(error)),
+    async (locks, progress) => {
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
+      return withTransaction(
+        ctx,
+        locks,
+        progress,
+        { operation: 'reorder', rowId: undefined },
+        async (tx): Promise<ReorderResult> => {
+          const roster = tx.roster()
+          const problem = orderProblem(roster, ids)
+          if (problem)
+            throw new PoolOperationError({
+              operation: 'reorder',
+              phase: 'before-first-write',
+              retryable: false,
+              kind: 'invalid-order',
+              message: problem,
+            })
+          const order = [...ids]
+          const next = reorderedRoster(roster, order)
+          if (next.every((raw, index) => raw === roster[index]))
+            return { ids: order, outcome: 'unchanged' }
+          tx.config.accounts = next
+          await tx.commitConfig()
+          return { ids: order, outcome: 'reordered' }
+        },
+      )
+    },
+  )
 }
 
 export async function recordRowIdentity(
