@@ -44,10 +44,24 @@ export interface VaultCredential {
   readonly orgName?: string
 }
 
-/** A vault record this consumer could not use, kept for the warning it raises. */
+/**
+ * Why a listed vault record could not be used. A closed set of fixed codes, so
+ * a log line or a roster file that carries one never echoes vault data.
+ */
+export type SkippedVaultReason =
+  | 'empty credential id'
+  | 'duplicate credential id'
+  | 'blank account identity'
+  | 'empty state'
+
+/**
+ * A vault record this consumer could not use. `credentialId` is absent when
+ * the record's id itself was unusable, so nothing can say which account the
+ * record was.
+ */
 export interface SkippedVaultRecord {
   readonly credentialId?: string
-  readonly reason: string
+  readonly reason: SkippedVaultReason
 }
 
 export interface VaultInventory {
@@ -68,6 +82,14 @@ export interface ClaustrumScopedIdentity {
 }
 
 /**
+ * Where a receipt's `accountIdentity` came from: the vault asserted it in the
+ * served reply, the plugin's `parseIdentity` read it from the served token, or
+ * neither did and it is only the roster's expectation (`none`: no identity at
+ * all).
+ */
+export type AccountIdentitySource = 'asserted' | 'parsed' | 'expected' | 'none'
+
+/**
  * A receipt: what the vault served for one physical send. Each attempt gets
  * its own. It records the exact record version served, because a 401 for
  * this send is reported to the vault against that version.
@@ -75,7 +97,22 @@ export interface ClaustrumScopedIdentity {
 export interface ClaustrumScopedAttempt {
   readonly credentialId: string
   readonly credentialType: VaultCredentialType
+  /**
+   * The account this receipt is bound to: the vault's assertion, else the
+   * plugin's parse of the token, else the roster's expectation. Check
+   * `accountIdentitySource` before treating it as proof.
+   */
   readonly accountIdentity?: string
+  readonly accountIdentitySource: AccountIdentitySource
+  /** The account the roster row named when this receipt was requested. */
+  readonly expectedAccountIdentity?: string
+  /** The credential id the vault itself put in the served reply, if any. */
+  readonly assertedCredentialId?: string
+  /**
+   * The account the vault itself put in the served reply, if any. Never filled
+   * in from the roster or from a token parse.
+   */
+  readonly assertedAccountIdentity?: string
   /**
    * Kept in memory only and hidden from JSON.stringify and object spreads, so
    * logging a receipt never leaks it. Authorize again for every dispatch and retry.
@@ -212,6 +249,7 @@ export class ClaustrumScopedCustody {
   readonly #now: () => number
   readonly #family: ClaustrumFamily
   readonly #parseIdentity?: IdentityParser
+  readonly #requireAssertion: boolean
   readonly #logger: ClaustrumLogger
   readonly #provenance = new WeakMap<ClaustrumScopedAttempt, string>()
   readonly #reports = new WeakMap<ClaustrumScopedAttempt, Promise<void>>()
@@ -223,6 +261,14 @@ export class ClaustrumScopedCustody {
     tokenPath?: string
     readToken?: () => Promise<EnrollmentTokenFile>
     parseIdentity?: IdentityParser
+    /**
+     * Issue a receipt only when the vault's served reply itself names the
+     * requested credential id and the roster's (known) account identity. For
+     * providers whose tokens are opaque, where nothing else can prove which
+     * account a token belongs to. Off by default: then an absent assertion is
+     * no claim, and the receipt says where its identity came from.
+     */
+    requireAssertion?: boolean
     now?: () => number
     logger?: ClaustrumLogger
   }) {
@@ -240,6 +286,7 @@ export class ClaustrumScopedCustody {
     this.#client = options.client
     this.#family = options.family
     this.#parseIdentity = options.parseIdentity
+    this.#requireAssertion = options.requireAssertion ?? false
     this.#now = options.now ?? Date.now
     this.#logger = options.logger ?? defaultLogger
   }
@@ -334,7 +381,7 @@ export class ClaustrumScopedCustody {
     }
     const credentials: VaultCredential[] = []
     for (const { row, type } of candidates) {
-      let reason: string | undefined
+      let reason: SkippedVaultReason | undefined
       if (!row.id.trim()) reason = 'empty credential id'
       else if ((counts.get(row.id) ?? 0) > 1) reason = 'duplicate credential id'
       else if (row.accountId !== undefined && !row.accountId.trim())
@@ -368,10 +415,12 @@ export class ClaustrumScopedCustody {
 
   /**
    * Fetch the credential for one physical send and wrap it in a fresh receipt.
-   * Identity is checked only where both sides assert one: the vault's served
-   * identity (or, without one, the plugin's parse of the token) must equal the
-   * roster's when both are present; absence on either side proves nothing and
-   * does not refuse.
+   * The vault's served identity (or, without one, the plugin's parse of the
+   * token) must equal the roster's when both are present. Without
+   * `requireAssertion`, absence on either side proves nothing and does not
+   * refuse; the receipt records what the vault asserted separately from what
+   * the roster expected. With it, a reply that does not itself name the
+   * credential id and the expected account is refused.
    */
   async authorize(
     identity: ClaustrumScopedIdentity,
@@ -384,6 +433,11 @@ export class ClaustrumScopedCustody {
       )
     // Capture the caller's fields before yielding so a later mutation cannot move the fence.
     const { credentialId, credentialType, accountIdentity } = identity
+    if (this.#requireAssertion && accountIdentity === undefined)
+      throw new ClaustrumConsumerError(
+        'identity-unasserted',
+        'Claustrum dispatch requires a known account identity',
+      )
     const token = await this.#token(signal)
     const served = await this.#call(
       () =>
@@ -418,9 +472,22 @@ export class ClaustrumScopedCustody {
       )
     }
     const accessToken = accessTokenFromMaterial(served.material)
-    const servedIdentity = served.accountId?.trim()
+    const assertedIdentity = served.accountId?.trim()
       ? served.accountId
-      : this.#parseIdentity?.(accessToken)
+      : undefined
+    if (
+      this.#requireAssertion &&
+      (served.credentialId === undefined || assertedIdentity === undefined)
+    )
+      throw new ClaustrumConsumerError(
+        'identity-unasserted',
+        'Claustrum served credential did not assert its identity',
+      )
+    const parsedIdentity =
+      assertedIdentity === undefined
+        ? this.#parseIdentity?.(accessToken)
+        : undefined
+    const servedIdentity = assertedIdentity ?? parsedIdentity
     if (
       accountIdentity !== undefined &&
       servedIdentity !== undefined &&
@@ -431,7 +498,15 @@ export class ClaustrumScopedCustody {
         'Claustrum served credential identity changed',
       )
     }
-    const resolvedIdentity = accountIdentity ?? servedIdentity
+    const resolvedIdentity = servedIdentity ?? accountIdentity
+    const source: AccountIdentitySource =
+      assertedIdentity !== undefined
+        ? 'asserted'
+        : parsedIdentity !== undefined
+          ? 'parsed'
+          : accountIdentity !== undefined
+            ? 'expected'
+            : 'none'
     const attempt = Object.freeze(
       Object.defineProperty(
         {
@@ -439,6 +514,16 @@ export class ClaustrumScopedCustody {
           credentialType,
           ...(resolvedIdentity !== undefined && {
             accountIdentity: resolvedIdentity,
+          }),
+          accountIdentitySource: source,
+          ...(accountIdentity !== undefined && {
+            expectedAccountIdentity: accountIdentity,
+          }),
+          ...(served.credentialId !== undefined && {
+            assertedCredentialId: served.credentialId,
+          }),
+          ...(assertedIdentity !== undefined && {
+            assertedAccountIdentity: assertedIdentity,
           }),
           recordVersion: served.recordVersion,
           expiresAtMs,

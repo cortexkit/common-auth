@@ -475,3 +475,88 @@ test('vault rows route through /routing admission and /quota projection alongsid
   ])
   expect(pulls).toEqual([f.route(roster, 'oauth:test')])
 })
+
+test('requireAssertion applies to every authorization the consumer makes', async () => {
+  const f = await fixture()
+  const connect = async (): Promise<ClaustrumScopedClient> => ({
+    ...f.client,
+    getScoped: async (input) => {
+      f.gets.push(input)
+      return {
+        credentialId: input.credentialId,
+        material: 'vault-test-access',
+        recordVersion: 3,
+        expiresAtMs: Date.now() + 600_000,
+      }
+    },
+  })
+  const strict = new ClaustrumConsumer({
+    ...f.options,
+    connect,
+    requireAssertion: true,
+  })
+  consumers.push(strict)
+  const id = f.route(await strict.refresh(), 'oauth:test')
+  await expect(strict.authorize(id)).rejects.toThrow('did not assert')
+  const lenient = new ClaustrumConsumer({ ...f.options, connect })
+  consumers.push(lenient)
+  await lenient.refresh()
+  expect((await lenient.authorize(id)).accountIdentitySource).toBe('expected')
+  expect(f.gets).toHaveLength(2)
+})
+
+test('a credential an incomplete reply re-lists under another account is never authorized or quota-recorded under its old account', async () => {
+  const f = await fixture()
+  f.rows.splice(
+    0,
+    f.rows.length,
+    inventoryRow({ id: 'oauth:test', accountId: 'account-a' }),
+    inventoryRow({ id: 'oauth:test:a2', accountId: 'account-a' }),
+    inventoryRow({ id: 'oauth:test:work', accountId: 'account-b' }),
+  )
+  const first = await f.consumer.refresh()
+  const routeA = f.route(first, 'oauth:test')
+  const routeB = f.route(first, 'oauth:test:work')
+  // Incomplete reply: one of A's records now logs into B, the other is
+  // rejected (blank identity), so A cannot be removed and stays stale.
+  f.rows.splice(
+    0,
+    f.rows.length,
+    inventoryRow({ id: 'oauth:test', accountId: 'account-b' }),
+    inventoryRow({ id: 'oauth:test:a2', accountId: ' ' }),
+    inventoryRow({ id: 'oauth:test:work', accountId: 'account-b' }),
+  )
+  const next = await f.consumer.refresh()
+  expect(next?.complete).toBe(false)
+  const holders = (next?.rows ?? [])
+    .filter((row) =>
+      [row.credentialId, ...(row.aliases ?? [])].includes('oauth:test'),
+    )
+    .map((row) => row.routeId)
+  expect(holders).toEqual([routeB])
+  expect(next?.rows.find((row) => row.routeId === routeA)).toMatchObject({
+    credentialId: 'oauth:test:a2',
+    accountIdentity: 'account-a',
+    stale: true,
+  })
+  await f.consumer.authorize(routeA).catch(() => undefined)
+  expect(f.gets.map((get) => get.credentialId)).toEqual(['oauth:test:a2'])
+  const observation = { checkedAt: Date.now(), readings: [] }
+  for (const accountIdentity of ['account-a', 'account-b'])
+    expect(
+      await f.consumer.recordQuota(routeA, observation, {
+        credentialId: 'oauth:test',
+        accountIdentity,
+        expectedAccountIdentity: accountIdentity,
+        accountIdentitySource: 'asserted',
+      }),
+    ).toBe(false)
+  expect(
+    await f.consumer.recordQuota(routeB, observation, {
+      credentialId: 'oauth:test',
+      accountIdentity: 'account-b',
+      expectedAccountIdentity: 'account-b',
+      accountIdentitySource: 'asserted',
+    }),
+  ).toBe(true)
+})

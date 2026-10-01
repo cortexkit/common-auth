@@ -15,6 +15,7 @@ import {
   type AccountMapper,
   acceptVaultRoute,
   declineVaultRoute,
+  type QuotaReceipt,
   readVaultRoster,
   recordVaultQuota,
   refreshVaultRoster,
@@ -44,6 +45,13 @@ export interface ClaustrumConsumerOptions {
   routePrefix?: string
   mapAccount?: AccountMapper
   parseIdentity?: IdentityParser
+  /**
+   * Issue a receipt only when the vault's served reply itself names the
+   * credential id and the roster's account identity (see
+   * `ClaustrumScopedCustody`). Set it for providers whose tokens do not reveal
+   * their account; leave it unset to accept a reply that asserts no identity.
+   */
+  requireAssertion?: boolean
   /**
    * Fired once per change of the vault's view cursor, including the first
    * roster. A poll that sees the same view does not fire, and neither does a
@@ -146,6 +154,7 @@ export class ClaustrumConsumer {
             family: this.#options.family,
             tokenPath: this.#options.tokenPath,
             parseIdentity: this.#options.parseIdentity,
+            requireAssertion: this.#options.requireAssertion,
             now: this.#options.now,
             logger: this.#logger,
           })
@@ -355,20 +364,27 @@ export class ClaustrumConsumer {
   }
 
   /**
-   * Store a quota observation for a vault route. Pass the receipt the reading
-   * was taken with, so an observation for a replaced account is dropped.
+   * Store a quota or profile observation for a vault route. The receipt the
+   * reading was taken with is required: the observation lands only while the
+   * route still holds the credential and account that receipt was served for
+   * (see `recordVaultQuota`), so a reading for a replaced account is dropped.
    */
   async recordQuota(
     routeId: string,
     observation: QuotaObservation,
-    attempt?: Pick<ClaustrumScopedAttempt, 'accountIdentity'>,
+    attempt: QuotaReceipt,
   ): Promise<boolean> {
     this.#assertOpen()
     const kept = await recordVaultQuota(this.#options.rosterPath, {
       routeId,
       observation,
-      ...(attempt?.accountIdentity !== undefined && {
+      credentialId: attempt.credentialId,
+      accountIdentitySource: attempt.accountIdentitySource,
+      ...(attempt.accountIdentity !== undefined && {
         accountIdentity: attempt.accountIdentity,
+      }),
+      ...(attempt.expectedAccountIdentity !== undefined && {
+        expectedAccountIdentity: attempt.expectedAccountIdentity,
       }),
     })
     if (kept) this.#roster = await readVaultRoster(this.#options.rosterPath)

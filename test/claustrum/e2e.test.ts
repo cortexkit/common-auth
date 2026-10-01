@@ -315,11 +315,15 @@ test('a declined vault account stays declined across refreshes and version bumps
   await s.consumer.refresh()
   expect(s.consumer.routingRows()).toEqual([])
 
-  // Logged into a different known account: the decline no longer applies.
+  // Logged into a different known account: the decline no longer applies to
+  // this credential, but it stays recorded for the declined account itself,
+  // which is still declined if it returns under any credential id.
   target.account_id = 'account-other'
   await s.consumer.refresh()
   expect(s.consumer.routingRows()).toHaveLength(1)
-  expect((await readVaultRoster(s.options.rosterPath))?.declined).toEqual([])
+  expect((await readVaultRoster(s.options.rosterPath))?.declined).toEqual([
+    { credentialId: 'oauth:test:work', accountIdentity: 'account-work' },
+  ])
 })
 
 test('the view cursor notifies on visible changes and ignores token refreshes', async () => {
