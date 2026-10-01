@@ -119,8 +119,9 @@ export function scopeFor(
 export type TestQuota = { used: number }
 
 /**
- * A provider-neutral adapter over two fake accounts. Account choice follows
- * `plan.next`, skipping accounts in `plan.limited`. Events are JSON objects:
+ * A provider-neutral adapter over two fake accounts, `A` and `B`. It picks the
+ * account named in `plan.next`, or the other one when that account is in
+ * `plan.limited`; tests change both between requests. Events are JSON objects:
  * `delta` starts output, `quota` reports usage, `refused` is a limit.
  */
 export function fakeAdapter(

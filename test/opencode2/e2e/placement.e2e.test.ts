@@ -247,7 +247,11 @@ const pick = (entries: readonly object[], ...keys: string[]) =>
     keys.map((key) => (entry as Record<string, unknown>)[key] ?? '').join(':'),
   )
 
-/** Every hook-driven signal this scenario must have produced. */
+/**
+ * Checks that hold for every scenario: the plugin set up once, every account
+ * was chosen in model.request, nothing was logged as a warning, and every
+ * request on the wire carried an account and never the placeholder.
+ */
 function expectRecipeFired(result: ScenarioResult) {
   expect(events(result.plugin, 'setup')).toHaveLength(1)
   const selects = events(result.plugin, 'select')
