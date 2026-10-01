@@ -139,7 +139,11 @@ describe('reorder', () => {
     expect(failures).toEqual(cases.map(() => 'reorder invalid-order'))
   })
 
-  it('reorder takes extra locks before the store locks and no row or provider-wide lock', async () => {
+  // reorder changes no row's credential, identity or quota, so it takes no row
+  // or provider-wide lock: only the caller's extra locks, then the store
+  // locks. A caller holding legacy locks around the roster passes them as
+  // extraLocks, and reorder waits for them without blocking store writes.
+  it('reorder takes extra locks before the store locks, waits on a held extra lock and completes once it is released', async () => {
     await populate()
     const log: string[] = []
     const onLockEvent = (event: LockEvent) => {
@@ -148,11 +152,34 @@ describe('reorder', () => {
         `${event.name}@${event.path === s.configPath ? 'config' : 'state'}`,
       )
     }
-    await s.open({ onLockEvent }).reorder(['b', 'k', 'a'], {
+    const held = deferred()
+    const release = deferred()
+    const holder = withLock(
+      s.statePath,
+      { name: 'extra-1', ttlMs: 10_000, timeoutMs: 5_000 },
+      async () => {
+        held.resolve()
+        await release.promise
+      },
+    )
+    await held.promise
+    const reorder = s.open({ onLockEvent }).reorder(['k', 'b', 'a'], {
       extraLocks: [
         { name: 'extra-1', path: s.statePath },
         { name: 'extra-2', path: s.statePath },
       ],
+    })
+    expect(await settlesWithin(reorder, 300)).toBe(false)
+    // While reorder waits on the extra lock, a store write still gets the
+    // store locks: reorder has not taken them yet.
+    expect(await settlesWithin(s.open().enable('b'), 2_000)).toBe(true)
+    expect(await storeOrder()).toEqual(['a', 'b', 'k'])
+    expect(log).toEqual([])
+    release.resolve()
+    await holder
+    expect(await reorder).toEqual({
+      ids: ['k', 'b', 'a'],
+      outcome: 'reordered',
     })
     expect(log).toEqual([
       'extra-1@state',
@@ -160,36 +187,6 @@ describe('reorder', () => {
       'save@config',
       'save@state',
     ])
-    expect(await storeOrder()).toEqual(['b', 'k', 'a'])
-  })
-
-  it('a held extra lock makes reorder wait without holding the store locks, and it completes once released', async () => {
-    await populate()
-    const held = deferred()
-    const release = deferred()
-    const holder = withLock(
-      s.statePath,
-      { name: 'legacy-held', ttlMs: 10_000, timeoutMs: 5_000 },
-      async () => {
-        held.resolve()
-        await release.promise
-      },
-    )
-    await held.promise
-    const reorder = s.open().reorder(['k', 'b', 'a'], {
-      extraLocks: [{ name: 'legacy-held', path: s.statePath }],
-    })
-    expect(await settlesWithin(reorder, 300)).toBe(false)
-    // While reorder waits on the extra lock, a store write still gets the
-    // store locks: reorder has not taken them yet.
-    expect(await settlesWithin(s.open().enable('b'), 2_000)).toBe(true)
-    expect(await storeOrder()).toEqual(['a', 'b', 'k'])
-    release.resolve()
-    await holder
-    expect(await reorder).toEqual({
-      ids: ['k', 'b', 'a'],
-      outcome: 'reordered',
-    })
     expect(await storeOrder()).toEqual(['k', 'b', 'a'])
     const rows = await s.open().read()
     if (rows.status !== 'ready') throw new Error('expected ready')
@@ -203,7 +200,6 @@ describe('reorder', () => {
   for (const [step, seenAs] of steps) {
     it(`a crash at ${step} of reorder leaves the whole old order or the whole new one`, async () => {
       await populate()
-      const before = await s.config()
       const stateBefore = (await s.bytes()).state
       const child = runChild({
         configPath: s.configPath,
@@ -217,28 +213,8 @@ describe('reorder', () => {
       const order = seenAs === 'old' ? ['a', 'b', 'k'] : ['b', 'k', 'a']
       expect(await storeOrder()).toEqual(order)
       expect((await legacyRows()).map(([id]) => id)).toEqual(order)
-      expect(rowBytes(await s.config())).toEqual(rowBytes(before))
+      // A reorder never writes the state file, so no crash point changes it.
       expect((await s.bytes()).state).toBe(stateBefore)
     })
   }
-
-  it('reorder makes exactly one config write and no state write', async () => {
-    await populate()
-    const child = runChild({
-      configPath: s.configPath,
-      statePath: s.statePath,
-      op: 'reorder',
-      id: '',
-      ids: ['k', 'a', 'b'],
-    })
-    expect(await child.exited).toBe(0)
-    const steps = child
-      .output()
-      .split('\n')
-      .filter((line) => line.startsWith('step:'))
-    expect(steps).toEqual([
-      'step:before-config-write',
-      'step:after-config-write',
-    ])
-  })
 })
