@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import type { AddInput, CommandInvocation } from '../../src/commands/index.js'
+import type { CommandInvocation } from '../../src/commands/index.js'
+import type { AddInput } from '../../src/store/index.js'
 import {
   apply,
   deferred,
