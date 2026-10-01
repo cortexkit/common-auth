@@ -951,7 +951,8 @@ describe('dump directory byte cap', () => {
       channel: 'http',
       bodyText: '{}',
     })
-    // The old dump goes as one group; the new one is young and protected.
+    // The old dump is evicted with all four of its files; the new dump is
+    // younger than the one-minute floor and is the dump just written, so it stays.
     await eventually(async () => (await readdir(dumpDir)).length === 3)
     expect((await readdir(dumpDir)).sort()).toEqual(
       Object.values(result!.files)

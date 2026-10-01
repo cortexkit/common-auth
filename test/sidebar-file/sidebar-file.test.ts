@@ -369,7 +369,10 @@ describe('lock lost during the rename', () => {
       },
     }
   }
-  /** Successor-aware: keep the successor's state, republish only the route. */
+  /**
+   * Keep everything the successor wrote and put back only the route, the one
+   * field the stale writer is the authority on.
+   */
   const republishRoute = (current: Frame, written: Frame) => ({
     ...current,
     route: written.route,

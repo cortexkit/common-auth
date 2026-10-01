@@ -212,9 +212,9 @@ export interface SweepDumpDirectoryOptions {
   protectedPaths?: readonly string[]
   /** Milliseconds since the epoch. Default `Date.now()`. */
   now?: number
-  /** Default one minute. */
+  /** A dump whose newest file is younger than this is kept. Default one minute. */
   minAgeMs?: number
-  /** Default ten minutes. */
+  /** A response staging file older than this is removed. Default ten minutes. */
   partialStaleMs?: number
   logger?: DumpLogger
 }
