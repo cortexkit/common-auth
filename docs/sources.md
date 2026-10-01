@@ -438,3 +438,26 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | A refresh holding the row lock makes remove wait and writes no credential for the removed row | new (neither copy) | a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row |
 | store | Enable clears enabled false and the disabled reason | new (neither copy) | enable clears enabled false and the disabled reason |
 | store | Enable refuses a duplicate identity, writing nothing | new (neither copy) | enable refuses a row whose identity another enabled row holds, with both files unchanged |
+| auth-menu | Arrow keys move the full-screen selection and every redraw is a new frame | reference/openai-auth/packages/opencode/src/auth/ui/select.ts | renders full-screen and moves the selection with the arrow keys |
+| auth-menu | Escape cancels the menu, runs nothing and restores raw mode | reference/openai-auth/packages/opencode/src/auth/ui/select.ts | Escape cancels the menu, runs nothing and restores the terminal |
+| auth-menu | Without a TTY the menu prints a plain list and runs nothing | new (neither copy) | a non-interactive terminal gets a plain list and nothing runs |
+| auth-menu | A declined confirmation keeps a destructive action from running | reference/openai-auth/packages/opencode/src/auth/ui/confirm.ts | a destructive action does not run when its confirmation is declined |
+| auth-menu | A destructive action runs after an explicit yes | reference/openai-auth/packages/opencode/src/auth/ui/confirm.ts | a destructive action runs after an explicit yes |
+| auth-menu | Confirm answers no without a TTY | new (neither copy) | confirm answers no without an interactive terminal |
+| auth-menu | A throwing action is printed and reported, not thrown | new (neither copy) | an action that throws is reported and the menu still completes |
+| auth-menu | The menu-completed result is an empty automatic login whose callback fails | reference/openai-auth/packages/opencode/src/auth/methods.ts (completedMenuResult) | the menu-completed result is an empty automatic login whose callback fails |
+| auth-menu | The TUI and a first CLI login keep the plugin's normal login | reference/openai-auth/packages/opencode/src/auth/methods.ts (openai-auth b7ceb56 tests/auth-menu.test.ts) | keeps TUI login and first CLI login on the original browser flow |
+| auth-menu | The menu opens on a credential, not on a non-empty roster | reference/openai-auth/packages/opencode/src/auth/methods.ts (openai-auth b7ceb56 tests/auth-menu.test.ts) | opens for a signed-in user who has no fallback accounts yet |
+| auth-menu | Opening and cancelling the account menu calls no login or poll and writes nothing | reference/openai-auth/packages/opencode/src/auth/methods.ts (openai-auth b7ceb56 tests/auth-menu.test.ts) | opening and cancelling the menu performs no network calls |
+| auth-menu | Add account switches to the device-code login when no browser opens, and adds the row | reference/openai-auth/packages/opencode/src/auth/methods.ts (openai-auth b7ceb56 tests/auth-menu.test.ts) | Add account falls back to device flow when the browser opener throws |
+| auth-menu | Delete all removes every row through the store except the ids protect keeps, config and state | reference/openai-auth/packages/opencode/src/auth/methods.ts (openai-auth b7ceb56 tests/auth-menu.test.ts) | Delete all removes every non-main raw id and prunes matching state |
+| auth-menu | Declining delete all writes nothing | reference/openai-auth/packages/opencode/src/auth/methods.ts (openai-auth b7ceb56 tests/auth-menu.test.ts) | declining Delete all leaves both files byte-unchanged |
+| auth-menu | Remove keeps a protected id and removes another only after a yes | new (neither copy) | Remove keeps a protected account and removes another after confirmation |
+| auth-menu | Enable or disable toggles the chosen row through the store | new (neither copy) | enable or disable toggles the chosen account through the store |
+| auth-menu | Re-authenticate replaces only the chosen row's credential | new (neither copy) | Re-authenticate replaces the chosen account credential |
+| auth-menu | Re-authenticate refuses a login as a different identity, writing nothing | new (neither copy) | Re-authenticate refuses a sign-in as a different account |
+| auth-menu | Check quotas polls each row once, records through the store and prints windows | reference/openai-auth/packages/opencode/src/auth/methods.ts | Check quotas polls each account once and prints its windows from the store |
+| auth-menu | Custody mode hides add, re-authenticate, remove and delete all | new (neither copy) | custody mode lists accounts read-only with enable and disable |
+| auth-menu | The doctor applies only the repairs answered yes | reference/openai-auth/packages/opencode/src/auth/doctor.ts | doctor applies only the repairs the operator chose |
+| auth-menu | Declining every repair writes nothing | reference/openai-auth/packages/opencode/src/auth/methods.ts (openai-auth b7ceb56 tests/auth-menu.test.ts) | declining Apply repairs leaves both files byte-unchanged |
+| auth-menu | A throwing doctor check becomes a finding beside the others | new (neither copy) | a doctor check that throws becomes a finding beside the others |
