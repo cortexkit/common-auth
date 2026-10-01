@@ -10,6 +10,7 @@ export type PoolOperation =
   | 'enable'
   | 'remove'
   | 'reorder'
+  | 'updateSettings'
   | 'recordIdentity'
   | 'refresh'
   | 'pull'

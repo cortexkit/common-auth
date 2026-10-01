@@ -1,2 +1,40 @@
-// Placeholder so the export resolves until this subpath is built.
-export {}
+export type {
+  AccountsSectionOptions,
+  LimitsSectionOptions,
+  LoginOutcome,
+  QuotaSectionOptions,
+  RoutingSectionOptions,
+} from './builtins.js'
+export { MENU_DISABLED_REASON } from './builtins.js'
+export type { CommandMenu, CommandMenuOptions } from './menu.js'
+export { createCommandMenu, parseApplyRequest } from './menu.js'
+export type {
+  ActionDefinition,
+  ActionInput,
+  ActionOutcome,
+  CommandApplyRequest,
+  CommandApplyResult,
+  CommandDialogPayload,
+  CommandInvocation,
+  CommandMenuModel,
+  ItemDefinition,
+  KnobValue,
+  KnobValues,
+  MenuAccount,
+  MenuAction,
+  MenuChoice,
+  MenuConfirmation,
+  MenuItem,
+  MenuKnob,
+  MenuSection,
+  NotifyKind,
+  PluginExtraSection,
+  PluginSection,
+  SectionContent,
+  SectionSlot,
+} from './model.js'
+export { SECTION_SLOTS } from './model.js'
+export type { PiMenuOptions, PiMenuUi } from './pi.js'
+export { runPiCommandMenu } from './pi.js'
+export type { SeamLogger } from './seam.js'
+export { DEFAULT_IRREVERSIBLE_CONFIRMATION } from './seam.js'
