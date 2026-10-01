@@ -155,7 +155,7 @@ export class Transaction {
     readonly snapshot: Snapshot,
     private readonly locks: LockStack,
     private readonly progress: Progress,
-    private readonly info: {
+    readonly info: {
       operation: PoolOperation
       rowId: string | undefined
     },

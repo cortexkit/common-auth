@@ -53,6 +53,7 @@ export type PoolFailureKind =
   | 'row-protected'
   | 'duplicate-identity'
   | 'identity-mismatch'
+  | 'endpoint-mismatch'
   | 'row-key-changed'
   | 'invalid-order'
   | 'refresh-stamp-ahead'

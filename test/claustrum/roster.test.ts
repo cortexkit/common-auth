@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { readFile, rm } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   acceptAccount,
@@ -726,4 +726,101 @@ test('a quota observation must name the served credential and account, and an ab
   expect(
     await record({ routeId: route, observation, ...receiptFor(work) }),
   ).toBe(true)
+})
+
+test('a reading with a proven account on a row that has never had one binds that account, so a later list naming another account inherits no quota', async () => {
+  const { path } = await fixture()
+  const anonymous = unclaimed(work)
+  const first = await refreshVaultRoster({
+    path,
+    custody: inventory([anonymous]),
+  })
+  const original = routeOf(first, work.credentialId)
+  expect(original.accountIdentity).toBeUndefined()
+  expect(
+    await recordVaultQuota(path, {
+      routeId: original.routeId,
+      observation,
+      credentialId: work.credentialId,
+      accountIdentity: 'account-A',
+      accountIdentitySource: 'asserted',
+    }),
+  ).toBe(true)
+  const bound = routeOf(await readVaultRoster(path), work.credentialId)
+  expect(bound).toMatchObject({
+    routeId: original.routeId,
+    accountIdentity: 'account-A',
+    unclaimed: true,
+  })
+  expect(bound.quota).toBeDefined()
+  // The bound account's own receipt still lands on the row.
+  expect(
+    await recordVaultQuota(path, {
+      routeId: original.routeId,
+      observation,
+      ...receiptFor({ ...work, accountIdentity: 'account-A' }),
+    }),
+  ).toBe(true)
+  const replaced = await refreshVaultRoster({
+    path,
+    custody: inventory([{ ...work, accountIdentity: 'account-B' }], 'v2'),
+  })
+  const row = routeOf(replaced, work.credentialId)
+  expect(row.accountIdentity).toBe('account-B')
+  expect(row.quota).toBeUndefined()
+  expect(row.routeId).not.toBe(original.routeId)
+})
+
+test('a reading with no account on a row that has never had one is kept and binds nothing', async () => {
+  const { path } = await fixture()
+  const anonymous = unclaimed(work)
+  const first = await refreshVaultRoster({
+    path,
+    custody: inventory([anonymous]),
+  })
+  const original = routeOf(first, work.credentialId)
+  expect(
+    await recordVaultQuota(path, {
+      routeId: original.routeId,
+      observation,
+      credentialId: work.credentialId,
+      accountIdentitySource: 'none',
+    }),
+  ).toBe(true)
+  const kept = routeOf(await readVaultRoster(path), work.credentialId)
+  expect(kept.quota).toBeDefined()
+  expect(kept.accountIdentity).toBeUndefined()
+  expect(kept.unclaimed).toBeUndefined()
+})
+
+test('a reading with a proven account on an accountless row with several credentials is refused', async () => {
+  const { path } = await fixture()
+  const roster: VaultRosterFile = {
+    version: 1,
+    complete: true,
+    declined: [],
+    rows: [
+      {
+        routeId: 'vault:shared',
+        credentialId: work.credentialId,
+        aliases: [alias.credentialId],
+        credentialType: 'oauth',
+        state: 'active',
+        label: 'work',
+        enabled: true,
+        addedAt: 1,
+      },
+    ],
+  }
+  await writeFile(path, JSON.stringify(roster), { mode: 0o600 })
+  expect(
+    await recordVaultQuota(path, {
+      routeId: 'vault:shared',
+      observation,
+      credentialId: alias.credentialId,
+      accountIdentity: 'account-A',
+      accountIdentitySource: 'parsed',
+    }),
+  ).toBe(false)
+  expect(await readVaultRoster(path)).toEqual(roster)
 })

@@ -2,6 +2,7 @@ import { PoolOperationError } from './errors.js'
 import { type Progress, toFailure, withTransaction } from './mutate.js'
 import { LockStack } from './refresh-lock.js'
 import { refusal, type StoreRuntime, unknownRow } from './runtime.js'
+import { isCredentialEpoch } from './schema.js'
 
 /**
  * What a pull or refresh captured about its row (named by id alongside) when
@@ -29,6 +30,13 @@ export async function recordQuota(
   const locks = new LockStack(ctx.lockDefaults, ctx.lockEnv)
   const progress: Progress = { writes: 0 }
   try {
+    if (!isCredentialEpoch(attribution?.credentialEpoch))
+      throw refusal(
+        'pull',
+        id,
+        'invalid-input',
+        'the credential epoch the reading was issued for must be a positive safe integer',
+      )
     await withTransaction(
       ctx,
       locks,

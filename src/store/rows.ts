@@ -28,9 +28,11 @@ import {
   credentialProblem,
   fingerprintOf,
   idProblem,
+  isCredentialEpoch,
   isRecord,
   type PoolCredential,
   type PoolRow,
+  type RotateCredential,
   rosterRowFor,
   rotationStamp,
   rowLockKey,
@@ -153,22 +155,80 @@ const CREDENTIAL_STATE_FIELDS = [
 ]
 
 /**
+ * The endpoint an API-key roster row sends its key to, as `buildRawRows` loads
+ * it: the trimmed `baseURL`, and a bearer header unless the row names
+ * `x-api-key`.
+ */
+function rowEndpoint(raw: Record<string, unknown>): {
+  baseURL: string
+  authHeader: 'authorization-bearer' | 'x-api-key'
+} {
+  return {
+    baseURL: String(raw.baseURL).trim(),
+    authHeader:
+      raw.authHeader === 'x-api-key' ? 'x-api-key' : 'authorization-bearer',
+  }
+}
+
+/**
+ * The credential as it will sit in the row. The state file holds only an API
+ * key; its endpoint lives in the roster row. So an API key written into a row
+ * is sent wherever that row says, and one given for another `baseURL` or
+ * `authHeader` would silently be paired with an endpoint it was not issued
+ * for. A part the caller leaves out is the row's; a part it gives must equal
+ * the row's, else the write is refused (`endpoint-mismatch`) before anything
+ * is written. Moving a row to another endpoint is a `replace`, which writes
+ * the new endpoint first.
+ */
+function onRowEndpoint(
+  tx: Transaction,
+  id: string,
+  credential: RotateCredential,
+): PoolCredential {
+  if (credential.type !== 'api') return credential
+  const raw = tx.rosterRow(id)
+  if (!isRecord(raw)) {
+    if (credential.baseURL === undefined)
+      throw refusal(
+        tx.info.operation,
+        id,
+        'invalid-input',
+        'api credential needs a valid baseURL',
+      )
+    return { ...credential, baseURL: credential.baseURL }
+  }
+  const endpoint = rowEndpoint(raw)
+  const baseURL = credential.baseURL?.trim() ?? endpoint.baseURL
+  const authHeader = credential.authHeader ?? endpoint.authHeader
+  if (baseURL !== endpoint.baseURL || authHeader !== endpoint.authHeader)
+    throw refusal(
+      tx.info.operation,
+      id,
+      'endpoint-mismatch',
+      `row ${id} sends its key to another endpoint or header; a key for another endpoint is a replacement`,
+    )
+  return { ...credential, baseURL, authHeader }
+}
+
+/**
  * Writes a credential into the state file (one write), stamped with the
  * credential epoch the row's entry holds in `tx` (1 without an entry) and,
  * for a replace, the binding the config is about to get. A rotation is the
- * same lineage: no epoch bump, no identity or quota change.
+ * same lineage: no epoch bump, no identity or quota change. An API key must
+ * belong to the endpoint the row holds in `tx` (see `onRowEndpoint`).
  */
 export async function rotateIn(
   rt: StoreRuntime,
   tx: Transaction,
   id: string,
-  credential: PoolCredential,
+  given: RotateCredential,
   extra: {
     stamp?: number
     clearErrors?: boolean
     binding?: CredentialBinding
   } = {},
 ): Promise<StoredCredential> {
+  const credential = onRowEndpoint(tx, id, given)
   const prior = tx.stateAccount(id)
   const priorStamp =
     typeof prior?.lastRefreshedAt === 'number'
@@ -185,21 +245,7 @@ export async function rotateIn(
     delete kept.lastQuotaRefreshError
     delete kept.quota
   }
-  const raw = tx.rosterRow(id)
-  const stored =
-    credential.type === 'api' && isRecord(raw)
-      ? storedCredential(
-          {
-            ...credential,
-            baseURL: String(raw.baseURL ?? credential.baseURL),
-            ...(raw.authHeader === 'x-api-key' ||
-            raw.authHeader === 'authorization-bearer'
-              ? { authHeader: raw.authHeader }
-              : {}),
-          },
-          stamp,
-        )
-      : storedCredential(credential, stamp)
+  const stored = storedCredential(credential, stamp)
   const epoch = tx.entry(id)?.credentialEpoch
   tx.setStateAccount(id, {
     ...kept,
@@ -217,11 +263,13 @@ export async function rotateIn(
 function checkInput(
   operation: 'add' | 'replace' | 'rotate',
   id: string,
-  credential: PoolCredential,
+  credential: RotateCredential,
 ): void {
   const idIssue = operation === 'add' ? idProblem(id) : undefined
   if (idIssue) throw refusal(operation, id, 'invalid-input', idIssue)
-  const credentialIssue = credentialProblem(credential)
+  const credentialIssue = credentialProblem(credential, {
+    baseURLOptional: operation === 'rotate',
+  })
   if (credentialIssue)
     throw refusal(operation, id, 'invalid-input', credentialIssue)
 }
@@ -230,7 +278,7 @@ function requireUsableRow(
   operation: 'replace' | 'rotate' | 'recordIdentity' | 'disable' | 'enable',
   id: string,
   row: PoolRow | undefined,
-  credential?: PoolCredential,
+  credential?: RotateCredential,
 ): PoolRow {
   if (!row) throw unknownRow(operation, id)
   if (row.invalid)
@@ -247,7 +295,7 @@ function requireUsableRow(
 
 /** The row is recorded for another account than the one given. */
 function identityMismatch(
-  operation: 'rotate' | 'recordIdentity',
+  operation: 'add' | 'rotate' | 'recordIdentity',
   id: string,
 ): PoolOperationError {
   return refusal(
@@ -317,6 +365,16 @@ export async function addRow(
               row.invalid === undefined && row.fingerprint === fingerprint,
           )
           if (same) {
+            // The same secret is the same credential, so re-adding it rotates
+            // that row. An identity or endpoint given with it must match the
+            // row's; a different one is refused rather than silently replaced
+            // by what the row already holds.
+            if (
+              identity !== undefined &&
+              same.identity !== undefined &&
+              identity !== same.identity
+            )
+              throw identityMismatch('add', same.id)
             const stored = await rotateIn(rt, tx, same.id, credential)
             return { id: same.id, outcome: 'rotated', credential: stored }
           }
@@ -338,6 +396,12 @@ export async function addRow(
                 'type-mismatch',
                 `row ${id} is a ${existing.type} row`,
               )
+            if (
+              identity !== undefined &&
+              existing.identity !== undefined &&
+              identity !== existing.identity
+            )
+              throw identityMismatch('add', id)
             // A roster row without a credential (left by another writer, or
             // by an add of an earlier version that stopped between its
             // writes): writing the credential now completes it at epoch 1.
@@ -438,6 +502,16 @@ export async function replaceRow(
           const priorEpoch = tx.entry(id)?.credentialEpoch
           const credentialEpoch =
             (typeof priorEpoch === 'number' ? priorEpoch : 1) + 1
+          // An epoch past the safe integer range could equal the one before
+          // it, so readers could not tell the new credential from the old.
+          // Refused before anything is written; the row keeps its credential.
+          if (!isCredentialEpoch(credentialEpoch))
+            throw refusal(
+              'replace',
+              id,
+              'invalid-row',
+              `row ${id}'s credential epoch cannot advance past ${Number.MAX_SAFE_INTEGER}; remove the row and add the new credential as a new row`,
+            )
           const binding: CredentialBinding = {
             ...(input.identity !== undefined
               ? { identity: input.identity }
@@ -475,7 +549,7 @@ export async function replaceRow(
 export async function rotateRow(
   rt: StoreRuntime,
   id: string,
-  credential: PoolCredential,
+  credential: RotateCredential,
   input: { identity?: string } = {},
   options: RowOperationOptions = {},
 ): Promise<{ id: string; credential: StoredCredential }> {
@@ -864,11 +938,7 @@ export async function recordRowIdentity(
       const captured = isRecord(attribution)
         ? attribution.credentialEpoch
         : undefined
-      if (
-        typeof captured !== 'number' ||
-        !Number.isInteger(captured) ||
-        captured < 1
-      )
+      if (!isCredentialEpoch(captured))
         throw refusal(
           'recordIdentity',
           id,

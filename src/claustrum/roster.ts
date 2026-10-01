@@ -565,8 +565,17 @@ export type QuotaReceipt = Pick<
   | 'expectedAccountIdentity'
 >
 
-function holdsReceipt(row: VaultRosterRow, receipt: QuotaReceipt): boolean {
-  if (!memberIds(row).includes(receipt.credentialId)) return false
+/**
+ * What a receipt may do to a row's quota: `hold` (the row holds the receipt's
+ * credential and account), `bind` (the row has never had a known account and
+ * the receipt proves one, so the row takes that account with the reading) or
+ * `refuse`.
+ */
+function receiptFence(
+  row: VaultRosterRow,
+  receipt: QuotaReceipt,
+): 'hold' | 'bind' | 'refuse' {
+  if (!memberIds(row).includes(receipt.credentialId)) return 'refuse'
   // While the vault makes no claim, the roster's own expectation proves
   // nothing about which account the reading came from.
   if (
@@ -574,16 +583,29 @@ function holdsReceipt(row: VaultRosterRow, receipt: QuotaReceipt): boolean {
     (receipt.accountIdentitySource === 'expected' ||
       receipt.accountIdentitySource === 'none')
   )
-    return false
+    return 'refuse'
   // Equality, never compatibility: a known account on one side does not match
-  // an absent one on the other. The one exception is a row still without any
-  // known account, reached by a receipt issued for it in that state; the
-  // credential id above is then the whole binding.
-  return (
-    row.accountIdentity === receipt.accountIdentity ||
-    (row.accountIdentity === undefined &&
-      receipt.expectedAccountIdentity === undefined)
+  // an absent one on the other. The only absent-absent match is a row that
+  // has never had a known account and a receipt that names none either.
+  if (row.accountIdentity === receipt.accountIdentity) return 'hold'
+  // A row that has never had a known account, reached by a receipt issued for
+  // it in that state whose served or parsed identity names an account. The
+  // reading belongs to that account, so keeping it without the account would
+  // let the next list that names a different account inherit it as if that
+  // account had been learned for the first time. The row takes the account
+  // with the reading instead: a later list naming another account is then a
+  // known replacement and inherits nothing. Only a single-credential row is
+  // bound, since one credential's account says nothing about the others.
+  if (
+    row.accountIdentity === undefined &&
+    receipt.expectedAccountIdentity === undefined &&
+    receipt.accountIdentity !== undefined &&
+    (receipt.accountIdentitySource === 'asserted' ||
+      receipt.accountIdentitySource === 'parsed') &&
+    memberIds(row).length === 1
   )
+    return 'bind'
+  return 'refuse'
 }
 
 /**
@@ -602,13 +624,21 @@ export function recordVaultQuota(
 ): Promise<boolean> {
   return mutateVaultRoster(path, (current) => {
     const row = current?.rows.find((entry) => entry.routeId === input.routeId)
-    if (!current || !row || !holdsReceipt(row, input)) return { result: false }
+    const fence = !current || !row ? 'refuse' : receiptFence(row, input)
+    if (!current || !row || fence === 'refuse') return { result: false }
     const quota = mergeQuotaObservation(row.quota, input.observation)
+    // A bound account is `unclaimed`: the vault's list has not named it, and
+    // the next projection keeps it as the account this credential last
+    // logged into until the vault names one.
+    const bound =
+      fence === 'bind'
+        ? { accountIdentity: input.accountIdentity, unclaimed: true as const }
+        : {}
     return {
       next: {
         ...current,
         rows: current.rows.map((entry) =>
-          entry === row ? { ...entry, quota } : entry,
+          entry === row ? { ...entry, ...bound, quota } : entry,
         ),
       },
       result: true,
