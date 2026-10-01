@@ -316,6 +316,12 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | routing | Sticky-balanced excludes a backed-off row until its retry time | new (neither copy) | sticky-balanced excludes a backed-off row until its retry time |
 | routing | Sticky-balanced leaves an unmarked row's order and weight unchanged by another row's mark | new (neither copy) | sticky-balanced leaves an unmarked row's order and weight unchanged by another row's mark |
 | routing | A killed pinned row is routed around and its pin retained | new (neither copy) | a killed pinned row is routed around and its pin retained |
+| routing | Per-row reserves, as a map or a function, change placement per row and replace the shared reserve for the rows they cover | new (neither copy) | per-row reserves change placement per row, as a map or a function, over the shared reserve |
+| routing | The move policy reassigns a pin whose row is refused as exhausted or budget-spent | new (neither copy) | the move policy moves a pin whose row is refused as exhausted or budget-spent |
+| routing | The move policy reassigns a pin whose row the killswitch kills | new (neither copy) | the move policy moves a pin whose row the killswitch kills |
+| routing | The move policy keeps a pin refused for unknown quota or excluded while serving elsewhere | new (neither copy) | the move policy keeps a pin whose row is refused for unknown quota or excluded, serving elsewhere |
+| routing | The move policy retains the pin when nothing else is admissible | new (neither copy) | the move policy retains the pin when nothing else is admissible |
+| routing | The default refused-pin policy keeps a pin whose row is exhausted, budget-spent or killed | new (neither copy) | the default policy keeps a pin whose row is exhausted, budget-spent or killed |
 | routing | A pin on a valid row with an unknown identity survives | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a pin on a valid row with an unknown identity survives |
 | routing | A pin whose known identities differ is invalidated | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a pin whose known identities differ is invalidated |
 | routing | A pin whose row left the valid set is invalidated | reference/openai-auth/packages/opencode/src/sidebar-state.ts | a pin whose row left the valid set is invalidated |
@@ -420,3 +426,15 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | Initialize leaves a ready pool untouched and refuses a load error | new (neither copy) | leaves a ready pool untouched and refuses a load error |
 | store | Initialize fails retryably with nothing written when its lease is lost | new (neither copy) | fails retryably with nothing written when its lease is lost before the write |
 | store | Row writes take extra locks after the row and provider-wide locks and before the store locks | new (neither copy) | add, replace, rotate and recordIdentity take extra locks after the row and provider-wide locks and before the store locks |
+| store | Disable, enable and remove take the row lock, then extra locks, then the store locks | new (neither copy) | disable, enable and remove take the row lock, then extra locks, then the store locks |
+| store | Remove deletes the roster row, its pool entry and its state credential and leaves the other rows intact | new (neither copy) | remove deletes the roster row, its pool entry and its state credential and leaves the other rows intact |
+| store | The legacy reader loads a pool a row was removed from | reference/openai-auth/packages/core/src/accounts.ts | the legacy reader loads a pool a row was removed from with every other row and credential |
+| store | Remove refuses a protected id and one a pending-operation record names, writing nothing | new (neither copy) | remove refuses an id the protect predicate reserves and one a pending-operation record names, with both files unchanged |
+| store | Remove and enable refuse an unknown row and a pending-migration pool before writing | new (neither copy) | remove and enable refuse an unknown row and a pending-migration pool before writing |
+| store | A crash before the config write of remove leaves the old pool | new (neither copy) | a crash at before-config-write of remove leaves either the old pool or the removed one and a re-run remove finishes it |
+| store | A crash after the config write of remove leaves the removed pool and a re-run remove drops the orphaned credential | new (neither copy) | a crash at after-config-write of remove leaves either the old pool or the removed one and a re-run remove finishes it |
+| store | A crash before the state write of remove leaves the removed pool and a re-run remove drops the orphaned credential | new (neither copy) | a crash at before-state-write of remove leaves either the old pool or the removed one and a re-run remove finishes it |
+| store | A crash after the state write of remove leaves the removed pool | new (neither copy) | a crash at after-state-write of remove leaves either the old pool or the removed one and a re-run remove finishes it |
+| store | A refresh holding the row lock makes remove wait and writes no credential for the removed row | new (neither copy) | a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row |
+| store | Enable clears enabled false and the disabled reason | new (neither copy) | enable clears enabled false and the disabled reason |
+| store | Enable refuses a duplicate identity, writing nothing | new (neither copy) | enable refuses a row whose identity another enabled row holds, with both files unchanged |
