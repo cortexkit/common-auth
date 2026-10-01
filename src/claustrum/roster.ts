@@ -278,12 +278,29 @@ export function projectVaultRoster(
   }
 
   // An account the reply does not account for keeps its last good projection:
-  // a rejected record must not read as the account having been removed.
+  // a rejected record must not read as the account having been removed. A
+  // credential this reply lists belongs to the live row it was projected into,
+  // so it is taken out of the stale row: otherwise one credential could be
+  // authorized, and its readings recorded, under two account bindings. A
+  // stale row left with no member is dropped.
   previousRows.forEach((row, previousIndex) => {
     if (used.has(row) || !memberIds(row).some(unaccounted)) return
     if (taken.has(row.routeId)) return
+    const [credentialId, ...aliases] = memberIds(row).filter(
+      (id) => !listed.has(id),
+    )
+    if (credentialId === undefined) return
     taken.add(row.routeId)
-    projected.push({ previousIndex, row: { ...row, stale: true } })
+    const { aliases: _previousAliases, ...rest } = row
+    projected.push({
+      previousIndex,
+      row: {
+        ...rest,
+        credentialId,
+        ...(aliases.length && { aliases }),
+        stale: true,
+      },
+    })
   })
 
   projected.sort((left, right) =>

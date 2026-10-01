@@ -687,6 +687,7 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | claustrum | Incomplete reply: an unrecoverable id keeps every unaccounted account, a newcomer is added | new (neither copy) | a record with no recoverable id keeps every unaccounted account and still adds a valid newcomer |
 | claustrum | Incomplete reply: a malformed alias stays a member | new (neither copy) | a malformed alias record stays a member of its account |
 | claustrum | Only a complete reply removes an account | new (neither copy) | a complete reply that no longer lists an account removes it |
+| claustrum | A credential re-listed under another account leaves the stale row | new (neither copy) | a credential an incomplete reply re-lists under another account is never authorized or quota-recorded under its old account |
 | claustrum | The quota fence needs the served credential and account | anthropic-auth/packages/core/src/claustrum-scoped.ts | a quota observation must name the served credential and account, and an absent side never matches a known one |
 | claustrum | Asserted identity is kept apart from expected identity | new (neither copy) | the receipt keeps what the vault asserted apart from what the roster expected |
 | claustrum | requireAssertion demands the vault's own credential and account assertion | anthropic-auth/packages/core/src/claustrum-scoped.ts | requireAssertion refuses a receipt unless the vault asserts the credential id and the expected account identity |
