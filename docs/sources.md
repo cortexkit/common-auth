@@ -438,3 +438,103 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | A refresh holding the row lock makes remove wait and writes no credential for the removed row | new (neither copy) | a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row |
 | store | Enable clears enabled false and the disabled reason | new (neither copy) | enable clears enabled false and the disabled reason |
 | store | Enable refuses a duplicate identity, writing nothing | new (neither copy) | enable refuses a row whose identity another enabled row holds, with both files unchanged |
+
+The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/claustrum-enrollment.test.ts`, `claustrum-scoped.test.ts` and `claustrum-scoped-runtime.test.ts` at anthropic-auth main 77e4c900; their origin names the source file the behaviour came from. Rows marked new (neither copy) are the contract changes and additions listed under ./claustrum in adoption-inventory.md, including the end-to-end scenarios, which drive the real `@cortexkit/claustrum-client` over a socket against a mock daemon ported from anthropic-auth's `packages/e2e-tests/src/mock-claustrum.ts`.
+
+| component | behaviour | origin | test |
+| --- | --- | --- | --- |
+| claustrum | The request secret is on disk before the proposal and only its hash is sent | anthropic-auth/packages/core/src/claustrum-enrollment.ts | persists the raw secret before proposing and hashes the decoded bytes |
+| claustrum | A crash before the request id is saved re-proposes with the same secret | anthropic-auth/packages/core/src/claustrum-enrollment.ts | re-proposes with the same persisted secret after a crash before the request id is saved |
+| claustrum | Queue saturation stays pending with the secret kept | anthropic-auth/packages/core/src/claustrum-enrollment.ts | keeps the secret and reports retryable queue saturation without inventing a request id |
+| claustrum | pending_exists blocks and scrubs the secret | anthropic-auth/packages/core/src/claustrum-enrollment.ts | blocks and scrubs the secret when another live proposal owns the name |
+| claustrum | Permanent ceremony refusals block and scrub the secret | anthropic-auth/packages/core/src/claustrum-enrollment.ts | fails terminally and scrubs the secret for permanent ceremony refusals |
+| claustrum | Denial scrubs the secret | anthropic-auth/packages/core/src/claustrum-enrollment.ts | removes the request secret when the operator denies enrollment |
+| claustrum | Reset clears only terminal ceremony state | anthropic-auth/packages/core/src/claustrum-enrollment.ts | resets only terminal local ceremony state |
+| claustrum | The one-shot token is written before pending state is replaced | anthropic-auth/packages/core/src/claustrum-enrollment.ts | writes the one-shot token before replacing pending metadata |
+| claustrum | An existing token suppresses every wire call | anthropic-auth/packages/core/src/claustrum-enrollment.ts | an existing token suppresses all wire calls and scrubs interrupted pending state |
+| claustrum | A group-readable enrollment file fails closed | anthropic-auth/packages/core/src/claustrum-enrollment.ts | fails closed on an owner-readable enrollment file with group permissions |
+| claustrum | A writable ancestor refuses the secret write | anthropic-auth/packages/core/src/claustrum-enrollment.ts | refuses to persist a request secret below an unsafe writable ancestor |
+| claustrum | A symlinked state file is refused before any wire call | anthropic-auth/packages/core/src/claustrum-enrollment.ts | refuses a symlinked enrollment state before any wire call |
+| claustrum | Concurrent ceremonies send one proposal | anthropic-auth/packages/core/src/claustrum-enrollment.ts | serializes concurrent process instances so only one proposal is sent |
+| claustrum | Poll not_found is terminal without re-proposing | anthropic-auth/packages/core/src/claustrum-enrollment.ts | treats poll not_found as permanent without probing through re-proposal |
+| claustrum | Permanent poll refusals persist as a visible terminal state | anthropic-auth/packages/core/src/claustrum-enrollment.ts | persists every permanent poll refusal as an operator-visible terminal state |
+| claustrum | A terminal code labelled retry on poll still blocks | anthropic-auth/packages/core/src/claustrum-enrollment.ts | blocks a retryable poll refusal whose code is protocol-terminal and stops re-polling |
+| claustrum | A terminal code labelled retry on propose still blocks | anthropic-auth/packages/core/src/claustrum-enrollment.ts | blocks a retryable propose refusal whose code is protocol-terminal |
+| claustrum | Genuinely retryable poll refusals stay pending | anthropic-auth/packages/core/src/claustrum-enrollment.ts | keeps genuinely retryable poll refusals pending |
+| claustrum | Approved metadata without a token is blocked | anthropic-auth/packages/core/src/claustrum-enrollment.ts | blocks approved metadata when the authoritative token file is missing |
+| claustrum | Approved status never exposes the token | anthropic-auth/packages/core/src/claustrum-enrollment.ts | reads a persisted approved status without exposing the enrollment token |
+| claustrum | Token reads see each atomic replacement | anthropic-auth/packages/core/src/claustrum-enrollment.ts | reads each atomic replacement rather than retaining the previous token |
+| claustrum | Token reads refuse symlinks and world-readable files | anthropic-auth/packages/core/src/claustrum-enrollment.ts | refuses symlinks and world-readable token files |
+| claustrum | Another host's ceremony cannot be adopted or reset | anthropic-auth/packages/core/src/claustrum-enrollment.ts | a second host cannot adopt or reset another host ceremony on disk |
+| claustrum | Token-only status uses the host's own name | anthropic-auth/packages/core/src/claustrum-enrollment.ts | Pi token-only status uses its own consumer name |
+| claustrum | A terminal refusal from one process stops another | anthropic-auth/packages/core/src/claustrum-enrollment.ts | a terminal refusal committed by one process stops an older process on its next tick |
+| claustrum | Each host gets its own token and state under the plugin state directory | anthropic-auth/packages/core/src/claustrum-enrollment.ts | OpenCode and Pi resolve separate owner-only enrollment paths from the same state root |
+| claustrum | Host overrides resolve absolute and relative paths per host | anthropic-auth/packages/core/src/claustrum-enrollment.ts | host-specific overrides resolve absolute and project-relative enrollment paths without crossing hosts |
+| claustrum | Enrollment refusals classify as (code, disposition) | new (neither copy) | classifies enrollment refusals as (code, disposition) with the producer code winning |
+| claustrum | Token 0600 in a 0700 directory, tightened when looser | new (neither copy) | keeps the token owner-only in an owner-only directory, tightening a group-readable one |
+| claustrum | Every dispatch is authorized and the token reread | anthropic-auth/packages/core/src/claustrum-scoped.ts | authorizes every dispatch and rereads the consumer token |
+| claustrum | No credential reuse after a refusal | anthropic-auth/packages/core/src/claustrum-scoped.ts | does not reuse a successful credential when the next get refuses |
+| claustrum | Invalid or changed served credentials are refused | anthropic-auth/packages/core/src/claustrum-scoped.ts | refuses invalid or changed serving identity {"credentialId":"other"} |
+| claustrum | A served identity that differs from the roster's is refused | anthropic-auth/packages/core/src/claustrum-scoped.ts | refuses invalid or changed serving identity {"accountId":"replacement-account"} |
+| claustrum | A token inside the serving margin is refused | anthropic-auth/packages/core/src/claustrum-scoped.ts | refuses invalid or changed serving identity {"expiresAtMs":300999} |
+| claustrum | The custody placeholder is never served as material | anthropic-auth/packages/core/src/claustrum-scoped.ts | refuses invalid or changed serving identity {"material":"claustrum-tombstone:v1:test"} |
+| claustrum | Absent served identity serves; the identity parser checks the token | new (neither copy) | serves when the vault asserts no identity, and checks the plugin parse of the token instead |
+| claustrum | Static API keys serve without expiry or TTL demand | new (neither copy) | a static API key is served without an expiry and without a TTL demand |
+| claustrum | Only a 401 is reported, with the send-time token and served version | anthropic-auth/packages/core/src/claustrum-scoped.ts | reports only 401 using exact send-time enrollment and served version |
+| claustrum | A delivered 401 report is logged without material | anthropic-auth/packages/core/src/claustrum-scoped.ts | logs a delivered 401 report with its served version and no credential material |
+| claustrum | An unaccepted report is not logged | anthropic-auth/packages/core/src/claustrum-scoped.ts | does not log a 401 report the vault did not accept |
+| claustrum | Copied or foreign receipts cannot be reported | anthropic-auth/packages/core/src/claustrum-scoped.ts | rejects a copied or foreign attempt receipt |
+| claustrum | Close fences an in-flight reply | anthropic-auth/packages/core/src/claustrum-scoped.ts | close fences an in-flight credential reply |
+| claustrum | An aborted dispatch never reaches the daemon | anthropic-auth/packages/core/src/claustrum-scoped.ts | aborted dispatch never asks the daemon for credentials |
+| claustrum | Classify by refresh adapter, authorize by category | anthropic-auth/packages/core/src/claustrum-scoped.ts | filters by native protocol, not model vendor or credential ID spelling |
+| claustrum | Route on credential type; static keys only by opt-in | new (neither copy) | admits static API keys by type and category only when the family opts in |
+| claustrum | Non-active rows are kept for reconciliation | anthropic-auth/packages/core/src/claustrum-scoped.ts | retains non-active inventory rows for reconciliation, not dispatch |
+| claustrum | Absent identity is no claim; a malformed record is skipped and warned | new (neither copy) | an absent identity is no claim, and a malformed record is skipped instead of refusing the inventory |
+| claustrum | Overlapping authorizations are not coalesced | anthropic-auth/packages/core/src/claustrum-scoped.ts | does not coalesce overlapping authorizations |
+| claustrum | Unknown transport errors are redacted | anthropic-auth/packages/core/src/claustrum-scoped.ts | redacts unknown transport errors containing bearer params |
+| claustrum | A malformed token is refused before dispatch | anthropic-auth/packages/core/src/claustrum-scoped.ts | rejects a malformed consumer token before daemon dispatch |
+| claustrum | JSON OAuth material is accepted and hidden | anthropic-auth/packages/core/src/claustrum-scoped.ts | accepts JSON OAuth material without exposing it in the receipt projection |
+| claustrum | An in-flight get is cancellable | anthropic-auth/packages/core/src/claustrum-scoped.ts | cancels an in-flight scoped get without waiting for its reply |
+| claustrum | Record version zero is valid | anthropic-auth/packages/core/src/claustrum-scoped.ts | preserves the producer contract allowing record version zero |
+| claustrum | The client decoder still rejects a wire-malformed reply | anthropic-auth/packages/core/src/claustrum-scoped.ts | producer decoder rejects malformed inventory before reconciliation: "" |
+| claustrum | Only a new version of the same account replays a 401 | anthropic-auth/packages/core/src/claustrum-scoped.ts | only a changed record version for the same scoped credential and provider identity permits a 401 replay |
+| claustrum | Both arms of the 401 retry decision are logged | anthropic-auth/packages/core/src/claustrum-scoped.ts | records both arms of a scoped 401 retry decision without credential material |
+| claustrum | Metadata coalesces, dispatch never does | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | metadata refresh and connection coalesce, but dispatch authorization never coalesces |
+| claustrum | A decline from another process applies before the next poll | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | a disabled route is refused even before the next metadata poll |
+| claustrum | A failing send reports its exact served version | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | quota requests authorize freshly and report the exact served version |
+| claustrum | A late connection is closed after shutdown | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | a late connector is closed rather than resurrected after shutdown |
+| claustrum | Local mode connects to nothing and refuses dispatch | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | local mode performs no vault connection and rejects any stale scoped dispatch |
+| claustrum | A replaced account's old route is refused | new (neither copy) | a peer replacing an account cannot leave its old route authorized |
+| claustrum | Each send gets a fresh receipt bound to its account | new (neither copy) | each send gets a new scoped receipt bound to its provider identity |
+| claustrum | A 401 retry on a new record reports that record if it fails too | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | profile 401 retries the new record and reports its version if it also fails |
+| claustrum | Cancelling a dispatch leaves shared discovery running | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | cancelling a dispatch during connection setup does not wait for or cancel shared discovery |
+| claustrum | Shutdown rejects waiters and closes a late client | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | shutdown rejects connection waiters immediately and closes a late client |
+| claustrum | onRoster follows the view cursor | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | onRoster fires only when the discovery view changes |
+| claustrum | A peer's lease means serving the persisted roster | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | two project runtimes sharing storage serve the persisted roster while a peer holds discovery lease |
+| claustrum | A 401 recovers only when the same account advances | anthropic-auth/packages/core/src/claustrum-scoped-runtime.ts | quota recovers a 401 only when the same scoped account advances |
+| claustrum | Sends never enroll | new (neither copy) | a send never enrolls: without a token it fails before reaching the vault |
+| claustrum | Vault rows go through /routing and /quota with local rows | new (neither copy) | vault rows route through /routing admission and /quota projection alongside local rows |
+| claustrum | Vault credentials become secret-free routing rows | new (neither copy) | discovery projects vault credentials as secret-free routing rows |
+| claustrum | No main record | new (neither copy) | there is no main: a record named exactly after the provider is an ordinary pool account |
+| claustrum | A replaced account inherits no route or quota | anthropic-auth/packages/core/src/claustrum-scoped-roster.ts | identity replacement does not inherit quota, profile or route identity |
+| claustrum | A later-learned identity keeps the route | new (neither copy) | an identity learned later keeps the route and its quota |
+| claustrum | Duplicate logins are one row | anthropic-auth/packages/core/src/claustrum-scoped-roster.ts | duplicate login records never create duplicate quota weight |
+| claustrum | A decline during discovery survives the commit | anthropic-auth/packages/core/src/claustrum-scoped-roster.ts | fresh config mutation during discovery is preserved at commit |
+| claustrum | A discovery that lost its lease cannot commit | anthropic-auth/packages/core/src/claustrum-scoped-roster.ts | a delayed discovery that lost its lease cannot overwrite a successor inventory |
+| claustrum | Failed discovery or leaving custody writes nothing | anthropic-auth/packages/core/src/claustrum-scoped-roster.ts | discovery failure and switching to local during discovery never delete accounts |
+| claustrum | Route ids never reuse a reserved or replaced id | anthropic-auth/packages/core/src/claustrum-scoped-roster.ts | a replacement cannot reuse an unrelated pre-existing route id |
+| claustrum | Quota for a replaced account is dropped | new (neither copy) | a quota observation taken for a replaced account is dropped |
+| claustrum | A malformed record keeps its last good projection | new (neither copy) | a record skipped as malformed keeps its last good projection instead of reading as removed |
+| claustrum | A returning declined account stays declined | new (neither copy) | a declined account that leaves the vault and returns is still declined |
+| claustrum | Interlock keyed on credential and identity | new (neither copy) | the declined interlock is keyed on credential and identity, sticky without identity, and lifts only on a known different identity |
+| claustrum | A host login under custody fails closed | anthropic-auth/packages/core/src/claustrum.ts | a real login landing in the host slot under custody fails closed |
+| claustrum | The placeholder in local mode asks for a login | anthropic-auth/packages/core/src/claustrum.ts | the custody placeholder in local mode asks for a login instead of serving |
+| claustrum | The placeholder is provider-specific and never a credential | anthropic-auth/packages/core/src/claustrum.ts | the placeholder is provider-specific and never mistaken for a credential |
+| claustrum | Cold vault accounts never route (real client) | anthropic-auth/packages/e2e-tests/src/mock-claustrum.ts | a cold vault account is listed but never routed or authorized |
+| claustrum | A warm account goes cold after a served 401 (real client) | anthropic-auth/packages/e2e-tests/src/mock-claustrum.ts | a warm account goes cold after a served 401 and leaves routing |
+| claustrum | A 401 names its own record (real client) | anthropic-auth/packages/e2e-tests/src/mock-claustrum.ts | a 401 is attributed to the record that served it |
+| claustrum | A malformed record is skipped (real client) | new (neither copy) | a malformed vault record is skipped and warned about while the rest of the list is used |
+| claustrum | Enrollment resumes the poll after a restart (real client) | new (neither copy) | enrollment resumes after a restart between propose and poll |
+| claustrum | Enrollment re-proposes after a lost reply (real client) | new (neither copy) | enrollment re-proposes with the persisted secret after a restart before the request id was saved |
+| claustrum | Declined interlock over refreshes (real client) | new (neither copy) | a declined vault account stays declined across refreshes and version bumps until its account changes |
+| claustrum | View cursor ignores token refreshes (real client) | new (neither copy) | the view cursor notifies on visible changes and ignores token refreshes |
