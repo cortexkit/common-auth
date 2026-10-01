@@ -95,9 +95,9 @@ export interface CacheKeepManagerOptions<M> {
   maxIdleWarmMs?: number
   /** Idle bound for subagent sessions. Default 30 minutes. */
   maxSubagentIdleMs?: number
-  /** Default 60 s. */
+  /** How often the timer runs a tick. Default 60 s. */
   tickIntervalMs?: number
-  /** Default 32. */
+  /** Most sessions tracked at once. Default 32. */
   maxTargets?: number
   /** Total captured body bytes (UTF-8). Default 8 MiB. */
   maxBytes?: number

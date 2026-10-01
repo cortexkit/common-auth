@@ -8,7 +8,10 @@ import {
 
 export const TTL_MS = 5 * 60 * 1000
 export const LEAD_MS = 5 * 1000
-/** A tick inside the lead window of a target captured `TTL_MS` ago. */
+/**
+ * Time after a capture at which its cache has under `LEAD_MS` left to live,
+ * so a tick then warms it.
+ */
 export const DUE_MS = TTL_MS - LEAD_MS + 1000
 
 export function fakeNow(start = 1_700_000_000_000) {

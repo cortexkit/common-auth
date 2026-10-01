@@ -118,8 +118,8 @@ describe('request dumps', () => {
       bodyText: turns(2),
     })
 
-    // Selected by content, not sort position: two dumps in one millisecond
-    // sort by pid and counter, not by time.
+    // Find the dump written after the restart by its non-null diff, not by
+    // file order: two dumps in one millisecond sort by pid and counter.
     const metas = await readMetas()
     expect(metas.length).toBe(2)
     const afterRestart = metas.find((meta) => meta.diff !== null)
@@ -339,7 +339,7 @@ describe('request dumps', () => {
             parameters: {
               type: 'object',
               properties: {
-                // Names an argument the tool accepts; holds no secret.
+                // Declares an argument named api_key; it holds no credential.
                 api_key: { type: 'string', description: 'the caller key' },
                 auth_token: { type: 'string', description: leaked },
               },
@@ -354,14 +354,14 @@ describe('request dumps', () => {
     )
     const parsed = JSON.parse(body)
     const properties = parsed.tools[0].parameters.properties
-    // The schema still parses as a schema rather than collapsing to a string.
+    // The parameter is still a schema object, not replaced by the mask.
     expect(properties.api_key).toEqual({
       type: 'string',
       description: 'the caller key',
     })
     expect(properties.auth_token.type).toBe('string')
     expect(body).not.toContain(leaked)
-    // Outside the schema the same key name is still a credential.
+    // A top-level api_key, outside the tools, is still a credential.
     expect(parsed.api_key).toBe(MASK)
   })
 

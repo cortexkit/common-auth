@@ -16,9 +16,9 @@ const LONG_TTL = 30 * 60_000
 const LONG_DUE = LONG_TTL - LEAD_MS + 1000
 
 /**
- * A plugin policy in the shape openai-auth uses for its long-cache model: a
- * 30-minute TTL, and for subagents a two-warm cap with an idle bound long
- * enough for both warms.
+ * A plugin profile for a model whose provider cache lives 30 minutes: that
+ * TTL for every session, and for subagents a two-warm cap with an idle bound
+ * long enough for both warms (openai-auth's policy for such a model).
  */
 function longCacheProfile(input: {
   bodyText: string
