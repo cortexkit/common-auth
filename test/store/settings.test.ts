@@ -24,7 +24,8 @@ async function populate() {
   const store = s.open()
   await store.add({ id: 'a', credential: oauth('r-a'), identity: 'acct-a' })
   await store.add({ id: 'k', credential: apiKey('key-k') })
-  // A key an older writer put there; settings writes must keep it.
+  // `main` is a key the older openai-auth writer puts in the config;
+  // settings writes must keep it.
   const config = await s.config()
   await s.writeConfig({
     ...config,

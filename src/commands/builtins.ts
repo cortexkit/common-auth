@@ -239,7 +239,8 @@ function accountView(
   const identity = options.accounts?.describeIdentity
     ? options.accounts.describeIdentity(row)
     : row.identity
-  // Field by field: the row also carries its credential and fingerprint.
+  // Copy only the fields the menu shows: the store row also carries its
+  // credential and fingerprint, which must never reach a payload.
   const account: MenuAccount = {
     id: row.id,
     ...(row.label !== undefined ? { label: row.label } : {}),
@@ -350,7 +351,8 @@ function accountsSection(
           const result = await store.add(outcome.account, locks)
           return addedText(outcome.account.label ?? result.id, result)
         }
-        // The account arrives later; report to the invocation that asked.
+        // The login finishes after this call returns: add the account then,
+        // and send the outcome to the invocation that started the login.
         void outcome.completion
           .then(
             async (account) => {

@@ -142,8 +142,9 @@ export async function updatePoolSettings(
     onFailure && ((_rowId, error) => onFailure(error)),
     async (locks, progress) => {
       for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
-      // The store locks are released before the failure hook runs, as in
-      // every other operation; only the extra locks are still held then.
+      // `mark` is where the store locks start on the lock stack. They are
+      // released at the end of this block, so `onFailure` runs holding only
+      // the caller's extra locks, as it does for every other store operation.
       const mark = locks.held.length
       try {
         for (const spec of ctx.storeLocks) await locks.acquire(spec)
