@@ -12,13 +12,27 @@ import { CRASH_EXIT_CODE, listCodec } from './helpers.js'
 type Task = {
   configPath: string
   statePath: string
-  op: 'add' | 'replace' | 'rotate' | 'remove' | 'reorder' | 'addMany'
+  op:
+    | 'add'
+    | 'replace'
+    | 'rotate'
+    | 'remove'
+    | 'reorder'
+    | 'addMany'
+    | 'recordIdentity'
+    | 'enable'
+    | 'disable'
+    | 'refresh'
   id: string
   ids?: string[]
   credential?: PoolCredential
   identity?: string
+  /** recordIdentity: the credential epoch the identity lookup was issued for. */
+  credentialEpoch?: number
   count?: number
   exitAt?: WriteStep
+  /** Lease length of every lock the child takes; 1 s unless given. */
+  ttlMs?: number
 }
 
 const task = JSON.parse(process.argv[2] ?? '{}') as Task
@@ -29,7 +43,7 @@ const store = openPoolStore({
   quota: listCodec,
   // A crashed child leaves its leases behind; short unrenewed leases let the
   // surviving process take the locks over within a test's time budget.
-  lockOptions: { ttlMs: 1_000, renew: false },
+  lockOptions: { ttlMs: task.ttlMs ?? 1_000, renew: false },
   onStep: (step) => {
     console.log(`step:${step}`)
     if (step === task.exitAt) process.exit(CRASH_EXIT_CODE)
@@ -51,6 +65,24 @@ try {
     await store.rotate(task.id, task.credential as PoolCredential, identity)
   } else if (task.op === 'remove') {
     await store.remove(task.id)
+  } else if (task.op === 'recordIdentity') {
+    await store.recordIdentity(task.id, task.identity ?? '', {
+      credentialEpoch: task.credentialEpoch ?? 1,
+    })
+  } else if (task.op === 'enable') {
+    await store.enable(task.id)
+  } else if (task.op === 'disable') {
+    await store.disable(task.id, 'manual')
+  } else if (task.op === 'refresh') {
+    // The provider hands back the task's credential, and its identity when
+    // the task names one.
+    const next = task.credential as { refresh: string; access?: string }
+    await store.refresh(task.id, async () => ({
+      access: next.access ?? `access-${next.refresh}`,
+      refresh: next.refresh,
+      expires: 4_000_000_000_000,
+      ...identity,
+    }))
   } else if (task.op === 'reorder') {
     await store.reorder(task.ids ?? [])
   } else if (task.op === 'addMany') {

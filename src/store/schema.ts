@@ -66,6 +66,44 @@ export interface PoolRow {
   candidate: boolean
   /** Set when the roster row or the per-row entry failed validation. */
   invalid?: 'roster' | 'entry'
+  /**
+   * Set when a replace stopped between its two writes: the state file holds
+   * the new credential, stamped with the epoch and the identity or endpoint
+   * it belongs to, and the config still holds the replaced row. The row is
+   * shown as the replace leaves it once completed, is never a candidate, and
+   * the next store write on it writes the config to match.
+   */
+  torn?: true
+}
+
+/**
+ * Key, inside a state-file account entry, of the stamp naming what the
+ * credential beside it belongs to. Older readers ignore it.
+ */
+export const CREDENTIAL_STAMP_KEY = POOL_KEY
+
+/**
+ * The config-side half of a replacement: the identity the new credential
+ * belongs to (absent: none is known) and, for an API key, its endpoint.
+ */
+export interface CredentialBinding {
+  identity?: string
+  baseURL?: string
+  authHeader?: 'authorization-bearer' | 'x-api-key'
+}
+
+/**
+ * Written beside every credential the store puts in the state file. It names
+ * the credential epoch the credential belongs to and a digest of its secret,
+ * so a stamp left beside a credential another writer put there afterwards is
+ * recognisable and ignored. A replace also records the binding it gives the
+ * row, which is what lets a reader complete a replace that stopped after
+ * writing the credential.
+ */
+export interface CredentialStamp {
+  credentialEpoch: number
+  digest: string
+  binding?: CredentialBinding
 }
 
 export type ConfigClassification =
@@ -111,14 +149,81 @@ export function isValidBaseURL(value: unknown): boolean {
   }
 }
 
+function secretOf(credential: PoolCredential | StoredCredential): string {
+  return credential.type === 'oauth'
+    ? `oauth\0${credential.refresh}`
+    : `api\0${credential.apiKey}`
+}
+
 export function fingerprintOf(
   credential: PoolCredential | StoredCredential,
 ): string {
-  const secret =
-    credential.type === 'oauth'
-      ? `oauth\0${credential.refresh}`
-      : `api\0${credential.apiKey}`
-  return createHash('sha256').update(secret).digest('hex')
+  return createHash('sha256').update(secretOf(credential)).digest('hex')
+}
+
+/**
+ * The digest a credential stamp carries. It is kept apart from the
+ * fingerprint (a different input prefix) so the persisted value is never the
+ * dedupe key.
+ */
+export function credentialDigest(
+  credential: PoolCredential | StoredCredential,
+): string {
+  return createHash('sha256')
+    .update(`credential-stamp\0${secretOf(credential)}`)
+    .digest('hex')
+}
+
+export function stampFor(
+  credential: PoolCredential | StoredCredential,
+  credentialEpoch: number,
+  binding?: CredentialBinding,
+): CredentialStamp {
+  return {
+    credentialEpoch,
+    digest: credentialDigest(credential),
+    ...(binding ? { binding: { ...binding } } : {}),
+  }
+}
+
+/** A well-formed stamp, or undefined for anything else (which is ignored). */
+export function parseStamp(raw: unknown): CredentialStamp | undefined {
+  if (!isRecord(raw)) return undefined
+  const epoch = raw.credentialEpoch
+  if (typeof epoch !== 'number' || !Number.isInteger(epoch) || epoch < 1)
+    return undefined
+  if (typeof raw.digest !== 'string') return undefined
+  if (!('binding' in raw)) return { credentialEpoch: epoch, digest: raw.digest }
+  const binding = raw.binding
+  if (!isRecord(binding)) return undefined
+  if (
+    'identity' in binding &&
+    (typeof binding.identity !== 'string' || !binding.identity)
+  )
+    return undefined
+  if ('baseURL' in binding && !isValidBaseURL(binding.baseURL)) return undefined
+  if (
+    'authHeader' in binding &&
+    binding.authHeader !== 'authorization-bearer' &&
+    binding.authHeader !== 'x-api-key'
+  )
+    return undefined
+  return {
+    credentialEpoch: epoch,
+    digest: raw.digest,
+    binding: {
+      ...(typeof binding.identity === 'string'
+        ? { identity: binding.identity }
+        : {}),
+      ...(typeof binding.baseURL === 'string'
+        ? { baseURL: binding.baseURL.trim() }
+        : {}),
+      ...(binding.authHeader === 'authorization-bearer' ||
+      binding.authHeader === 'x-api-key'
+        ? { authHeader: binding.authHeader }
+        : {}),
+    },
+  }
 }
 
 /** A parsed file, or the reason it could not be parsed. */
@@ -263,12 +368,57 @@ function credentialFor(
   }
 }
 
+/** The first roster row with this id (the one the pool loads). */
+export function rosterRowIn(
+  config: Record<string, unknown>,
+  id: string,
+): Record<string, unknown> | undefined {
+  return rosterOf(config).find(
+    (raw): raw is Record<string, unknown> => isRecord(raw) && raw.id === id,
+  )
+}
+
+/** The per-row entries of a config, created (empty) when absent. */
+export function ensureEntries(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!isRecord(config[POOL_KEY])) config[POOL_KEY] = {}
+  const pool = config[POOL_KEY] as Record<string, unknown>
+  if (!isRecord(pool[POOL_ROWS_KEY])) pool[POOL_ROWS_KEY] = {}
+  return pool[POOL_ROWS_KEY] as Record<string, unknown>
+}
+
+export function entryIn(
+  config: Record<string, unknown>,
+  id: string,
+): Record<string, unknown> | undefined {
+  const entries = entriesOf(config)
+  const entry = Object.hasOwn(entries, id) ? entries[id] : undefined
+  return isRecord(entry) ? entry : undefined
+}
+
+/** Sets an entry as an own property, so an id such as `toString` is safe. */
+export function setEntryIn(
+  config: Record<string, unknown>,
+  id: string,
+  entry: Record<string, unknown>,
+): void {
+  Object.defineProperty(ensureEntries(config), id, {
+    value: entry,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  })
+}
+
 /**
- * Builds the rows of a ready pool. A roster row the older readers would
- * reject, a duplicate id, or a malformed per-row entry makes that one row
- * invalid (never a candidate) and blocks nothing else.
+ * Builds the rows of a ready pool from the files exactly as they are, without
+ * looking at credential stamps (see `loadRows` for the rows every reader
+ * gets). A roster row the older readers would reject, a duplicate id, or a
+ * malformed per-row entry makes that one row invalid (never a candidate) and
+ * blocks nothing else.
  */
-export function buildRows(
+export function buildRawRows(
   config: Record<string, unknown>,
   state: Record<string, unknown>,
   codec: QuotaCodec,

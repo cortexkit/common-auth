@@ -95,7 +95,9 @@ describe('dedupe and ids', () => {
     const store = s.open()
     await store.add({ id: 'a', credential: oauth('r-a') })
     await store.add({ id: 'b', credential: oauth('r-b'), identity: 'acct-1' })
-    const result = await store.recordIdentity('a', 'acct-1')
+    const result = await store.recordIdentity('a', 'acct-1', {
+      credentialEpoch: 1,
+    })
     expect(result.disabled).toEqual(['b'])
     const rows = await rowsOf(store)
     expect(rows.map((row) => [row.id, row.enabled])).toEqual([
@@ -114,8 +116,8 @@ describe('dedupe and ids', () => {
     let rows = await rowsOf(store)
     expect(rows.map((row) => row.enabled)).toEqual([true, true])
     expect(rows[0]?.fingerprint).toBe(rows[1]?.fingerprint as string)
-    await store.recordIdentity('a', 'acct-1')
-    await store.recordIdentity('b', 'acct-1')
+    await store.recordIdentity('a', 'acct-1', { credentialEpoch: 1 })
+    await store.recordIdentity('b', 'acct-1', { credentialEpoch: 2 })
     rows = await rowsOf(store)
     expect(rows.map((row) => row.enabled)).toEqual([true, false])
     expect(rows.length).toBe(2)
@@ -167,7 +169,11 @@ describe('dedupe and ids', () => {
       authHeader: 'x-api-key',
     })
     expect(JSON.stringify(config)).not.toContain('secret-key')
-    expect((await s.state()).accounts.k).toEqual({ apiKey: 'secret-key' })
+    // Beside the key, only the stamp naming the epoch it belongs to.
+    expect((await s.state()).accounts.k).toEqual({
+      apiKey: 'secret-key',
+      commonAuthPool: expect.objectContaining({ credentialEpoch: 1 }),
+    })
     expect(config[POOL_KEY].rows.k).toEqual({
       credentialEpoch: 1,
       needsFirstReading: false,
@@ -182,10 +188,10 @@ describe('failure values carry the commit phase', () => {
       [WriteStep, (store: ReturnType<typeof expiringAt>) => Promise<unknown>]
     > = [
       [
-        'before-config-write',
+        'before-state-write',
         (store) => store.add({ id: 'b', credential: oauth('r-b') }),
       ],
-      ['before-config-write', (store) => store.replace('a', oauth('r-x'))],
+      ['before-state-write', (store) => store.replace('a', oauth('r-x'))],
       ['before-state-write', (store) => store.rotate('a', oauth('r-y'))],
     ]
     for (const [step, run] of cases) {
@@ -205,8 +211,8 @@ describe('failure values carry the commit phase', () => {
     }
   })
 
-  it('ownership lost before the second write of add is a partial commit that leaves the row without a credential', async () => {
-    const store = expiringAt('before-state-write')
+  it('ownership lost before the second write of add is a partial commit that leaves only a state entry no reader loads', async () => {
+    const store = expiringAt('before-config-write')
     const hooked: PoolOperationError[] = []
     const error = await rejectionOf(
       store.add(
@@ -220,14 +226,13 @@ describe('failure values carry the commit phase', () => {
       kind: 'lock-ownership',
       phase: 'after-first-write',
       retryable: true,
-      committed: undefined,
     })
+    expect(error.committed).toMatchObject({ refresh: 'r-a' })
     expect(hooked).toEqual([error])
-    const row = (await rowsOf())[0]
-    expect(row).toMatchObject({ id: 'a', credentialEpoch: 1, candidate: false })
-    expect(row?.credential).toBeUndefined()
-    const completed = await s.open().add({ id: 'a', credential: oauth('r-a') })
-    expect(completed.outcome).toBe('completed')
+    expect(await rowsOf()).toEqual([])
+    expect((await s.state()).accounts.a.refresh).toBe('r-a')
+    const added = await s.open().add({ id: 'a', credential: oauth('r-a') })
+    expect(added.outcome).toBe('added')
     expect((await rowsOf())[0]).toMatchObject({
       credentialEpoch: 1,
       candidate: true,
@@ -263,9 +268,9 @@ describe('failure values carry the commit phase', () => {
     expect((await rowsOf())[0]?.identity).toBeUndefined()
   })
 
-  it('ownership lost before the state write of replace reports after-first-write with no committed credential', async () => {
+  it('ownership lost before the config write of replace reports after-first-write with the committed credential and leaves the row torn', async () => {
     await s.open().add({ id: 'a', credential: oauth('r-a') })
-    const store = expiringAt('before-state-write')
+    const store = expiringAt('before-config-write')
     const hooked: PoolOperationError[] = []
     const error = await rejectionOf(
       store.replace(
@@ -282,12 +287,17 @@ describe('failure values carry the commit phase', () => {
       rowId: 'a',
       phase: 'after-first-write',
       kind: 'lock-ownership',
-      committed: undefined,
     })
+    expect(error.committed).toMatchObject({ refresh: 'r-new' })
     expect(hooked).toEqual([error])
     const row = (await rowsOf())[0]
-    expect(row?.credentialEpoch).toBe(2)
-    expect(row?.credential).toMatchObject({ refresh: 'r-a' })
+    expect(row).toMatchObject({
+      credentialEpoch: 2,
+      torn: true,
+      candidate: false,
+    })
+    expect(row?.credential).toMatchObject({ refresh: 'r-new' })
+    expect((await s.config())[POOL_KEY].rows.a.credentialEpoch).toBe(1)
   })
 
   it('a failed disable and a failed record identity reach their failure hook before the first write', async () => {
@@ -300,9 +310,14 @@ describe('failure values carry the commit phase', () => {
       expiringAt('before-config-write').disable('a', 'manual', { onFailure }),
     )
     const identityError = await rejectionOf(
-      expiringAt('before-config-write').recordIdentity('a', 'acct', {
-        onFailure,
-      }),
+      expiringAt('before-config-write').recordIdentity(
+        'a',
+        'acct',
+        { credentialEpoch: 1 },
+        {
+          onFailure,
+        },
+      ),
     )
     expect(hooked).toEqual([disableError, identityError])
     expect(disableError).toMatchObject({

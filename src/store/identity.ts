@@ -1,5 +1,15 @@
-import type { Transaction } from './mutate.js'
 import type { PoolRow } from './schema.js'
+
+/**
+ * What the identity rules edit: a transaction, or a config being completed
+ * in memory.
+ */
+export interface RowEditor {
+  rows(): PoolRow[]
+  rosterRow(id: string): Record<string, unknown> | undefined
+  entry(id: string): Record<string, unknown> | undefined
+  setEntry(id: string, entry: Record<string, unknown>): void
+}
 
 /** The reason recorded on a row disabled because an earlier row is the same account. */
 export const DUPLICATE_IDENTITY_REASON = 'duplicate-identity'
@@ -24,7 +34,7 @@ export function countUnknownIdentityRows(rows: readonly PoolRow[]): number {
  * which older readers honour, and the reason in the per-row entry. A row
  * without an entry gets one at epoch 1. Nothing is ever deleted.
  */
-export function disableIn(tx: Transaction, id: string, reason: string): void {
+export function disableIn(tx: RowEditor, id: string, reason: string): void {
   const raw = tx.rosterRow(id)
   if (!raw) return
   raw.enabled = false
@@ -38,7 +48,7 @@ export function disableIn(tx: Transaction, id: string, reason: string): void {
  * with a reason. Returns the ids it disabled.
  */
 export function disableIdentityDuplicates(
-  tx: Transaction,
+  tx: RowEditor,
   identity: string,
 ): string[] {
   const holders = tx
@@ -60,7 +70,7 @@ export function disableIdentityDuplicates(
 
 /** Records a row's wire identity in its roster row, then applies dedupe. */
 export function recordIdentityIn(
-  tx: Transaction,
+  tx: RowEditor,
   id: string,
   identity: string,
 ): string[] {

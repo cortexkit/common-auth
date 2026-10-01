@@ -100,7 +100,7 @@ describe('store shapes', () => {
       () => store.recordQuota('x', { credentialEpoch: 1 }, { used: 1 }),
       () => store.replace('x', oauth('r-z')),
       () => store.rotate('x', oauth('r-z')),
-      () => store.recordIdentity('x', 'acct-x'),
+      () => store.recordIdentity('x', 'acct-x', { credentialEpoch: 1 }),
     ]
     for (const attempt of attempts) {
       const error = await rejectionOf(attempt())

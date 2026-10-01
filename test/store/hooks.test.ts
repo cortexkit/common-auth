@@ -33,8 +33,10 @@ function forbiddenCalls(store: PoolStore) {
     'rotate same': () => store.rotate('a', oauth('r-a-x')),
     'replace other': () => store.replace('b', oauth('r-b-y')),
     'replace same': () => store.replace('a', oauth('r-a-y')),
-    'identity other': () => store.recordIdentity('b', 'acct-b'),
-    'identity same': () => store.recordIdentity('a', 'acct-a'),
+    'identity other': () =>
+      store.recordIdentity('b', 'acct-b', { credentialEpoch: 1 }),
+    'identity same': () =>
+      store.recordIdentity('a', 'acct-a', { credentialEpoch: 1 }),
     'disable other': () => store.disable('b', 'manual'),
     'disable same': () => store.disable('a', 'manual'),
     'refresh other': () => store.refresh('b', async () => ok('r-b-z')),
