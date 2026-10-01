@@ -1,8 +1,8 @@
 /**
- * Every refusal this subpath raises itself. Producer refusals from the vault
- * keep arriving as the client's own `ClaustrumCredentialError` (a `code`, a
- * `class` and an `action`), so callers can tell the vault's verdict apart from
- * a consumer-side check.
+ * Every refusal the `/claustrum` code raises itself. Refusals sent by the
+ * vault keep arriving as the client's own `ClaustrumCredentialError` (a
+ * `code`, a `class` and an `action`), so callers can tell the vault's verdict
+ * apart from a check made on this side.
  */
 export type ClaustrumConsumerFailureKind =
   | 'closed'

@@ -68,15 +68,18 @@ export interface ClaustrumScopedIdentity {
 }
 
 /**
- * The receipt for one physical send. Each attempt gets its own: it records the
- * exact record version the vault served, which is the version a 401 for this
- * send must name.
+ * A receipt: what the vault served for one physical send. Each attempt gets
+ * its own. It records the exact record version served, because a 401 for
+ * this send is reported to the vault against that version.
  */
 export interface ClaustrumScopedAttempt {
   readonly credentialId: string
   readonly credentialType: VaultCredentialType
   readonly accountIdentity?: string
-  /** Non-enumerable and memory-only. Authorize again for every dispatch and retry. */
+  /**
+   * Kept in memory only and hidden from JSON.stringify and object spreads, so
+   * logging a receipt never leaks it. Authorize again for every dispatch and retry.
+   */
   readonly accessToken: string
   readonly recordVersion: number
   readonly expiresAtMs: number | null
@@ -122,9 +125,9 @@ const defaultLogger = createLogger('claustrum')
 
 /**
  * Decide whether a request that got a 401 should retry with the freshly
- * re-authorized receipt, and record the decision. The vault can refresh a
- * credential between dispatch and the 401; this log line is the consumer's
- * half of that timeline. `site` names the send class for diagnostics.
+ * re-authorized receipt, and log the decision. The vault can refresh a
+ * credential between the send and the 401; the log line lets that refresh be
+ * matched against the consumer's retry. `site` names the kind of request.
  */
 export function decideScopedRetryAfter401(
   site: string,
@@ -144,7 +147,10 @@ export function decideScopedRetryAfter401(
   return retry
 }
 
-/** The validity a served OAuth token must still have when it leaves the vault. */
+/**
+ * How long a served OAuth token must stay valid after the vault hands it out,
+ * so it cannot expire while a long request is still using it.
+ */
 export const SERVING_MARGIN_MS = 300_000
 
 function invalidMaterial(): ClaustrumConsumerError {
@@ -193,7 +199,8 @@ function credentialTypeOf(
 }
 
 /**
- * The scoped read plane shared by every host of a plugin. There is
+ * Reads this consumer's vault credentials (list, fetch, 401 report), with the
+ * enrollment token as authorization. Used by every host of a plugin. There is
  * deliberately no credential cache and no single-flight of credential reads:
  * each physical send is authorized by the vault, so a revoked enrollment or a
  * changed record takes effect on the next send. The enrollment token is
@@ -286,9 +293,9 @@ export class ClaustrumScopedCustody {
         : await pending
     } catch (error) {
       this.#check(signal)
-      // Keep the producer's own (code, class, action) refusals; replace any
-      // other transport text, which may echo request params carrying the
-      // enrollment bearer.
+      // Keep the vault's own refusals (ClaustrumCredentialError, carrying
+      // code, class and action); replace any other error, whose text may echo
+      // request params that include the enrollment token.
       if (error instanceof ClaustrumCredentialError) throw error
       throw new ClaustrumConsumerError(
         'unavailable',

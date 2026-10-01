@@ -23,15 +23,23 @@ import {
 } from './roster.js'
 
 export interface ClaustrumConsumerOptions {
-  /** Secret-free roster file: vault routes, declines and their quota. */
+  /**
+   * The roster file: one row per vault account (route id, credential id,
+   * account identity, state, quota), plus the accounts the user declined. It
+   * never holds a token.
+   */
   rosterPath: string
   /** This host's enrollment token, written by setup. */
   tokenPath: string
   family: ClaustrumFamily
   connect: () => Promise<ClaustrumScopedClient>
-  /** Whether the plugin is in custody mode now; read before every discovery and dispatch. */
+  /**
+   * Whether the plugin currently takes its accounts from the vault (custody
+   * mode) rather than from local logins. Checked before every discovery,
+   * commit and dispatch; false closes the vault connection and refuses sends.
+   */
   isCustodyActive?: () => boolean | Promise<boolean>
-  /** Local row ids a vault route must not take. */
+  /** Ids of the plugin's local pool rows; no vault route id may equal one. */
   reservedRouteIds?: () => Iterable<string>
   routePrefix?: string
   mapAccount?: AccountMapper
@@ -51,7 +59,10 @@ export interface ClaustrumConsumerOptions {
 }
 
 export interface SendOptions {
-  /** Names the send class in the 401 retry log, for example `model` or `quota`. */
+  /**
+   * What kind of request this is (for example `model`, `quota`, `profile`),
+   * recorded in the 401 retry log line so a retry can be traced to its caller.
+   */
   site: string
   signal?: AbortSignal
   reporterSource?: ClaustrumReporterSource
@@ -301,8 +312,8 @@ export class ClaustrumConsumer {
       try {
         current = await this.authorize(routeId, signal)
       } catch {
-        // No verified replacement: keep this response and report the receipt
-        // this physical request used.
+        // Re-authorization failed: keep this 401 and report it against the
+        // receipt (served record version) this request was sent with.
       }
       if (
         decideScopedRetryAfter401(options.site, served, current, this.#logger)
@@ -318,9 +329,14 @@ export class ClaustrumConsumer {
         401,
         options.reporterSource ?? 'direct',
       ).catch((error: unknown) => this.#options.onError?.(error))
-      // The vault may now hold the account cold; let the pool learn it
-      // without waiting for the next poll.
-      this.refresh().catch((error: unknown) => this.#options.onError?.(error))
+      // After the report the vault may mark the account as needing a new
+      // login; refresh now so routing drops it without waiting for the next poll. Deferred so a consumer closed in
+      // the meantime reports to onError instead of throwing from this send.
+      Promise.resolve()
+        .then(() => this.refresh())
+        .catch((error: unknown) => {
+          if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
+        })
     }
     return response
   }

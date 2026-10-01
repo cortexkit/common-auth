@@ -439,7 +439,7 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | Enable clears enabled false and the disabled reason | new (neither copy) | enable clears enabled false and the disabled reason |
 | store | Enable refuses a duplicate identity, writing nothing | new (neither copy) | enable refuses a row whose identity another enabled row holds, with both files unchanged |
 
-The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/claustrum-enrollment.test.ts`, `claustrum-scoped.test.ts` and `claustrum-scoped-runtime.test.ts` at anthropic-auth main 77e4c900; their origin names the source file the behaviour came from. Rows marked new (neither copy) are the contract changes and additions listed under ./claustrum in adoption-inventory.md, including the end-to-end scenarios, which drive the real `@cortexkit/claustrum-client` over a socket against a mock daemon ported from anthropic-auth's `packages/e2e-tests/src/mock-claustrum.ts`.
+The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/claustrum-enrollment.test.ts`, `claustrum-scoped.test.ts` and `claustrum-scoped-runtime.test.ts` at anthropic-auth main 77e4c900; the origin column names the anthropic-auth source file each behaviour came from. Rows marked new (neither copy) are the contract changes and additions listed under ./claustrum in adoption-inventory.md, including the end-to-end scenarios, which drive the real `@cortexkit/claustrum-client` over a socket against a mock daemon ported from anthropic-auth's `packages/e2e-tests/src/mock-claustrum.ts`.
 
 | component | behaviour | origin | test |
 | --- | --- | --- | --- |

@@ -205,7 +205,7 @@ Vault custody through scoped enrollment, extracted from anthropic-auth main 77e4
 | identity parser | `parseIdentity(accessToken) → identity \| undefined` | used only when the vault serves no `account_id`, to check the served token belongs to the roster's account |
 | custody mode | `isCustodyActive()` | read before every discovery, commit and dispatch; false closes the connection and refuses dispatch |
 | local ids | `reservedRouteIds()` | ids a vault route must never take |
-| connection | `connect()`, typically `connectClaustrumScopedClient({ connectionFile, identity \| projectRoot+storagePath })` | the scoped read plane; `connectClaustrumEnrollmentClient` is the setup-only ceremony connection |
+| connection | `connect()`, typically `connectClaustrumScopedClient({ connectionFile, identity \| projectRoot+storagePath })` | the request-path client that lists and fetches this consumer's vault credentials; `connectClaustrumEnrollmentClient` is the separate setup-only enrollment connection |
 
 **What it gets.**
 
@@ -233,7 +233,7 @@ Vault custody through scoped enrollment, extracted from anthropic-auth main 77e4
 
 **Declined-account interlock.** Consumer-side, in the roster file, keyed on `(credentialId, accountIdentity)`, never on the record version. Sticky when either identity is absent; lifted automatically only when both are known and differ; a declined account that leaves the vault and returns is still declined; `accept` lifts it for the route and its aliases.
 
-**Host slot.** In custody mode the host slot holds `custodyPlaceholder(provider)` (an OAuth-shaped value with an empty access token). `assertHostSlotMatchesMode` fails closed on a real login in the slot under custody (anthropic-auth's behaviour; the answer to openai-auth #173) and refuses the placeholder in local mode; `assertNotCustodyPlaceholder` guards a local refresh.
+**Host slot.** In custody mode the host slot holds `custodyPlaceholder(provider)` (an OAuth-shaped value with an empty access token). `assertHostSlotMatchesMode` fails closed on a real login in the slot under custody (anthropic-auth's behaviour, and the answer to openai-auth #173: serving either the host login or the vault would silently pick one of two accounts the user may not mean, so the plugin refuses until the user leaves custody or removes the login) and refuses the placeholder in local mode; `assertNotCustodyPlaceholder` guards a local refresh.
 
 **Differences from each plugin today.**
 

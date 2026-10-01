@@ -1,8 +1,8 @@
 // Claustrum vault custody shared by the auth plugins: scoped enrollment (run
-// from setup), discovery of this consumer's vault accounts as `/routing`
-// rows, per-send authorization, 401 reporting, the declined-account
-// interlock and the host-slot guard. Needs the optional peer
-// `@cortexkit/claustrum-client`.
+// from setup), discovery of this consumer's vault accounts as rows for this
+// package's `/routing` subpath, per-send authorization, 401 reporting, the
+// declined-account interlock and the host-slot guard. Needs the optional
+// peer `@cortexkit/claustrum-client`.
 import {
   ClaustrumClient,
   type ClaustrumClientOptions,
@@ -94,7 +94,8 @@ export {
 } from './roster.js'
 
 /**
- * Connect the scoped read plane. `connectionFile` is required: this library
+ * Connect the client that lists and fetches this consumer's vault credentials
+ * on the request path. `connectionFile` is required: this library
  * reads no environment, so the plugin resolves the vault's connection file.
  */
 export function connectClaustrumScopedClient(
