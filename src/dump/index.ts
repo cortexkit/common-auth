@@ -166,9 +166,14 @@ export function diffDumpBodies(
   }
 }
 
+// Shared by every dumper in the process. A plugin may create one dumper per
+// project, and two of them writing the same session in the same millisecond
+// would otherwise both number their dump 1 and pick the same file name; the
+// exclusive create then drops the second dump.
+let processDumpCounter = 0
+
 export function createDumper(options: DumpOptions): Dumper {
   let enabled = options.enabled === true
-  let counter = 0
   const pid = options.pid ?? process.pid
   const now = options.now ?? Date.now
   const log = options.logger
@@ -299,7 +304,7 @@ export function createDumper(options: DumpOptions): Dumper {
 
   async function dump(input: DumpInput): Promise<DumpResult | undefined> {
     if (!enabled) return undefined
-    counter++
+    const counter = ++processDumpCounter
     const session = input.session?.trim() || UNKNOWN_SESSION
     const dir = resolveDir()
     const createdAt = new Date(now()).toISOString()

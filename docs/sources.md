@@ -533,6 +533,7 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | dump | A baseline is never borrowed from another session or channel | openai dump | does not borrow a diff baseline from a different session |
 | dump | Sessions sharing a filename segment keep separate baselines | new (neither copy) | sessions whose filename segments collide do not share a baseline |
 | dump | The pid in the filename keeps two processes' dumps apart | openai dump (pid in the filename) | dumps from two processes in the same directory never collide |
+| dump | Dumpers in one process share the counter, so two of them never collide in one millisecond | new (neither copy) | two dumpers in one process never collide in the same millisecond |
 | dump | A body with nothing to redact keeps its original bytes | openai dump | preserves non-secret JSON dump body bytes |
 | dump | A plugin-listed header is redacted while the serving account is recorded | openai dump | records the internal serving account without exposing a ChatGPT account id |
 | dump | Credential keys and token values are redacted from the body | openai dump | redacts credentials from JSON dump bodies |

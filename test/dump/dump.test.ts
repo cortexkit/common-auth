@@ -254,6 +254,28 @@ describe('request dumps', () => {
     expect(await readFile(b!.files.body, 'utf8')).toBe('{"from":"b"}')
   })
 
+  test('two dumpers in one process never collide in the same millisecond', async () => {
+    const instant = () => Date.UTC(2026, 0, 1)
+    // One plugin instance per project in a single process: same pid, same
+    // millisecond, same session.
+    const first = dumper({ pid: 303, now: instant })
+    const second = dumper({ pid: 303, now: instant })
+    const a = await first.dump({
+      session: 'ses_shared',
+      channel: 'http',
+      bodyText: '{"from":"a"}',
+    })
+    const b = await second.dump({
+      session: 'ses_shared',
+      channel: 'http',
+      bodyText: '{"from":"b"}',
+    })
+    expect(a).toBeDefined()
+    expect(b).toBeDefined()
+    expect(a!.id).not.toBe(b!.id)
+    expect((await readdir(dumpDir)).length).toBe(6)
+  })
+
   test('preserves non-secret JSON dump body bytes', async () => {
     const bodyText = '{\n  "model": "any-model",\n  "input": []\n}\n'
     await dumper().dump({
