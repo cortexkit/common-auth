@@ -3,7 +3,7 @@
 // builds its sections afresh from the store and gets its own copy of the
 // caller's context.
 
-import { createLogger } from '../logger/index.js'
+import { createLogger, type RedactionOptions } from '../logger/index.js'
 import type { PoolLockSpec, PoolStore } from '../store/index.js'
 import {
   type AccountsSectionOptions,
@@ -25,11 +25,16 @@ import type {
   PluginSection,
 } from './model.js'
 import {
+  type ApplyOutcome,
   applyResult,
   confirmationOf,
+  createTextRedactor,
   dialogPayload,
+  projectFailure,
   type ResolvedSection,
+  type SeamContext,
   type SeamLogger,
+  type TextRedactor,
 } from './seam.js'
 
 const BUILTIN_IDS = new Set([
@@ -61,6 +66,13 @@ export interface CommandMenuOptions {
   extras?: readonly PluginExtraSection[]
   /** Receives the seam's warnings and failed actions; defaults to the library logger. */
   logger?: SeamLogger
+  /**
+   * The provider's secret shapes, added to the redactor every string that
+   * leaves the menu goes through (payloads and notifications). Without a
+   * pattern for its key format, a plugin's API key quoted in an outcome's
+   * text is not recognised.
+   */
+  redaction?: RedactionOptions
   now?: () => number
 }
 
@@ -81,12 +93,20 @@ export interface CommandMenu {
  * reuses and rebinds one context object for the next session cannot pull an
  * earlier invocation's feedback over to it.
  */
-function ownInvocation(invocation: CommandInvocation): CommandInvocation {
+function ownInvocation(
+  invocation: CommandInvocation,
+  redact: TextRedactor,
+): CommandInvocation {
   const { sessionId } = invocation
   const notify = invocation.notify.bind(invocation)
+  // A notification leaves the process just as a payload does, so its text
+  // goes through the same redactor.
   return Object.freeze({
     ...(sessionId !== undefined ? { sessionId } : {}),
-    notify,
+    notify: (message: string, kind?: Parameters<typeof notify>[1]) =>
+      kind === undefined
+        ? notify(redact(String(message)))
+        : notify(redact(String(message)), kind),
   })
 }
 
@@ -172,6 +192,8 @@ function findAction(
 
 export function createCommandMenu(options: CommandMenuOptions): CommandMenu {
   const logger: SeamLogger = options.logger ?? createLogger('commands')
+  const redact = createTextRedactor(options.redaction)
+  const seam: SeamContext = { logger, redact }
   const now = options.now ?? Date.now
   const extras = options.extras ?? []
   const seen = new Set<string>()
@@ -199,7 +221,7 @@ export function createCommandMenu(options: CommandMenuOptions): CommandMenu {
       logger.warn('command menu section failed to build', {
         command: options.command,
         section: id,
-        error: error instanceof Error ? error.message : String(error),
+        error: redact(error instanceof Error ? error.message : String(error)),
       })
       return {
         id,
@@ -242,27 +264,23 @@ export function createCommandMenu(options: CommandMenuOptions): CommandMenu {
   return {
     command: options.command,
     async open(invocation) {
-      const own = ownInvocation(invocation)
+      const own = ownInvocation(invocation, redact)
       return dialogPayload(
         options.command,
         options.title,
         await sections(own),
-        logger,
+        seam,
       )
     },
     async apply(request, invocation) {
-      const own = ownInvocation(invocation)
-      const finish = async (outcome: {
-        ok: boolean
-        text: string
-        needsConfirmation?: boolean
-      }) =>
+      const own = ownInvocation(invocation, redact)
+      const finish = async (outcome: ApplyOutcome) =>
         applyResult(
           options.command,
           options.title,
           await sections(own),
           outcome,
-          logger,
+          seam,
         )
       const action =
         request.command === options.command
@@ -271,19 +289,25 @@ export function createCommandMenu(options: CommandMenuOptions): CommandMenu {
       if (!action)
         return finish({
           ok: false,
+          code: 'unavailable',
           text: 'That action is no longer available.',
         })
       const confirmation = confirmationOf(action)
       if (confirmation && request.confirmed !== true)
         return finish({
           ok: false,
+          code: 'needs-confirmation',
           text: confirmation.message,
           needsConfirmation: true,
         })
       const coerced = coerceValues(action.knobs ?? [], request.values)
       if ('problem' in coerced)
-        return finish({ ok: false, text: coerced.problem })
-      let outcome: { ok: boolean; text: string }
+        return finish({
+          ok: false,
+          code: 'invalid-input',
+          text: coerced.problem,
+        })
+      let outcome: ApplyOutcome
       try {
         const result = await action.run({
           values: coerced.values,
@@ -291,16 +315,25 @@ export function createCommandMenu(options: CommandMenuOptions): CommandMenu {
           invocation: own,
         })
         outcome =
-          typeof result === 'string' ? { ok: true, text: result } : result
+          typeof result === 'string'
+            ? { ok: true, text: result }
+            : {
+                ok: result.ok,
+                text: result.text,
+                ...(result.ok ? {} : { code: result.code ?? 'refused' }),
+              }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
+        // The raw text goes only to the log (redacted); the user sees the
+        // projected code and message, never the exception's own words.
+        const failure = projectFailure(error)
         logger.warn('command menu action failed', {
           command: options.command,
           section: request.sectionId,
           action: request.actionId,
-          error: message,
+          code: failure.code,
+          error: redact(error instanceof Error ? error.message : String(error)),
         })
-        outcome = { ok: false, text: message }
+        outcome = { ok: false, ...failure }
       }
       return finish(outcome)
     },
