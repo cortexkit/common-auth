@@ -39,8 +39,19 @@ export async function recordQuota(
         if (!row) throw unknownRow('pull', id)
         if (row.invalid)
           throw refusal('pull', id, 'invalid-row', `row ${id} is invalid`)
+        // A reading belongs to one (epoch, identity, credential). A row
+        // holding no credential, or torn between the writes of a replace,
+        // has no such triple on disk, so no reading is recorded for it.
+        if (!row.credential)
+          throw refusal(
+            'pull',
+            id,
+            'no-credential',
+            `row ${id} holds no credential`,
+          )
         const entry = tx.entry(id)
         if (
+          row.torn ||
           !entry ||
           entry.credentialEpoch !== attribution.credentialEpoch ||
           row.identity !== attribution.identity
@@ -64,6 +75,9 @@ export async function recordQuota(
         tx.setEntry(id, { ...entry, quota: merged, needsFirstReading: false })
         await tx.commitConfig()
       },
+      // Recording a reading never completes a torn row: the fence above
+      // refuses it, and the row's own next write completes it.
+      { completeTorn: false },
     )
   } catch (error) {
     throw toFailure(error, 'pull', id, progress)

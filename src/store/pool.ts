@@ -172,9 +172,17 @@ export interface PoolStore {
     mutator: SettingsMutator,
     options?: UpdateSettingsOptions,
   ): Promise<UpdateSettingsResult>
+  /**
+   * Records the identity a lookup found for the row's credential. Since
+   * 0.3.1 it takes the credential epoch the lookup was issued for, and
+   * refuses a lookup that completes after the row was replaced
+   * (`attribution`) or a row recorded for another account
+   * (`identity-mismatch`).
+   */
   recordIdentity(
     id: string,
     identity: string,
+    attribution: Pick<Attribution, 'credentialEpoch'>,
     options?: RowOperationOptions,
   ): Promise<{ id: string; disabled: string[] }>
   refresh(
@@ -277,8 +285,15 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     async load() {
       const result = await readPool(ctx)
       if (result.status === 'ready') {
+        // A torn row is no candidate, but its pull is fired too: the pull
+        // completes the row on disk before reading it, so an interrupted
+        // replace of an OAuth row heals at the next load.
         for (const row of result.rows)
-          if (row.candidate && row.type === 'oauth' && row.needsFirstReading)
+          if (
+            (row.candidate || (row.torn && row.enabled)) &&
+            row.type === 'oauth' &&
+            row.needsFirstReading
+          )
             pulls.fire(row.id, 'load')
       }
       return toLoad(result)
@@ -302,8 +317,8 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     readSettings: () => readPoolSettings(rt),
     updateSettings: (mutator, callOptions) =>
       updatePoolSettings(rt, mutator, callOptions),
-    recordIdentity: (id, identity, callOptions) =>
-      recordRowIdentity(rt, id, identity, callOptions),
+    recordIdentity: (id, identity, attribution, callOptions) =>
+      recordRowIdentity(rt, id, identity, attribution, callOptions),
     refresh: (id, provider, callOptions) =>
       refreshRow(rt, id, provider, callOptions),
     recordQuota: (id, attribution, observation) =>

@@ -46,20 +46,55 @@ function pausedPull() {
 }
 
 describe('crash windows, with the observer surviving', () => {
-  it('a crash after the config write of add leaves a row without a credential that a re-run add completes at epoch 1', async () => {
+  it('a crash after the state write of add leaves only a state entry no reader loads and a re-run add adds the row at epoch 1', async () => {
+    await s.open().add({ id: 'b', credential: oauth('r-b') })
     const child = crashChild({
       op: 'add',
       id: 'a',
       credential: oauth('r-a'),
-      exitAt: 'after-config-write',
+      exitAt: 'after-state-write',
     })
     expect(await child.exited).toBe(CRASH_EXIT_CODE)
+    const store = s.open()
+    expect(await rowOf('a')).toBeUndefined()
+    expect((await s.state()).accounts.a.refresh).toBe('r-a')
+    const refresh = await rejectionOf(
+      store.refresh('a', async () => ({
+        access: 'x',
+        refresh: 'y',
+        expires: 1,
+      })),
+    )
+    expect(refresh.kind).toBe('unknown-row')
+    expect(
+      (await store.add({ id: 'a', credential: oauth('r-a') })).outcome,
+    ).toBe('added')
+    expect(await rowOf('a')).toMatchObject({
+      credentialEpoch: 1,
+      candidate: true,
+    })
+    const again = await rejectionOf(
+      store.add({ id: 'a', credential: oauth('r-other') }),
+    )
+    expect(again.kind).toBe('id-exists')
+  })
+
+  it('a roster row left without a credential is completed at epoch 1 by a re-run add', async () => {
+    // What an add of an earlier version left when it stopped between its
+    // config and state writes.
+    await s.writeConfig({
+      version: 1,
+      accounts: [{ id: 'a', type: 'oauth', addedAt: 1 }],
+      [POOL_KEY]: {
+        schemaVersion: 1,
+        rows: { a: { credentialEpoch: 1, needsFirstReading: true } },
+      },
+    })
     const store = s.open()
     expect(await rowOf('a')).toMatchObject({
       credentialEpoch: 1,
       candidate: false,
     })
-    expect((await rowOf('a'))?.credential).toBeUndefined()
     const refresh = await rejectionOf(
       store.refresh('a', async () => ({
         access: 'x',
@@ -75,13 +110,9 @@ describe('crash windows, with the observer surviving', () => {
       credentialEpoch: 1,
       candidate: true,
     })
-    const again = await rejectionOf(
-      store.add({ id: 'a', credential: oauth('r-other') }),
-    )
-    expect(again.kind).toBe('id-exists')
   })
 
-  it('a crash after the config write of replace leaves the bumped epoch with the prior credential and a survivor pull for the prior epoch fails attribution', async () => {
+  it('a crash after the state write of replace leaves a torn row and a survivor pull for the prior epoch fails attribution', async () => {
     await s.open().add({ id: 'r', credential: oauth('r-old') })
     const pull = pausedPull()
     const failed = deferred<PoolOperationError>()
@@ -95,12 +126,16 @@ describe('crash windows, with the observer surviving', () => {
       op: 'replace',
       id: 'r',
       credential: oauth('r-new'),
-      exitAt: 'after-config-write',
+      exitAt: 'after-state-write',
     })
     expect(await child.exited).toBe(CRASH_EXIT_CODE)
     let row = await rowOf('r')
-    expect(row).toMatchObject({ credentialEpoch: 2 })
-    expect(row?.credential).toMatchObject({ refresh: 'r-old' })
+    expect(row).toMatchObject({
+      credentialEpoch: 2,
+      torn: true,
+      candidate: false,
+    })
+    expect(row?.credential).toMatchObject({ refresh: 'r-new' })
     pull.release.resolve()
     expect(await failed.promise).toMatchObject({ kind: 'attribution' })
     await s.open().replace('r', oauth('r-new'))
@@ -175,13 +210,13 @@ describe('crash windows, with the observer surviving', () => {
     expect((await rowOf('r'))?.quota).toEqual({ readings: ['reading-epoch-1'] })
   })
 
-  it('a pull issued after a crash between replace writes captures the durable intermediate and applies until a re-run replace supersedes it', async () => {
+  it('a pull issued after a crash between replace writes completes the row and reads the replacement until a re-run replace supersedes it', async () => {
     await s.open().add({ id: 'r', credential: oauth('r-old') })
     const child = crashChild({
       op: 'replace',
       id: 'r',
       credential: oauth('r-new'),
-      exitAt: 'after-config-write',
+      exitAt: 'after-state-write',
     })
     expect(await child.exited).toBe(CRASH_EXIT_CODE)
     const requests: PullRequest[] = []
@@ -194,7 +229,7 @@ describe('crash windows, with the observer surviving', () => {
     survivor.requestReading('r')
     await survivor.pullsSettled()
     expect(requests[0]).toMatchObject({ credentialEpoch: 2 })
-    expect(requests[0]?.credential).toMatchObject({ refresh: 'r-old' })
+    expect(requests[0]?.credential).toMatchObject({ refresh: 'r-new' })
     expect((await rowOf('r'))?.quota).toEqual({ readings: ['reading-epoch-2'] })
     await survivor.replace('r', oauth('r-new'))
     await survivor.pullsSettled()

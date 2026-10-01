@@ -1,3 +1,4 @@
+import type { Attribution } from './attribution.js'
 import { PoolOperationError } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
 import {
@@ -22,6 +23,8 @@ import {
   unknownRow,
 } from './runtime.js'
 import {
+  CREDENTIAL_STAMP_KEY,
+  type CredentialBinding,
   credentialProblem,
   fingerprintOf,
   idProblem,
@@ -32,9 +35,11 @@ import {
   rotationStamp,
   rowLockKey,
   type StoredCredential,
+  stampFor,
   stateFieldsFor,
   storedCredential,
 } from './schema.js'
+import { bindReplacement } from './torn.js'
 
 export type FailureHook = (
   rowId: string,
@@ -148,15 +153,21 @@ const CREDENTIAL_STATE_FIELDS = [
 ]
 
 /**
- * Writes a rotated credential into the state file (one write). A rotation is
- * the same lineage: no epoch bump, no identity or quota change.
+ * Writes a credential into the state file (one write), stamped with the
+ * credential epoch the row's entry holds in `tx` (1 without an entry) and,
+ * for a replace, the binding the config is about to get. A rotation is the
+ * same lineage: no epoch bump, no identity or quota change.
  */
 export async function rotateIn(
   rt: StoreRuntime,
   tx: Transaction,
   id: string,
   credential: PoolCredential,
-  extra: { stamp?: number; clearErrors?: boolean } = {},
+  extra: {
+    stamp?: number
+    clearErrors?: boolean
+    binding?: CredentialBinding
+  } = {},
 ): Promise<StoredCredential> {
   const prior = tx.stateAccount(id)
   const priorStamp =
@@ -189,7 +200,16 @@ export async function rotateIn(
           stamp,
         )
       : storedCredential(credential, stamp)
-  tx.setStateAccount(id, { ...kept, ...stateFieldsFor(credential, stamp) })
+  const epoch = tx.entry(id)?.credentialEpoch
+  tx.setStateAccount(id, {
+    ...kept,
+    ...stateFieldsFor(credential, stamp),
+    [CREDENTIAL_STAMP_KEY]: stampFor(
+      stored,
+      typeof epoch === 'number' ? epoch : 1,
+      extra.binding,
+    ),
+  })
   await tx.commitState(stored)
   return stored
 }
@@ -223,6 +243,19 @@ function requireUsableRow(
       `row ${id} holds a ${row.type} credential`,
     )
   return row
+}
+
+/** The row is recorded for another account than the one given. */
+function identityMismatch(
+  operation: 'rotate' | 'recordIdentity',
+  id: string,
+): PoolOperationError {
+  return refusal(
+    operation,
+    id,
+    'identity-mismatch',
+    `row ${id} is recorded for another account; a credential of a different account is a replacement`,
+  )
 }
 
 /** Keying changed between the unlocked read and the locked one: retry. */
@@ -305,18 +338,18 @@ export async function addRow(
                 'type-mismatch',
                 `row ${id} is a ${existing.type} row`,
               )
-            // An earlier add wrote this row's config and stopped before the
-            // state write; writing the credential now completes it at epoch 1.
-            if (!existing.hasEntry) {
+            // A roster row without a credential (left by another writer, or
+            // by an add of an earlier version that stopped between its
+            // writes): writing the credential now completes it at epoch 1.
+            if (!existing.hasEntry)
               tx.setEntry(id, {
                 credentialEpoch: 1,
                 needsFirstReading: credential.type === 'oauth',
               })
-              await tx.commitConfig()
-            }
             const stored = await rotateIn(rt, tx, id, credential, {
               clearErrors: true,
             })
+            if (!existing.hasEntry) await tx.commitConfig()
             return { id, outcome: 'completed', credential: stored }
           }
           tx.roster().push(
@@ -347,8 +380,14 @@ export async function addRow(
               outcome = 'added-disabled'
             }
           }
-          await tx.commitConfig()
+          // The credential is written first. A crash before the config write
+          // then leaves a state entry no roster row names, which no reader
+          // loads and `remove` drops; written the other way round, the new
+          // roster row could load beside a credential left under its id by an
+          // interrupted removal. Nothing of such a leftover entry is kept.
+          tx.dropStateAccount(id)
           const stored = await rotateIn(rt, tx, id, credential)
+          await tx.commitConfig()
           return { id, outcome, credential: stored }
         },
       )
@@ -396,32 +435,34 @@ export async function replaceRow(
           const row = requireUsableRow('replace', id, tx.row(id), credential)
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged('replace', id)
-          const entry = tx.entry(id) ?? {}
-          const priorEpoch =
-            typeof entry.credentialEpoch === 'number'
-              ? entry.credentialEpoch
-              : 1
-          const credentialEpoch = priorEpoch + 1
-          const nextEntry: Record<string, unknown> = {
-            ...entry,
-            credentialEpoch,
-            needsFirstReading: true,
+          const priorEpoch = tx.entry(id)?.credentialEpoch
+          const credentialEpoch =
+            (typeof priorEpoch === 'number' ? priorEpoch : 1) + 1
+          const binding: CredentialBinding = {
+            ...(input.identity !== undefined
+              ? { identity: input.identity }
+              : {}),
+            ...(credential.type === 'api'
+              ? {
+                  baseURL: credential.baseURL.trim(),
+                  authHeader: credential.authHeader ?? 'authorization-bearer',
+                }
+              : {}),
           }
-          delete nextEntry.quota
-          tx.setEntry(id, nextEntry)
-          const raw = tx.rosterRow(id) as Record<string, unknown>
-          if (input.identity !== undefined) raw.accountId = input.identity
-          else delete raw.accountId
-          if (credential.type === 'api') {
-            raw.baseURL = credential.baseURL.trim()
-            raw.authHeader = credential.authHeader ?? 'authorization-bearer'
-          }
+          bindReplacement(tx, id, credentialEpoch, binding)
           if (input.identity !== undefined)
             disableIdentityDuplicates(tx, input.identity)
-          await tx.commitConfig()
+          // The new credential goes first, stamped with the new epoch and the
+          // binding. A crash before the config write leaves the stamp ahead
+          // of the config: every reader shows the row torn (completed, never
+          // a candidate) and the next store write completes the config from
+          // the stamp, so no reader pairs either credential with the other
+          // account's identity or endpoint.
           const stored = await rotateIn(rt, tx, id, credential, {
             clearErrors: true,
+            binding,
           })
+          await tx.commitConfig()
           return { id, credential: stored, credentialEpoch }
         },
       )
@@ -461,6 +502,15 @@ export async function rotateRow(
           const row = requireUsableRow('rotate', id, tx.row(id), credential)
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged('rotate', id)
+          // A rotation stays with one account: it may record the first
+          // identity the row learns, but a credential of another known
+          // account is a replacement (new epoch, quota and errors dropped).
+          if (
+            input.identity !== undefined &&
+            row.identity !== undefined &&
+            input.identity !== row.identity
+          )
+            throw identityMismatch('rotate', id)
           const stored = await rotateIn(rt, tx, id, credential)
           let configChanged = false
           if (!row.hasEntry) {
@@ -773,15 +823,28 @@ export async function reorderRows(
           await tx.commitConfig()
           return { ids: order, outcome: 'reordered' }
         },
+        // A reorder keeps every roster row and entry byte for byte, so it
+        // leaves a torn row for a write on that row to complete.
+        { completeTorn: false },
       )
     },
   )
 }
 
+/**
+ * Records the wire identity an identity lookup found for a row's credential.
+ * `attribution` is the credential epoch the lookup was issued for (a row
+ * without an entry is at epoch 1): a lookup that completes after the row was
+ * replaced is refused (`attribution`), as a quota reading would be, so the
+ * first credential's account is never recorded on the second credential. A
+ * row already recorded for another account refuses (`identity-mismatch`):
+ * that is a replacement, not something learnt about the same credential.
+ */
 export async function recordRowIdentity(
   rt: StoreRuntime,
   id: string,
   identity: string,
+  attribution: Pick<Attribution, 'credentialEpoch'>,
   options: RowOperationOptions = {},
 ): Promise<{ id: string; disabled: string[] }> {
   assertNotInsideHook('recordIdentity')
@@ -798,6 +861,20 @@ export async function recordRowIdentity(
           'invalid-input',
           'identity must be non-empty',
         )
+      const captured = isRecord(attribution)
+        ? attribution.credentialEpoch
+        : undefined
+      if (
+        typeof captured !== 'number' ||
+        !Number.isInteger(captured) ||
+        captured < 1
+      )
+        throw refusal(
+          'recordIdentity',
+          id,
+          'invalid-input',
+          'the credential epoch the identity lookup was issued for is required',
+        )
       const { row: seen } = await readRow(rt, 'recordIdentity', id)
       await locks.acquire(rowLockSpec(rt, seen))
       await locks.acquire(options.providerLock ?? rt.providerLock)
@@ -811,6 +888,16 @@ export async function recordRowIdentity(
           const row = requireUsableRow('recordIdentity', id, tx.row(id))
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged('recordIdentity', id)
+          if ((row.credentialEpoch ?? 1) !== captured)
+            throw refusal(
+              'recordIdentity',
+              id,
+              'attribution',
+              `the identity for ${id} was looked up for a credential the row no longer holds`,
+              true,
+            )
+          if (row.identity !== undefined && row.identity !== identity)
+            throw identityMismatch('recordIdentity', id)
           const disabled = recordIdentityIn(tx, id, identity)
           await tx.commitConfig()
           return { id, disabled }

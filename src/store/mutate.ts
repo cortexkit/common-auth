@@ -14,9 +14,10 @@ import {
   type PoolLockSpec,
 } from './refresh-lock.js'
 import {
-  buildRows,
   classifyConfig,
   classifyState,
+  ensureEntries,
+  entryIn,
   type FileRead,
   isRecord,
   LEGACY_STORE_VERSION,
@@ -25,8 +26,11 @@ import {
   POOL_SCHEMA_VERSION,
   type PoolRow,
   type QuotaCodec,
+  rosterRowIn,
   type StoredCredential,
+  setEntryIn,
 } from './schema.js'
+import { completeTornRows, loadRows } from './torn.js'
 
 /** Named points on the write path, for crash and ownership injection. */
 export type WriteStep =
@@ -102,7 +106,7 @@ export async function readPool(ctx: StoreContext): Promise<ReadResult> {
     stateExists: state.exists,
     config: config.config,
     state: state.state,
-    rows: buildRows(config.config, state.state, ctx.codec),
+    rows: loadRows(config.config, state.state, ctx.codec),
   }
 }
 
@@ -160,8 +164,13 @@ export class Transaction {
     this.state = structuredClone(snapshot.state)
   }
 
+  /**
+   * The rows as every reader loads them: a row torn between the writes of a
+   * replace is shown as that replace leaves it once completed (see
+   * `PoolRow.torn`).
+   */
   rows(): PoolRow[] {
-    return buildRows(this.config, this.state, this.ctx.codec)
+    return loadRows(this.config, this.state, this.ctx.codec)
   }
 
   row(id: string): PoolRow | undefined {
@@ -175,9 +184,8 @@ export class Transaction {
 
   /** The first roster row with this id (the one the pool loads). */
   rosterRow(id: string): Record<string, unknown> | undefined {
-    return this.roster().find(
-      (raw): raw is Record<string, unknown> => isRecord(raw) && raw.id === id,
-    )
+    this.roster()
+    return rosterRowIn(this.config, id)
   }
 
   /**
@@ -193,25 +201,34 @@ export class Transaction {
   }
 
   entries(): Record<string, unknown> {
-    if (!isRecord(this.config[POOL_KEY])) this.config[POOL_KEY] = {}
-    const pool = this.config[POOL_KEY] as Record<string, unknown>
-    if (!isRecord(pool[POOL_ROWS_KEY])) pool[POOL_ROWS_KEY] = {}
-    return pool[POOL_ROWS_KEY] as Record<string, unknown>
+    return ensureEntries(this.config)
   }
 
   entry(id: string): Record<string, unknown> | undefined {
-    const entries = this.entries()
-    const entry = Object.hasOwn(entries, id) ? entries[id] : undefined
-    return isRecord(entry) ? entry : undefined
+    this.entries()
+    return entryIn(this.config, id)
   }
 
   setEntry(id: string, entry: Record<string, unknown>): void {
-    Object.defineProperty(this.entries(), id, {
-      value: entry,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    })
+    setEntryIn(this.config, id, entry)
+  }
+
+  /**
+   * Writes the config of every row torn between the writes of a replace as
+   * that replace would have left it (see `completeTornRows`), in one config
+   * write ahead of the operation's own. The write is counted apart from the
+   * operation's: it is setup, like a pull giving a row its entry, so a later
+   * refusal still reports `before-first-write`.
+   */
+  async completeTorn(): Promise<void> {
+    const { config, torn } = completeTornRows(
+      this.config,
+      this.state,
+      this.ctx.codec,
+    )
+    if (torn.length === 0) return
+    this.config = config
+    await this.commitConfig({ counted: false })
   }
 
   stateAccount(id: string): Record<string, unknown> | undefined {
@@ -242,7 +259,7 @@ export class Transaction {
    * key untouched. Entries for ids no longer in the roster are dropped here,
    * and remembered so the id is not reused in this process.
    */
-  async commitConfig(): Promise<void> {
+  async commitConfig(options: { counted?: boolean } = {}): Promise<void> {
     const roster = this.roster()
     const rosterIds = new Set<string>()
     for (const raw of roster)
@@ -272,7 +289,12 @@ export class Transaction {
         [POOL_ROWS_KEY]: kept,
       },
     }
-    await this.write(this.ctx.configPath, next, 'config')
+    await this.write(
+      this.ctx.configPath,
+      next,
+      'config',
+      options.counted ?? true,
+    )
     this.config = next
   }
 
@@ -292,6 +314,7 @@ export class Transaction {
     path: string,
     value: unknown,
     file: 'config' | 'state',
+    counted = true,
   ): Promise<void> {
     await writeJsonAtomic(path, value, {
       beforeRename: async () => {
@@ -300,7 +323,7 @@ export class Transaction {
         await this.locks.assertAll()
       },
     })
-    this.progress.writes++
+    if (counted) this.progress.writes++
     await this.ctx.onStep?.(`after-${file}-write`, this.info)
   }
 }
@@ -354,7 +377,10 @@ export async function initializePool(
 
 /**
  * Runs `fn` under the store-lock list. The pool must be ready: a pending
- * migration or a load error refuses before anything is written.
+ * migration or a load error refuses before anything is written. Unless
+ * `completeTorn` is false, rows torn between the writes of a replace are
+ * completed first, so `fn` never sees one; the writes that only record
+ * readings or reorder the roster opt out and leave such rows as they are.
  */
 export async function withTransaction<T>(
   ctx: StoreContext,
@@ -362,6 +388,7 @@ export async function withTransaction<T>(
   progress: Progress,
   info: { operation: PoolOperation; rowId: string | undefined },
   fn: (tx: Transaction) => Promise<T>,
+  options: { completeTorn?: boolean } = {},
 ): Promise<T> {
   const mark = locks.held.length
   try {
@@ -374,7 +401,9 @@ export async function withTransaction<T>(
         info.rowId,
         progress.writes > 0 ? 'after-first-write' : 'before-first-write',
       )
-    return await fn(new Transaction(ctx, result, locks, progress, info))
+    const tx = new Transaction(ctx, result, locks, progress, info)
+    if (options.completeTorn ?? true) await tx.completeTorn()
+    return await fn(tx)
   } finally {
     await locks.releaseTo(mark)
   }

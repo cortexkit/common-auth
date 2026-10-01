@@ -69,7 +69,13 @@ test('add, replace, rotate and recordIdentity take extra locks after the row and
       (r) =>
         s
           .open({ onLockEvent: r.onLockEvent })
-          .recordIdentity('a', 'acct-1', { extraLocks: extras }),
+          // The replace above moved the row to epoch 2.
+          .recordIdentity(
+            'a',
+            'acct-1',
+            { credentialEpoch: 2 },
+            { extraLocks: extras },
+          ),
     ],
   ]
   for (const [name, run] of cases) {
