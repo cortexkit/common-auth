@@ -55,10 +55,10 @@ export interface VaultRosterRow {
    */
   stale?: true
   /**
-   * The vault's latest list made no identity claim for the representative
-   * credential, so `accountIdentity` is the last account it was known to log
-   * into, kept until the vault claims one again. It is neither proof that the
-   * account is the same nor that it changed.
+   * The vault's latest list named no account for `credentialId`, so
+   * `accountIdentity` is the last account that credential was known to log
+   * into, kept until the vault names one again. It proves neither that the
+   * credential still logs into that account nor that it changed accounts.
    */
   unclaimed?: true
 }
@@ -536,9 +536,9 @@ export function acceptVaultRoute(path: string, routeId: string) {
 }
 
 /**
- * What a quota or profile observation must carry about the send it came from:
- * the fields of the receipt that send was served. A `ClaustrumScopedAttempt`
- * is one.
+ * The receipt fields a quota or profile observation must carry to say which
+ * send (credential and account) it came from. Pass the
+ * `ClaustrumScopedAttempt` that send was authorized with.
  */
 export type QuotaReceipt = Pick<
   ClaustrumScopedAttempt,
@@ -694,8 +694,9 @@ export type VaultPrimary =
     }
 
 /**
- * The seam for a plugin that keeps a main account owned by the host rather
- * than by the pool. The library has no main convention: the plugin names the
+ * The seam for a plugin that keeps a main account: one fixed account the host
+ * owns under a logical route, outside the pool's rotating rows. The library
+ * has no main convention of its own: the plugin names the
  * vault record that holds the role (`primaryCredentialId`) and its logical
  * route. Main follows the account that record claims; another credential of
  * that same account may serve it when the record itself is not active, but a

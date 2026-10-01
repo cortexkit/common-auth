@@ -46,10 +46,10 @@ export interface ClaustrumConsumerOptions {
   mapAccount?: AccountMapper
   parseIdentity?: IdentityParser
   /**
-   * Issue a receipt only when the vault's served reply names the credential id
-   * and the roster's account identity itself (see `ClaustrumScopedCustody`).
-   * For providers whose tokens are opaque; leave unset to accept a reply that
-   * asserts no identity.
+   * Issue a receipt only when the vault's served reply itself names the
+   * credential id and the roster's account identity (see
+   * `ClaustrumScopedCustody`). Set it for providers whose tokens do not reveal
+   * their account; leave it unset to accept a reply that asserts no identity.
    */
   requireAssertion?: boolean
   /**

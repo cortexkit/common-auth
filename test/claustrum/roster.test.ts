@@ -656,14 +656,35 @@ test('a different account behind a declined credential id has its own policy, an
 
 test('a quota observation must name the served credential and account, and an absent side never matches a known one', async () => {
   const { path } = await fixture()
+  const anonymous = unclaimed(newcomer)
   const first = await refreshVaultRoster({
     path,
-    custody: inventory([work, alias, fallback]),
+    custody: inventory([work, alias, fallback, anonymous]),
   })
   const route = rowFor(first, 'provider-work').routeId
   const record = (receipt: Parameters<typeof recordVaultQuota>[1]) =>
     recordVaultQuota(path, receipt)
-  // No identity on the receipt for a known account.
+  // A row that has never had a known account takes a receipt issued for it
+  // in that state, even when the token parse named an account, but not one
+  // issued for a known account it does not hold.
+  const anonymousRoute = routeOf(first, anonymous.credentialId).routeId
+  expect(
+    await record({
+      routeId: anonymousRoute,
+      observation,
+      credentialId: anonymous.credentialId,
+      accountIdentity: 'parsed-account',
+      accountIdentitySource: 'parsed',
+    }),
+  ).toBe(true)
+  expect(
+    await record({
+      routeId: anonymousRoute,
+      observation,
+      ...receiptFor({ ...anonymous, accountIdentity: 'other-account' }),
+    }),
+  ).toBe(false)
+  // A receipt with no account identity is rejected for a row whose account is known.
   expect(
     await record({
       routeId: route,
@@ -672,7 +693,7 @@ test('a quota observation must name the served credential and account, and an ab
       accountIdentitySource: 'none',
     }),
   ).toBe(false)
-  // A credential that is not a member of the account.
+  // A receipt is rejected when its credential is not the row's representative or alias.
   expect(
     await record({
       routeId: route,
@@ -684,11 +705,15 @@ test('a quota observation must name the served credential and account, and an ab
   expect(
     await record({ routeId: route, observation, ...receiptFor(alias) }),
   ).toBe(true)
-  // While the inventory makes no claim, only an identity the vault or the
-  // token itself proved may land; the roster's own expectation is not proof.
+  // When the vault's list names no account for the row's credential, a reading
+  // is accepted only if the vault's reply or the token parse proved the
+  // account; the roster's expected account alone is not proof.
   await refreshVaultRoster({
     path,
-    custody: inventory([unclaimed(work), unclaimed(alias), fallback], 'v2'),
+    custody: inventory(
+      [unclaimed(work), unclaimed(alias), fallback, anonymous],
+      'v2',
+    ),
   })
   expect(
     await record({
