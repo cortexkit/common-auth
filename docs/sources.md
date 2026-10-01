@@ -443,3 +443,25 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | Reorder takes extra locks before the store locks and waits on a held extra lock | new (neither copy) | reorder takes extra locks before the store locks, waits on a held extra lock and completes once it is released |
 | store | A crash before the config write of reorder leaves the old order | new (neither copy) | a crash at before-config-write of reorder leaves the whole old order or the whole new one |
 | store | A crash after the config write of reorder leaves the new order | new (neither copy) | a crash at after-config-write of reorder leaves the whole old order or the whole new one |
+| store | Settings writes keep every pool-owned key and the state file, and the legacy reader still loads the pool | new (neither copy) | updateSettings writes settings beside the pool, keeping every pool-owned key and the state file unchanged |
+| store | A settings result that sets a pool-owned key is refused, writing nothing | new (neither copy) | updateSettings refuses a result that sets a pool-owned key, with both files unchanged |
+| store | Settings writes refuse a pending-migration pool and a store call from the mutator | new (neither copy) | updateSettings refuses a pending-migration pool and a store call from inside the mutator, writing nothing |
+| store | Settings writes take extra locks before the store locks | new (neither copy) | updateSettings takes extra locks before the store locks |
+| commands | Built-in sections project accounts field by field, so no credential reaches a payload | reference/openai-auth/packages/core/src/commands.ts | no built-in section payload carries a credential field even when the store rows carry one |
+| commands | A credential-shaped field from a plugin section is scrubbed and its name warned | reference/openai-auth/packages/core/src/commands.ts | a plugin section leaking a credential-shaped field is scrubbed and the dropped names are warned, never the values |
+| commands | Apply results pass through the same scrub | reference/openai-auth/packages/core/src/commands.ts | an apply result passes through the same scrub as the dialog payload |
+| commands | Sections come in the fixed order | new (neither copy) | sections come in the fixed order whatever order the plugin supplies them in |
+| commands | Accounts lists the roster with state, identity and quota summary | new (neither copy) | accounts lists the roster in order with enabled state, identity and quota summary |
+| commands | Add goes through the plugin's login into the store | new (neither copy) | add through a ready login adds the account to the store |
+| commands | Remove needs confirmation and honours protect | new (neither copy) | remove deletes the account from the store only once confirmed, and protect refuses an id |
+| commands | Disable and enable reach the store | new (neither copy) | disable and enable toggle the account in the store |
+| commands | Move and set order go through store.reorder | new (neither copy) | move and set order reorder the roster through store.reorder, and a bad order is refused |
+| commands | Quota shows windows and budget; check now goes through the plugin poll | new (neither copy) | quota shows per-account windows and credit budget, and check now goes through the plugin poll |
+| commands | Routing mode is written to routing.mode | new (neither copy) | routing mode writes routing.mode beside the pool |
+| commands | Killswitch and floors are written under killswitch | new (neither copy) | limits toggles killswitch.enabled and writes per-account floors under killswitch.accounts |
+| commands | The Pi renderer walks the same menu through add, reorder and remove | new (neither copy) | the Pi renderer drives add, reorder and remove through the same menu |
+| commands | The Pi renderer does not apply a declined irreversible action | new (neither copy) | the Pi renderer does not apply an irreversible action the user declines |
+| commands | Irreversible actions always carry and require a confirmation | new (neither copy) | an irreversible action is refused without a confirmation and carries one even when its definition names none |
+| commands | Apply requests from the RPC are checked | new (neither copy) | parseApplyRequest keeps a well-formed request and refuses a malformed one |
+| commands | A pending login reports to the session that started it | reference/openai-auth/packages/opencode/src/tests/command-session-isolation.test.ts | a second session interleaving inside the add await-window does not steal the add notification |
+| commands | Concurrent invocations do not cross results | new (neither copy) | concurrent invocations each get their own apply result |
