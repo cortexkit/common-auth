@@ -59,6 +59,11 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | logger | Redacts stable-ID variants while preserving internal accountId; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | redacts only the ChatGPT stable id, not the internal accountId key |
 | logger | Redacts served identity; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | redacts served identity email and organization values from emitted log lines |
 | logger | Redacts every credential shape while preserving internal accountId; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | writes no credential value when a command logs every secret shape at once |
+| logger | Two instances in one process write their own files at their own levels | new (neither copy) | two logger instances in one process keep their own files and levels |
+| logger | Two instances keep their own redaction and capture sink | new (neither copy) | instances keep their own redaction and capture sink |
+| logger | initLogger and setLogLevel on the module logger do not reach an instance | new (neither copy) | initLogger and setLogLevel on the module logger leave an instance alone |
+| logger | An instance's runtime level applies to it alone and survives configure | new (neither copy) | an instance runtime level overrides only its own floor and survives reconfiguring |
+| logger | initLogger returns the module default logger as an instance | new (neither copy) | initLogger returns the module default logger as an instance |
 | sidebar-file | Tolerant reads hand parsed JSON to the supplied normalizer | reference/openai-auth/packages/opencode/src/sidebar-state.ts | tolerant reads hand parsed JSON to the supplied normalizer |
 | sidebar-file | Writes state atomically and cleans up temp files | reference/openai-auth/packages/opencode/src/sidebar-state.ts | writes state atomically and cleans up temp files |
 | sidebar-file | Five concurrent writes are serialized; the final queued state wins | reference/openai-auth/packages/opencode/src/sidebar-state.ts | 5 concurrent writes with different lastUpdated values — last-chained state wins |
@@ -72,6 +77,13 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | sidebar-file | Sidebar lock renews with unchanged owner and private mode | new (neither copy) | sidebar lock renews with unchanged owner and private mode |
 | sidebar-file | Sidebar contention override rejects and queue recovers | new (neither copy) | sidebar contention override rejects and queue recovers |
 | sidebar-file | Sidebar default contention waits 15000 ms | new (neither copy) | sidebar default contention waits 15000 ms |
+| sidebar-file | A write reports written when the lock held through the rename and skipped when the merge declined | new (neither copy) | reports a write that kept its lock as written and a declined merge as skipped |
+| sidebar-file | A lock lost during the rename runs the repair once under a new lock on the successor's state | anthropic-auth packages/opencode/src/sidebar-state.ts:726-767 (77e4c900), packages/opencode/src/tests/sidebar-state.test.ts | repairs an authoritative write after losing ownership post-rename |
+| sidebar-file | Without a repair a lock lost during the rename is reported and the write still resolves | new (neither copy) | without a repair a write that lost its lock at the rename is reported and left |
+| sidebar-file | A repair returning undefined leaves the successor's state | new (neither copy) | a repair that returns undefined leaves the successor state |
+| sidebar-file | A per-write repair overrides the file's repair | new (neither copy) | a per-write repair overrides the file repair |
+| sidebar-file | A repair that loses its lock again is reported and not repeated | anthropic-auth packages/opencode/src/sidebar-state.ts:751-758 (77e4c900) | a repair that loses its lock again is not repaired a second time |
+| sidebar-file | A repair that cannot retake the lock is reported, not rejected | anthropic-auth packages/opencode/src/sidebar-state.ts:690-698 (77e4c900) | a repair that cannot retake the lock is skipped without rejecting |
 | tui-prefs | Missing file returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | missing file returns empty object |
 | tui-prefs | Parses JSONC with comments and trailing commas | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | parses JSONC with comments and trailing commas |
 | tui-prefs | Malformed file returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | malformed file returns empty object |
@@ -560,6 +572,29 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | dump | An existing dump directory is tightened to 0700 | openai dump | tightens an existing dump directory to 0700 |
 | dump | The plugin summary is computed on the redacted body | new (neither copy) | stores the plugin body summary computed on the redacted body |
 | dump | A failed dump returns nothing and logs a warning | openai dump | a failed dump returns nothing and logs instead of throwing |
+| dump | A failed dump hands back no dump, so no response artifact can be attached to it | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | failed request dumps return no handle or orphan response artifact |
+| dump | The response artifact holds only the given fields, redacted, next to its dump, 0600; a null field is kept | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | response artifacts sanitize message fields and preserve diagnostics presence |
+| dump | A later response artifact replaces the earlier one through a staging file | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | response artifacts preserve opening usage while recording terminal usage and reason |
+| dump | A response artifact records an incomplete stream | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | response artifacts mark a stream incomplete when no terminal frame arrives |
+| dump | A planted symlink at the staging or final response path is replaced, never followed | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | does not follow a pre-planted predictable partial symlink |
+| dump | A failed response write returns nothing and logs a warning | new (neither copy) | a failed response write returns nothing and logs instead of throwing |
+| dump | Without cleanup a failed dump leaves the files it wrote | new (neither copy) | a failed dump leaves the files it wrote by default |
+| dump | With cleanup a failed dump removes every file of its group, partial ones included | new (neither copy) | a failed dump removes every file of its group when cleanup is on |
+| dump | Cleanup never removes a file whose exclusive create failed because another writer owns it | new (neither copy) | cleanup leaves a file another writer created at the same name |
+| dump | A dump with a maximum-length session and a phase is still recognised by the sweep | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | sweeps tagged dumps with a maximum-length affinity segment |
+| dump | The sweep counts and removes response artifacts | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | dump sweep recognizes response artifacts |
+| dump | The sweep removes the oldest dumps until under the cap and keeps protected paths | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | dump sweep deletes oldest files until the directory is under its cap |
+| dump | The sweep keeps a protected dump even when it is the oldest | new (neither copy) | the sweep keeps a protected dump even when it is the oldest |
+| dump | The sweep evicts a dump's files together | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | evicts complete dump artifact groups instead of orphaning request pairs |
+| dump | The sweep recognises counters longer than six digits | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | sweeps artifacts whose request counter has grown to seven digits |
+| dump | The sweep refuses a symlinked directory | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | refuses a configured symlinked dump directory without deleting target files |
+| dump | The sweep leaves files whose names a dumper does not write | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | enforces the cap in a configured custom dump directory |
+| dump | A cap of zero, the default, disables the sweep | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | disables dump sweeping when the configured cap is zero |
+| dump | The sweep keeps dumps younger than the newness floor | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | preserves files younger than the sweep newness floor |
+| dump | The sweep keeps fresh staging files and removes stale ones even under the cap | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | preserves fresh partials and reclaims stale partials even under the cap |
+| dump | A capped dumper sweeps after a dump, evicting old groups whole and keeping the new one | anthropic-auth packages/core/src/dump.ts (77e4c900) | a capped dumper evicts the oldest whole dumps after writing a new one |
+| dump | An uncapped dumper never sweeps | new (neither copy) | an uncapped dumper never evicts old dumps |
+| dump | The automatic sweep runs at most once per interval; sweep() runs now | anthropic-auth packages/core/src/dump.ts (77e4c900) | the automatic sweep runs at most once per interval while sweep runs now |
 | auth-menu | Arrow keys move the full-screen selection and every redraw is a new frame | reference/openai-auth/packages/opencode/src/auth/ui/select.ts | renders full-screen and moves the selection with the arrow keys |
 | auth-menu | Escape cancels the menu, runs nothing and restores raw mode | reference/openai-auth/packages/opencode/src/auth/ui/select.ts | Escape cancels the menu, runs nothing and restores the terminal |
 | auth-menu | Without a TTY the menu prints a plain list and runs nothing | new (neither copy) | a non-interactive terminal gets a plain list and nothing runs |
