@@ -1,7 +1,7 @@
 {
   "name": "@cortexkit/common-auth",
   "version": "0.2.3",
-  "description": "Shared plumbing for the CortexKit auth plugins: loopback RPC, file locks and atomic writes, logger, sidebar state file, TUI preferences and TUI build.",
+  "description": "Shared code for the CortexKit auth plugins: account pool, quota and routing, commands and auth menu, OpenCode 2 hooks, Claustrum custody, and plumbing (loopback RPC, file locks, logger, sidebar state, TUI preferences and build).",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -51,6 +51,30 @@
     "./routing": {
       "types": "./dist/routing/index.d.ts",
       "import": "./dist/routing/index.js"
+    },
+    "./commands": {
+      "types": "./dist/commands/index.d.ts",
+      "import": "./dist/commands/index.js"
+    },
+    "./auth-menu": {
+      "types": "./dist/auth-menu/index.d.ts",
+      "import": "./dist/auth-menu/index.js"
+    },
+    "./opencode2": {
+      "types": "./dist/opencode2/index.d.ts",
+      "import": "./dist/opencode2/index.js"
+    },
+    "./claustrum": {
+      "types": "./dist/claustrum/index.d.ts",
+      "import": "./dist/claustrum/index.js"
+    },
+    "./cachekeep": {
+      "types": "./dist/cachekeep/index.d.ts",
+      "import": "./dist/cachekeep/index.js"
+    },
+    "./dump": {
+      "types": "./dist/dump/index.d.ts",
+      "import": "./dist/dump/index.js"
     }
   },
   "files": [
@@ -73,7 +97,9 @@
   "peerDependencies": {
     "@opentui/core": ">=0.5.12",
     "@opentui/solid": ">=0.5.12",
-    "solid-js": "1.9.12"
+    "solid-js": "1.9.12",
+    "@cortexkit/claustrum-client": ">=0.5.0",
+    "@opencode/plugin": ">=2.0.21"
   },
   "peerDependenciesMeta": {
     "@opentui/core": {
@@ -84,10 +110,18 @@
     },
     "solid-js": {
       "optional": true
+    },
+    "@cortexkit/claustrum-client": {
+      "optional": true
+    },
+    "@opencode/plugin": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
+    "@cortexkit/claustrum-client": "0.5.0",
+    "@opencode/plugin": "2.0.21",
     "@opentui/core": ">=0.5.12",
     "@opentui/solid": ">=0.5.12",
     "@tsconfig/bun": "1.0.11",
