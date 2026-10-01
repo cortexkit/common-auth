@@ -33,6 +33,12 @@ type Task = {
   exitAt?: WriteStep
   /** Lease length of every lock the child takes; 1 s unless given. */
   ttlMs?: number
+  /**
+   * Renew the child's leases while it runs (off unless given). A crashed
+   * child stops renewing, so its leases still lapse one lease length later;
+   * a live child on a loaded machine no longer loses them mid-operation.
+   */
+  renew?: boolean
 }
 
 const task = JSON.parse(process.argv[2] ?? '{}') as Task
@@ -43,7 +49,7 @@ const store = openPoolStore({
   quota: listCodec,
   // A crashed child leaves its leases behind; short unrenewed leases let the
   // surviving process take the locks over within a test's time budget.
-  lockOptions: { ttlMs: task.ttlMs ?? 1_000, renew: false },
+  lockOptions: { ttlMs: task.ttlMs ?? 1_000, renew: task.renew ?? false },
   onStep: (step) => {
     console.log(`step:${step}`)
     if (step === task.exitAt) process.exit(CRASH_EXIT_CODE)

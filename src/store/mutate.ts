@@ -164,7 +164,11 @@ export class Transaction {
     this.state = structuredClone(snapshot.state)
   }
 
-  /** The rows as every reader loads them (a torn row shown completed). */
+  /**
+   * The rows as every reader loads them: a row torn between the writes of a
+   * replace is shown as that replace leaves it once completed (see
+   * `PoolRow.torn`).
+   */
   rows(): PoolRow[] {
     return loadRows(this.config, this.state, this.ctx.codec)
   }

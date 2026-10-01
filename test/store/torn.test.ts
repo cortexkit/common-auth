@@ -101,7 +101,10 @@ function verdict(row: PoolRow | undefined, c: Case): string {
   return `MIXED: ${JSON.stringify(shape)} candidate=${row.candidate}`
 }
 
-/** The same judgement for what a pull was issued with. */
+/**
+ * The same verdict for a pull request: whether its identity, secret and
+ * epoch are those of one of the case's whole shapes.
+ */
 function pullVerdict(request: PullRequest, c: Case): string {
   const shape: Shape = {
     identity: request.identity,
@@ -279,10 +282,12 @@ async function crashAt(c: Case, step: WriteStep): Promise<void> {
     statePath: s.statePath,
     id: ID,
     exitAt: step,
+    renew: true,
     ...c.task,
   })
   const code = await child.exited
-  // An operation that never reaches this step finishes instead.
+  // An operation that never reaches the requested write step completes
+  // normally instead.
   const reached = child.output().includes(`step:${step}\n`)
   expect({ code, output: child.output() }).toMatchObject({
     code: reached ? CRASH_EXIT_CODE : 0,
@@ -417,7 +422,8 @@ describe('a replace torn between its writes', () => {
     const torn = await rowOf()
     expect(torn).toMatchObject({ torn: true, candidate: false })
     expect(verdict(torn, replaceCase)).toBe('whole: done')
-    // The config still holds the replaced row's epoch and identity.
+    // On disk the config still names the old account until a write
+    // completes the row.
     const config = await s.config()
     expect(config.accounts[0].accountId).toBe('acct-old')
     await s.open().disable(ID, 'probe')
