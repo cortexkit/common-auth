@@ -47,6 +47,14 @@ import {
   type QuotaCodec,
   type StoredCredential,
 } from './schema.js'
+import {
+  readPoolSettings,
+  type SettingsMutator,
+  type SettingsRead,
+  type UpdateSettingsOptions,
+  type UpdateSettingsResult,
+  updatePoolSettings,
+} from './settings.js'
 
 export interface OpenPoolStoreOptions {
   /** The provider every row of this pool belongs to; keys the provider-wide lock. */
@@ -150,6 +158,20 @@ export interface PoolStore {
     ids: readonly string[],
     options?: ReorderOptions,
   ): Promise<ReorderResult>
+  /**
+   * The plugin's settings (since 0.2.5): every top-level key of the config
+   * file except the pool-owned ones (`POOL_OWNED_KEYS`). Never writes.
+   */
+  readSettings(): Promise<SettingsRead>
+  /**
+   * One locked write of the plugin's settings (since 0.2.5) beside the pool,
+   * in the config file. Refuses a result that sets a pool-owned key
+   * (`invalid-input`). Takes `extraLocks`, then the store locks.
+   */
+  updateSettings(
+    mutator: SettingsMutator,
+    options?: UpdateSettingsOptions,
+  ): Promise<UpdateSettingsResult>
   recordIdentity(
     id: string,
     identity: string,
@@ -277,6 +299,9 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     enable: (id, callOptions) => enableRow(rt, id, callOptions),
     remove: (id, callOptions) => removeRow(rt, id, callOptions),
     reorder: (ids, callOptions) => reorderRows(rt, ids, callOptions),
+    readSettings: () => readPoolSettings(rt),
+    updateSettings: (mutator, callOptions) =>
+      updatePoolSettings(rt, mutator, callOptions),
     recordIdentity: (id, identity, callOptions) =>
       recordRowIdentity(rt, id, identity, callOptions),
     refresh: (id, provider, callOptions) =>

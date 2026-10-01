@@ -60,3 +60,11 @@ export {
   REFRESH_STAMP_TOLERANCE_MS,
   rowLockKey,
 } from './schema.js'
+export type {
+  PoolSettings,
+  SettingsMutator,
+  SettingsRead,
+  UpdateSettingsOptions,
+  UpdateSettingsResult,
+} from './settings.js'
+export { POOL_OWNED_KEYS } from './settings.js'
