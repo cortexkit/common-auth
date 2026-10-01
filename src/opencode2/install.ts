@@ -527,8 +527,9 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           })
           if (signal) noteLimit(rec, signal, 'http')
         }
-        // An error response carries no output, and the host does not always
-        // read its body to the end, so its status is the outcome.
+        // An error response carries no output, so its status is the outcome;
+        // ending here keeps the end from depending on whether the host reads
+        // the error body to the end.
         if (!original.ok || !original.body) finish(rec)
         let response = original
         if (original.body && (adapter.inspectEvent || adapter.onAttemptEnd)) {

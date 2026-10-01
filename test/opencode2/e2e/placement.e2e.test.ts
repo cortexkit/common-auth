@@ -470,7 +470,8 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
       expect(
         pick(events(result.plugin, 'error-response'), 'receipt', 'status'),
       ).toEqual([`${refused}:401`])
-      // Title requests run beside the primary ones and keep their own.
+      // Title requests run beside the primary ones; each ends with its own
+      // receipt and status.
       const titles = result.wire.filter((record) => record.kind === 'title')
       expect(titles.length).toBeGreaterThan(0)
       const titleEnds = events(result.plugin, 'end').filter(
