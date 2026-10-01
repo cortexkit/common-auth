@@ -169,10 +169,12 @@ describe('CacheKeepManager tick/prewarm', () => {
   })
 
   test('prewarm fires again after backoff expires', async () => {
+    // The backoff ends inside the cache lifetime, so the retry still keeps
+    // a warm cache alive.
     let calls = 0
     const { mgr, send } = makeManager(
       clock,
-      {},
+      { backoffMs: 2000 },
       {
         send: async () => {
           calls++
@@ -186,14 +188,106 @@ describe('CacheKeepManager tick/prewarm', () => {
     await mgr.tick()
     expect(send).toHaveBeenCalledTimes(1)
 
-    clock.advance(BACKOFF_MS - 1000)
+    clock.advance(1000)
     await mgr.tick()
     expect(send).toHaveBeenCalledTimes(1)
 
-    clock.advance(2000)
+    clock.advance(1500)
     await mgr.tick()
     expect(send).toHaveBeenCalledTimes(2)
     expect(mgr.status().targets[0]!.backoffUntil).toBeUndefined()
+  })
+
+  test('a failed warm is never retried after the confirmed cache lifetime ends, even with sustain', async () => {
+    const start = clock.now()
+    const { mgr, send, log } = makeManager(
+      clock,
+      { ttlMs: 1000, leadMs: 150, getSustain: () => true },
+      {
+        send: async () => {
+          throw new Error('network error')
+        },
+      },
+    )
+    mgr.track({ sessionKey: 'sess-1', bodyText: body('test') })
+    expect(mgr.status().targets[0]!.cacheExpiresAt).toBe(start + 1000)
+
+    clock.advance(900)
+    await mgr.tick()
+    expect(send).toHaveBeenCalledTimes(1)
+    // The default backoff (10 minutes) ends long after the cache expires.
+    clock.advance(BACKOFF_MS + 100)
+    await mgr.tick()
+    clock.advance(BACKOFF_MS)
+    await mgr.tick()
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(mgr.status().tracked).toBe(0)
+    expect(mgr.status().totalBytes).toBe(0)
+    expect(log.debug.mock.calls.map((call) => call[0])).toContain(
+      'cachekeep retired target (cache lifetime ended)',
+    )
+  })
+
+  test('a retry due exactly at the cache expiry is not sent', async () => {
+    const start = clock.now()
+    const { mgr, send } = makeManager(
+      clock,
+      { ttlMs: 1000, leadMs: 150, backoffMs: 100 },
+      { send: async () => new Response('{}', { status: 503 }) },
+    )
+    mgr.track({ sessionKey: 'sess-1', bodyText: body('test') })
+    clock.advance(900)
+    await mgr.tick()
+    expect(send).toHaveBeenCalledTimes(1)
+    clock.advance(100)
+    expect(clock.now()).toBe(start + 1000)
+    await mgr.tick()
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(mgr.status().tracked).toBe(0)
+  })
+
+  test('a target whose lifetime ended during an earlier warm in the same tick is retired without building its body', async () => {
+    const built: string[] = []
+    const { mgr, send } = makeManager(
+      clock,
+      { ttlMs: 1000, leadMs: 300 },
+      {
+        buildBody: async (target) => {
+          built.push(target.sessionKey)
+          clock.advance(200)
+          return target.bodyText
+        },
+      },
+    )
+    mgr.track({ sessionKey: 'first', bodyText: body('a') })
+    clock.advance(50)
+    mgr.track({ sessionKey: 'second', bodyText: body('b') })
+    // At 850 both are due (expiries 1000 and 1050). Building the first body
+    // takes until 1050, which ends both lifetimes: the first is not sent and
+    // the second is retired before its body is built.
+    clock.advance(800)
+    await mgr.tick()
+    expect(built).toEqual(['first'])
+    expect(send).not.toHaveBeenCalled()
+    expect(mgr.status().tracked).toBe(0)
+  })
+
+  test('a lifetime that ends while the replay body is being built sends nothing', async () => {
+    const { mgr, send } = makeManager(
+      clock,
+      { ttlMs: 1000, leadMs: 150 },
+      {
+        buildBody: async (target) => {
+          clock.advance(200)
+          return target.bodyText
+        },
+      },
+    )
+    mgr.track({ sessionKey: 'sess-1', bodyText: body('test') })
+    clock.advance(900)
+    await mgr.tick()
+    expect(send).not.toHaveBeenCalled()
+    expect(mgr.status().tracked).toBe(0)
   })
 
   test('does not reenter tick while a previous prewarm is still in flight', async () => {
@@ -443,6 +537,7 @@ describe('CacheKeepManager tick/prewarm', () => {
     const { mgr } = makeManager(
       clock,
       {
+        leadMs: 60_000,
         backoffMs: ({ failures }) => {
           seen.push(failures)
           return 1000 * 2 ** failures
@@ -453,7 +548,8 @@ describe('CacheKeepManager tick/prewarm', () => {
       },
     )
     mgr.track({ sessionKey: 'sess-1', bodyText: body('test') })
-    clock.advance(DUE_MS)
+    // Due early enough that both retries fall inside the cache lifetime.
+    clock.advance(TTL_MS - 30_000)
     await mgr.tick()
     expect(mgr.status().targets[0]!.backoffUntil).toBe(clock.now() + 2000)
     clock.advance(2000)
@@ -484,7 +580,9 @@ describe('CacheKeepManager per-model profile', () => {
     mgr.track({ sessionKey: 'long', bodyText: longBody('a') })
     mgr.track({ sessionKey: 'malformed', bodyText: '{not-json' })
     expect(profile).toHaveBeenCalledTimes(2)
-    clock.advance(LONG_DUE)
+    // A tick that tries to warm the default-lifetime target, inside both
+    // targets' lifetimes.
+    clock.advance(DUE_MS)
     await mgr.tick()
     expect(profile).toHaveBeenCalledTimes(2)
     expect(mgr.status().targets.map((t) => t.ttlMs)).toEqual([LONG_TTL, TTL_MS])
@@ -529,14 +627,18 @@ describe('CacheKeepManager per-model profile', () => {
       { profile: longCacheProfile },
     )
     mgr.track({ sessionKey: 'sub', bodyText: longBody('s'), isSubagent: true })
-    clock.advance(31 * 60_000)
+    // Warmed inside its 30-minute lifetime, then past the 30-minute subagent
+    // default idle cap: the profile's longer idle bound keeps it.
+    clock.advance(LONG_DUE)
+    await mgr.tick()
+    clock.advance(31 * 60_000 - LONG_DUE)
     await mgr.tick()
     expect(mgr.status().tracked).toBe(1)
     expect(send).toHaveBeenCalledTimes(1)
   })
 
-  test('a capped subagent stuck on failing warms is reclaimed at its profile idle bound', async () => {
-    const { mgr } = makeManager(
+  test('a capped subagent stuck on failing warms is reclaimed when its cache lifetime ends, before its profile idle bound', async () => {
+    const { mgr, send } = makeManager(
       clock,
       { maxSubagentIdleMs: 30 * 60_000 },
       {
@@ -549,13 +651,18 @@ describe('CacheKeepManager per-model profile', () => {
       bodyText: longBody('s'),
       isSubagent: true,
     })
-    clock.advance(74 * 60_000)
+    clock.advance(LONG_DUE)
+    await mgr.tick()
+    expect(send).toHaveBeenCalledTimes(1)
+    clock.advance(LONG_TTL - LONG_DUE - 1)
     mgr.track({ sessionKey: 'trigger', bodyText: body('t') })
     expect(sessions(mgr)).toEqual(['stuck', 'trigger'])
 
-    clock.advance(2 * 60_000)
+    // Its 75-minute idle bound is far off, but its cache has expired.
+    clock.advance(1)
     mgr.track({ sessionKey: 'trigger', bodyText: body('t') })
     expect(sessions(mgr)).toEqual(['trigger'])
+    expect(send).toHaveBeenCalledTimes(1)
   })
 
   test('a subagent without a profile idle bound is idle-pruned at maxSubagentIdleMs', () => {

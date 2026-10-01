@@ -21,12 +21,6 @@ import { isPinValid, type StickyPin } from './pins.js'
 export const QUOTA_STALENESS_MS = 15 * 60_000
 export const MIN_RESET_HOURS = 1 / 60
 export const MIN_WEIGHT = 1e-6
-/**
- * How many window readings the selection primitives judge, as openai-auth's
- * primary and secondary slots did. The projection's first readings in its
- * order fill the slots; any further window is judged by admission only.
- */
-export const STICKY_WINDOW_SLOTS = 2
 
 /** The projection's time, else the caller's cache-entry time. */
 export function snapshotCheckedAt(
@@ -51,10 +45,49 @@ export type StickyBreakDecision =
       resetsAt?: string
     }
 
-function slotReadings(quota: ProjectedQuota): ProjectedLimit[] {
-  // Longest known window first, unknown lengths last, as openai-auth sorts.
-  // Tombstones and absence records carry no capacity figure, so they occupy
-  // no slot.
+/**
+ * How the adapter reads a failed response's HTTP status for the break
+ * decision. `permanent` moves the session off its row before any quota is
+ * consulted; `transient` and `healthy` keep it unless the quota says the row
+ * is spent. A missing status means the request failed without a response.
+ */
+export type StickyStatusClass = 'permanent' | 'transient' | 'healthy'
+
+export type StickyStatusClassifier = (
+  status: number | undefined,
+) => StickyStatusClass
+
+/**
+ * The status rule used when the adapter supplies none, carried from
+ * openai-auth: 401 and 403 are permanent; no response, 0, a non-finite
+ * status, 429 and 5xx are transient; anything else leaves the row healthy.
+ * A provider whose 403 can mean an organisation or model policy rather than
+ * a dead account supplies its own classifier and can fall back to this one
+ * for the statuses it does not single out.
+ */
+export function defaultStickyStatusClass(
+  status: number | undefined,
+): StickyStatusClass {
+  if (status === 401 || status === 403) return 'permanent'
+  if (
+    status === undefined ||
+    status === 0 ||
+    !Number.isFinite(status) ||
+    (status >= 500 && status <= 599) ||
+    status === 429
+  ) {
+    return 'transient'
+  }
+  return 'healthy'
+}
+
+function windowReadings(quota: ProjectedQuota): ProjectedLimit[] {
+  // Every reading is an independent constraint, so all of them are judged:
+  // a third window (for example a short window beside two weekly ones) can
+  // be the one that is nearly spent. Longest known window first, unknown
+  // lengths last, as openai-auth sorts, so a break decision with several
+  // spent windows names the longest. Tombstones and absence records carry no
+  // capacity figure and are left out.
   return quota.limits
     .filter((limit) => limit.kind === 'reading')
     .sort((left, right) => {
@@ -66,7 +99,6 @@ function slotReadings(quota: ProjectedQuota): ProjectedLimit[] {
       }
       return 0
     })
-    .slice(0, STICKY_WINDOW_SLOTS)
 }
 
 /** Classifies whether a pinned session should leave its row after a failure. */
@@ -76,8 +108,13 @@ export function decideStickyBreak(input: {
   status?: number
   now: number
   killswitchPasses?: boolean
+  /** Defaults to `defaultStickyStatusClass`. */
+  classifyStatus?: StickyStatusClassifier
 }): StickyBreakDecision {
-  if (input.status === 401 || input.status === 403) {
+  const statusClass = (input.classifyStatus ?? defaultStickyStatusClass)(
+    input.status,
+  )
+  if (statusClass === 'permanent') {
     return { action: 'migrate', reason: 'permanent' }
   }
   if (!input.quota) return { action: 'retain', reason: 'unknown' }
@@ -97,7 +134,7 @@ export function decideStickyBreak(input: {
     return { action: 'migrate', reason: 'killswitch' }
   }
 
-  for (const limit of slotReadings(input.quota)) {
+  for (const limit of windowReadings(input.quota)) {
     const remaining = limit.remainingPercent
     if (
       typeof remaining === 'number' &&
@@ -126,16 +163,7 @@ export function decideStickyBreak(input: {
     }
   }
 
-  if (
-    input.status === undefined ||
-    input.status === 0 ||
-    !Number.isFinite(input.status) ||
-    (input.status >= 500 && input.status <= 599) ||
-    input.status === 429
-  ) {
-    return { action: 'retain', reason: 'transient' }
-  }
-  return { action: 'retain', reason: 'healthy' }
+  return { action: 'retain', reason: statusClass }
 }
 
 export function sustainableWindowWeight(
@@ -210,7 +238,8 @@ function candidateWeight(
   }
   // Missing reserve data must leave a window usable rather than silently
   // excluding its account.
-  const weights = slotReadings(candidate.quota).map((limit) =>
+  // The account is as constrained as its tightest window, whichever it is.
+  const weights = windowReadings(candidate.quota).map((limit) =>
     sustainableWindowWeight(
       {
         remainingPercent: limit.remainingPercent ?? Number.NaN,

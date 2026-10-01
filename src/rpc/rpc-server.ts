@@ -7,10 +7,11 @@ import {
 } from 'node:http'
 import { join } from 'node:path'
 import type { RpcLogChannel } from './index.js'
-import type {
-  ApplyRequest,
-  ApplyResult,
-  RpcNotification,
+import {
+  type ApplyRequest,
+  type ApplyResult,
+  isSessionId,
+  type RpcNotification,
 } from './notifications.js'
 import { sweepRpcState, writePortFile } from './port-file.js'
 
@@ -28,6 +29,14 @@ export interface RpcServerOptions {
   sweepRoot?: string
   drain: (lastReceivedId: number, sessionId?: string) => RpcNotification[]
   apply: (request: ApplyRequest) => Promise<ApplyResult>
+  /**
+   * Refuse a `pending-notifications` drain whose `sessionId` is absent, not a
+   * string or empty, with 400 and without calling `drain`. Pair it with a
+   * strict notification scope (`requireSession`) so neither the wire nor
+   * the queue can hand one session's notifications to another. Off by
+   * default, when a session-less drain is passed to `drain` as undefined.
+   */
+  requireSession?: boolean
   // Bounds handler execution via the socket inactivity timer.
   timeoutMs?: number
   // Bounds request delivery only (requestTimeout/headersTimeout).
@@ -98,6 +107,8 @@ export async function startRpcServer(
       const body = await readBody(req)
       const params = JSON.parse(body || '{}') as Record<string, unknown>
       if (method === 'pending-notifications') {
+        if (options.requireSession === true && !isSessionId(params.sessionId))
+          return json(400, { error: 'session required' })
         const sessionId =
           typeof params.sessionId === 'string' ? params.sessionId : undefined
         if (sessionId === undefined && !warnedMissingNotificationSession) {
@@ -118,9 +129,13 @@ export async function startRpcServer(
       }
       return json(404, { error: 'unknown method' })
     } catch (error) {
-      json(500, {
+      // A handler's exception can quote a request or a credential, so its
+      // text goes to the plugin's log channel only; the wire gets a fixed code.
+      log.warn('rpc request failed', {
+        pid: process.pid,
         error: error instanceof Error ? error.message : String(error),
       })
+      json(500, { error: 'internal error' })
     }
   }
 

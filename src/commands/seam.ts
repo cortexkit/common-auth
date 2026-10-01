@@ -2,10 +2,15 @@
 // payload a renderer receives (the dialog payload and every apply result) is
 // produced here: each part is projected field by field from its definition,
 // so action bodies and stray properties never travel, and the whole payload
-// is then scrubbed of credential-shaped property names as a backstop. Nothing
+// is then scrubbed as a backstop: credential-shaped property names are
+// dropped and every string value is passed through the redactor. Nothing
 // outside this module can build a payload without passing through
-// `dialogPayload` or `applyResult`.
+// `dialogPayload` or `applyResult`. A failed action never shows its raw
+// exception text: `projectFailure` turns it into a stable code and a message
+// the library or the plugin wrote for the user.
 
+import { createRedactor, type RedactionOptions } from '../logger/index.js'
+import { type PoolFailureKind, PoolOperationError } from '../store/index.js'
 import type {
   ActionDefinition,
   CommandApplyResult,
@@ -26,6 +31,107 @@ import type {
 /** Where a dropped field is reported. Names only, never values. */
 export interface SeamLogger {
   warn(message: string, data?: unknown): void
+}
+
+/** Masks the secret-shaped parts of one string. */
+export type TextRedactor = (text: string) => string
+
+/**
+ * Secret shapes the seam masks on top of the logger's (bearer tokens, `sk-`
+ * keys, JWTs, vault host tokens): a value assigned to a secret-named field
+ * (`client_secret=…`, `"api_key": "…"`, `Authorization: …`), and a run of 32
+ * or more hex digits, the shape of a minted request secret. A plugin adds its
+ * provider's key shapes through `RedactionOptions.extraValuePatterns`.
+ */
+const SEAM_VALUE_PATTERNS: readonly RegExp[] = [
+  /\b[\w-]*(?:secret|token|password|passwd|api[_-]?key|authorization|verifier)["']?\s*[:=]\s*["']?(?:(?:Bearer|Basic)\s+)?[^\s"'&,;}]+/gi,
+  /\b[0-9a-fA-F]{32,}\b/g,
+]
+
+/** The string redactor every value crossing the seam goes through. */
+export function createTextRedactor(
+  options: RedactionOptions = {},
+): TextRedactor {
+  const { redactStrings } = createRedactor({
+    ...options,
+    extraValuePatterns: [
+      ...SEAM_VALUE_PATTERNS,
+      ...(options.extraValuePatterns ?? []),
+    ],
+  })
+  return (text) => redactStrings(text) as string
+}
+
+/**
+ * A failure whose message was written for the user. An action throws it to
+ * show `message` with the stable `code`; any other thrown value is shown only
+ * as a generic message, because its text may quote a request, a response or
+ * a credential. `code` is lowercase letters, digits and dashes; anything else
+ * is reported as `action-failed`.
+ */
+export class CommandError extends Error {
+  readonly code: string
+  constructor(code: string, message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'CommandError'
+    this.code = code
+  }
+}
+
+/** What a failed action shows: a stable code and a message safe to display. */
+export interface ProjectedFailure {
+  code: string
+  text: string
+}
+
+const CODE_SHAPE = /^[a-z][a-z0-9-]{0,63}$/
+
+/** The code and message shown for an exception the seam cannot vouch for. */
+export const ACTION_FAILED: ProjectedFailure = {
+  code: 'action-failed',
+  text: 'That action failed.',
+}
+
+/**
+ * Store failure kinds whose message the store composes itself from row ids
+ * and the plugin's own refusal reasons (`protect`). Other kinds can carry a
+ * lock or filesystem error's text, or an arbitrary exception from a hook, so
+ * they show a generic message with the kind as the code.
+ */
+const STORE_KINDS_WITH_OWN_MESSAGE: ReadonlySet<PoolFailureKind> = new Set([
+  'unknown-row',
+  'invalid-row',
+  'invalid-input',
+  'id-exists',
+  'id-removed',
+  'type-mismatch',
+  'no-credential',
+  'row-disabled',
+  'row-protected',
+  'duplicate-identity',
+  'row-key-changed',
+  'invalid-order',
+  'pending-migration',
+  'provider',
+  'pull',
+  'attribution',
+])
+
+/** The code and display text for a thrown value; never its raw text. */
+export function projectFailure(error: unknown): ProjectedFailure {
+  if (error instanceof CommandError)
+    return {
+      code: CODE_SHAPE.test(error.code) ? error.code : ACTION_FAILED.code,
+      text: error.message,
+    }
+  if (error instanceof PoolOperationError)
+    return {
+      code: `pool-${error.kind}`,
+      text: STORE_KINDS_WITH_OWN_MESSAGE.has(error.kind)
+        ? error.message
+        : `The account pool could not do that (${error.kind}).`,
+    }
+  return ACTION_FAILED
 }
 
 /** A built-in item may carry the account it shows; plugin items cannot. */
@@ -75,19 +181,37 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-/** A copy of `value` without credential-shaped properties; their paths go to `found`. */
-function scrub(value: unknown, path: string, found: string[]): unknown {
+interface ScrubReport {
+  redact: TextRedactor
+  /** Paths of the credential-shaped properties dropped. */
+  dropped: string[]
+  /** Paths of the string values the redactor changed. */
+  redacted: string[]
+}
+
+/**
+ * A copy of `value` without credential-shaped properties and with every
+ * string redacted; the paths of both go to `report`.
+ */
+function scrub(value: unknown, path: string, report: ScrubReport): unknown {
+  if (typeof value === 'string') {
+    const clean = report.redact(value)
+    if (clean !== value) report.redacted.push(path)
+    return clean
+  }
   if (Array.isArray(value))
-    return value.map((entry, index) => scrub(entry, `${path}[${index}]`, found))
+    return value.map((entry, index) =>
+      scrub(entry, `${path}[${index}]`, report),
+    )
   if (!isPlainRecord(value)) return value
   const out: Record<string, unknown> = {}
   for (const [name, entry] of Object.entries(value)) {
     if (isCredentialName(name)) {
-      found.push(`${path}.${name}`)
+      report.dropped.push(`${path}.${name}`)
       continue
     }
     Object.defineProperty(out, name, {
-      value: scrub(entry, `${path}.${name}`, found),
+      value: scrub(entry, `${path}.${name}`, report),
       enumerable: true,
       writable: true,
       configurable: true,
@@ -96,13 +220,28 @@ function scrub(value: unknown, path: string, found: string[]): unknown {
   return out
 }
 
-function sealed<T>(payload: T, command: string, logger: SeamLogger): T {
-  const found: string[] = []
-  const clean = scrub(payload, 'payload', found) as T
-  if (found.length > 0)
-    logger.warn('credential-shaped field dropped from a command payload', {
+/** What every payload builder needs besides the payload itself. */
+export interface SeamContext {
+  logger: SeamLogger
+  redact: TextRedactor
+}
+
+function sealed<T>(payload: T, command: string, seam: SeamContext): T {
+  const report: ScrubReport = {
+    redact: seam.redact,
+    dropped: [],
+    redacted: [],
+  }
+  const clean = scrub(payload, 'payload', report) as T
+  if (report.dropped.length > 0)
+    seam.logger.warn('credential-shaped field dropped from a command payload', {
       command,
-      fields: found,
+      fields: report.dropped,
+    })
+  if (report.redacted.length > 0)
+    seam.logger.warn('secret-shaped text masked in a command payload', {
+      command,
+      fields: report.redacted,
     })
   return clean
 }
@@ -139,11 +278,15 @@ function projectKnob(knob: MenuKnob): MenuKnob {
         ...(knob.required ? { required: true } : {}),
       }
     case 'text':
+      // A masked input holds a secret, so its current value is never shown;
+      // the action still receives it when the user leaves the input alone.
       return {
         kind: 'text',
         id: knob.id,
         label: knob.label,
-        ...(knob.value !== undefined ? { value: knob.value } : {}),
+        ...(knob.value !== undefined && !knob.masked
+          ? { value: knob.value }
+          : {}),
         ...(knob.placeholder !== undefined
           ? { placeholder: knob.placeholder }
           : {}),
@@ -231,13 +374,22 @@ export function dialogPayload(
   command: string,
   title: string,
   sections: readonly ResolvedSection[],
-  logger: SeamLogger,
+  seam: SeamContext,
 ): CommandDialogPayload {
   return sealed(
     { command, menu: projectMenu(command, title, sections) },
     command,
-    logger,
+    seam,
   )
+}
+
+/** How an apply ended, before the seam turns it into a payload. */
+export interface ApplyOutcome {
+  ok: boolean
+  text: string
+  /** Present on every failure. */
+  code?: string
+  needsConfirmation?: boolean
 }
 
 /** An apply's result: the message and the refreshed menu. */
@@ -245,18 +397,21 @@ export function applyResult(
   command: string,
   title: string,
   sections: readonly ResolvedSection[],
-  outcome: { ok: boolean; text: string; needsConfirmation?: boolean },
-  logger: SeamLogger,
+  outcome: ApplyOutcome,
+  seam: SeamContext,
 ): CommandApplyResult {
   return sealed(
     {
       command,
       ok: outcome.ok,
-      text: outcome.text,
+      text: String(outcome.text),
+      ...(!outcome.ok && outcome.code !== undefined
+        ? { code: CODE_SHAPE.test(outcome.code) ? outcome.code : 'refused' }
+        : {}),
       ...(outcome.needsConfirmation ? { needsConfirmation: true } : {}),
       menu: projectMenu(command, title, sections),
     },
     command,
-    logger,
+    seam,
   )
 }

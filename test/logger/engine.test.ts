@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import {
   createCaptureSink,
   createLogger,
+  createLoggerInstance,
   flushLogs,
   initLogger,
   resetLoggerForTest,
@@ -447,4 +448,104 @@ it('host-installed exit handler synchronously flushes buffered logs', () => {
   expect(child.status).toBe(0)
   expect(child.stderr).toBe('')
   expect(readFileSync(logFile, 'utf8')).toContain('exit-buffered')
+})
+
+describe('logger instances', () => {
+  const read = (path: string) =>
+    existsSync(path) ? readFileSync(path, 'utf8') : ''
+
+  it('two logger instances in one process keep their own files and levels', () => {
+    const fileA = join(dir, 'a.log')
+    const fileB = join(dir, 'b.log')
+    const a = createLoggerInstance({ file: fileA, level: 'info' })
+    const b = createLoggerInstance({ file: fileB, level: 'debug' })
+    a.createLogger('plugin-a').info('info-from-a')
+    a.createLogger('plugin-a').debug('debug-from-a')
+    b.createLogger('plugin-b').debug('debug-from-b')
+    a.flushLogs()
+    b.flushLogs()
+    expect(read(fileA)).toContain('info-from-a')
+    expect(read(fileA)).not.toContain('debug-from-a')
+    expect(read(fileA)).not.toContain('from-b')
+    expect(read(fileB)).toContain('debug-from-b')
+    expect(read(fileB)).not.toContain('from-a')
+  })
+
+  it('instances keep their own redaction and capture sink', () => {
+    const captureA = createCaptureSink()
+    const captureB = createCaptureSink()
+    const a = createLoggerInstance({
+      file: join(dir, 'a.log'),
+      captureSink: captureA.sink,
+      extraSecretKeys: (key) => key === 'email',
+    })
+    const b = createLoggerInstance({
+      file: join(dir, 'b.log'),
+      captureSink: captureB.sink,
+    })
+    a.createLogger('a').info('a-line', { email: 'person@example.com' })
+    b.createLogger('b').info('b-line', { email: 'person@example.com' })
+    expect(captureA.records).toEqual([
+      {
+        channel: 'a',
+        level: 'info',
+        message: 'a-line',
+        data: { email: '***REDACTED***' },
+      },
+    ])
+    expect(captureB.records).toEqual([
+      {
+        channel: 'b',
+        level: 'info',
+        message: 'b-line',
+        data: { email: 'person@example.com' },
+      },
+    ])
+  })
+
+  it('initLogger and setLogLevel on the module logger leave an instance alone', () => {
+    const own = join(dir, 'own.log')
+    const instance = createLoggerInstance({ file: own, level: 'info' })
+    // Another plugin sharing this module configures the default logger.
+    initLogger({ file: logFile, level: 'trace' })
+    setLogLevel('trace')
+    const log = instance.createLogger('own')
+    log.debug('instance-debug')
+    log.info('instance-info')
+    createLogger('default').info('default-info')
+    flushLogs()
+    expect(read(own)).toBe('')
+    instance.flushLogs()
+    expect(read(own)).toContain('instance-info')
+    expect(read(own)).not.toContain('instance-debug')
+    expect(read(own)).not.toContain('default-info')
+    expect(read(logFile)).toContain('default-info')
+    expect(read(logFile)).not.toContain('instance-info')
+  })
+
+  it('an instance runtime level overrides only its own floor and survives reconfiguring', () => {
+    const own = join(dir, 'own.log')
+    const moved = join(dir, 'moved.log')
+    const instance = createLoggerInstance({ file: own, level: 'info' })
+    instance.setLogLevel('error')
+    instance.createLogger('own').warn('instance-warn')
+    createLogger('default').warn('default-warn')
+    instance.configure({ file: moved, level: 'trace' })
+    instance.createLogger('own').warn('after-configure-warn')
+    instance.createLogger('own').error('after-configure-error')
+    instance.flushLogs()
+    flushLogs()
+    expect(read(own)).toBe('')
+    expect(read(moved)).not.toContain('after-configure-warn')
+    expect(read(moved)).toContain('after-configure-error')
+    expect(read(logFile)).toContain('default-warn')
+  })
+
+  it('initLogger returns the module default logger as an instance', () => {
+    const instance = initLogger({ file: logFile, level: 'info' })
+    instance.setLogLevel('debug')
+    createLogger('module').debug('module-debug')
+    flushLogs()
+    expect(read(logFile)).toContain('module-debug')
+  })
 })

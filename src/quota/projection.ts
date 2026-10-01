@@ -104,10 +104,17 @@ function projectBudget(budget: CreditBudgetReading): ProjectedBudget {
 
 /**
  * Resolves `map` for a request in `scope` (`all` or a model family). A family
- * request sees only its own family's keys and the `all` keys. Per label, a
- * family reading shadows the `all` entry; a family tombstone or absence
- * record says only that no family-specific limit exists, so it does not hide
- * an `all` entry for the same label and is used only when there is none.
+ * request sees only its own family's keys and the `all` keys.
+ *
+ * The label decides how a family limit relates to a general one. Under the
+ * same label, the family reading replaces the `all` reading: use this only
+ * when the provider's family figure is a more specific view of the same cap.
+ * Under different labels both limits are projected and every consumer judges
+ * both, so a family cap that applies on top of a general cap must be stored
+ * under its own label; otherwise the general cap is hidden from a family
+ * request. A family tombstone or absence record says only that no
+ * family-specific limit exists, so it does not hide an `all` entry for the
+ * same label and is used only when there is none.
  */
 export function projectQuota(
   map: QuotaMap | undefined,

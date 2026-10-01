@@ -59,6 +59,11 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | logger | Redacts stable-ID variants while preserving internal accountId; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | redacts only the ChatGPT stable id, not the internal accountId key |
 | logger | Redacts served identity; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | redacts served identity email and organization values from emitted log lines |
 | logger | Redacts every credential shape while preserving internal accountId; the test passes extraSecretKeys covering chatgptaccountid, email, orgname, organizationname; not a common-set failure | reference/openai-auth/packages/core/src/logger.ts | writes no credential value when a command logs every secret shape at once |
+| logger | Two instances in one process write their own files at their own levels | new (neither copy) | two logger instances in one process keep their own files and levels |
+| logger | Two instances keep their own redaction and capture sink | new (neither copy) | instances keep their own redaction and capture sink |
+| logger | initLogger and setLogLevel on the module logger do not reach an instance | new (neither copy) | initLogger and setLogLevel on the module logger leave an instance alone |
+| logger | An instance's runtime level applies to it alone and survives configure | new (neither copy) | an instance runtime level overrides only its own floor and survives reconfiguring |
+| logger | initLogger returns the module default logger as an instance | new (neither copy) | initLogger returns the module default logger as an instance |
 | sidebar-file | Tolerant reads hand parsed JSON to the supplied normalizer | reference/openai-auth/packages/opencode/src/sidebar-state.ts | tolerant reads hand parsed JSON to the supplied normalizer |
 | sidebar-file | Writes state atomically and cleans up temp files | reference/openai-auth/packages/opencode/src/sidebar-state.ts | writes state atomically and cleans up temp files |
 | sidebar-file | Five concurrent writes are serialized; the final queued state wins | reference/openai-auth/packages/opencode/src/sidebar-state.ts | 5 concurrent writes with different lastUpdated values — last-chained state wins |
@@ -72,6 +77,13 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | sidebar-file | Sidebar lock renews with unchanged owner and private mode | new (neither copy) | sidebar lock renews with unchanged owner and private mode |
 | sidebar-file | Sidebar contention override rejects and queue recovers | new (neither copy) | sidebar contention override rejects and queue recovers |
 | sidebar-file | Sidebar default contention waits 15000 ms | new (neither copy) | sidebar default contention waits 15000 ms |
+| sidebar-file | A write reports written when the lock held through the rename and skipped when the merge declined | new (neither copy) | reports a write that kept its lock as written and a declined merge as skipped |
+| sidebar-file | A lock lost during the rename runs the repair once under a new lock on the successor's state | anthropic-auth packages/opencode/src/sidebar-state.ts:726-767 (77e4c900), packages/opencode/src/tests/sidebar-state.test.ts | repairs an authoritative write after losing ownership post-rename |
+| sidebar-file | Without a repair a lock lost during the rename is reported and the write still resolves | new (neither copy) | without a repair a write that lost its lock at the rename is reported and left |
+| sidebar-file | A repair returning undefined leaves the successor's state | new (neither copy) | a repair that returns undefined leaves the successor state |
+| sidebar-file | A per-write repair overrides the file's repair | new (neither copy) | a per-write repair overrides the file repair |
+| sidebar-file | A repair that loses its lock again is reported and not repeated | anthropic-auth packages/opencode/src/sidebar-state.ts:751-758 (77e4c900) | a repair that loses its lock again is not repaired a second time |
+| sidebar-file | A repair that cannot retake the lock is reported, not rejected | anthropic-auth packages/opencode/src/sidebar-state.ts:690-698 (77e4c900) | a repair that cannot retake the lock is skipped without rejecting |
 | tui-prefs | Missing file returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | missing file returns empty object |
 | tui-prefs | Parses JSONC with comments and trailing commas | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | parses JSONC with comments and trailing commas |
 | tui-prefs | Malformed file returns empty object | reference/anthropic-auth/packages/opencode/src/tui-preferences.ts | malformed file returns empty object |
@@ -172,6 +184,10 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | rpc | Scoped drain does not connect an unscoped probe | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | a drain for one session does not make an unscoped probe connected |
 | rpc | Queue cap evicts oldest beyond 100 | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | queue cap evicts oldest beyond 100 |
 | rpc | Global notices survive one session acknowledgement | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | a global notification reaches every session and is not pruned by one ack |
+| rpc | A strict scope refuses a push or drain without a non-empty session | anthropic-auth packages/opencode/src/rpc (native drain rejects a missing session) | a strict scope refuses a push or drain with an absent or empty session |
+| rpc | A strict drain returns only its own session's notices and is a separate queue from the lenient scope | new (neither copy) | in one process, a strict drain returns only its own session, never another or a lenient push |
+| rpc | Strict servers refuse a session-less drain with 400 before the queue and keep sessions apart | new (neither copy) | across two strict servers, each session drains only its own notifications and a session-less drain is refused before reaching the queue |
+| rpc | A handler failure answers 500 with a fixed code; the text goes to the log | new (neither copy) | a handler failure answers 500 with a fixed code, not the exception text |
 | rpc | Same-directory replacement serialized | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | serializes same-directory replacement and fences predecessor release |
 | rpc | Stale registry release is identity-fenced | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | serializes same-directory replacement and fences predecessor release |
 | rpc | Different directories are independent | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | does not serialize different project directories |
@@ -193,6 +209,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | quota | Observation validation accepts the documented shape and rejects malformed parts | new (neither copy) | observation validation accepts the documented shape and rejects malformed parts |
 | quota | A family request sees only its own family and all-models keys | new (neither copy) | a family request sees only its own family and all-models keys |
 | quota | A family reading shadows the all-models entry per label, one entry per label | new (neither copy) | a family reading shadows the all-models entry per label, one entry per label |
+| quota | A family limit under its own label is projected beside the general limit of the same length | new (neither copy) | a family limit under its own label is projected beside the general limit of the same length |
 | quota | A family tombstone or absence record does not hide an all-models entry | new (neither copy) | a family tombstone or absence record does not hide an all-models entry |
 | quota | Limits are ordered longest stored length first with unknown lengths last | new (neither copy) | limits are ordered longest stored length first with unknown lengths last |
 | quota | Each limit carries its stored length and an unknown length stays unknown | new (neither copy) | each limit carries its stored length and an unknown length stays unknown |
@@ -225,6 +242,8 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | routing | Gate 4 leaves a reading below 100% admitted whatever its reset says | new (neither copy) | gate 4 leaves a reading below 100% admitted whatever its reset says |
 | routing | Gate 5: an exhausted reading with a future reset is refused exhausted without a pull | new (neither copy) | gate 5: an exhausted reading with a future reset is refused exhausted without a pull |
 | routing | A third window reaches admission and alone drives a refusal | new (neither copy) | a third window reaches admission and alone drives a refusal |
+| routing | An exhausted general week refuses a family request whose own week is healthy | new (neither copy) | an exhausted general week refuses a family request whose own week is healthy |
+| routing | An exhausted family week refuses the family request and leaves the general request admitted | new (neither copy) | an exhausted family week refuses the family request and leaves the general request admitted |
 | routing | A reading older than the staleness threshold is admitted | new (neither copy) | a reading older than the staleness threshold is admitted |
 | routing | A map holding only a tombstone or absence record for the requested pairs is admitted | new (neither copy) | a map holding only a tombstone or absence record for the requested pairs is admitted |
 | routing | Covered absence admits as known-unlimited | new (neither copy) | covered absence admits as known-unlimited |
@@ -267,6 +286,11 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | routing | Skips healthy windows when a longer window is exhausted | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | skips healthy windows when a longer window is exhausted |
 | routing | Reports the longest exhausted window when every window is exhausted | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | reports the longest exhausted window when every window is exhausted |
 | routing | Names the exhausted limit by its label rather than the slot it occupies | new (neither copy) | names the exhausted limit by its label rather than the slot it occupies |
+| routing | A spent third window drives the break decision | new (neither copy) | a spent third window drives the break decision |
+| routing | The default status rule is permanent for 401 and 403, transient for no response, 429 and 5xx, else healthy | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | the default status rule is permanent for 401 and 403, transient for no response, 429 and 5xx, else healthy |
+| routing | An adapter status classifier keeps a policy 403 on its row | new (neither copy) | an adapter status classifier keeps a policy 403 on its row |
+| routing | A 403 the adapter classifies as not permanent still migrates off a spent window | new (neither copy) | a 403 the adapter classifies as not permanent still migrates off a spent window |
+| routing | An adapter status classifier can make another status permanent before quota is consulted | new (neither copy) | an adapter status classifier can make another status permanent before quota is consulted |
 | routing | Omits non-string reset metadata from exhausted decisions | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | omits non-string reset metadata from exhausted decisions |
 | routing | Never returns a hold action | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | never returns a hold action |
 | routing | Migrates a fresh below-floor account when killswitchPasses is false | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | migrates a fresh below-floor account when killswitchPasses is false |
@@ -300,7 +324,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | routing | KillswitchPasses true is a no-op on placement | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | killswitchPasses true is a no-op on placement |
 | routing | KillswitchPasses undefined is a no-op on placement (killswitch disabled) | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | killswitchPasses undefined is a no-op on placement (killswitch disabled) |
 | routing | Tombstones and absence records add no weight | new (neither copy) | tombstones and absence records add no weight |
-| routing | A third window adds no weight | new (neither copy) | a third window adds no weight |
+| routing | A nearly spent short window outweighs two healthy weekly windows | new (neither copy) | a nearly spent short window outweighs two healthy weekly windows |
 | routing | Selection judges freshness by the minimum checkedAt of the projection | new (neither copy) | selection judges freshness by the minimum checkedAt of the projection |
 | routing | Deprioritises a nearly-spent credit budget in cold placement | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | deprioritises a nearly-spent credit budget in cold placement |
 | routing | Ignores a malformed credit reading instead of excluding the account | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | ignores a malformed credit reading instead of excluding the account |
@@ -498,7 +522,11 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | cachekeep | Running reflects the timer | openai cachekeep | status running reflects the actual timer presence |
 | cachekeep | A warm fires only within leadMs of expiry and replays the adapter's body | openai cachekeep | fires prewarm only within LEAD window of cacheExpiresAt |
 | cachekeep | A failed send backs the target off (default 10 minutes) | openai cachekeep | backoff suppresses prewarm after failure |
-| cachekeep | A backed-off target warms again once its backoff passes | openai cachekeep | prewarm fires again after backoff expires |
+| cachekeep | A backed-off target warms again once its backoff passes, when that is inside its cache lifetime | openai cachekeep | prewarm fires again after backoff expires |
+| cachekeep | A failed warm is never retried after its confirmed cache lifetime ends; the target retires, sustain notwithstanding | anthropic-auth packages/core/src/cachekeep.ts (drops targets at confirmed expiry) | a failed warm is never retried after the confirmed cache lifetime ends, even with sustain |
+| cachekeep | A retry due exactly at the expiry is not sent | new (neither copy) | a retry due exactly at the cache expiry is not sent |
+| cachekeep | A target whose lifetime ended during an earlier warm of the same tick retires before its body is built | new (neither copy) | a target whose lifetime ended during an earlier warm in the same tick is retired without building its body |
+| cachekeep | A lifetime that ends while the replay body is built sends nothing | new (neither copy) | a lifetime that ends while the replay body is being built sends nothing |
 | cachekeep | Overlapping ticks share one run and never send twice | openai cachekeep; anthropic-auth packages/opencode/src/tests/cachekeep.test.ts "coalesces overlapping scheduler ticks into one prewarm attempt" | does not reenter tick while a previous prewarm is still in flight |
 | cachekeep | An unbuildable replay body backs off that target and others still warm | openai cachekeep | sets backoff for malformed captured bodies and continues warming other targets |
 | cachekeep | An idle tick leaves the manager armed | openai cachekeep | stays armed across an idle tick and later warms a captured request |
@@ -517,7 +545,7 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | cachekeep | A successful warm restarts the clock with the per-target TTL | openai cachekeep "gpt-5.6 session: post-warm reset uses per-target 30-min TTL (not 5-min)" | post-warm reset uses the per-target TTL |
 | cachekeep | A per-target warm cap retires the target after its last warm | openai cachekeep "gpt-5.6 subagent warms exactly twice then is dropped from the map" | a capped subagent warms exactly maxWarms times then is dropped from the map |
 | cachekeep | A profile idle bound replaces the subagent default | openai cachekeep "gpt-5.6 subagent is NOT idle-pruned before its 2 warms (cap governs)" | a profile idle bound outlives the subagent default so the warm cap governs |
-| cachekeep | A capped target whose warms keep failing is reclaimed at its idle bound | openai cachekeep "gpt-5.6 subagent stuck on persistently failing warms is reclaimed at the long idle bound (no leak)" | a capped subagent stuck on failing warms is reclaimed at its profile idle bound |
+| cachekeep | A capped target whose warms keep failing is reclaimed when its cache lifetime ends, before its idle bound (the openai test's idle-bound reclaim came after the cache had already expired) | openai cachekeep "gpt-5.6 subagent stuck on persistently failing warms is reclaimed at the long idle bound (no leak)" | a capped subagent stuck on failing warms is reclaimed when its cache lifetime ends, before its profile idle bound |
 | cachekeep | Without a profile idle bound a subagent uses maxSubagentIdleMs | openai cachekeep "non-5.6 subagent is still idle-pruned at maxSubagentIdleMs (unchanged)" | a subagent without a profile idle bound is idle-pruned at maxSubagentIdleMs |
 | cachekeep | Without a warm cap a target keeps warming | openai cachekeep "gpt-5.6 main target is unchanged (not dropped after 2 warms)" | a main target without a warm cap is not dropped after repeated warms |
 | cachekeep | Retracking resets the warm count | openai cachekeep | warmCount resets when track() re-captures the same subagent session |
@@ -544,6 +572,29 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | dump | An existing dump directory is tightened to 0700 | openai dump | tightens an existing dump directory to 0700 |
 | dump | The plugin summary is computed on the redacted body | new (neither copy) | stores the plugin body summary computed on the redacted body |
 | dump | A failed dump returns nothing and logs a warning | openai dump | a failed dump returns nothing and logs instead of throwing |
+| dump | A failed dump hands back no dump, so no response artifact can be attached to it | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | failed request dumps return no handle or orphan response artifact |
+| dump | The response artifact holds only the given fields, redacted, next to its dump, 0600; a null field is kept | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | response artifacts sanitize message fields and preserve diagnostics presence |
+| dump | A later response artifact replaces the earlier one through a staging file | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | response artifacts preserve opening usage while recording terminal usage and reason |
+| dump | A response artifact records an incomplete stream | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | response artifacts mark a stream incomplete when no terminal frame arrives |
+| dump | A planted symlink at the staging or final response path is replaced, never followed | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | does not follow a pre-planted predictable partial symlink |
+| dump | A failed response write returns nothing and logs a warning | new (neither copy) | a failed response write returns nothing and logs instead of throwing |
+| dump | Without cleanup a failed dump leaves the files it wrote | new (neither copy) | a failed dump leaves the files it wrote by default |
+| dump | With cleanup a failed dump removes every file of its group, partial ones included | new (neither copy) | a failed dump removes every file of its group when cleanup is on |
+| dump | Cleanup never removes a file whose exclusive create failed because another writer owns it | new (neither copy) | cleanup leaves a file another writer created at the same name |
+| dump | A dump with a maximum-length session and a phase is still recognised by the sweep | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | sweeps tagged dumps with a maximum-length affinity segment |
+| dump | The sweep counts and removes response artifacts | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | dump sweep recognizes response artifacts |
+| dump | The sweep removes the oldest dumps until under the cap and keeps protected paths | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | dump sweep deletes oldest files until the directory is under its cap |
+| dump | The sweep keeps a protected dump even when it is the oldest | new (neither copy) | the sweep keeps a protected dump even when it is the oldest |
+| dump | The sweep evicts a dump's files together | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | evicts complete dump artifact groups instead of orphaning request pairs |
+| dump | The sweep recognises counters longer than six digits | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | sweeps artifacts whose request counter has grown to seven digits |
+| dump | The sweep refuses a symlinked directory | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | refuses a configured symlinked dump directory without deleting target files |
+| dump | The sweep leaves files whose names a dumper does not write | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | enforces the cap in a configured custom dump directory |
+| dump | A cap of zero, the default, disables the sweep | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | disables dump sweeping when the configured cap is zero |
+| dump | The sweep keeps dumps younger than the newness floor | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | preserves files younger than the sweep newness floor |
+| dump | The sweep keeps fresh staging files and removes stale ones even under the cap | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | preserves fresh partials and reclaims stale partials even under the cap |
+| dump | A capped dumper sweeps after a dump, evicting old groups whole and keeping the new one | anthropic-auth packages/core/src/dump.ts (77e4c900) | a capped dumper evicts the oldest whole dumps after writing a new one |
+| dump | An uncapped dumper never sweeps | new (neither copy) | an uncapped dumper never evicts old dumps |
+| dump | The automatic sweep runs at most once per interval; sweep() runs now | anthropic-auth packages/core/src/dump.ts (77e4c900) | the automatic sweep runs at most once per interval while sweep runs now |
 | auth-menu | Arrow keys move the full-screen selection and every redraw is a new frame | reference/openai-auth/packages/opencode/src/auth/ui/select.ts | renders full-screen and moves the selection with the arrow keys |
 | auth-menu | Escape cancels the menu, runs nothing and restores raw mode | reference/openai-auth/packages/opencode/src/auth/ui/select.ts | Escape cancels the menu, runs nothing and restores the terminal |
 | auth-menu | Without a TTY the menu prints a plain list and runs nothing | new (neither copy) | a non-interactive terminal gets a plain list and nothing runs |
@@ -589,6 +640,15 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | commands | Apply requests from the RPC are checked | new (neither copy) | parseApplyRequest keeps a well-formed request and refuses a malformed one |
 | commands | A pending login reports to the session that started it | reference/openai-auth/packages/opencode/src/tests/command-session-isolation.test.ts | a second session interleaving inside the add await-window does not steal the add notification |
 | commands | Concurrent invocations do not cross results | new (neither copy) | concurrent invocations each get their own apply result |
+| commands | A thrown failure shows the generic code and message; its bearer token reaches neither the result nor the log | new (neither copy) | a thrown failure quoting a bearer token shows only the generic code and message |
+| commands | A thrown failure quoting an API key of any shape never reaches the result | new (neither copy) | a thrown failure quoting an arbitrary API key never reaches the result |
+| commands | A thrown failure quoting an enrollment request secret reaches neither the result nor the log | new (neither copy) | a thrown failure quoting an enrollment request secret never reaches the result |
+| commands | A CommandError shows its own code and message, redacted | new (neither copy) | a CommandError shows its own code and message, redacted |
+| commands | A store refusal shows the store's message with pool-<kind> as the code | new (neither copy) | a store refusal keeps the store message and names its kind as the code |
+| commands | Outcome text is masked, including a plugin-declared key shape | new (neither copy) | an outcome text quoting secrets is masked, using the plugin pattern for its key shape |
+| commands | Notifications are redacted before they reach the host | new (neither copy) | a notification sent by an action is redacted before it reaches the host |
+| commands | A late login failure is reported by its projected message | new (neither copy) | a late login failure is reported by its projected message, not its exception text |
+| commands | A masked knob's default is withheld and an unmasked secret-shaped default is masked | new (neither copy) | a credential-valued knob default is withheld when masked and redacted otherwise |
 
 The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/claustrum-enrollment.test.ts`, `claustrum-scoped.test.ts` and `claustrum-scoped-runtime.test.ts` at anthropic-auth main 77e4c900; the origin column names the anthropic-auth source file each behaviour came from. Rows marked new (neither copy) are the contract changes and additions listed under ./claustrum in adoption-inventory.md, including the end-to-end scenarios, which drive the real `@cortexkit/claustrum-client` over a socket against a mock daemon ported from anthropic-auth's `packages/e2e-tests/src/mock-claustrum.ts`.
 
@@ -732,7 +792,9 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | opencode2 | Sequential attempts of one session and kind keep their own values on both transports; the retry hook's error classifier and event get the attempt it judged | new (neither copy) | two sequential attempts in one session keep their own values |
 | opencode2 | A cancelled HTTP response body ends its attempt as cancelled, with output as observed | new (neither copy) | cancelling the response ends the attempt with output as observed |
 | opencode2 | Frames before a handshake, after the attempt ended or after the next model.request, and responses on an unknown request once the attempt has its response, reach no attempt | new (neither copy) | an event with no attributable attempt reaches no attempt |
-| opencode2 | A response handed back on another request object is attributed to the newest HTTP attempt of its session and kind while it awaits its response | new (neither copy) | a response the host hands back on another request object is still attributed while it is the only one outstanding |
+| opencode2 | A response handed back on a request object the installer did not produce is dropped, with one warning | new (neither copy) | a response the host hands back on another request object is dropped, even with one attempt outstanding |
+| opencode2 | A delayed copied response of an earlier attempt never reaches the newer attempt | new (neither copy) | a delayed copied response of an earlier attempt is not attributed to the newer one |
+| opencode2 | A late 401 of an older same-account attempt is reported on that attempt's own handle | new (neither copy) | a late 401 of an older same-account attempt is reported on that attempt, never on the newer credential version |
 | opencode2 | An error-status response ends its attempt at once with its status, and the retry hook waits for onAttemptEnd to settle | new (neither copy) | an error response ends its attempt at once and the retry waits for the end callback |
 | opencode2 | An open attempt is ended as abandoned, once, by a newer attempt of its session and kind, by forgetting its session and by dispose | new (neither copy) | a newer attempt, a forgotten session or dispose abandons an open attempt once |
 | opencode2 | A verdict error and a throwing transport hook end the attempt as failed | new (neither copy) | a failure reported in the stream or by a transport hook ends the attempt as failed |

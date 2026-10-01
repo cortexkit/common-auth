@@ -1,6 +1,15 @@
-import { createHash } from 'node:crypto'
-import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { createHash, randomBytes } from 'node:crypto'
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { createRedactor } from '../logger/redact.js'
 
 export interface DumpLogger {
@@ -38,6 +47,33 @@ export interface DumpOptions {
    * It receives the redacted body.
    */
   summarize?: (body: Record<string, unknown>) => Record<string, unknown>
+  /**
+   * Byte cap for the dump artifacts in `dir`. When it is above zero, a sweep
+   * runs after a successful dump, at most once per `sweepIntervalMs`, and
+   * evicts whole dumps, oldest first, until the artifacts fit. Default off:
+   * the directory grows without bound.
+   */
+  maxBytes?: number
+  /** Least time between two automatic sweeps. Default five minutes. */
+  sweepIntervalMs?: number
+  /**
+   * A dump whose newest file is younger than this is never evicted, so a
+   * sweep cannot remove a dump whose response is still being attached.
+   * Default one minute.
+   */
+  sweepMinAgeMs?: number
+  /**
+   * A response staging file older than this is left over from a crashed
+   * write and is removed by any sweep, even under the cap. Default ten
+   * minutes.
+   */
+  partialStaleMs?: number
+  /**
+   * Remove the files a dump did write when another file of the same dump
+   * failed, so a failed dump leaves no half group behind. Default false: the
+   * files that were written stay.
+   */
+  cleanupFailedDumps?: boolean
 }
 
 export interface DumpInput {
@@ -75,6 +111,37 @@ export interface DumpDiff {
 export interface DumpResult {
   id: string
   files: { body: string; metadata: string; request: string }
+  /**
+   * Where `dumpResponse` writes this dump's response artifact. Nothing is
+   * there until a response is attached.
+   */
+  responseFile: string
+}
+
+/**
+ * What a plugin knows about the upstream response to a dumped request. Every
+ * field is optional; the artifact holds only what was given, redacted like the
+ * request. Pass no response content: the artifact is evidence about the
+ * response (who answered, what it cost), not a copy of it.
+ */
+export interface DumpResponseInput {
+  status?: number
+  /** The provider's id for the request or response, for support lookups. */
+  requestId?: string
+  /** The usage block the provider reported. */
+  usage?: unknown
+  /**
+   * False while a stream is still open or when it ended without its final
+   * frame. Default true.
+   */
+  complete?: boolean
+  /** Further provider fields, such as the model or the stop reason. */
+  fields?: Record<string, unknown>
+}
+
+export interface DumpSweepResult {
+  removed: number
+  freedBytes: number
 }
 
 export interface Dumper {
@@ -86,10 +153,200 @@ export interface Dumper {
    * and never throws into the request path.
    */
   dump(input: DumpInput): Promise<DumpResult | undefined>
+  /**
+   * Write the response artifact of an earlier dump as
+   * `<id>.response.json`, replacing any earlier one, so a stream can record
+   * its opening usage and later its final usage. Does nothing for an
+   * undefined dump. Returns the path, or undefined when the write failed
+   * (logged, never thrown).
+   */
+  dumpResponse(
+    dump: DumpResult | undefined,
+    input: DumpResponseInput,
+  ): Promise<string | undefined>
+  /**
+   * Apply the byte cap now, whatever the sweep interval. Does nothing when
+   * `maxBytes` is not above zero.
+   */
+  sweep(protectedPaths?: readonly string[]): Promise<DumpSweepResult>
 }
 
 const PREVIOUS_BODY_LIMIT = 100
 const UNKNOWN_SESSION = 'session-unknown'
+const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60 * 1000
+const DEFAULT_SWEEP_MIN_AGE_MS = 60 * 1000
+const DEFAULT_PARTIAL_STALE_MS = 10 * 60 * 1000
+
+/**
+ * The suffixes of the files one dump writes. A dump's files share the name
+ * before the suffix, which is how the sweep groups them.
+ */
+const ARTIFACT_SUFFIX = /\.(body|meta|request|response)\.json$/
+/**
+ * A dump id: the ISO time with `:` and `.` replaced, the pid, a counter of
+ * at least six digits, then the sanitised session, channel and phase. Only
+ * names of this shape are swept, so a plugin may point dumps at a directory
+ * that also holds other files.
+ */
+const ARTIFACT_ID =
+  /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-\d+-\d{6,}-[a-zA-Z0-9._-]+$/
+/** A response staging file: the final name, a random nonce, `.partial`. */
+const PARTIAL_SUFFIX = /\.[a-f0-9]{24}\.partial$/
+
+function artifactGroup(name: string): string | undefined {
+  const stem = name.replace(ARTIFACT_SUFFIX, '')
+  if (stem === name || !ARTIFACT_ID.test(stem)) return undefined
+  return stem
+}
+
+function isPartialName(name: string): boolean {
+  const finalName = name.replace(PARTIAL_SUFFIX, '')
+  return finalName !== name && artifactGroup(finalName) !== undefined
+}
+
+export interface SweepDumpDirectoryOptions {
+  dir: string
+  /** Byte cap for the dump artifacts; zero or less disables the sweep. */
+  maxBytes: number
+  /** Files never removed, such as the dump just written. */
+  protectedPaths?: readonly string[]
+  /** Milliseconds since the epoch. Default `Date.now()`. */
+  now?: number
+  /** A dump whose newest file is younger than this is kept. Default one minute. */
+  minAgeMs?: number
+  /** A response staging file older than this is removed. Default ten minutes. */
+  partialStaleMs?: number
+  logger?: DumpLogger
+}
+
+/**
+ * Hold the dump artifacts in `dir` to `maxBytes`. Only file names a dumper
+ * writes are counted or removed, so unrelated files in a directory the user
+ * chose survive. A dump's files are evicted together, oldest dump first by
+ * its newest file, because a body without its metadata (or the reverse) is no
+ * use to anyone. Dumps younger than `minAgeMs`, protected paths and symlinks
+ * are kept, and a symlinked directory is refused outright. Response staging
+ * files left by a crash are reclaimed once stale, even under the cap.
+ * Best-effort: a failure removes less, and never throws.
+ */
+export async function sweepDumpDirectory(
+  options: SweepDumpDirectoryOptions,
+): Promise<DumpSweepResult> {
+  const { dir, maxBytes } = options
+  const now = options.now ?? Date.now()
+  const minAgeMs = options.minAgeMs ?? DEFAULT_SWEEP_MIN_AGE_MS
+  const partialStaleMs = options.partialStaleMs ?? DEFAULT_PARTIAL_STALE_MS
+  const empty = { removed: 0, freedBytes: 0 }
+  if (!(maxBytes > 0)) return empty
+
+  try {
+    if ((await lstat(dir)).isSymbolicLink()) return empty
+    const protectedPaths = new Set(
+      (options.protectedPaths ?? []).map((path) => resolve(path)),
+    )
+    const entries = await readdir(dir, { withFileTypes: true })
+    type Entry = {
+      path: string
+      size: number
+      mtimeMs: number
+      group?: string
+    }
+    const files: Entry[] = []
+    await Promise.all(
+      entries.map(async (entry) => {
+        if (!entry.isFile()) return
+        const partial = isPartialName(entry.name)
+        const group = partial ? undefined : artifactGroup(entry.name)
+        if (!partial && group === undefined) return
+        const path = join(dir, entry.name)
+        try {
+          const stats = await lstat(path)
+          if (!stats.isFile()) return
+          files.push({ path, size: stats.size, mtimeMs: stats.mtimeMs, group })
+        } catch {
+          // Another process removed it between the listing and the stat.
+        }
+      }),
+    )
+
+    let total = files.reduce((sum, file) => sum + file.size, 0)
+    let removed = 0
+    let freedBytes = 0
+    const remove = async (file: Entry) => {
+      try {
+        await unlink(file.path)
+        total -= file.size
+        freedBytes += file.size
+        removed += 1
+      } catch {
+        // Best-effort: what cannot be removed now is tried again next sweep.
+      }
+    }
+
+    // A staging file is never a usable dump, so a stale one goes whatever
+    // the total; a fresh one may still be renamed into place.
+    for (const file of files) {
+      if (file.group !== undefined) continue
+      if (protectedPaths.has(resolve(file.path))) continue
+      if (now - file.mtimeMs < partialStaleMs) continue
+      await remove(file)
+    }
+
+    const groups = new Map<string, { files: Entry[]; newest: number }>()
+    for (const file of files) {
+      if (file.group === undefined) continue
+      const group = groups.get(file.group) ?? { files: [], newest: 0 }
+      group.files.push(file)
+      group.newest = Math.max(group.newest, file.mtimeMs)
+      groups.set(file.group, group)
+    }
+    const oldestFirst = [...groups.entries()].sort(
+      ([leftName, left], [rightName, right]) =>
+        left.newest - right.newest || leftName.localeCompare(rightName),
+    )
+    for (const [, group] of oldestFirst) {
+      if (total <= maxBytes) break
+      if (now - group.newest < minAgeMs) continue
+      if (group.files.some((file) => protectedPaths.has(resolve(file.path))))
+        continue
+      for (const file of group.files) await remove(file)
+    }
+
+    if (removed > 0) {
+      options.logger?.debug('removed old dump files', { removed, freedBytes })
+    }
+    return { removed, freedBytes }
+  } catch {
+    return empty
+  }
+}
+
+/**
+ * Replace `path` through a staging file created exclusively next to it, so a
+ * reader never sees half a file and a symlink planted at a predictable
+ * staging name is never followed.
+ */
+async function replaceFile(path: string, text: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    const staging = `${path}.${randomBytes(12).toString('hex')}.partial`
+    let created = false
+    try {
+      await writeFile(staging, text, {
+        encoding: 'utf8',
+        mode: 0o600,
+        flag: 'wx',
+      })
+      created = true
+      await rename(staging, path)
+      return
+    } catch (error) {
+      if (created) await unlink(staging).catch(() => {})
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'EEXIST' && attempt === 0) continue
+      throw error
+    }
+  }
+}
 
 function shortSession(session: string): string {
   return session.length <= 16 ? session : `${session.slice(0, 12)}…`
@@ -387,21 +644,115 @@ export function createDumper(options: DumpOptions): Dumper {
       // `wx`: a name collision fails loudly instead of overwriting a dump.
       const write = (path: string, text: string) =>
         writeFile(path, text, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-      await Promise.all([
-        write(files.body, body.text),
-        write(files.metadata, `${JSON.stringify(metadata, null, 2)}\n`),
-        write(files.request, `${JSON.stringify(request, null, 2)}\n`),
-      ])
+      const writes: Array<[string, string]> = [
+        [files.body, body.text],
+        [files.metadata, `${JSON.stringify(metadata, null, 2)}\n`],
+        [files.request, `${JSON.stringify(request, null, 2)}\n`],
+      ]
+      // Settle every write before judging the group, so a cleanup never
+      // races a write that is still in flight.
+      const settled = await Promise.allSettled(
+        writes.map(([path, text]) => write(path, text)),
+      )
+      const failed = settled.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected',
+      )
+      if (failed) {
+        if (options.cleanupFailedDumps) await removeGroup(writes, settled)
+        throw failed.reason
+      }
       remember(baselineKey, body.text)
       log?.debug('dumped request', {
         id,
         session: shortSession(session),
         body: files.body,
       })
-      return { id, files }
+      scheduleSweep(dir, Object.values(files))
+      return { id, files, responseFile: `${prefix}.response.json` }
     } catch (error) {
       log?.warn('request dump failed', {
         session: shortSession(session),
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    }
+  }
+
+  /**
+   * Remove what a failed dump wrote. A write that failed with EEXIST found
+   * someone else's file at that name and must leave it; any other failure
+   * either created nothing or left a partial file of this dump.
+   */
+  async function removeGroup(
+    writes: Array<[string, string]>,
+    settled: PromiseSettledResult<void>[],
+  ): Promise<void> {
+    await Promise.all(
+      writes.map(async ([path], index) => {
+        const result = settled[index]
+        if (
+          result?.status === 'rejected' &&
+          (result.reason as NodeJS.ErrnoException)?.code === 'EEXIST'
+        ) {
+          return
+        }
+        await unlink(path).catch(() => {})
+      }),
+    )
+  }
+
+  const maxBytes = options.maxBytes ?? 0
+  const sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS
+  // Zero, so the first dump of a process sweeps whatever earlier processes
+  // left behind.
+  let lastSweepAt = 0
+
+  function sweepOptions(
+    dir: string,
+    protectedPaths: readonly string[] | undefined,
+  ): SweepDumpDirectoryOptions {
+    return {
+      dir,
+      maxBytes,
+      protectedPaths,
+      now: now(),
+      minAgeMs: options.sweepMinAgeMs,
+      partialStaleMs: options.partialStaleMs,
+      logger: log,
+    }
+  }
+
+  /** Sweep in the background, off the request path, at most once per interval. */
+  function scheduleSweep(dir: string, protectedPaths: readonly string[]): void {
+    if (!(maxBytes > 0)) return
+    const at = now()
+    if (at - lastSweepAt < sweepIntervalMs) return
+    lastSweepAt = at
+    void sweepDumpDirectory(sweepOptions(dir, protectedPaths))
+  }
+
+  async function dumpResponse(
+    result: DumpResult | undefined,
+    input: DumpResponseInput,
+  ): Promise<string | undefined> {
+    if (!result) return undefined
+    const artifact = scrub({
+      status: input.status,
+      requestId: input.requestId,
+      usage: input.usage,
+      ...input.fields,
+      complete: input.complete ?? true,
+    })
+    try {
+      await replaceFile(
+        result.responseFile,
+        `${JSON.stringify(artifact, null, 2)}\n`,
+      )
+      return result.responseFile
+    } catch (error) {
+      log?.warn('response dump failed', {
+        id: result.id,
         error: error instanceof Error ? error.message : String(error),
       })
       return undefined
@@ -414,5 +765,8 @@ export function createDumper(options: DumpOptions): Dumper {
       enabled = value
     },
     dump,
+    dumpResponse,
+    sweep: (protectedPaths) =>
+      sweepDumpDirectory(sweepOptions(resolveDir(), protectedPaths)),
   }
 }
