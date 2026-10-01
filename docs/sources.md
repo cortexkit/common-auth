@@ -193,6 +193,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | quota | Observation validation accepts the documented shape and rejects malformed parts | new (neither copy) | observation validation accepts the documented shape and rejects malformed parts |
 | quota | A family request sees only its own family and all-models keys | new (neither copy) | a family request sees only its own family and all-models keys |
 | quota | A family reading shadows the all-models entry per label, one entry per label | new (neither copy) | a family reading shadows the all-models entry per label, one entry per label |
+| quota | A family limit under its own label is projected beside the general limit of the same length | new (neither copy) | a family limit under its own label is projected beside the general limit of the same length |
 | quota | A family tombstone or absence record does not hide an all-models entry | new (neither copy) | a family tombstone or absence record does not hide an all-models entry |
 | quota | Limits are ordered longest stored length first with unknown lengths last | new (neither copy) | limits are ordered longest stored length first with unknown lengths last |
 | quota | Each limit carries its stored length and an unknown length stays unknown | new (neither copy) | each limit carries its stored length and an unknown length stays unknown |
@@ -225,6 +226,8 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | routing | Gate 4 leaves a reading below 100% admitted whatever its reset says | new (neither copy) | gate 4 leaves a reading below 100% admitted whatever its reset says |
 | routing | Gate 5: an exhausted reading with a future reset is refused exhausted without a pull | new (neither copy) | gate 5: an exhausted reading with a future reset is refused exhausted without a pull |
 | routing | A third window reaches admission and alone drives a refusal | new (neither copy) | a third window reaches admission and alone drives a refusal |
+| routing | An exhausted general week refuses a family request whose own week is healthy | new (neither copy) | an exhausted general week refuses a family request whose own week is healthy |
+| routing | An exhausted family week refuses the family request and leaves the general request admitted | new (neither copy) | an exhausted family week refuses the family request and leaves the general request admitted |
 | routing | A reading older than the staleness threshold is admitted | new (neither copy) | a reading older than the staleness threshold is admitted |
 | routing | A map holding only a tombstone or absence record for the requested pairs is admitted | new (neither copy) | a map holding only a tombstone or absence record for the requested pairs is admitted |
 | routing | Covered absence admits as known-unlimited | new (neither copy) | covered absence admits as known-unlimited |
@@ -267,6 +270,11 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | routing | Skips healthy windows when a longer window is exhausted | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | skips healthy windows when a longer window is exhausted |
 | routing | Reports the longest exhausted window when every window is exhausted | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | reports the longest exhausted window when every window is exhausted |
 | routing | Names the exhausted limit by its label rather than the slot it occupies | new (neither copy) | names the exhausted limit by its label rather than the slot it occupies |
+| routing | A spent third window drives the break decision | new (neither copy) | a spent third window drives the break decision |
+| routing | The default status rule is permanent for 401 and 403, transient for no response, 429 and 5xx, else healthy | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | the default status rule is permanent for 401 and 403, transient for no response, 429 and 5xx, else healthy |
+| routing | An adapter status classifier keeps a policy 403 on its row | new (neither copy) | an adapter status classifier keeps a policy 403 on its row |
+| routing | A 403 the adapter classifies as not permanent still migrates off a spent window | new (neither copy) | a 403 the adapter classifies as not permanent still migrates off a spent window |
+| routing | An adapter status classifier can make another status permanent before quota is consulted | new (neither copy) | an adapter status classifier can make another status permanent before quota is consulted |
 | routing | Omits non-string reset metadata from exhausted decisions | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | omits non-string reset metadata from exhausted decisions |
 | routing | Never returns a hold action | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | never returns a hold action |
 | routing | Migrates a fresh below-floor account when killswitchPasses is false | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | migrates a fresh below-floor account when killswitchPasses is false |
@@ -300,7 +308,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | routing | KillswitchPasses true is a no-op on placement | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | killswitchPasses true is a no-op on placement |
 | routing | KillswitchPasses undefined is a no-op on placement (killswitch disabled) | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | killswitchPasses undefined is a no-op on placement (killswitch disabled) |
 | routing | Tombstones and absence records add no weight | new (neither copy) | tombstones and absence records add no weight |
-| routing | A third window adds no weight | new (neither copy) | a third window adds no weight |
+| routing | A nearly spent short window outweighs two healthy weekly windows | new (neither copy) | a nearly spent short window outweighs two healthy weekly windows |
 | routing | Selection judges freshness by the minimum checkedAt of the projection | new (neither copy) | selection judges freshness by the minimum checkedAt of the projection |
 | routing | Deprioritises a nearly-spent credit budget in cold placement | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | deprioritises a nearly-spent credit budget in cold placement |
 | routing | Ignores a malformed credit reading instead of excluding the account | reference/openai-auth/packages/opencode/src/core/sticky-routing.ts | ignores a malformed credit reading instead of excluding the account |

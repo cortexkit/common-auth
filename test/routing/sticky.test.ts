@@ -8,11 +8,13 @@ import {
 import {
   admit,
   decideStickyBreak,
+  defaultStickyStatusClass,
   MIN_RESET_HOURS,
   pendingBytesForPins,
   QUOTA_STALENESS_MS,
   routeSticky,
   type StickySelectionCandidate,
+  type StickyStatusClass,
   selectStickyCandidate,
   snapshotCheckedAt,
   sustainableWindowWeight,
@@ -306,6 +308,102 @@ describe('decideStickyBreak', () => {
       window: { scope: 'all', label: 'primary' },
       resetsAt: '2026-08-10T13:00:00.000Z',
     })
+  })
+
+  test('a spent third window drives the break decision', () => {
+    // The five-hour window sorts after both weeks, so it is the third
+    // reading; it alone is spent.
+    const accountQuota = projectQuota(
+      quotaMap([
+        reading('five_hour', 100, {
+          resetsAt: '2026-08-10T15:00:00.000Z',
+          windowMinutes: 300,
+        }),
+        reading('seven_day', 10, { windowMinutes: 10_080 }),
+        reading('seven_day_family', 10, {
+          scope: 'family',
+          windowMinutes: 10_080,
+        }),
+      ]),
+      'family',
+    )
+    expect(accountQuota.limits.at(-1)?.label).toBe('five_hour')
+    expect(
+      decideStickyBreak({ quota: accountQuota, status: 400, now }),
+    ).toEqual({
+      action: 'migrate',
+      reason: 'exhausted',
+      window: { scope: 'all', label: 'five_hour' },
+      resetsAt: '2026-08-10T15:00:00.000Z',
+    })
+  })
+
+  test('the default status rule is permanent for 401 and 403, transient for no response, 429 and 5xx, else healthy', () => {
+    const table: [number | undefined, StickyStatusClass][] = [
+      [401, 'permanent'],
+      [403, 'permanent'],
+      [undefined, 'transient'],
+      [0, 'transient'],
+      [Number.NaN, 'transient'],
+      [429, 'transient'],
+      [500, 'transient'],
+      [599, 'transient'],
+      [400, 'healthy'],
+      [404, 'healthy'],
+      [600, 'healthy'],
+    ]
+    for (const [status, want] of table) {
+      expect([status, defaultStickyStatusClass(status)]).toEqual([status, want])
+    }
+  })
+
+  test('an adapter status classifier keeps a policy 403 on its row', () => {
+    const policyForbidden = (status: number | undefined) =>
+      status === 403 ? 'transient' : defaultStickyStatusClass(status)
+    expect(
+      decideStickyBreak({
+        quota: quota(50),
+        status: 403,
+        now,
+        classifyStatus: policyForbidden,
+      }),
+    ).toEqual({ action: 'retain', reason: 'transient' })
+    expect(
+      decideStickyBreak({
+        quota: quota(50),
+        status: 403,
+        now,
+        classifyStatus: () => 'healthy',
+      }),
+    ).toEqual({ action: 'retain', reason: 'healthy' })
+  })
+
+  test('a 403 the adapter classifies as not permanent still migrates off a spent window', () => {
+    expect(
+      decideStickyBreak({
+        quota: quota(0, now, '2026-08-10T13:00:00.000Z'),
+        status: 403,
+        now,
+        classifyStatus: () => 'healthy',
+      }),
+    ).toEqual({
+      action: 'migrate',
+      reason: 'exhausted',
+      window: { scope: 'all', label: 'primary' },
+      resetsAt: '2026-08-10T13:00:00.000Z',
+    })
+  })
+
+  test('an adapter status classifier can make another status permanent before quota is consulted', () => {
+    expect(
+      decideStickyBreak({
+        quota: null,
+        status: 400,
+        now,
+        classifyStatus: (status) =>
+          status === 400 ? 'permanent' : defaultStickyStatusClass(status),
+      }),
+    ).toEqual({ action: 'migrate', reason: 'permanent' })
   })
 
   test('omits non-string reset metadata from exhausted decisions', () => {
@@ -701,20 +799,40 @@ describe('selectStickyCandidate', () => {
     ).toEqual({ accountId: 'mixed', quotaCheckedAt: now, source: 'weighted' })
   })
 
-  test('a third window adds no weight', () => {
-    const threeWindows = projectQuota(
-      quotaMap([
-        reading('primary', 50, { windowMinutes: 300 }),
-        reading('secondary', 50, { windowMinutes: 10_080 }),
-        reading('tertiary', 99, { windowMinutes: 60 }),
-      ]),
-    )
+  test('a nearly spent short window outweighs two healthy weekly windows', () => {
+    // A five-hour window beside a general week and a family week: A has
+    // 0.1% of its five hours left but healthy weeks, B the reverse. Judged
+    // over all three windows A weighs 0.1/5 = 0.02 and B 10/168 = 0.0595.
+    const fiveHourReset = new Date(now + 5 * 3_600_000).toISOString()
+    const weekReset = new Date(now + 168 * 3_600_000).toISOString()
+    const threeWindows = (fiveHourUsed: number, weeklyUsed: number) =>
+      projectQuota(
+        quotaMap([
+          reading('five_hour', fiveHourUsed, {
+            resetsAt: fiveHourReset,
+            windowMinutes: 300,
+          }),
+          reading('seven_day', weeklyUsed, {
+            resetsAt: weekReset,
+            windowMinutes: 10_080,
+          }),
+          reading('seven_day_family', weeklyUsed, {
+            scope: 'family',
+            resetsAt: weekReset,
+            windowMinutes: 10_080,
+          }),
+        ]),
+        'family',
+      )
+    const a = threeWindows(99.9, 10)
+    const b = threeWindows(10, 90)
+    expect(a.limits).toHaveLength(3)
     expect(
       select([
-        candidate('three', threeWindows, 1),
-        candidate('two', twoWindows({ remaining: 40 }, { remaining: 40 }), 0),
+        candidate('A', a, 0, { reservePercent: {} }),
+        candidate('B', b, 1, { reservePercent: {} }),
       ]).accountId,
-    ).toBe('three')
+    ).toBe('B')
   })
 
   test('selection judges freshness by the minimum checkedAt of the projection', () => {

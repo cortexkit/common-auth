@@ -358,3 +358,57 @@ describe('admission gates', () => {
     expect(result.refused).toHaveLength(1)
   })
 })
+
+// A provider whose model families carry a weekly cap on top of the general
+// weekly cap stores the family week under its own label, so both caps reach
+// admission for a family request.
+describe('admission with a family cap under its own label', () => {
+  const required = { requiredLabels: ['five_hour', 'seven_day'] }
+
+  function additiveWeeks(generalUsed: number, familyUsed: number): QuotaMap {
+    return quotaMap([
+      reading('five_hour', 10, { resetsAt: at(HOUR), windowMinutes: 300 }),
+      reading('seven_day', generalUsed, {
+        resetsAt: weekReset,
+        windowMinutes: 10_080,
+      }),
+      reading('seven_day_opus', familyUsed, {
+        scope: 'opus',
+        resetsAt: weekReset,
+        windowMinutes: 10_080,
+      }),
+    ])
+  }
+
+  test('an exhausted general week refuses a family request whose own week is healthy', () => {
+    const map = additiveWeeks(100, 5)
+    for (const scope of ['opus', 'all']) {
+      const result = run([oauth('a', map)], { ...required, scope })
+      expect(result.admitted).toEqual([])
+      expect(result.refused).toMatchObject([
+        {
+          id: 'a',
+          gate: 5,
+          reason: 'exhausted',
+          window: { scope: 'all', label: 'seven_day' },
+        },
+      ])
+    }
+  })
+
+  test('an exhausted family week refuses the family request and leaves the general request admitted', () => {
+    const map = additiveWeeks(10, 100)
+    const family = run([oauth('a', map)], { ...required, scope: 'opus' })
+    expect(family.admitted).toEqual([])
+    expect(family.refused).toMatchObject([
+      {
+        id: 'a',
+        gate: 5,
+        reason: 'exhausted',
+        window: { scope: 'opus', label: 'seven_day_opus' },
+      },
+    ])
+    const general = run([oauth('a', map)], { ...required, scope: 'all' })
+    expect(ids(general.admitted)).toEqual(['a'])
+  })
+})

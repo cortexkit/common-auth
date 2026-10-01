@@ -49,6 +49,20 @@ describe('quota projection', () => {
     ).toEqual([])
   })
 
+  test('a family limit under its own label is projected beside the general limit of the same length', () => {
+    expect(
+      labels(
+        'opus',
+        reading('five_hour', 10, { windowMinutes: 300 }),
+        reading('seven_day', 100, { windowMinutes: 10_080 }),
+        reading('seven_day_opus', 5, {
+          scope: 'opus',
+          windowMinutes: 10_080,
+        }),
+      ),
+    ).toEqual(['all/seven_day', 'opus/seven_day_opus', 'all/five_hour'])
+  })
+
   test('a family tombstone or absence record does not hide an all-models entry', () => {
     expect(
       labels(

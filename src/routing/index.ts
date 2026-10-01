@@ -35,14 +35,16 @@ export type {
   StickySelection,
   StickySelectionCandidate,
   StickySelectionInput,
+  StickyStatusClass,
+  StickyStatusClassifier,
 } from './sticky.js'
 export {
   decideStickyBreak,
+  defaultStickyStatusClass,
   MIN_RESET_HOURS,
   MIN_WEIGHT,
   QUOTA_STALENESS_MS,
   routeSticky,
-  STICKY_WINDOW_SLOTS,
   selectStickyCandidate,
   snapshotCheckedAt,
   sustainableWindowWeight,
