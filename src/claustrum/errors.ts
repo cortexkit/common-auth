@@ -10,6 +10,7 @@ export type ClaustrumConsumerFailureKind =
   | 'invalid-token'
   | 'unavailable'
   | 'identity-changed'
+  | 'identity-unasserted'
   | 'insufficient-validity'
   | 'invalid-material'
   | 'not-active'

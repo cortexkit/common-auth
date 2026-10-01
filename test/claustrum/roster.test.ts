@@ -2,18 +2,21 @@ import { afterEach, expect, test } from 'bun:test'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+  acceptAccount,
+  acceptVaultRoute,
   declineAccount,
   declineVaultRoute,
   isDeclined,
   projectVaultRoster,
-  pruneDeclined,
   readVaultRoster,
   recordVaultQuota,
   refreshVaultRoster,
   type VaultCredential,
   type VaultInventory,
+  type VaultRosterFile,
   vaultRoutingRows,
 } from '../../src/claustrum/index.ts'
+import { mergeQuotaObservation } from '../../src/quota/index.ts'
 import { cleanupDirs, deferred, tempDir } from './helpers.ts'
 
 afterEach(cleanupDirs)
@@ -35,6 +38,51 @@ const observation = {
   readings: [
     { label: '5h', usedPercent: 10, resetsAt: '2026-10-01T12:00:00.000Z' },
   ],
+}
+const alias: VaultCredential = {
+  ...work,
+  credentialId: 'oauth:test:work-alias',
+}
+const fallback: VaultCredential = {
+  credentialId: 'oauth:test:fallback',
+  credentialType: 'oauth',
+  accountIdentity: 'provider-fallback',
+  state: 'active',
+}
+const newcomer: VaultCredential = {
+  credentialId: 'oauth:test:newcomer',
+  credentialType: 'oauth',
+  accountIdentity: 'provider-newcomer',
+  state: 'active',
+}
+const unclaimed = (credential: VaultCredential): VaultCredential => ({
+  credentialId: credential.credentialId,
+  credentialType: credential.credentialType,
+  state: credential.state,
+})
+const receiptFor = (credential: VaultCredential) => ({
+  credentialId: credential.credentialId,
+  ...(credential.accountIdentity !== undefined && {
+    accountIdentity: credential.accountIdentity,
+    expectedAccountIdentity: credential.accountIdentity,
+  }),
+  accountIdentitySource: 'asserted' as const,
+})
+function withQuota(roster: VaultRosterFile): VaultRosterFile {
+  return {
+    ...roster,
+    rows: roster.rows.map((row) => ({
+      ...row,
+      quota: mergeQuotaObservation(undefined, observation),
+    })),
+  }
+}
+function rowFor(roster: VaultRosterFile | undefined, accountIdentity: string) {
+  const row = roster?.rows.find(
+    (entry) => entry.accountIdentity === accountIdentity,
+  )
+  if (!row) throw new Error(`missing row for ${accountIdentity}`)
+  return row
 }
 
 function list(
@@ -103,7 +151,7 @@ test('identity replacement does not inherit quota, profile or route identity', a
     await recordVaultQuota(path, {
       routeId: original.routeId,
       observation,
-      accountIdentity: work.accountIdentity,
+      ...receiptFor(work),
     }),
   ).toBe(true)
   const replaced = await refreshVaultRoster({
@@ -124,7 +172,13 @@ test('an identity learned later keeps the route and its quota', async () => {
     custody: inventory([anonymous]),
   })
   const original = routeOf(first, work.credentialId)
-  await recordVaultQuota(path, { routeId: original.routeId, observation })
+  expect(
+    await recordVaultQuota(path, {
+      routeId: original.routeId,
+      observation,
+      ...receiptFor(anonymous),
+    }),
+  ).toBe(true)
   const learned = await refreshVaultRoster({ path, custody: inventory([work]) })
   const row = routeOf(learned, work.credentialId)
   expect(row.routeId).toBe(original.routeId)
@@ -279,7 +333,7 @@ test('a quota observation taken for a replaced account is dropped', async () => 
     await recordVaultQuota(path, {
       routeId: route,
       observation,
-      accountIdentity: work.accountIdentity,
+      ...receiptFor(work),
     }),
   ).toBe(false)
   const current = routeOf(await readVaultRoster(path), work.credentialId)
@@ -287,14 +341,14 @@ test('a quota observation taken for a replaced account is dropped', async () => 
     await recordVaultQuota(path, {
       routeId: current.routeId,
       observation,
-      accountIdentity: work.accountIdentity,
+      ...receiptFor(work),
     }),
   ).toBe(false)
   expect(
     await recordVaultQuota(path, {
       routeId: current.routeId,
       observation,
-      accountIdentity: 'replacement',
+      ...receiptFor({ ...work, accountIdentity: 'replacement' }),
     }),
   ).toBe(true)
   expect(
@@ -333,27 +387,318 @@ test('a declined account that leaves the vault and returns is still declined', a
   expect(vaultRoutingRows(returned)).toEqual([])
 })
 
-test('the declined interlock is keyed on credential and identity, sticky without identity, and lifts only on a known different identity', () => {
+test('the declined interlock follows a known account across credential ids, and falls back to the credential id while the account is unknown', () => {
   const known = declineAccount([], 'cred-a', 'acct-1')
   expect(isDeclined(known, 'cred-a', 'acct-1')).toBe(true)
   expect(isDeclined(known, 'cred-a', undefined)).toBe(true)
+  // The same account under another credential id or alias stays declined.
+  expect(isDeclined(known, 'cred-b', 'acct-1')).toBe(true)
+  // A different known account behind the declined credential id has its own policy.
   expect(isDeclined(known, 'cred-a', 'acct-2')).toBe(false)
-  expect(isDeclined(known, 'cred-b', 'acct-1')).toBe(false)
+  expect(isDeclined(known, 'cred-b', undefined)).toBe(false)
   const unknown = declineAccount([], 'cred-a')
   expect(isDeclined(unknown, 'cred-a', 'acct-9')).toBe(true)
+  expect(isDeclined(unknown, 'cred-b', 'acct-9')).toBe(false)
+  // Accepting lifts exactly the entries that decline the accepted row.
+  const both = declineAccount(known, 'cred-c', 'acct-3')
+  expect(acceptAccount(both, ['cred-z'], 'acct-1')).toEqual(
+    declineAccount([], 'cred-c', 'acct-3'),
+  )
+  expect(acceptAccount(both, ['cred-a'], 'acct-2')).toEqual(both)
+  expect(acceptAccount(unknown, ['cred-a'])).toEqual([])
+})
+
+test('a temporary identity omission keeps the last known binding, so the same account returns with its route, aliases and quota', async () => {
+  const { path } = await fixture()
+  const first = await refreshVaultRoster({
+    path,
+    custody: inventory([work, alias], 'v1'),
+  })
+  const original = routeOf(first, work.credentialId)
   expect(
-    pruneDeclined(unknown, [{ credentialId: 'cred-a', accountIdentity: 'x' }]),
-  ).toEqual(unknown)
-  expect(pruneDeclined(known, [{ credentialId: 'cred-a' }])).toEqual(known)
-  expect(pruneDeclined(known, [])).toEqual(known)
+    await recordVaultQuota(path, {
+      routeId: original.routeId,
+      observation,
+      ...receiptFor(work),
+    }),
+  ).toBe(true)
+  const omitted = await refreshVaultRoster({
+    path,
+    custody: inventory([unclaimed(work), unclaimed(alias)], 'v2'),
+  })
+  expect(omitted?.rows).toHaveLength(1)
+  expect(omitted?.rows[0]).toMatchObject({
+    routeId: original.routeId,
+    credentialId: work.credentialId,
+    accountIdentity: work.accountIdentity,
+    aliases: [alias.credentialId],
+    unclaimed: true,
+  })
+  expect(omitted?.rows[0]?.quota).toBeDefined()
+  const back = await refreshVaultRoster({
+    path,
+    custody: inventory([work, alias], 'v3'),
+  })
+  expect(back?.rows).toHaveLength(1)
+  expect(back?.rows[0]).toMatchObject({
+    routeId: original.routeId,
+    accountIdentity: work.accountIdentity,
+    aliases: [alias.credentialId],
+  })
+  expect(back?.rows[0]?.unclaimed).toBeUndefined()
+  expect(back?.rows[0]?.quota).toBeDefined()
+})
+
+test('a known replacement after a temporary identity omission inherits no route, quota or decline', async () => {
+  const { path } = await fixture()
+  const first = await refreshVaultRoster({
+    path,
+    custody: inventory([work, alias], 'v1'),
+  })
+  const original = routeOf(first, work.credentialId)
+  await recordVaultQuota(path, {
+    routeId: original.routeId,
+    observation,
+    ...receiptFor(work),
+  })
+  await declineVaultRoute(path, original.routeId)
+  const omitted = await refreshVaultRoster({
+    path,
+    custody: inventory([unclaimed(work), unclaimed(alias)], 'v2'),
+  })
+  expect(omitted?.rows[0]).toMatchObject({
+    routeId: original.routeId,
+    accountIdentity: work.accountIdentity,
+    enabled: false,
+  })
+  const replacement = 'provider-replacement'
+  const replaced = await refreshVaultRoster({
+    path,
+    custody: inventory(
+      [
+        { ...work, accountIdentity: replacement },
+        { ...alias, accountIdentity: replacement },
+      ],
+      'v3',
+    ),
+  })
+  expect(replaced?.rows).toHaveLength(1)
+  const row = rowFor(replaced, replacement)
+  expect(row.routeId).not.toBe(original.routeId)
+  expect(row.quota).toBeUndefined()
+  expect(row.enabled).toBe(true)
+  expect(row.unclaimed).toBeUndefined()
   expect(
-    pruneDeclined(known, [
-      { credentialId: 'cred-a', accountIdentity: 'acct-1' },
+    await recordVaultQuota(path, {
+      routeId: row.routeId,
+      observation,
+      ...receiptFor(work),
+    }),
+  ).toBe(false)
+})
+
+test('an incomplete reply keeps an account whose representative record is malformed, with that record still a member', () => {
+  const previous = withQuota(
+    projectVaultRoster(undefined, list([work, alias, fallback])),
+  )
+  const before = rowFor(previous, 'provider-work')
+  const next = projectVaultRoster(
+    previous,
+    list([alias, fallback], 'v2', [
+      { credentialId: work.credentialId, reason: 'blank account identity' },
     ]),
-  ).toEqual(known)
-  expect(
-    pruneDeclined(known, [
-      { credentialId: 'cred-a', accountIdentity: 'acct-2' },
+  )
+  expect(next.complete).toBe(false)
+  expect(next.rejected).toEqual([
+    { credentialId: work.credentialId, reason: 'blank account identity' },
+  ])
+  const row = rowFor(next, 'provider-work')
+  expect(row).toMatchObject({
+    routeId: before.routeId,
+    credentialId: alias.credentialId,
+    aliases: [work.credentialId],
+  })
+  expect(row.quota).toEqual(before.quota)
+  expect(next.rows).toHaveLength(2)
+})
+
+test('a malformed or duplicated fallback record keeps its account as stale', () => {
+  const previous = withQuota(
+    projectVaultRoster(undefined, list([work, alias, fallback])),
+  )
+  for (const skipped of [
+    [{ credentialId: fallback.credentialId, reason: 'empty state' as const }],
+    [
+      {
+        credentialId: fallback.credentialId,
+        reason: 'duplicate credential id' as const,
+      },
+      {
+        credentialId: fallback.credentialId,
+        reason: 'duplicate credential id' as const,
+      },
+    ],
+  ]) {
+    const next = projectVaultRoster(
+      previous,
+      list([work, alias], 'v2', skipped),
+    )
+    expect(next.complete).toBe(false)
+    expect(rowFor(next, 'provider-fallback')).toEqual({
+      ...rowFor(previous, 'provider-fallback'),
+      stale: true,
+    })
+  }
+})
+
+test('a record with no recoverable id keeps every unaccounted account and still adds a valid newcomer', () => {
+  const previous = withQuota(
+    projectVaultRoster(undefined, list([work, alias, fallback])),
+  )
+  const next = projectVaultRoster(
+    previous,
+    list([newcomer], 'v2', [{ reason: 'empty credential id' }]),
+  )
+  expect(next.complete).toBe(false)
+  expect(next.rejected).toEqual([{ reason: 'empty credential id' }])
+  expect(rowFor(next, 'provider-work')).toMatchObject({
+    routeId: rowFor(previous, 'provider-work').routeId,
+    aliases: [alias.credentialId],
+    stale: true,
+  })
+  expect(rowFor(next, 'provider-fallback').stale).toBe(true)
+  expect(rowFor(next, 'provider-newcomer').stale).toBeUndefined()
+  expect(next.rows).toHaveLength(3)
+})
+
+test('a malformed alias record stays a member of its account', () => {
+  const previous = projectVaultRoster(undefined, list([work, alias, fallback]))
+  const next = projectVaultRoster(
+    previous,
+    list([work, fallback], 'v2', [
+      { credentialId: alias.credentialId, reason: 'blank account identity' },
     ]),
-  ).toEqual([])
+  )
+  expect(next.complete).toBe(false)
+  expect(rowFor(next, 'provider-work')).toMatchObject({
+    routeId: rowFor(previous, 'provider-work').routeId,
+    credentialId: work.credentialId,
+    aliases: [alias.credentialId],
+  })
+  expect(next.rows).toHaveLength(2)
+})
+
+test('a complete reply that no longer lists an account removes it', () => {
+  const previous = projectVaultRoster(undefined, list([work, alias, fallback]))
+  const next = projectVaultRoster(previous, list([work], 'v2'))
+  expect(next.complete).toBe(true)
+  expect(next.rejected).toBeUndefined()
+  expect(next.rows.map((row) => [row.credentialId, row.aliases])).toEqual([
+    [work.credentialId, undefined],
+  ])
+})
+
+test('a declined account stays declined under a new credential id or alias, and after leaving and returning', async () => {
+  const { path } = await fixture()
+  const first = await refreshVaultRoster({ path, custody: inventory([work]) })
+  await declineVaultRoute(path, routeOf(first, work.credentialId).routeId)
+  const relabelled = { ...work, credentialId: 'oauth:test:relabelled' }
+  const moved = await refreshVaultRoster({
+    path,
+    custody: inventory([relabelled], 'v2'),
+  })
+  expect(routeOf(moved, relabelled.credentialId).enabled).toBe(false)
+  await refreshVaultRoster({ path, custody: inventory([], 'gone') })
+  const returned = await refreshVaultRoster({
+    path,
+    custody: inventory(
+      [{ ...work, credentialId: 'oauth:test:third' }, alias],
+      'back',
+    ),
+  })
+  const row = rowFor(returned, 'provider-work')
+  expect(row.enabled).toBe(false)
+  expect(vaultRoutingRows(returned)).toEqual([])
+  await acceptVaultRoute(path, row.routeId)
+  const accepted = await refreshVaultRoster({
+    path,
+    custody: inventory(
+      [{ ...work, credentialId: 'oauth:test:third' }, alias],
+      'again',
+    ),
+  })
+  expect(rowFor(accepted, 'provider-work').enabled).toBe(true)
+  expect(accepted?.declined).toEqual([])
+})
+
+test('a different account behind a declined credential id has its own policy, and the declined account stays declined when it returns', async () => {
+  const { path } = await fixture()
+  const first = await refreshVaultRoster({ path, custody: inventory([work]) })
+  await declineVaultRoute(path, routeOf(first, work.credentialId).routeId)
+  const other = await refreshVaultRoster({
+    path,
+    custody: inventory([{ ...work, accountIdentity: 'provider-other' }], 'v2'),
+  })
+  expect(rowFor(other, 'provider-other').enabled).toBe(true)
+  const returned = await refreshVaultRoster({
+    path,
+    custody: inventory(
+      [
+        { ...work, accountIdentity: 'provider-other' },
+        { ...work, credentialId: 'oauth:test:back' },
+      ],
+      'v3',
+    ),
+  })
+  expect(rowFor(returned, 'provider-other').enabled).toBe(true)
+  expect(rowFor(returned, 'provider-work').enabled).toBe(false)
+})
+
+test('a quota observation must name the served credential and account, and an absent side never matches a known one', async () => {
+  const { path } = await fixture()
+  const first = await refreshVaultRoster({
+    path,
+    custody: inventory([work, alias, fallback]),
+  })
+  const route = rowFor(first, 'provider-work').routeId
+  const record = (receipt: Parameters<typeof recordVaultQuota>[1]) =>
+    recordVaultQuota(path, receipt)
+  // No identity on the receipt for a known account.
+  expect(
+    await record({
+      routeId: route,
+      observation,
+      credentialId: work.credentialId,
+      accountIdentitySource: 'none',
+    }),
+  ).toBe(false)
+  // A credential that is not a member of the account.
+  expect(
+    await record({
+      routeId: route,
+      observation,
+      ...receiptFor(fallback),
+      accountIdentity: work.accountIdentity,
+    }),
+  ).toBe(false)
+  expect(
+    await record({ routeId: route, observation, ...receiptFor(alias) }),
+  ).toBe(true)
+  // While the inventory makes no claim, only an identity the vault or the
+  // token itself proved may land; the roster's own expectation is not proof.
+  await refreshVaultRoster({
+    path,
+    custody: inventory([unclaimed(work), unclaimed(alias), fallback], 'v2'),
+  })
+  expect(
+    await record({
+      routeId: route,
+      observation,
+      ...receiptFor(work),
+      accountIdentitySource: 'expected',
+    }),
+  ).toBe(false)
+  expect(
+    await record({ routeId: route, observation, ...receiptFor(work) }),
+  ).toBe(true)
 })

@@ -20,6 +20,7 @@ export {
   type SendOptions,
 } from './consumer.js'
 export {
+  type AccountIdentitySource,
   type ClaustrumFamily,
   type ClaustrumScopedAttempt,
   type ClaustrumScopedClient,
@@ -30,6 +31,7 @@ export {
   isScopedCredentialRotation,
   type ScopedRetryReason,
   SERVING_MARGIN_MS,
+  type SkippedVaultReason,
   type SkippedVaultRecord,
   type VaultCredential,
   type VaultCredentialType,
@@ -75,7 +77,6 @@ export {
   type DeclinedAccount,
   declineAccount,
   isDeclined,
-  pruneDeclined,
 } from './interlock.js'
 export {
   type AccountMapper,
@@ -85,9 +86,14 @@ export {
   mutateVaultRoster,
   type ProjectionOptions,
   projectVaultRoster,
+  type QuotaReceipt,
   readVaultRoster,
   recordVaultQuota,
   refreshVaultRoster,
+  resolveVaultPrimary,
+  type VaultPrimary,
+  type VaultPrimaryBinding,
+  type VaultPrimaryUnavailableReason,
   type VaultRosterFile,
   type VaultRosterRow,
   vaultRoutingRows,

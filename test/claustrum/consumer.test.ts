@@ -475,3 +475,32 @@ test('vault rows route through /routing admission and /quota projection alongsid
   ])
   expect(pulls).toEqual([f.route(roster, 'oauth:test')])
 })
+
+test('requireAssertion applies to every authorization the consumer makes', async () => {
+  const f = await fixture()
+  const connect = async (): Promise<ClaustrumScopedClient> => ({
+    ...f.client,
+    getScoped: async (input) => {
+      f.gets.push(input)
+      return {
+        credentialId: input.credentialId,
+        material: 'vault-test-access',
+        recordVersion: 3,
+        expiresAtMs: Date.now() + 600_000,
+      }
+    },
+  })
+  const strict = new ClaustrumConsumer({
+    ...f.options,
+    connect,
+    requireAssertion: true,
+  })
+  consumers.push(strict)
+  const id = f.route(await strict.refresh(), 'oauth:test')
+  await expect(strict.authorize(id)).rejects.toThrow('did not assert')
+  const lenient = new ClaustrumConsumer({ ...f.options, connect })
+  consumers.push(lenient)
+  await lenient.refresh()
+  expect((await lenient.authorize(id)).accountIdentitySource).toBe('expected')
+  expect(f.gets).toHaveLength(2)
+})

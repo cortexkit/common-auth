@@ -166,6 +166,111 @@ describe('scoped custody dispatch authorization', () => {
     ).toBe('account-9')
   })
 
+  test('the receipt keeps what the vault asserted apart from what the roster expected', async () => {
+    const reply = {
+      material: 'token-for-account-1',
+      recordVersion: 1,
+      expiresAtMs: 1_000_000,
+    }
+    const silent = await fixture({
+      getScoped: async () => reply,
+    }).custody.authorize(identity)
+    expect(silent).toMatchObject({
+      accountIdentity: 'account-1',
+      expectedAccountIdentity: 'account-1',
+      accountIdentitySource: 'expected',
+    })
+    expect(silent.assertedCredentialId).toBeUndefined()
+    expect(silent.assertedAccountIdentity).toBeUndefined()
+    const parsed = await fixture(
+      { getScoped: async () => reply },
+      { parseIdentity: (token) => token.replace('token-for-', '') },
+    ).custody.authorize(identity)
+    expect(parsed.accountIdentitySource).toBe('parsed')
+    expect(parsed.assertedAccountIdentity).toBeUndefined()
+    const asserted = await fixture().custody.authorize(identity)
+    expect(asserted).toMatchObject({
+      accountIdentity: 'account-1',
+      assertedCredentialId: identity.credentialId,
+      assertedAccountIdentity: 'account-1',
+      accountIdentitySource: 'asserted',
+    })
+    const anonymous = await fixture({
+      getScoped: async () => reply,
+    }).custody.authorize({
+      credentialId: identity.credentialId,
+      credentialType: 'oauth',
+    })
+    expect(anonymous.accountIdentity).toBeUndefined()
+    expect(anonymous.accountIdentitySource).toBe('none')
+  })
+
+  test('requireAssertion refuses a receipt unless the vault asserts the credential id and the expected account identity', async () => {
+    const strict = (
+      reply: Partial<Awaited<ReturnType<ClaustrumScopedClient['getScoped']>>>,
+      parseIdentity?: (token: string) => string | undefined,
+    ) =>
+      fixture(
+        {
+          getScoped: async () => ({
+            material: 'test-access',
+            recordVersion: 1,
+            expiresAtMs: 1_000_000,
+            ...reply,
+          }),
+        },
+        { requireAssertion: true, ...(parseIdentity && { parseIdentity }) },
+      ).custody
+    const refusals: Array<
+      [
+        string,
+        ReturnType<typeof strict>,
+        typeof identity | Omit<typeof identity, 'accountIdentity'>,
+      ]
+    > = [
+      ['no served credential id', strict({ accountId: 'account-1' }), identity],
+      [
+        'no served account',
+        strict({ credentialId: identity.credentialId }),
+        identity,
+      ],
+      [
+        'blank served account',
+        strict({ credentialId: identity.credentialId, accountId: ' ' }),
+        identity,
+      ],
+      [
+        'parsed identity only',
+        strict({ credentialId: identity.credentialId }, () => 'account-1'),
+        identity,
+      ],
+      [
+        'unknown expected account',
+        strict(served),
+        { credentialId: identity.credentialId, credentialType: 'oauth' },
+      ],
+      [
+        'different served account',
+        strict({ ...served, accountId: 'account-2' }),
+        identity,
+      ],
+    ]
+    for (const [name, custody, requested] of refusals) {
+      const outcome = await custody.authorize(requested).then(
+        () => `${name}: served`,
+        (error: { kind?: string }) => `${name}: ${error.kind}`,
+      )
+      expect(outcome).toMatch(/: identity-(unasserted|changed)$/)
+    }
+    const ok = await strict(served).authorize(identity)
+    expect(ok).toMatchObject({
+      accountIdentity: 'account-1',
+      assertedAccountIdentity: 'account-1',
+      assertedCredentialId: identity.credentialId,
+      accountIdentitySource: 'asserted',
+    })
+  })
+
   test('a static API key is served without an expiry and without a TTL demand', async () => {
     const f = fixture(
       {
@@ -563,6 +668,7 @@ test.each([
 test('only a changed record version for the same scoped credential and provider identity permits a 401 replay', () => {
   const attempt = {
     ...identity,
+    accountIdentitySource: 'asserted' as const,
     accessToken: 'old',
     recordVersion: 7,
     expiresAtMs: 1_000_000,
@@ -588,6 +694,7 @@ test('records both arms of a scoped 401 retry decision without credential materi
   const logs = captureLogger()
   const attempt = {
     ...identity,
+    accountIdentitySource: 'asserted' as const,
     accessToken: 'served-secret',
     recordVersion: 7,
     expiresAtMs: 1_000_000,
