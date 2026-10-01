@@ -1,6 +1,8 @@
 import { chmod, mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
+  LockContentionError,
+  LockOwnershipError,
   WRITER_LOCK_CONSTANTS,
   withLock,
   writeJsonAtomic,
@@ -11,7 +13,52 @@ export interface SidebarFileHooks {
   beforeRecheck?: () => void | Promise<void>
   /** @internal Test seam after staging, before the ownership fence. */
   beforeCommit?: () => Promise<void>
+  /** @internal Test seam after the rename, before ownership is checked again. */
+  afterRename?: () => Promise<void>
 }
+
+/**
+ * Rebuild a write after the lock was lost while it was being renamed into
+ * place. `current` is the file as it is now, under a freshly taken lock: a
+ * successor may have written it after taking over the lease. `written` is the
+ * value this write committed. Return the value to write instead, typically
+ * the successor's state with only the fields this write is the authority on
+ * carried over, or undefined to leave the file as it is.
+ */
+export type SidebarRepair<T> = (current: T, written: T) => T | undefined
+
+export interface SidebarWriteOptions<T> extends SidebarFileHooks {
+  /** Repair for this write; overrides the file's `repair` option. */
+  repair?: SidebarRepair<T>
+  /**
+   * Told how this write ended, before its promise resolves. A callback
+   * rather than a resolved value, so `write` and `update` keep resolving to
+   * nothing for callers that pass them on as `Promise<void>`.
+   */
+  onResult?: (result: SidebarWriteResult) => void
+}
+
+/**
+ * How a write ended.
+ *
+ * - `skipped`: the merge returned undefined, so nothing was written.
+ * - `written`: the value was renamed into place and the lock was still held
+ *   afterwards, so no other writer can have taken over during the rename.
+ * - `lost-after-rename`: the value was renamed into place, but by then the
+ *   lock had been taken over; the value may have replaced a successor's
+ *   state. `repair` says what was done about it: `none` (no repair was
+ *   supplied), `written` (the repaired value was committed and the lock held),
+ *   `skipped` (the repair returned undefined), `lock-unavailable` (the lock
+ *   could not be retaken in time) or `lost-again` (the repaired value was
+ *   committed but the lock was lost again; no further repair is tried).
+ */
+export type SidebarWriteResult =
+  | { status: 'skipped' }
+  | { status: 'written' }
+  | {
+      status: 'lost-after-rename'
+      repair: 'none' | 'written' | 'skipped' | 'lock-unavailable' | 'lost-again'
+    }
 
 export interface SidebarFileOptions<T> {
   path: string
@@ -29,14 +76,19 @@ export interface SidebarFileOptions<T> {
     warn: (message: string, payload?: unknown) => void
     debug: (message: string, payload?: unknown) => void
   }
+  /**
+   * Runs once, under a newly taken lock, when a write finds after its rename
+   * that the lock was lost. Without it such a write is only reported.
+   */
+  repair?: SidebarRepair<T>
 }
 
 export interface SidebarFile<T> {
   read(): Promise<T>
-  write(value: T, hooks?: SidebarFileHooks): Promise<void>
+  write(value: T, options?: SidebarWriteOptions<T>): Promise<void>
   update(
     merge: (latest: T) => T | undefined,
-    hooks?: SidebarFileHooks,
+    options?: SidebarWriteOptions<T>,
   ): Promise<void>
 }
 
@@ -70,16 +122,88 @@ export function createSidebarFile<T>(
       return defaultValue
     }
   }
-  const enqueue = (operation: () => Promise<void>): Promise<void> => {
-    const result = chain.then(operation)
+  const enqueue = (
+    operation: () => Promise<SidebarWriteResult>,
+    writeOptions: SidebarWriteOptions<T> | undefined,
+  ): Promise<void> => {
+    const result = chain
+      .then(operation)
+      .then((outcome) => writeOptions?.onResult?.(outcome))
     // Keep the next operation runnable without hiding this caller's rejection.
     chain = result.catch(() => {})
     return result
   }
+  const lockOptions = {
+    ...WRITER_LOCK_CONSTANTS.sidebar,
+    timeoutMs: options.timeoutMs ?? WRITER_LOCK_CONSTANTS.sidebar.timeoutMs,
+  }
+  /**
+   * Rename `value` into place under `lock`, then report whether the lock was
+   * still held. The fence before the rename stops a write whose lock is
+   * already gone; the check after it catches a lock lost while the rename
+   * itself was in flight, which no check before it can see.
+   */
+  const commitUnder = async (
+    lock: { assertOwned(): Promise<void> },
+    value: T,
+    hooks: SidebarFileHooks | undefined,
+  ): Promise<boolean> => {
+    await writeJsonAtomic(path, value, {
+      serialize: JSON.stringify,
+      beforeRename: async () => {
+        await hooks?.beforeCommit?.()
+        await lock.assertOwned()
+      },
+    })
+    await hooks?.afterRename?.()
+    try {
+      await lock.assertOwned()
+      return true
+    } catch (error) {
+      if (error instanceof LockOwnershipError) return false
+      throw error
+    }
+  }
+  /**
+   * One repair, under a new lock, of a write that lost its lock during the
+   * rename. Bounded to a single attempt: if the repair loses its lock too,
+   * the newer holder is writing and its state stands.
+   */
+  const repairLostWrite = async (
+    repair: SidebarRepair<T>,
+    written: T,
+    hooks: SidebarFileHooks | undefined,
+  ): Promise<SidebarWriteResult> => {
+    options.logger?.warn('sidebar lock lost after rename; repairing write', {
+      path,
+    })
+    try {
+      const outcome = await withLock(path, lockOptions, async (lock) => {
+        const next = repair(await read(), written)
+        if (next === undefined) return 'skipped' as const
+        return (await commitUnder(lock, next, hooks))
+          ? ('written' as const)
+          : ('lost-again' as const)
+      })
+      if (outcome === 'lost-again') {
+        options.logger?.warn('sidebar repair lost its lock after rename', {
+          path,
+        })
+      }
+      return { status: 'lost-after-rename', repair: outcome }
+    } catch (error) {
+      if (!(error instanceof LockContentionError)) throw error
+      options.logger?.warn('sidebar repair lock unavailable; repair skipped', {
+        path,
+      })
+      return { status: 'lost-after-rename', repair: 'lock-unavailable' }
+    }
+  }
   const persist = async (
     merge: (latest: T) => T | undefined,
-    hooks?: SidebarFileHooks,
-  ): Promise<void> => {
+    writeOptions?: SidebarWriteOptions<T>,
+  ): Promise<SidebarWriteResult> => {
+    const hooks: SidebarFileHooks | undefined = writeOptions
     const parent = dirname(path)
     const secureDir = options.secureDir ?? true
     await mkdir(parent, { recursive: true, mode: 0o700 })
@@ -91,39 +215,43 @@ export function createSidebarFile<T>(
         )
       })
     }
-    await withLock(
-      path,
-      {
-        ...WRITER_LOCK_CONSTANTS.sidebar,
-        timeoutMs: options.timeoutMs ?? WRITER_LOCK_CONSTANTS.sidebar.timeoutMs,
-      },
-      async (lock) => {
-        const commit = (value: T) =>
-          writeJsonAtomic(path, value, {
-            serialize: JSON.stringify,
-            beforeRename: async () => {
-              await hooks?.beforeCommit?.()
-              await lock.assertOwned()
-            },
-          })
-        // Older processes may ignore the lock; remerge if their bytes changed.
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          const raw = await readRaw()
-          const next = merge(parse(raw))
-          if (next === undefined) return
-          if (attempt === 0) await hooks?.beforeRecheck?.()
-          if ((await readRaw()) !== raw) continue
-          await commit(next)
-          return
-        }
-        const next = merge(await read())
-        if (next !== undefined) await commit(next)
-      },
-    )
+    const committed = await withLock(path, lockOptions, async (lock) => {
+      const commit = async (value: T) => ({
+        value,
+        held: await commitUnder(lock, value, hooks),
+      })
+      // Older processes may ignore the lock; remerge if their bytes changed.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const raw = await readRaw()
+        const next = merge(parse(raw))
+        if (next === undefined) return undefined
+        if (attempt === 0) await hooks?.beforeRecheck?.()
+        if ((await readRaw()) !== raw) continue
+        return await commit(next)
+      }
+      const next = merge(await read())
+      return next === undefined ? undefined : await commit(next)
+    })
+    if (committed === undefined) return { status: 'skipped' }
+    if (committed.held) return { status: 'written' }
+    // The first lock is released by now; the repair takes its own.
+    const repair = writeOptions?.repair ?? options.repair
+    if (!repair) {
+      options.logger?.warn(
+        'sidebar lock lost after rename; write not repaired',
+        {
+          path,
+        },
+      )
+      return { status: 'lost-after-rename', repair: 'none' }
+    }
+    return await repairLostWrite(repair, committed.value, hooks)
   }
   return {
     read,
-    write: (value, hooks) => enqueue(() => persist(() => value, hooks)),
-    update: (merge, hooks) => enqueue(() => persist(merge, hooks)),
+    write: (value, writeOptions) =>
+      enqueue(() => persist(() => value, writeOptions), writeOptions),
+    update: (merge, writeOptions) =>
+      enqueue(() => persist(merge, writeOptions), writeOptions),
   }
 }

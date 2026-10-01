@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -6,7 +6,10 @@ import {
   LockOwnershipError,
   lockPathFor,
 } from '../../src/fs/index.js'
-import { createSidebarFile } from '../../src/sidebar-file/index.js'
+import {
+  createSidebarFile,
+  type SidebarWriteResult,
+} from '../../src/sidebar-file/index.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 let dir: string
@@ -300,3 +303,185 @@ for (const timeoutMs of [50, undefined]) {
     expect(await file.read()).toBe(2)
   }, 25000)
 }
+
+/** Captures the result a write reports through `onResult`. */
+const reporting = () => {
+  const seen: SidebarWriteResult[] = []
+  return {
+    onResult: (result: SidebarWriteResult) => {
+      seen.push(result)
+    },
+    seen,
+  }
+}
+
+test('reports a write that kept its lock as written and a declined merge as skipped', async () => {
+  const written = reporting()
+  const skipped = reporting()
+  await writer().write(1, written)
+  await writer().update(() => undefined, skipped)
+  expect(written.seen).toEqual([{ status: 'written' }])
+  expect(skipped.seen).toEqual([{ status: 'skipped' }])
+  expect(await fs.readFile(target, 'utf8')).toBe('1')
+})
+
+describe('lock lost during the rename', () => {
+  interface Frame {
+    route: string
+    quota: number
+  }
+  const successor: Frame = { route: 'successor-route', quota: 80 }
+  const stale: Frame = { route: 'writer-route', quota: 10 }
+  const frames = (
+    options: {
+      repair?: (current: Frame, written: Frame) => Frame | undefined
+      timeoutMs?: number
+    } = {},
+  ) =>
+    createSidebarFile<Frame>({
+      path: target,
+      defaultValue: { route: 'none', quota: 0 },
+      normalize: (value) => value as Frame,
+      ...options,
+    })
+  const onDisk = async () =>
+    JSON.parse(await fs.readFile(target, 'utf8')) as Frame
+  /**
+   * After the first rename, a successor that took over the lapsed lease writes
+   * its own state. `holdLock` leaves its live lock in place, as if it were
+   * still writing; otherwise it releases the lock when done.
+   */
+  const successorTakesOver = (holdLock = false) => {
+    let fired = 0
+    return {
+      afterRename: async () => {
+        fired += 1
+        if (fired > 1) return
+        await fs.writeFile(
+          lockPath(),
+          JSON.stringify({
+            ownerId: 'successor',
+            expiresAt: Date.now() + 30000,
+          }),
+        )
+        await fs.writeFile(target, JSON.stringify(successor))
+        if (!holdLock) await fs.rm(lockPath())
+      },
+    }
+  }
+  /** Successor-aware: keep the successor's state, republish only the route. */
+  const republishRoute = (current: Frame, written: Frame) => ({
+    ...current,
+    route: written.route,
+  })
+
+  test('repairs an authoritative write after losing ownership post-rename', async () => {
+    const repairs: Array<[Frame, Frame]> = []
+    const report = reporting()
+    await frames({
+      repair: (current, written) => {
+        repairs.push([current, written])
+        return republishRoute(current, written)
+      },
+    }).write(stale, { ...successorTakesOver(), onResult: report.onResult })
+    expect(report.seen).toEqual([
+      { status: 'lost-after-rename', repair: 'written' },
+    ])
+    expect(repairs).toEqual([[successor, stale]])
+    expect(await onDisk()).toEqual({ route: 'writer-route', quota: 80 })
+    expect(
+      (await fs.readdir(dir)).filter((name) => name !== 'state.json'),
+    ).toEqual([])
+  })
+
+  test('without a repair a write that lost its lock at the rename is reported and left', async () => {
+    const report = reporting()
+    // Resolves, as it always has: the plugin learns of the loss from the report.
+    await frames().write(stale, {
+      ...successorTakesOver(),
+      onResult: report.onResult,
+    })
+    expect(report.seen).toEqual([
+      { status: 'lost-after-rename', repair: 'none' },
+    ])
+    expect(await onDisk()).toEqual(successor)
+  })
+
+  test('a repair that returns undefined leaves the successor state', async () => {
+    const report = reporting()
+    await frames({ repair: () => undefined }).write(stale, {
+      ...successorTakesOver(),
+      onResult: report.onResult,
+    })
+    expect(report.seen).toEqual([
+      { status: 'lost-after-rename', repair: 'skipped' },
+    ])
+    expect(await onDisk()).toEqual(successor)
+  })
+
+  test('a per-write repair overrides the file repair', async () => {
+    const report = reporting()
+    await frames({ repair: () => undefined }).update(() => stale, {
+      ...successorTakesOver(),
+      repair: republishRoute,
+      onResult: report.onResult,
+    })
+    expect(report.seen).toEqual([
+      { status: 'lost-after-rename', repair: 'written' },
+    ])
+    expect(await onDisk()).toEqual({ route: 'writer-route', quota: 80 })
+  })
+
+  test('a repair that loses its lock again is not repaired a second time', async () => {
+    let repairs = 0
+    let renames = 0
+    const report = reporting()
+    await frames({
+      repair: (current, written) => {
+        repairs += 1
+        return republishRoute(current, written)
+      },
+    }).write(stale, {
+      onResult: report.onResult,
+      afterRename: async () => {
+        renames += 1
+        await fs.writeFile(
+          lockPath(),
+          JSON.stringify({
+            ownerId: 'successor',
+            expiresAt: Date.now() + 30000,
+          }),
+        )
+        if (renames === 1) {
+          await fs.writeFile(target, JSON.stringify(successor))
+          await fs.rm(lockPath())
+        }
+      },
+    })
+    expect(report.seen).toEqual([
+      { status: 'lost-after-rename', repair: 'lost-again' },
+    ])
+    expect(repairs).toBe(1)
+    expect(renames).toBe(2)
+  })
+
+  test('a repair that cannot retake the lock is skipped without rejecting', async () => {
+    let repairs = 0
+    const report = reporting()
+    await frames({
+      timeoutMs: 50,
+      repair: (current, written) => {
+        repairs += 1
+        return republishRoute(current, written)
+      },
+    }).write(stale, {
+      ...successorTakesOver(true),
+      onResult: report.onResult,
+    })
+    expect(report.seen).toEqual([
+      { status: 'lost-after-rename', repair: 'lock-unavailable' },
+    ])
+    expect(repairs).toBe(0)
+    expect(await onDisk()).toEqual(successor)
+  })
+})
