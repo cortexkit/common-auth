@@ -438,3 +438,101 @@ The store rows (the `/store` account pool) are written fresh: no plugin had a sh
 | store | A refresh holding the row lock makes remove wait and writes no credential for the removed row | new (neither copy) | a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row |
 | store | Enable clears enabled false and the disabled reason | new (neither copy) | enable clears enabled false and the disabled reason |
 | store | Enable refuses a duplicate identity, writing nothing | new (neither copy) | enable refuses a row whose identity another enabled row holds, with both files unchanged |
+
+The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/opencode/src/core/cachekeep.ts` and `packages/opencode/src/tests/cachekeep.test.ts`, last changed at 2fb6a71; `packages/opencode/src/dump.ts` and `packages/opencode/src/tests/dump.test.ts`) and anthropic-auth `main` at 77e4c900 (`packages/core/src/cachekeep.ts`, `packages/opencode/src/tests/cachekeep.test.ts`, `packages/core/src/dump.ts`, `packages/core/src/tests/dump.test.ts`). Ported titles are unchanged; the plugin's request path, credential lookup and provider headers are replaced by a recording adapter, so assertions read the adapter's calls instead of a mocked fetch. Titles that named an OpenAI model are renamed provider-neutrally and their origin cell quotes the original title. In the origin cells below, `openai cachekeep` is openai-auth's cachekeep.ts with its cachekeep.test.ts, `openai dump` is its dump.ts with dump.test.ts, and `anthropic dump` is anthropic-auth's core dump.ts with core dump.test.ts.
+
+| component | behaviour | origin | test |
+| --- | --- | --- | --- |
+| cachekeep | A capture stores the session, account, idle clock, TTL and byte size | openai cachekeep | stores a target with correct fields |
+| cachekeep | A capture expires one TTL after the request | openai cachekeep | sets cacheExpiresAt to now + TTL_MS |
+| cachekeep | Retracking a session keeps one target and replays the freshest body | openai cachekeep | replace-on-retrack: freshest body wins |
+| cachekeep | Retracking restarts the cache clock | openai cachekeep | replace-on-retrack resets cacheExpiresAt |
+| cachekeep | A main session idle past maxIdleWarmMs is pruned | openai cachekeep | prunes targets past maxIdleWarmMs from last real request |
+| cachekeep | Sustain is read at runtime and lifts main idle pruning only while on | openai cachekeep | sustain toggles main idle pruning at runtime without recreating the manager |
+| cachekeep | Sustain leaves the target-count and byte caps evicting | openai cachekeep | sustain bypasses idle pruning but leaves maxTargets and maxBytes eviction active |
+| cachekeep | Sustain leaves the clock window gating capture and warming | openai cachekeep | sustain leaves the configured clock window in control of capture and warming |
+| cachekeep | The target-count cap (default 32) evicts the least recently touched | openai cachekeep | caps Map size at default maxTargets (32) |
+| cachekeep | The byte cap (default 8 MiB) refuses an oversized body and evicts by recency | openai cachekeep | caps total bytes at default maxBytes |
+| cachekeep | An oversized body is refused without evicting existing targets | openai cachekeep | rejects an oversized body without evicting existing targets |
+| cachekeep | A warm counts as a touch for least-recently-used eviction under sustain | openai cachekeep | sustain leaves least-recently-used eviction active |
+| cachekeep | Byte caps count UTF-8 bytes | new (neither copy) | byte caps count UTF-8 bytes, not string length |
+| cachekeep | Remove forgets a session, frees its bytes and stops its warms | new (neither copy) | remove forgets a session and frees its bytes |
+| cachekeep | A subagent idle past maxSubagentIdleMs is pruned even under sustain | openai cachekeep | subagent target pruned at 31min (past 30min cap) |
+| cachekeep | A subagent within its idle cap survives | openai cachekeep | subagent target survives at 29min (within 30min cap) |
+| cachekeep | A main session within its idle cap survives past the subagent cap | openai cachekeep | main target survives at 31min (within 1h cap) |
+| cachekeep | A main session past its idle cap is pruned | openai cachekeep | main target pruned past 1h |
+| cachekeep | A pruned subagent is captured again by its next request | openai cachekeep | re-captures a subagent target after it was pruned |
+| cachekeep | Status never carries captured bodies | openai cachekeep | does not expose captured body text |
+| cachekeep | Start arms the timer | openai cachekeep | start sets running flag |
+| cachekeep | Stop disarms and forgets every target | openai cachekeep | stop clears targets and timer |
+| cachekeep | Status reports the idle caps | openai cachekeep | status shows max idle warm time |
+| cachekeep | A null window value is no window | openai cachekeep | returns undefined for null storage |
+| cachekeep | A missing window block is no window | openai cachekeep | returns undefined when storage has no cachekeep block |
+| cachekeep | A same-day window parses | openai cachekeep | returns the parsed window for a valid same-day pair |
+| cachekeep | An overnight window parses | openai cachekeep | returns the parsed window for a valid overnight wrap pair |
+| cachekeep | Equal start and end hours are no window | openai cachekeep | returns undefined when start and end are equal |
+| cachekeep | Hours outside 0-23 are no window | openai cachekeep | returns undefined when hours are out of 0-23 range |
+| cachekeep | Fractional or NaN hours are no window | openai cachekeep | returns undefined when hours are non-integer |
+| cachekeep | A missing hour is no window | openai cachekeep | returns undefined when either hour is missing |
+| cachekeep | No window is never inside | openai cachekeep | returns false for undefined window |
+| cachekeep | A same-day window includes its start hour and hours before its end | openai cachekeep | same-day window (9-18): inside hours |
+| cachekeep | A same-day window excludes its end hour and hours outside | openai cachekeep | same-day window (9-18): outside hours |
+| cachekeep | An overnight window includes hours from its start through midnight to before its end | openai cachekeep | overnight wrap (22-6): inside hours |
+| cachekeep | An overnight window excludes the daytime hours | openai cachekeep | overnight wrap (22-6): outside hours |
+| cachekeep | Without a window the manager captures and warms at any hour | openai cachekeep | without getWindow: behavior is identical to the pre-window manager (unchanged legacy path) |
+| cachekeep | Outside the window nothing is captured or warmed | openai cachekeep | with excluded getWindow: track() captures nothing and tick() does not fire |
+| cachekeep | Inside the window capture and warming proceed | openai cachekeep | with included getWindow: track() captures and tick() fires normally |
+| cachekeep | A tick outside the window creates nothing and sends nothing | openai cachekeep | tick() before any capture with excluded window: no targets created, fetch not called |
+| cachekeep | Targets captured inside the window survive outside it and warm when it reopens | openai cachekeep | changing getWindow at runtime affects only subsequent track/tick calls (existing targets survive outside-window) |
+| cachekeep | The idle cap prunes a target in backoff | openai cachekeep | idle cap prunes targets even when active backoff would otherwise skip pruning |
+| cachekeep | The idle cap prunes before a retry after backoff | openai cachekeep | idle cap prunes expired-backoff targets before retrying warm |
+| cachekeep | Capture arms the timer and the timer warms a due target | openai cachekeep | track self-arms an unstarted manager and the timer fires a due target |
+| cachekeep | Repeated starts keep one timer and the first start time | openai cachekeep | track-driven start is idempotent and does not bump startedAt |
+| cachekeep | Running reflects the timer | openai cachekeep | status running reflects the actual timer presence |
+| cachekeep | A warm fires only within leadMs of expiry and replays the adapter's body | openai cachekeep | fires prewarm only within LEAD window of cacheExpiresAt |
+| cachekeep | A failed send backs the target off (default 10 minutes) | openai cachekeep | backoff suppresses prewarm after failure |
+| cachekeep | A backed-off target warms again once its backoff passes | openai cachekeep | prewarm fires again after backoff expires |
+| cachekeep | Overlapping ticks share one run and never send twice | openai cachekeep; anthropic-auth packages/opencode/src/tests/cachekeep.test.ts "coalesces overlapping scheduler ticks into one prewarm attempt" | does not reenter tick while a previous prewarm is still in flight |
+| cachekeep | An unbuildable replay body backs off that target and others still warm | openai cachekeep | sets backoff for malformed captured bodies and continues warming other targets |
+| cachekeep | An idle tick leaves the manager armed | openai cachekeep | stays armed across an idle tick and later warms a captured request |
+| cachekeep | Pruning on tick leaves the timer armed | openai cachekeep | tick prunes expired targets without disarming cachekeep |
+| cachekeep | The per-target idle cap prunes while the manager stays armed | openai cachekeep | per-target idle cap prunes old captures while cachekeep stays enabled |
+| cachekeep | A real request after pruning captures and warms again | openai cachekeep | a real request after the idle cap resumes warming |
+| cachekeep | A successful warm restarts the cache clock and counts the warm | openai cachekeep | on success: resets cacheExpiresAt and lastWarmedAt |
+| cachekeep | A non-2xx response backs off without restarting the cache clock and logs the body | openai cachekeep | backs off on non-2xx responses without resetting expiry |
+| cachekeep | Usage read by the adapter is logged on the fired line | openai cachekeep | logs cost from mock usage |
+| cachekeep | A usage reader that throws does not fail the warm | new (neither copy) | a usage reader that throws never fails a warm that worked |
+| cachekeep | The adapter receives the target's account, plugin data and an abort signal | openai cachekeep | sends cache-relevant captured headers on warm requests |
+| cachekeep | The response body is drained, never cancelled | openai cachekeep | prewarm drains the response body without canceling a locked body |
+| cachekeep | A backoff function sees the consecutive failure count, which success resets | anthropic-auth packages/core/src/cachekeep.ts (cacheKeepRetryDelayMs) | a backoff function receives the consecutive failure count and success resets it |
+| cachekeep | A plugin profile sets a per-target TTL | openai cachekeep "gpt-5.6 body uses 30-min cacheExpiresAt; non-5.6 body keeps 5-min" | profile ttlMs sets a per-target cacheExpiresAt; other bodies keep the default |
+| cachekeep | The profile is evaluated once at capture and kept on the target | openai cachekeep "is56 flag is captured at track(): true for 5.6 body, false for 5.5/5.4/5.60" | profile is evaluated once at track() and kept on the target |
+| cachekeep | A successful warm restarts the clock with the per-target TTL | openai cachekeep "gpt-5.6 session: post-warm reset uses per-target 30-min TTL (not 5-min)" | post-warm reset uses the per-target TTL |
+| cachekeep | A per-target warm cap retires the target after its last warm | openai cachekeep "gpt-5.6 subagent warms exactly twice then is dropped from the map" | a capped subagent warms exactly maxWarms times then is dropped from the map |
+| cachekeep | A profile idle bound replaces the subagent default | openai cachekeep "gpt-5.6 subagent is NOT idle-pruned before its 2 warms (cap governs)" | a profile idle bound outlives the subagent default so the warm cap governs |
+| cachekeep | A capped target whose warms keep failing is reclaimed at its idle bound | openai cachekeep "gpt-5.6 subagent stuck on persistently failing warms is reclaimed at the long idle bound (no leak)" | a capped subagent stuck on failing warms is reclaimed at its profile idle bound |
+| cachekeep | Without a profile idle bound a subagent uses maxSubagentIdleMs | openai cachekeep "non-5.6 subagent is still idle-pruned at maxSubagentIdleMs (unchanged)" | a subagent without a profile idle bound is idle-pruned at maxSubagentIdleMs |
+| cachekeep | Without a warm cap a target keeps warming | openai cachekeep "gpt-5.6 main target is unchanged (not dropped after 2 warms)" | a main target without a warm cap is not dropped after repeated warms |
+| cachekeep | Retracking resets the warm count | openai cachekeep | warmCount resets when track() re-captures the same subagent session |
+| cachekeep | A credential failure inside the adapter sends nothing and backs off | openai cachekeep | skips warm and sets backoff if no token resolves |
+| cachekeep | Stop aborts the warm in flight and its result mutates nothing | openai cachekeep | stop/dispose aborts in-flight warm and prevents mutating removed targets |
+| cachekeep | A session now routed to another account is dropped, not warmed | new (neither copy) | skips the warm and drops the target when the session now routes to another account |
+| cachekeep | A matching active account, or none reported, warms the captured account | new (neither copy) | warms when the active account matches or the plugin reports none |
+| cachekeep | An active-account lookup that throws backs off without sending | new (neither copy) | backs off when the active account cannot be resolved |
+| dump | Writes body, metadata and redacted request files, 0600 in a 0700 directory | openai dump | dumps final HTTP body and redacted request metadata when enabled |
+| dump | The first dump after a restart diffs against the dump on disk | openai dump | recovers a diff baseline from disk after a restart |
+| dump | The disk baseline is the newest earlier dump of the key | anthropic dump | seeds a direct-request diff from the latest same-session dump after restart |
+| dump | A dump with another phase of the same channel is a baseline | anthropic dump | recognizes a tagged prewarm as the latest same-session restart baseline |
+| dump | A baseline is never borrowed from another session or channel | openai dump | does not borrow a diff baseline from a different session |
+| dump | Sessions sharing a filename segment keep separate baselines | new (neither copy) | sessions whose filename segments collide do not share a baseline |
+| dump | The pid in the filename keeps two processes' dumps apart | openai dump (pid in the filename) | dumps from two processes in the same directory never collide |
+| dump | A body with nothing to redact keeps its original bytes | openai dump | preserves non-secret JSON dump body bytes |
+| dump | A plugin-listed header is redacted while the serving account is recorded | openai dump | records the internal serving account without exposing a ChatGPT account id |
+| dump | Credential keys and token values are redacted from the body | openai dump | redacts credentials from JSON dump bodies |
+| dump | A body that is not JSON still loses token-shaped strings | new (neither copy) | scrubs token-shaped strings from a body that is not JSON |
+| dump | Tool schemas keep a parameter named api_key while their strings are scrubbed | openai dump | keeps tool schemas intact while scrubbing credentials inside them |
+| dump | The diff is computed on the redacted text | openai dump | diffs the redacted text so offsets index the dumped file |
+| dump | Dumps switch on and off at runtime | anthropic dump "request dumps return response handles only when enabled" | setEnabled switches dumps at runtime without recreating the dumper |
+| dump | An existing dump directory is tightened to 0700 | openai dump | tightens an existing dump directory to 0700 |
+| dump | The plugin summary is computed on the redacted body | new (neither copy) | stores the plugin body summary computed on the redacted body |
+| dump | A failed dump returns nothing and logs a warning | openai dump | a failed dump returns nothing and logs instead of throwing |
