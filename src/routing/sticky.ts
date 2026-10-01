@@ -13,6 +13,7 @@ import {
   type AdmissionRefusal,
   type AdmissionResult,
   admit,
+  type RoutingRow,
   type WindowRef,
 } from './admission.js'
 import { isPinValid, type StickyPin } from './pins.js'
@@ -321,14 +322,45 @@ export function selectStickyCandidate(
   }
 }
 
+/** Reserve percent per window label; a missing label reserves nothing. */
+export type ReservePercent = Readonly<Record<string, number>>
+
+/**
+ * Reserve percentages per row: a map keyed by row id, or a function of the
+ * row. A row the map lacks, or for which the function returns undefined,
+ * takes the shared `reservePercent`.
+ */
+export type RowReservePercent =
+  | ReadonlyMap<string, ReservePercent>
+  | ((row: RoutingRow) => ReservePercent | undefined)
+
+/**
+ * What a valid pin does when its row is not dispatched.
+ *
+ * `keep`: the pin is retained whatever kept its row from this request.
+ *
+ * `move-on-confirmed-exhaustion`: the pin moves to the row this request is
+ * dispatched to when its own row was refused as confirmed exhausted (a spent
+ * window with a future reset, or a spent credit budget) or killed by the
+ * killswitch. A refusal for unknown quota (no reading yet, a missing window,
+ * an exhausted reading without a usable reset) and an exclusion (rate-limit
+ * mark, refresh backoff) keep the pin while this request is served elsewhere.
+ * With no admissible row the pin is retained either way.
+ */
+export type RefusedPinPolicy = 'keep' | 'move-on-confirmed-exhaustion'
+
 export interface StickyRouteInput extends AdmissionInput {
   requestBytes: number
   /** Bytes already committed per row, for example from other sessions' pins. */
   pendingBytes?: ReadonlyMap<string, number>
   /** Killswitch verdict per row; a missing row passes. */
   killswitch?: ReadonlyMap<string, boolean>
-  /** Reserve percent per window label, applied to every row. */
-  reservePercent?: Readonly<Record<string, number>>
+  /** Reserve percent per window label, for every row without its own. */
+  reservePercent?: ReservePercent
+  /** Per-row reserves, which replace `reservePercent` for the rows they cover. */
+  rowReservePercent?: RowReservePercent
+  /** Defaults to `keep`. */
+  refusedPinPolicy?: RefusedPinPolicy
   resetCreditsApplicable?: ReadonlyMap<string, number>
   /** The session's current pin, if it has one. */
   pin?: StickyPin
@@ -339,8 +371,9 @@ export interface StickyRouteInput extends AdmissionInput {
 
 /**
  * What the caller does with the session's pin: keep it, replace it with
- * `pin`, or drop it. A valid pin is always kept, even when this request was
- * routed elsewhere because its row was refused or excluded.
+ * `pin`, or drop it. Under the default `keep` policy a valid pin is always
+ * kept, even when this request was routed elsewhere because its row was
+ * refused, excluded or killed; `refusedPinPolicy` can move it instead.
  */
 export type PinAction =
   | { action: 'retain' }
@@ -400,6 +433,28 @@ export function routeSticky(input: StickyRouteInput): StickyRoute {
     }
   }
 
+  // A spent window with a future reset, a spent credit budget and a killswitch
+  // verdict all say the pinned row will not serve until some known later time,
+  // so the pin may move. A row refused for want of a usable reading, or
+  // excluded by a short rate-limit mark or refresh backoff, may serve again on
+  // the next reading, so its pin stays.
+  const pinRefusal = input.pin ? refusals.get(input.pin.accountId) : undefined
+  const pinMoves =
+    pinValid &&
+    input.pin !== undefined &&
+    input.refusedPinPolicy === 'move-on-confirmed-exhaustion' &&
+    (input.killswitch?.get(input.pin.accountId) === false ||
+      pinRefusal?.reason === 'exhausted' ||
+      pinRefusal?.reason === 'budget-spent')
+
+  const reserveFor = (row: RoutingRow): ReservePercent => {
+    const perRow =
+      typeof input.rowReservePercent === 'function'
+        ? input.rowReservePercent(row)
+        : input.rowReservePercent?.get(row.id)
+    return perRow ?? input.reservePercent ?? {}
+  }
+
   const scope = input.scope
   let candidates: StickySelectionCandidate[] = input.rows
     .map((row, configuredOrder) => ({ row, configuredOrder }))
@@ -414,7 +469,7 @@ export function routeSticky(input: StickyRouteInput): StickyRoute {
             ? undefined
             : (admitted.get(row.id)?.projection ??
               projectQuota(row.quota, scope)),
-        reservePercent: input.reservePercent ?? {},
+        reservePercent: reserveFor(row),
         configuredOrder,
         ...(credits === undefined ? {} : { resetCreditsApplicable: credits }),
         ...(killswitchPasses === undefined ? {} : { killswitchPasses }),
@@ -454,19 +509,20 @@ export function routeSticky(input: StickyRouteInput): StickyRoute {
       ...(selection.quotaCheckedAt === undefined
         ? {}
         : { quotaCheckedAt: selection.quotaCheckedAt }),
-      pin: pinValid
-        ? { action: 'retain' }
-        : {
-            action: 'assign',
-            pin: {
-              accountId: selection.accountId,
-              inputBytes: input.requestBytes,
-              ...(identity === undefined ? {} : { wireIdentity: identity }),
-              ...(selection.quotaCheckedAt === undefined
-                ? {}
-                : { quotaCheckedAt: selection.quotaCheckedAt }),
+      pin:
+        pinValid && !pinMoves
+          ? { action: 'retain' }
+          : {
+              action: 'assign',
+              pin: {
+                accountId: selection.accountId,
+                inputBytes: input.requestBytes,
+                ...(identity === undefined ? {} : { wireIdentity: identity }),
+                ...(selection.quotaCheckedAt === undefined
+                  ? {}
+                  : { quotaCheckedAt: selection.quotaCheckedAt }),
+              },
             },
-          },
       refusedSelections,
       admission,
     }

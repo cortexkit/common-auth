@@ -26,8 +26,13 @@ import {
   type AddResult,
   addRow,
   disableRow,
+  enableRow,
+  type RemoveOptions,
+  type RemoveResult,
   type RowOperationOptions,
+  type RowToggleOptions,
   recordRowIdentity,
+  removeRow,
   replaceRow,
   rotateRow,
 } from './rows.js'
@@ -111,11 +116,27 @@ export interface PoolStore {
     input?: { identity?: string },
     options?: RowOperationOptions,
   ): Promise<{ id: string; credential: StoredCredential }>
+  /**
+   * Sets `enabled: false` and the entry's `disabledReason`. Takes the row
+   * lock, then `extraLocks`, then the store locks (the row lock and
+   * `extraLocks` since 0.2.3).
+   */
   disable(
     id: string,
     reason: string,
-    options?: Pick<RowOperationOptions, 'onFailure'>,
+    options?: RowToggleOptions,
   ): Promise<{ id: string }>
+  /**
+   * Clears `enabled: false` and `disabledReason` (since 0.2.3); refuses with
+   * `duplicate-identity` when another enabled OAuth row holds the row's
+   * identity. Locks as `disable`.
+   */
+  enable(id: string, options?: RowToggleOptions): Promise<{ id: string }>
+  /**
+   * Deletes the roster row, its per-row entry and its state-file credential
+   * (since 0.2.3). Locks as `disable`; `protect` can refuse the id.
+   */
+  remove(id: string, options?: RemoveOptions): Promise<RemoveResult>
   recordIdentity(
     id: string,
     identity: string,
@@ -240,6 +261,8 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
       rotateRow(rt, id, credential, input, callOptions),
     disable: (id, reason, callOptions) =>
       disableRow(rt, id, reason, callOptions),
+    enable: (id, callOptions) => enableRow(rt, id, callOptions),
+    remove: (id, callOptions) => removeRow(rt, id, callOptions),
     recordIdentity: (id, identity, callOptions) =>
       recordRowIdentity(rt, id, identity, callOptions),
     refresh: (id, provider, callOptions) =>

@@ -180,6 +180,18 @@ export class Transaction {
     )
   }
 
+  /**
+   * Drops every roster row carrying this id. The row's per-row entry goes with
+   * it on the next `commitConfig`, which drops entries for ids no longer in
+   * the roster. Returns how many roster rows were dropped.
+   */
+  dropRosterRows(id: string): number {
+    const roster = this.roster()
+    const kept = roster.filter((raw) => !(isRecord(raw) && raw.id === id))
+    this.config.accounts = kept
+    return roster.length - kept.length
+  }
+
   entries(): Record<string, unknown> {
     if (!isRecord(this.config[POOL_KEY])) this.config[POOL_KEY] = {}
     const pool = this.config[POOL_KEY] as Record<string, unknown>
@@ -206,6 +218,12 @@ export class Transaction {
     const accounts = isRecord(this.state.accounts) ? this.state.accounts : {}
     const entry = Object.hasOwn(accounts, id) ? accounts[id] : undefined
     return isRecord(entry) ? entry : undefined
+  }
+
+  /** Drops the row's credential and runtime fields from the state file's accounts. */
+  dropStateAccount(id: string): void {
+    if (isRecord(this.state.accounts) && Object.hasOwn(this.state.accounts, id))
+      delete this.state.accounts[id]
   }
 
   setStateAccount(id: string, fields: Record<string, unknown>): void {

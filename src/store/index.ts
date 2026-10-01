@@ -34,7 +34,11 @@ export type {
   AddInput,
   AddResult,
   FailureHook,
+  RemoveOptions,
+  RemoveResult,
+  RemoveView,
   RowOperationOptions,
+  RowToggleOptions,
 } from './rows.js'
 export type { PullReason } from './runtime.js'
 export type {

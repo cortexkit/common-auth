@@ -986,4 +986,178 @@ describe('routeSticky', () => {
     })
     expect(route).toMatchObject({ accountId: 'b', pin: { action: 'retain' } })
   })
+
+  test('per-row reserves change placement per row, as a map or a function, over the shared reserve', () => {
+    // a: 60% left, b: 50% left. Without reserves a carries more weight.
+    const rows = [oauth('a', fresh(40)), oauth('b', fresh(50))]
+    expect(routeSticky({ ...base, rows })).toMatchObject({
+      accountId: 'a',
+      source: 'weighted',
+    })
+    // A 30% reserve on a alone leaves it 30 spendable against b's 50.
+    const map = new Map([['a', { primary: 30 }]])
+    expect(
+      routeSticky({ ...base, rows, rowReservePercent: map }),
+    ).toMatchObject({ accountId: 'b', source: 'weighted' })
+    expect(
+      routeSticky({
+        ...base,
+        rows,
+        rowReservePercent: (row) =>
+          row.id === 'a' ? { primary: 30 } : undefined,
+      }),
+    ).toMatchObject({ accountId: 'b', source: 'weighted' })
+    // The shared 30% reserve applies to both rows, so a stays ahead.
+    expect(
+      routeSticky({ ...base, rows, reservePercent: { primary: 30 } }),
+    ).toMatchObject({ accountId: 'a' })
+    // A row the per-row map covers ignores the shared reserve; b keeps it.
+    expect(
+      routeSticky({
+        ...base,
+        rows,
+        reservePercent: { primary: 45 },
+        rowReservePercent: new Map([['a', { primary: 0 }]]),
+      }),
+    ).toMatchObject({ accountId: 'a', source: 'weighted' })
+    expect(
+      routeSticky({
+        ...base,
+        rows,
+        reservePercent: { primary: 0 },
+        rowReservePercent: new Map([['b', { primary: 45 }]]),
+      }),
+    ).toMatchObject({ accountId: 'a', source: 'weighted' })
+    expect(
+      routeSticky({
+        ...base,
+        rows,
+        reservePercent: { primary: 0 },
+        rowReservePercent: new Map([['a', { primary: 45 }]]),
+      }),
+    ).toMatchObject({ accountId: 'b', source: 'weighted' })
+  })
+
+  describe('refused pin policy', () => {
+    const pin = { accountId: 'a' }
+    const moved = {
+      outcome: 'dispatch',
+      accountId: 'b',
+      pin: { action: 'assign', pin: { accountId: 'b', inputBytes: 10 } },
+    }
+    const kept = {
+      outcome: 'dispatch',
+      accountId: 'b',
+      pin: { action: 'retain' },
+    }
+    const move = 'move-on-confirmed-exhaustion' as const
+    // Healthy windows with a reached credit budget resetting in thirty days.
+    const spent = {
+      ...fresh(10),
+      budget: {
+        kind: 'reading' as const,
+        checkedAt: now,
+        reached: true,
+        remainingPercent: 0,
+        resetsAt: new Date(now + 30 * 24 * 3600_000).toISOString(),
+      },
+    }
+
+    test('the move policy moves a pin whose row is refused as exhausted or budget-spent', () => {
+      const exhausted = [oauth('a', fresh(100)), oauth('b', fresh(20))]
+      expect(
+        routeSticky({ ...base, rows: exhausted, pin, refusedPinPolicy: move }),
+      ).toMatchObject(moved)
+      const budget = routeSticky({
+        ...base,
+        rows: [oauth('a', spent), oauth('b', fresh(20))],
+        pin,
+        refusedPinPolicy: move,
+      })
+      expect(budget.admission.refused).toMatchObject([
+        { id: 'a', reason: 'budget-spent' },
+      ])
+      expect(budget).toMatchObject(moved)
+    })
+
+    test('the move policy moves a pin whose row the killswitch kills', () => {
+      expect(
+        routeSticky({
+          ...base,
+          rows: [oauth('a', fresh(10)), oauth('b', fresh(10))],
+          pin,
+          killswitch: new Map([['a', false]]),
+          refusedPinPolicy: move,
+        }),
+      ).toMatchObject(moved)
+    })
+
+    test('the move policy keeps a pin whose row is refused for unknown quota or excluded, serving elsewhere', () => {
+      for (const reasonRows of [
+        // No reading yet.
+        [oauth('a'), oauth('b', fresh(20))],
+        // Exhausted with a reset that has already passed: admission cannot
+        // tell whether the window has refilled, so it refuses as unknown-reset.
+        [
+          oauth(
+            'a',
+            quotaMap([
+              reading('primary', 100, {
+                resetsAt: new Date(now - 1000).toISOString(),
+              }),
+            ]),
+          ),
+          oauth('b', fresh(20)),
+        ],
+      ]) {
+        const route = routeSticky({
+          ...base,
+          rows: reasonRows,
+          pin,
+          refusedPinPolicy: move,
+        })
+        expect(route.admission.refused[0]?.id).toBe('a')
+        expect(route).toMatchObject(kept)
+      }
+      expect(
+        routeSticky({
+          ...base,
+          rows: [oauth('a', fresh(10)), oauth('b', fresh(20))],
+          pin,
+          rateLimitMarks: new Map([['a', now + 1000]]),
+          refusedPinPolicy: move,
+        }),
+      ).toMatchObject(kept)
+    })
+
+    test('the move policy retains the pin when nothing else is admissible', () => {
+      expect(
+        routeSticky({
+          ...base,
+          rows: [oauth('a', fresh(100)), oauth('b')],
+          pin,
+          refusedPinPolicy: move,
+        }),
+      ).toMatchObject({
+        outcome: 'no-admissible-account',
+        pin: { action: 'retain' },
+      })
+    })
+
+    test('the default policy keeps a pin whose row is exhausted, budget-spent or killed', () => {
+      for (const extra of [
+        { rows: [oauth('a', fresh(100)), oauth('b', fresh(20))] },
+        { rows: [oauth('a', spent), oauth('b', fresh(20))] },
+        {
+          rows: [oauth('a', fresh(10)), oauth('b', fresh(10))],
+          killswitch: new Map([['a', false]]),
+        },
+      ]) {
+        expect(routeSticky({ ...base, ...extra, pin })).toMatchObject(kept)
+        expect(
+          routeSticky({ ...base, ...extra, pin, refusedPinPolicy: 'keep' }),
+        ).toMatchObject(kept)
+      }
+    })
+  })
 })

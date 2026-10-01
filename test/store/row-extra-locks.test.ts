@@ -88,3 +88,54 @@ test('add, replace, rotate and recordIdentity take extra locks after the row and
     })
   }
 })
+
+// disable, enable and remove change no identity keying, so they take no
+// provider-wide lock; otherwise they lock as every other row write does, so a
+// removal waits for a refresh of the row instead of landing during its
+// provider call.
+test('disable, enable and remove take the row lock, then extra locks, then the store locks', async () => {
+  const extras = [
+    { name: 'extra-1', path: s.statePath },
+    { name: 'extra-2', path: s.statePath },
+  ]
+  await s.open().add({ id: 'a', credential: oauth('r-a'), identity: 'acct-1' })
+  const cases: Array<
+    [string, (r: ReturnType<typeof recorder>) => Promise<unknown>]
+  > = [
+    [
+      'disable',
+      (r) =>
+        s
+          .open({ onLockEvent: r.onLockEvent })
+          .disable('a', 'manual', { extraLocks: extras }),
+    ],
+    [
+      'enable',
+      (r) =>
+        s
+          .open({ onLockEvent: r.onLockEvent })
+          .enable('a', { extraLocks: extras }),
+    ],
+    [
+      'remove',
+      (r) =>
+        s
+          .open({ onLockEvent: r.onLockEvent })
+          .remove('a', { extraLocks: extras }),
+    ],
+  ]
+  for (const [name, run] of cases) {
+    const r = recorder()
+    await run(r)
+    expect({ name, log: r.log }).toEqual({
+      name,
+      log: [
+        'row-acct-1@state',
+        'extra-1@state',
+        'extra-2@state',
+        'save@config',
+        'save@state',
+      ],
+    })
+  }
+})

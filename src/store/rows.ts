@@ -1,12 +1,18 @@
 import type { PoolOperationError } from './errors.js'
-import { assertNotInsideHook } from './hooks.js'
+import { assertNotInsideHook, runInsideHook } from './hooks.js'
 import {
   DUPLICATE_IDENTITY_REASON,
   disableIdentityDuplicates,
   disableIn,
   recordIdentityIn,
 } from './identity.js'
-import { runOperation, type Transaction, withTransaction } from './mutate.js'
+import {
+  notReadyError,
+  readPool,
+  runOperation,
+  type Transaction,
+  withTransaction,
+} from './mutate.js'
 import type { PoolLockSpec } from './refresh-lock.js'
 import {
   readRow,
@@ -47,6 +53,56 @@ export interface RowOperationOptions {
    * refresh of that row acquire them in one order and cannot deadlock.
    */
   extraLocks?: readonly PoolLockSpec[]
+}
+
+/**
+ * Options of `disable`, `enable` and `remove`. The provider-wide lock guards
+ * changes to the recorded identity a row lock is named by; none of these
+ * three records an identity, so none takes it. The extra locks are taken
+ * where every other row write takes them, after the row lock and before the
+ * store locks.
+ */
+export type RowToggleOptions = Pick<
+  RowOperationOptions,
+  'onFailure' | 'extraLocks'
+>
+
+/** What a `remove` protect predicate is shown, read under every lock. */
+export interface RemoveView {
+  /**
+   * The row as loaded; undefined when the roster no longer holds the id and
+   * only its state-file entry is left (a removal interrupted between writes).
+   */
+  row: PoolRow | undefined
+  /** The config file as read under the store locks. */
+  config: Readonly<Record<string, unknown>>
+  /** The state file as read under the store locks. */
+  state: Readonly<Record<string, unknown>>
+}
+
+export interface RemoveOptions extends RowToggleOptions {
+  /**
+   * Awaited under every lock before anything is written; a reason refuses
+   * the removal (kind `row-protected`) with both files unchanged. The store
+   * keeps no record of a plugin's in-flight work, so this is where a plugin
+   * refuses an id it reserves or one its own pending-operation record (kept
+   * in the config or state file) still names: reading that record from the
+   * locked files here cannot race a writer that holds the store locks.
+   */
+  protect?: (
+    id: string,
+    view: RemoveView,
+  ) => string | undefined | Promise<string | undefined>
+}
+
+export type RemoveResult = {
+  id: string
+  /**
+   * `removed`: the roster row was dropped (and its state entry, if any).
+   * `completed`: only a state-file entry was left, by a removal interrupted
+   * between its config and state writes, and it is now dropped.
+   */
+  outcome: 'removed' | 'completed'
 }
 
 export interface AddInput {
@@ -132,7 +188,7 @@ function checkInput(
 }
 
 function requireUsableRow(
-  operation: 'replace' | 'rotate' | 'recordIdentity' | 'disable',
+  operation: 'replace' | 'rotate' | 'recordIdentity' | 'disable' | 'enable',
   id: string,
   row: PoolRow | undefined,
   credential?: PoolCredential,
@@ -152,7 +208,13 @@ function requireUsableRow(
 
 /** Keying changed between the unlocked read and the locked one: retry. */
 function keyChanged(
-  operation: 'replace' | 'rotate' | 'recordIdentity',
+  operation:
+    | 'replace'
+    | 'rotate'
+    | 'recordIdentity'
+    | 'disable'
+    | 'enable'
+    | 'remove',
   id: string,
 ) {
   return refusal(
@@ -401,11 +463,16 @@ export async function rotateRow(
   )
 }
 
+/**
+ * Marks a row disabled. Since 0.2.3 it takes the row lock and the caller's
+ * extra locks before the store locks, as the other row writes do, so it waits
+ * for a refresh of the row instead of landing during its provider call.
+ */
 export async function disableRow(
   rt: StoreRuntime,
   id: string,
   reason: string,
-  options: Pick<RowOperationOptions, 'onFailure'> = {},
+  options: RowToggleOptions = {},
 ): Promise<{ id: string }> {
   assertNotInsideHook('disable')
   return runOperation(
@@ -413,20 +480,172 @@ export async function disableRow(
     'disable',
     id,
     options.onFailure,
-    async (locks, progress) =>
-      withTransaction(
+    async (locks, progress) => {
+      const { row: seen } = await readRow(rt, 'disable', id)
+      await locks.acquire(rowLockSpec(rt, seen))
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
+      return withTransaction(
         rt.ctx,
         locks,
         progress,
         { operation: 'disable', rowId: id },
         async (tx) => {
-          if (!tx.rosterRow(id)) throw unknownRow('disable', id)
+          const row = tx.row(id)
+          if (!row || !tx.rosterRow(id)) throw unknownRow('disable', id)
+          if (rowLockKey(row) !== rowLockKey(seen))
+            throw keyChanged('disable', id)
           disableIn(tx, id, reason)
           await tx.commitConfig()
           return { id }
         },
-      ),
+      )
+    },
   )
+}
+
+/**
+ * Clears a row's `enabled: false` and its `disabledReason` in one config
+ * write. An OAuth row whose recorded identity another enabled OAuth row holds
+ * stays disabled and the call refuses (`duplicate-identity`): the same rule
+ * that makes `add` store such a row disabled. Enabling a row that is already
+ * enabled writes nothing.
+ */
+export async function enableRow(
+  rt: StoreRuntime,
+  id: string,
+  options: RowToggleOptions = {},
+): Promise<{ id: string }> {
+  assertNotInsideHook('enable')
+  return runOperation(
+    rt.ctx,
+    'enable',
+    id,
+    options.onFailure,
+    async (locks, progress) => {
+      const { row: seen } = await readRow(rt, 'enable', id)
+      await locks.acquire(rowLockSpec(rt, seen))
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
+      return withTransaction(
+        rt.ctx,
+        locks,
+        progress,
+        { operation: 'enable', rowId: id },
+        async (tx) => {
+          const row = requireUsableRow('enable', id, tx.row(id))
+          if (rowLockKey(row) !== rowLockKey(seen))
+            throw keyChanged('enable', id)
+          if (row.enabled && row.disabledReason === undefined) return { id }
+          if (row.type === 'oauth' && row.identity !== undefined) {
+            const holder = tx
+              .rows()
+              .find(
+                (other) =>
+                  other.id !== id &&
+                  other.invalid === undefined &&
+                  other.type === 'oauth' &&
+                  other.enabled &&
+                  other.identity === row.identity,
+              )
+            if (holder)
+              throw refusal(
+                'enable',
+                id,
+                'duplicate-identity',
+                `row ${holder.id} is enabled with the same identity as row ${id}`,
+              )
+          }
+          const raw = tx.rosterRow(id) as Record<string, unknown>
+          raw.enabled = true
+          const entry = tx.entry(id)
+          if (entry && 'disabledReason' in entry) {
+            const next = { ...entry }
+            delete next.disabledReason
+            tx.setEntry(id, next)
+          }
+          await tx.commitConfig()
+          return { id }
+        },
+      )
+    },
+  )
+}
+
+/**
+ * Deletes a row: its roster row and per-row entry (quota, epoch; the identity
+ * lives in the roster row) in one config write, then its credential and
+ * runtime fields in one state write. The config goes first, so a crash
+ * between the two leaves a row every reader already sees as removed, with
+ * only an orphaned state entry that no reader loads; calling `remove` again
+ * drops that entry (`completed`). As with every id the store drops, the id is
+ * not reused by `add` in this process.
+ */
+export async function removeRow(
+  rt: StoreRuntime,
+  id: string,
+  options: RemoveOptions = {},
+): Promise<RemoveResult> {
+  assertNotInsideHook('remove')
+  const { ctx } = rt
+  return runOperation(
+    ctx,
+    'remove',
+    id,
+    options.onFailure,
+    async (locks, progress) => {
+      // Only a non-string or empty id is refused: a roster row whose id the
+      // older readers would trim is invalid, and removing it is a repair.
+      if (typeof id !== 'string' || id.length === 0)
+        throw refusal('remove', id, 'invalid-input', 'id must be non-empty')
+      const result = await readPool(ctx)
+      if (result.status !== 'ready') throw notReadyError(result, 'remove', id)
+      const seen = result.rows.find((row) => row.id === id)
+      if (!seen && !hasStateAccount(result.state, id))
+        throw unknownRow('remove', id)
+      const seenKey = rowLockKey(seen ?? { id })
+      await locks.acquire(rowLockSpec(rt, seen ?? { id }))
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
+      return withTransaction(
+        ctx,
+        locks,
+        progress,
+        { operation: 'remove', rowId: id },
+        async (tx): Promise<RemoveResult> => {
+          const row = tx.row(id)
+          const orphan = hasStateAccount(tx.state, id)
+          if (!row && !orphan) throw unknownRow('remove', id)
+          if (rowLockKey(row ?? { id }) !== seenKey)
+            throw keyChanged('remove', id)
+          const protect = options.protect
+          if (protect) {
+            const view: RemoveView = {
+              row,
+              config: tx.snapshot.config,
+              state: tx.snapshot.state,
+            }
+            const reason = await runInsideHook('remove', () =>
+              protect(id, view),
+            )
+            if (reason !== undefined)
+              throw refusal('remove', id, 'row-protected', reason)
+          }
+          if (row) {
+            tx.dropRosterRows(id)
+            await tx.commitConfig()
+          }
+          if (orphan) {
+            tx.dropStateAccount(id)
+            await tx.commitState()
+          }
+          return { id, outcome: row ? 'removed' : 'completed' }
+        },
+      )
+    },
+  )
+}
+
+function hasStateAccount(state: Record<string, unknown>, id: string): boolean {
+  const accounts = state.accounts
+  return isRecord(accounts) && Object.hasOwn(accounts, id)
 }
 
 export async function recordRowIdentity(
