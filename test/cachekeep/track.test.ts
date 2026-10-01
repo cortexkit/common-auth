@@ -247,9 +247,12 @@ describe('CacheKeepManager.track', () => {
 })
 
 describe('CacheKeepManager subagent pruneStale', () => {
+  // A cache lifetime longer than either idle cap, so these targets are pruned
+  // by the idle caps and not by the end of their cache lifetime.
   const hourAndHalf = {
     maxIdleWarmMs: 60 * 60_000,
     maxSubagentIdleMs: 30 * 60_000,
+    ttlMs: 2 * 60 * 60_000,
   }
 
   test('subagent target pruned at 31min (past 30min cap)', () => {
