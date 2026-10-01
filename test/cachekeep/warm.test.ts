@@ -246,6 +246,32 @@ describe('CacheKeepManager tick/prewarm', () => {
     expect(mgr.status().tracked).toBe(0)
   })
 
+  test('a target whose lifetime ended during an earlier warm in the same tick is retired without building its body', async () => {
+    const built: string[] = []
+    const { mgr, send } = makeManager(
+      clock,
+      { ttlMs: 1000, leadMs: 300 },
+      {
+        buildBody: async (target) => {
+          built.push(target.sessionKey)
+          clock.advance(200)
+          return target.bodyText
+        },
+      },
+    )
+    mgr.track({ sessionKey: 'first', bodyText: body('a') })
+    clock.advance(50)
+    mgr.track({ sessionKey: 'second', bodyText: body('b') })
+    // At 850 both are due (expiries 1000 and 1050). Building the first body
+    // takes until 1050, which ends both lifetimes: the first is not sent and
+    // the second is retired before its body is built.
+    clock.advance(800)
+    await mgr.tick()
+    expect(built).toEqual(['first'])
+    expect(send).not.toHaveBeenCalled()
+    expect(mgr.status().tracked).toBe(0)
+  })
+
   test('a lifetime that ends while the replay body is being built sends nothing', async () => {
     const { mgr, send } = makeManager(
       clock,
