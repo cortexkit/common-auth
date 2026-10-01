@@ -47,8 +47,6 @@ interface AttemptRecord<A> {
    * for the same session and kind is a new send and gets a new attempt.
    */
   transport?: Transport
-  /** An `http.response` was attributed to this attempt. */
-  responded: boolean
   status?: number
   outputStarted: boolean
   limit?: { readonly signal: LimitSignal; readonly delivered: Promise<void> }
@@ -163,9 +161,14 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
  *   account, and refuses to retry once output has started.
  *
  * Attribution. An HTTP response belongs to the attempt whose `http.request`
- * produced its request; if the host hands back a different request object,
- * it belongs to the newest attempt of its session and kind only while that
- * attempt went out over HTTP and has no response yet. A WebSocket frame
+ * produced its request object, and to nothing else. The host hands
+ * `http.response` the request object the `http.request` hooks left, so a
+ * different object means a later hook replaced it; nothing then proves which
+ * send the response answers (an earlier attempt's send may still be in
+ * flight, and only the newest attempt of each session and kind is kept), and
+ * its feedback is dropped rather than guessed by recency. No marker can ride
+ * on the request instead: the host builds the wire request from that same
+ * object, so a marker would be sent to the provider. A WebSocket frame
  * belongs to the newest attempt of its session and kind only while that
  * attempt went out over WebSocket and has not ended: the host runs one
  * exchange at a time per session socket, so frames between one handshake
@@ -185,6 +188,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   ).filter((value) => value !== '')
   const records = new Map<string, AttemptRecord<A>>()
   const byRequest = new WeakMap<Request, AttemptRecord<A>>()
+  let warnedUnprovenResponse = false
   const listeners = new Map<
     OpenCode2AuthEventName,
     Set<(payload: never) => void | Promise<void>>
@@ -331,7 +335,6 @@ export async function installOpenCode2Auth<Q, A = unknown>(
               data,
             },
       ...(transport === undefined ? {} : { transport }),
-      responded: false,
       outputStarted: false,
     }
     remember(rec)
@@ -502,15 +505,21 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     await ctx.session.hook(
       'http.response',
       async (draft) => {
-        const latest = records.get(keyOf(draft.sessionID, draft.kind))
-        const rec =
-          byRequest.get(draft.request) ??
-          (latest && !latest.responded ? liveOn(latest, 'http') : undefined)
-        const account = rec && accountOf(rec)
+        const rec = byRequest.get(draft.request)
+        if (!rec) {
+          if (!warnedUnprovenResponse) {
+            warnedUnprovenResponse = true
+            warn(
+              'opencode2 auth dropped an http.response whose request it did not produce',
+              { sessionID: draft.sessionID, kind: draft.kind },
+            )
+          }
+          return
+        }
+        const account = accountOf(rec)
         const attempt = rec?.attempt
         if (!rec || !account || !attempt) return
         const original = draft.response
-        rec.responded = true
         rec.status = original.status
         const quota = adapter.quotaFromHeaders?.(
           original.headers,

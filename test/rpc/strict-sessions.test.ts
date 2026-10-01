@@ -62,7 +62,10 @@ async function strictServer() {
     )
     return {
       status: res.status,
-      body: (await res.json()) as { messages?: RpcNotification[] },
+      body: (await res.json()) as {
+        messages?: RpcNotification[]
+        error?: string
+      },
     }
   }
   return { drain, drained }

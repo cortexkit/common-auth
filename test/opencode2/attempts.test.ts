@@ -398,23 +398,109 @@ describe('installOpenCode2Auth attempts', () => {
     ])
   })
 
-  test('a response the host hands back on another request object is still attributed while it is the only one outstanding', async () => {
+  test('a response the host hands back on another request object is dropped, even with one attempt outstanding', async () => {
+    // Only the request object the installer produced proves which send a
+    // response answers: the installer keeps only the newest attempt of each
+    // session and kind, so an older send still in flight is invisible to it.
     const { adapter, seen } = trackingAdapter()
-    const { host } = await install(adapter)
+    const warned: string[] = []
+    const host = fakeHost()
+    await installOpenCode2Auth<TestQuota, string>(host.ctx, adapter, {
+      logger: { warn: (message) => void warned.push(message) },
+    })
     await modelRequest(host, 's1')
     await httpRequest(host, 's1')
+    for (let n = 0; n < 2; n++)
+      await httpResponse(
+        host,
+        's1',
+        new Request('https://provider.invalid/copy'),
+        new Response('ok', { status: 401 }),
+      )
+    await settle()
+    // No adapter callback ran for either response.
+    expect(seen).toEqual([])
+    // Said once, so a plugin that always copies requests does not flood the log.
+    expect(warned).toEqual([
+      'opencode2 auth dropped an http.response whose request it did not produce',
+    ])
+  })
+
+  test('a delayed copied response of an earlier attempt is not attributed to the newer one', async () => {
+    const { adapter, seen } = trackingAdapter()
+    const { host } = await install(adapter, seen)
+    await modelRequest(host, 's1')
+    const a = await httpRequest(host, 's1')
+    await modelRequest(host, 's1')
+    const b = await httpRequest(host, 's1')
+    // A's response arrives after B went out, on a copy of A's request.
     await httpResponse(
       host,
       's1',
-      new Request('https://provider.invalid/copy'),
-      new Response('ok', { status: 401 }),
+      new Request(a.request),
+      new Response('slow down', {
+        status: 429,
+        headers: { 'x-quota-used': '100' },
+      }),
     )
     await settle()
-    expect(seen).toEqual([
-      'headers:s1/primary#1',
-      'response:s1/primary#1',
-      'end:s1/primary#1',
+    expect(seen.filter((entry) => entry.includes('#2'))).toEqual([
+      'select:s1/primary#2',
     ])
+    // B's own response is still attributed to B.
+    const reply = await httpResponse(
+      host,
+      's1',
+      b.request,
+      new Response('ok', { headers: { 'x-quota-used': '5' } }),
+    )
+    await reply.response.text()
+    await settle()
+    expect(seen.filter((entry) => entry.includes('#2'))).toEqual([
+      'select:s1/primary#2',
+      'headers:s1/primary#2',
+      'quota:s1/primary#2',
+      'end:s1/primary#2',
+    ])
+  })
+
+  test('a late 401 of an older same-account attempt is reported on that attempt, never on the newer credential version', async () => {
+    // Both attempts use the same account; the attempt value stands for the
+    // credential version each send carried.
+    let version = 0
+    const { adapter, seen } = trackingAdapter({
+      chooseAccount: () => 'acct-x',
+      accountHeaders: ({ accountId }) => ({
+        headers: { authorization: `Bearer tok-${accountId}-v${++version}` },
+        attempt: `${accountId}@v${version}`,
+      }),
+    })
+    const { host } = await install(adapter, seen)
+    await modelRequest(host, 's1')
+    const old = await httpRequest(host, 's1')
+    await modelRequest(host, 's1')
+    await httpRequest(host, 's1')
+    // The old send's 401 arrives late, once on a copy and once on its own
+    // request object.
+    await httpResponse(
+      host,
+      's1',
+      new Request(old.request),
+      new Response('expired', { status: 401 }),
+    )
+    await httpResponse(
+      host,
+      's1',
+      old.request,
+      new Response('expired', { status: 401 }),
+    )
+    await settle()
+    expect(seen.filter((entry) => entry.includes('@v2'))).toEqual([
+      'select:acct-x@v2',
+    ])
+    expect(
+      seen.filter((entry) => /^(headers|response|limit):/.test(entry)),
+    ).toEqual(['headers:acct-x@v1', 'response:acct-x@v1'])
   })
 
   test('an error response ends its attempt at once and the retry waits for the end callback', async () => {
