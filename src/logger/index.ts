@@ -1,8 +1,14 @@
 export type { CaptureSink, LogTestRecord } from './capture-sink.js'
 export { createCaptureSink } from './capture-sink.js'
-export type { InitLoggerOptions, Level } from './engine.js'
+export type {
+  ChannelLogger,
+  InitLoggerOptions,
+  Level,
+  LoggerInstance,
+} from './engine.js'
 export {
   createLogger,
+  createLoggerInstance,
   flushForTest,
   flushLogs,
   initLogger,
