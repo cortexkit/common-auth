@@ -172,6 +172,10 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | rpc | Scoped drain does not connect an unscoped probe | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | a drain for one session does not make an unscoped probe connected |
 | rpc | Queue cap evicts oldest beyond 100 | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | queue cap evicts oldest beyond 100 |
 | rpc | Global notices survive one session acknowledgement | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | a global notification reaches every session and is not pruned by one ack |
+| rpc | A strict scope refuses a push or drain without a non-empty session | anthropic-auth packages/opencode/src/rpc (native drain rejects a missing session) | a strict scope refuses a push or drain with an absent or empty session |
+| rpc | A strict drain returns only its own session's notices and is a separate queue from the lenient scope | new (neither copy) | in one process, a strict drain returns only its own session, never another or a lenient push |
+| rpc | Strict servers refuse a session-less drain with 400 before the queue and keep sessions apart | new (neither copy) | across two strict servers, each session drains only its own notifications and a session-less drain is refused before reaching the queue |
+| rpc | A handler failure answers 500 with a fixed code; the text goes to the log | new (neither copy) | a handler failure answers 500 with a fixed code, not the exception text |
 | rpc | Same-directory replacement serialized | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | serializes same-directory replacement and fences predecessor release |
 | rpc | Stale registry release is identity-fenced | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | serializes same-directory replacement and fences predecessor release |
 | rpc | Different directories are independent | reference/anthropic-auth/packages/opencode/src/rpc/server-registry.ts | does not serialize different project directories |
@@ -506,7 +510,11 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | cachekeep | Running reflects the timer | openai cachekeep | status running reflects the actual timer presence |
 | cachekeep | A warm fires only within leadMs of expiry and replays the adapter's body | openai cachekeep | fires prewarm only within LEAD window of cacheExpiresAt |
 | cachekeep | A failed send backs the target off (default 10 minutes) | openai cachekeep | backoff suppresses prewarm after failure |
-| cachekeep | A backed-off target warms again once its backoff passes | openai cachekeep | prewarm fires again after backoff expires |
+| cachekeep | A backed-off target warms again once its backoff passes, when that is inside its cache lifetime | openai cachekeep | prewarm fires again after backoff expires |
+| cachekeep | A failed warm is never retried after its confirmed cache lifetime ends; the target retires, sustain notwithstanding | anthropic-auth packages/core/src/cachekeep.ts (drops targets at confirmed expiry) | a failed warm is never retried after the confirmed cache lifetime ends, even with sustain |
+| cachekeep | A retry due exactly at the expiry is not sent | new (neither copy) | a retry due exactly at the cache expiry is not sent |
+| cachekeep | A target whose lifetime ended during an earlier warm of the same tick retires before its body is built | new (neither copy) | a target whose lifetime ended during an earlier warm in the same tick is retired without building its body |
+| cachekeep | A lifetime that ends while the replay body is built sends nothing | new (neither copy) | a lifetime that ends while the replay body is being built sends nothing |
 | cachekeep | Overlapping ticks share one run and never send twice | openai cachekeep; anthropic-auth packages/opencode/src/tests/cachekeep.test.ts "coalesces overlapping scheduler ticks into one prewarm attempt" | does not reenter tick while a previous prewarm is still in flight |
 | cachekeep | An unbuildable replay body backs off that target and others still warm | openai cachekeep | sets backoff for malformed captured bodies and continues warming other targets |
 | cachekeep | An idle tick leaves the manager armed | openai cachekeep | stays armed across an idle tick and later warms a captured request |
@@ -525,7 +533,7 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | cachekeep | A successful warm restarts the clock with the per-target TTL | openai cachekeep "gpt-5.6 session: post-warm reset uses per-target 30-min TTL (not 5-min)" | post-warm reset uses the per-target TTL |
 | cachekeep | A per-target warm cap retires the target after its last warm | openai cachekeep "gpt-5.6 subagent warms exactly twice then is dropped from the map" | a capped subagent warms exactly maxWarms times then is dropped from the map |
 | cachekeep | A profile idle bound replaces the subagent default | openai cachekeep "gpt-5.6 subagent is NOT idle-pruned before its 2 warms (cap governs)" | a profile idle bound outlives the subagent default so the warm cap governs |
-| cachekeep | A capped target whose warms keep failing is reclaimed at its idle bound | openai cachekeep "gpt-5.6 subagent stuck on persistently failing warms is reclaimed at the long idle bound (no leak)" | a capped subagent stuck on failing warms is reclaimed at its profile idle bound |
+| cachekeep | A capped target whose warms keep failing is reclaimed when its cache lifetime ends, before its idle bound (the openai test's idle-bound reclaim came after the cache had already expired) | openai cachekeep "gpt-5.6 subagent stuck on persistently failing warms is reclaimed at the long idle bound (no leak)" | a capped subagent stuck on failing warms is reclaimed when its cache lifetime ends, before its profile idle bound |
 | cachekeep | Without a profile idle bound a subagent uses maxSubagentIdleMs | openai cachekeep "non-5.6 subagent is still idle-pruned at maxSubagentIdleMs (unchanged)" | a subagent without a profile idle bound is idle-pruned at maxSubagentIdleMs |
 | cachekeep | Without a warm cap a target keeps warming | openai cachekeep "gpt-5.6 main target is unchanged (not dropped after 2 warms)" | a main target without a warm cap is not dropped after repeated warms |
 | cachekeep | Retracking resets the warm count | openai cachekeep | warmCount resets when track() re-captures the same subagent session |
@@ -597,6 +605,15 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | commands | Apply requests from the RPC are checked | new (neither copy) | parseApplyRequest keeps a well-formed request and refuses a malformed one |
 | commands | A pending login reports to the session that started it | reference/openai-auth/packages/opencode/src/tests/command-session-isolation.test.ts | a second session interleaving inside the add await-window does not steal the add notification |
 | commands | Concurrent invocations do not cross results | new (neither copy) | concurrent invocations each get their own apply result |
+| commands | A thrown failure shows the generic code and message; its bearer token reaches neither the result nor the log | new (neither copy) | a thrown failure quoting a bearer token shows only the generic code and message |
+| commands | A thrown failure quoting an API key of any shape never reaches the result | new (neither copy) | a thrown failure quoting an arbitrary API key never reaches the result |
+| commands | A thrown failure quoting an enrollment request secret reaches neither the result nor the log | new (neither copy) | a thrown failure quoting an enrollment request secret never reaches the result |
+| commands | A CommandError shows its own code and message, redacted | new (neither copy) | a CommandError shows its own code and message, redacted |
+| commands | A store refusal shows the store's message with pool-<kind> as the code | new (neither copy) | a store refusal keeps the store message and names its kind as the code |
+| commands | Outcome text is masked, including a plugin-declared key shape | new (neither copy) | an outcome text quoting secrets is masked, using the plugin pattern for its key shape |
+| commands | Notifications are redacted before they reach the host | new (neither copy) | a notification sent by an action is redacted before it reaches the host |
+| commands | A late login failure is reported by its projected message | new (neither copy) | a late login failure is reported by its projected message, not its exception text |
+| commands | A masked knob's default is withheld and an unmasked secret-shaped default is masked | new (neither copy) | a credential-valued knob default is withheld when masked and redacted otherwise |
 
 The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/claustrum-enrollment.test.ts`, `claustrum-scoped.test.ts` and `claustrum-scoped-runtime.test.ts` at anthropic-auth main 77e4c900; the origin column names the anthropic-auth source file each behaviour came from. Rows marked new (neither copy) are the contract changes and additions listed under ./claustrum in adoption-inventory.md, including the end-to-end scenarios, which drive the real `@cortexkit/claustrum-client` over a socket against a mock daemon ported from anthropic-auth's `packages/e2e-tests/src/mock-claustrum.ts`.
 
@@ -721,7 +738,9 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | opencode2 | Sequential attempts of one session and kind keep their own values on both transports; the retry hook's error classifier and event get the attempt it judged | new (neither copy) | two sequential attempts in one session keep their own values |
 | opencode2 | A cancelled HTTP response body ends its attempt as cancelled, with output as observed | new (neither copy) | cancelling the response ends the attempt with output as observed |
 | opencode2 | Frames before a handshake, after the attempt ended or after the next model.request, and responses on an unknown request once the attempt has its response, reach no attempt | new (neither copy) | an event with no attributable attempt reaches no attempt |
-| opencode2 | A response handed back on another request object is attributed to the newest HTTP attempt of its session and kind while it awaits its response | new (neither copy) | a response the host hands back on another request object is still attributed while it is the only one outstanding |
+| opencode2 | A response handed back on a request object the installer did not produce is dropped, with one warning | new (neither copy) | a response the host hands back on another request object is dropped, even with one attempt outstanding |
+| opencode2 | A delayed copied response of an earlier attempt never reaches the newer attempt | new (neither copy) | a delayed copied response of an earlier attempt is not attributed to the newer one |
+| opencode2 | A late 401 of an older same-account attempt is reported on that attempt's own handle | new (neither copy) | a late 401 of an older same-account attempt is reported on that attempt, never on the newer credential version |
 | opencode2 | An error-status response ends its attempt at once with its status, and the retry hook waits for onAttemptEnd to settle | new (neither copy) | an error response ends its attempt at once and the retry waits for the end callback |
 | opencode2 | An open attempt is ended as abandoned, once, by a newer attempt of its session and kind, by forgetting its session and by dispose | new (neither copy) | a newer attempt, a forgotten session or dispose abandons an open attempt once |
 | opencode2 | A verdict error and a throwing transport hook end the attempt as failed | new (neither copy) | a failure reported in the stream or by a transport hook ends the attempt as failed |

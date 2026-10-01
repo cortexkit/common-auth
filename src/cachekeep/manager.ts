@@ -200,12 +200,18 @@ function errorMessage(error: unknown): string {
  * Keeps idle prompt caches warm: one target per session holding the latest
  * request body, replayed just before the provider's cache would expire.
  *
- * Bounds, in the order they act: the clock window gates capture and warming
- * (targets captured earlier survive outside it); idle caps prune a target its
- * session stopped using (`sustain` lifts only the main-session cap); the
- * target-count and byte caps evict the least recently touched target; a
- * per-target warm cap retires short-lived sessions; and a failed warm backs
- * that target off without touching the others.
+ * Bounds, in the order they act: a target retires once its last confirmed
+ * cache lifetime ends (`cacheExpiresAt`, set by its capture or its last
+ * successful warm), whatever else holds, because replaying a history whose
+ * cache has expired rebuilds a cold cache instead of keeping a warm one
+ * alive; the clock window gates capture and warming (targets captured earlier
+ * survive outside it until their lifetime ends); idle caps prune a target its
+ * session stopped using (`sustain` lifts only the main-session idle cap, not
+ * the lifetime); the target-count and byte caps evict the least recently
+ * touched target; a per-target warm cap retires short-lived sessions; and a
+ * failed warm backs that target off without touching the others. A retry
+ * after a failure is sent only while the lifetime lasts, so a backoff that
+ * runs past it retires the target instead.
  */
 export class CacheKeepManager<M = undefined> {
   private readonly targets = new Map<string, Target<M>>()
@@ -440,8 +446,9 @@ export class CacheKeepManager<M = undefined> {
 
   private async runTick(): Promise<void> {
     this.pruneStale()
-    // Outside the window nothing fires, but captured targets stay so they
-    // warm again when it reopens.
+    // Outside the window nothing fires, but captured targets stay until
+    // their cache lifetime ends, so one still alive when the window reopens
+    // is warmed again.
     const window = this.getWindow?.()
     if (window && !isWithinCacheKeepWindow(window, new Date(this.now()))) {
       return
@@ -457,6 +464,23 @@ export class CacheKeepManager<M = undefined> {
       if (target.cacheExpiresAt > leadBound) continue
       await this.warm(sessionKey, target)
     }
+  }
+
+  /**
+   * Retires `target` when its last confirmed cache lifetime has ended; true
+   * when it did. Called before every send, since earlier warms in the same
+   * tick, the adapter's account lookup and body build all take time.
+   */
+  private retireIfExpired(sessionKey: string, target: Target<M>): boolean {
+    if (this.now() < target.cacheExpiresAt) return false
+    this.log?.debug('cachekeep retired target (cache lifetime ended)', {
+      sessionKey,
+      accountId: target.accountId,
+      cacheExpiresAt: target.cacheExpiresAt,
+      failures: target.failures,
+    })
+    this.drop(sessionKey)
+    return true
   }
 
   private isCurrent(sessionKey: string, target: Target<M>): boolean {
@@ -499,6 +523,7 @@ export class CacheKeepManager<M = undefined> {
   }
 
   private async warm(sessionKey: string, target: Target<M>): Promise<void> {
+    if (this.retireIfExpired(sessionKey, target)) return
     const view = this.view(sessionKey, target)
     if (this.adapter.activeAccount) {
       let active: string | undefined
@@ -542,6 +567,7 @@ export class CacheKeepManager<M = undefined> {
       return
     }
     if (!this.isCurrent(sessionKey, target)) return
+    if (this.retireIfExpired(sessionKey, target)) return
 
     const signal = AbortSignal.any([
       AbortSignal.timeout(this.warmTimeoutMs),
@@ -605,8 +631,9 @@ export class CacheKeepManager<M = undefined> {
     const now = this.now()
     const sustain = this.getSustain?.() === true
     for (const [sessionKey, target] of [...this.targets]) {
-      // Sustain exempts main sessions from the idle cap only; the window,
-      // count, byte and warm caps still apply to them.
+      if (this.retireIfExpired(sessionKey, target)) continue
+      // Sustain exempts main sessions from the idle cap only; the lifetime,
+      // window, count, byte and warm caps still apply to them.
       if (sustain && !target.isSubagent) continue
       const maxIdleMs = target.maxIdleMs ?? this.idleDefault(target.isSubagent)
       if (target.lastRealRequestAt >= now - maxIdleMs) continue

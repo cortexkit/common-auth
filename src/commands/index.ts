@@ -36,5 +36,11 @@ export type {
 export { SECTION_SLOTS } from './model.js'
 export type { PiMenuOptions, PiMenuUi } from './pi.js'
 export { runPiCommandMenu } from './pi.js'
-export type { SeamLogger } from './seam.js'
-export { DEFAULT_IRREVERSIBLE_CONFIRMATION } from './seam.js'
+export type { ProjectedFailure, SeamLogger, TextRedactor } from './seam.js'
+export {
+  ACTION_FAILED,
+  CommandError,
+  createTextRedactor,
+  DEFAULT_IRREVERSIBLE_CONFIRMATION,
+  projectFailure,
+} from './seam.js'

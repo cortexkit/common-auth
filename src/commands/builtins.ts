@@ -31,7 +31,11 @@ import type {
   MenuChoice,
   MenuKnob,
 } from './model.js'
-import type { ResolvedItem, ResolvedSection } from './seam.js'
+import {
+  projectFailure,
+  type ResolvedItem,
+  type ResolvedSection,
+} from './seam.js'
 
 /**
  * What a plugin's login hands back. `ready` adds the account now. `pending`
@@ -211,8 +215,12 @@ function addedText(name: string, result: AddResult): string {
   }
 }
 
+/**
+ * What the user is told about a failed late login: the projected message,
+ * never the exception's own text, which can quote the login's request.
+ */
 function failureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  return projectFailure(error).text
 }
 
 /** What every built-in section reads, once per build. */

@@ -147,6 +147,13 @@ export interface CommandApplyResult {
   command: string
   ok: boolean
   text: string
+  /**
+   * A stable code naming why the apply failed; present on every failure.
+   * The library's own codes are `unavailable`, `needs-confirmation`,
+   * `invalid-input`, `refused`, `action-failed` and `pool-<store failure
+   * kind>`; a plugin's `CommandError` or `ActionOutcome` names its own.
+   */
+  code?: string
   /** True when the action was refused only for want of a confirmation. */
   needsConfirmation?: boolean
   menu: CommandMenuModel
@@ -168,6 +175,8 @@ export interface CommandInvocation {
 export interface ActionOutcome {
   ok: boolean
   text: string
+  /** The failure's stable code; a failure without one is `refused`. */
+  code?: string
 }
 
 export interface ActionInput {
