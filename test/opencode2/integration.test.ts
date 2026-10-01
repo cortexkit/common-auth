@@ -49,7 +49,9 @@ function fakeIntegration() {
 
 const NOW = 1_800_000_000_000
 
-function setup(onLogin: (result: string, context: unknown) => void) {
+function setup(
+  onLogin: (result: string, context: unknown) => void | Promise<void>,
+) {
   const host = fakeIntegration()
   const logins: Array<{ result: string; context: unknown }> = []
   const registration = registerOpenCode2AuthMethods<string>(host.ctx, {
@@ -57,7 +59,7 @@ function setup(onLogin: (result: string, context: unknown) => void) {
     now: () => NOW,
     label: 'Accounts managed by the plugin',
     onLogin: async (result, context) => {
-      onLogin(result, context)
+      await onLogin(result, context)
       logins.push({ result, context })
     },
     methods: [
@@ -120,7 +122,9 @@ describe('registerOpenCode2AuthMethods', () => {
 
   test('an automatic login resolves to a placeholder only after the pool write', async () => {
     const order: string[] = []
-    const { host } = setup((result) => {
+    const { host } = setup(async (result) => {
+      // A slow pool write: the host must still wait for it.
+      await new Promise((resolve) => setTimeout(resolve, 5))
       order.push(`pool:${result}`)
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
