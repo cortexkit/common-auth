@@ -452,14 +452,15 @@ export function toFailure(
  * The frame every lock-holding operation runs in: failures are mapped onto
  * the failure value, handed to the failure hook while the outer locks are
  * still held (the store locks are already released), and rethrown; every
- * lock is released afterwards.
+ * lock is released afterwards. `rowId` is undefined for an operation that
+ * names no row (`reorder`).
  */
-export async function runOperation<T>(
+export async function runOperation<T, R extends string | undefined = string>(
   ctx: StoreContext,
   operation: PoolOperation,
-  rowId: string,
+  rowId: R,
   onFailure:
-    | ((rowId: string, error: PoolOperationError) => void | Promise<void>)
+    | ((rowId: R, error: PoolOperationError) => void | Promise<void>)
     | undefined,
   body: (locks: LockStack, progress: Progress) => Promise<T>,
 ): Promise<T> {
