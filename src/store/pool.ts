@@ -63,6 +63,19 @@ export interface OpenPoolStoreOptions {
   configPath: string
   statePath: string
   quota: QuotaCodec
+  /**
+   * Refuse every credential this store did not stamp (default false, which
+   * loads unstamped and mis-stamped credentials as older writers left them).
+   * When true, a row whose `stamp` is not `bound` loads `unbound` and is no
+   * candidate, and every operation that would use or keep its credential or
+   * what was observed about it (`refresh`, quota pulls, `recordQuota`,
+   * `recordIdentity`, `rotate`, and an `add` of the same secret or onto the
+   * same credential-less row) refuses with `unbound-credential` before any
+   * provider call or write, checked again under the locks and at commit.
+   * Nothing makes such a row bound except `replace`, which starts a new
+   * credential epoch and drops what was observed about the old one.
+   */
+  requireCredentialStamps?: boolean
   /** Injected clock for leases, refresh stamps and `addedAt`. */
   now?: () => number
   /**
@@ -267,6 +280,7 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
       ...(options.onLockStep ? { onLockStep: options.onLockStep } : {}),
     },
     removedIds: memory.removedIds,
+    requireCredentialStamps: options.requireCredentialStamps === true,
     ...(options.logger ? { logger: options.logger } : {}),
     ...(options.onStep ? { onStep: options.onStep } : {}),
     ...(options.hold ? { hold: options.hold } : {}),

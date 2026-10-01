@@ -4,7 +4,13 @@ import { recordIdentityIn } from './identity.js'
 import { type Progress, runOperation, withTransaction } from './mutate.js'
 import type { PoolLockSpec } from './refresh-lock.js'
 import { type FailureHook, rotateIn } from './rows.js'
-import { readRow, refusal, rowLockSpec, type StoreRuntime } from './runtime.js'
+import {
+  readRow,
+  refusal,
+  requireBound,
+  rowLockSpec,
+  type StoreRuntime,
+} from './runtime.js'
 import {
   type OAuthCredential,
   type PoolRow,
@@ -138,6 +144,7 @@ export async function refreshRow(
             tx,
           ): Promise<Captured | { keyNow: string } | { refused: string }> => {
             let row = requireRefreshable(id, tx.row(id))
+            requireBound('refresh', row)
             if (!row.hasEntry) {
               tx.setEntry(id, { credentialEpoch: 1, needsFirstReading: true })
               await tx.commitConfig()
@@ -225,6 +232,10 @@ export async function refreshRow(
               kind: 'attribution',
               message: `row ${id} changed credential while its refresh was in flight; the rotation is discarded`,
             })
+          // The epoch fence above does not see a credential another writer
+          // swapped in under the same epoch; the stamp does, and committing
+          // the rotation would stamp the swapped row as bound.
+          requireBound('refresh', current)
           const reason = await options.refuse?.(current)
           if (reason !== undefined) return { refused: reason } as const
           const now = ctx.now()

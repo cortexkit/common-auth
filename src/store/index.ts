@@ -45,6 +45,7 @@ export type {
 export type { PullReason } from './runtime.js'
 export type {
   ApiKeyCredential,
+  CredentialStampStatus,
   OAuthCredential,
   PoolCredential,
   PoolRow,

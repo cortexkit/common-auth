@@ -57,6 +57,7 @@ export type PoolFailureKind =
   | 'row-key-changed'
   | 'invalid-order'
   | 'refresh-stamp-ahead'
+  | 'unbound-credential'
   | 'attribution'
   | 'provider'
   | 'pull'

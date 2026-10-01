@@ -120,19 +120,28 @@ export function completeTornRows(
  * The rows every reader gets. A torn row is shown completed (the identity,
  * endpoint and epoch its stamp names, beside the credential it stamps), is
  * marked `torn` and is never a candidate; every other row is as on disk.
+ * With `requireCredentialStamps`, a row whose stamp is not `bound` is marked
+ * `unbound` and is never a candidate either. A torn row is shown with the
+ * replacement's stamp, which binds the completed row, so it is not unbound:
+ * it stays out of routing only until its completion is written.
  */
 export function loadRows(
   config: Record<string, unknown>,
   state: Record<string, unknown>,
   codec: QuotaCodec,
+  options: { requireCredentialStamps?: boolean } = {},
 ): PoolRow[] {
   const { config: whole, torn } = completeTornRows(config, state, codec)
   const rows = buildRawRows(whole, state, codec)
-  if (torn.length === 0) return rows
   for (const row of rows) {
-    if (!torn.includes(row.id)) continue
-    row.torn = true
-    row.candidate = false
+    if (torn.includes(row.id)) {
+      row.torn = true
+      row.candidate = false
+    }
+    if (options.requireCredentialStamps && row.stamp !== 'bound') {
+      row.unbound = true
+      row.candidate = false
+    }
   }
   return rows
 }
