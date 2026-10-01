@@ -27,3 +27,25 @@ jobs:
         run: bun test --reporter=junit --reporter-outfile=test-results.xml
       - name: Check source evidence
         run: bun scripts/check-sources.mjs docs/sources.md test-results.xml
+  # Runs the real OpenCode 2 CLI (installed from npm at test time, pinned in
+  # the test) against a loopback mock provider. It fails when a host release
+  # stops firing, or moves, one of the hooks the /opencode2 subpath relies on.
+  opencode2-placement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: OpenCode 2 placement contract
+        env:
+          COMMON_AUTH_OPENCODE2_E2E: "1"
+        run: bun test --reporter=junit --reporter-outfile=opencode2-placement-results.xml test/opencode2/e2e/placement.e2e.test.ts
+      - name: Check source evidence
+        run: bun scripts/check-sources.mjs test/opencode2/e2e/sources.md opencode2-placement-results.xml
