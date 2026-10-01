@@ -6,7 +6,9 @@
 //
 // A marked or backed-off row is excluded before the gates. Stage 1 then
 // judges each remaining row alone, in gate order:
-//   1. an API-key row is admitted without consulting quota;
+//   1. an API-key row is admitted without consulting quota (a provider that
+//      offers paid rows only after its OAuth rows are spent leaves them out
+//      of `rows` until then);
 //   2. an OAuth row whose projection resolves no entry for the scope needs a
 //      first reading: refused, pull requested;
 //   3. a required label with no entry is unknown: refused, pull requested;
