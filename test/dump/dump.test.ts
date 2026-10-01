@@ -797,6 +797,22 @@ describe('dump directory byte cap', () => {
     expect(await readdir(dumpDir)).toEqual([dumpArtifactName(3, 'request')])
   })
 
+  test('the sweep keeps a protected dump even when it is the oldest', async () => {
+    await mkdir(dumpDir)
+    const oldest = join(dumpDir, dumpArtifactName(1))
+    await writeAged(oldest, '12345678', 1_000)
+    await writeAged(join(dumpDir, dumpArtifactName(2)), '12345678', 2_000)
+
+    expect(
+      await sweepDumpDirectory({
+        dir: dumpDir,
+        maxBytes: 8,
+        protectedPaths: [oldest],
+      }),
+    ).toEqual({ removed: 1, freedBytes: 8 })
+    expect(await readdir(dumpDir)).toEqual([dumpArtifactName(1)])
+  })
+
   test('evicts complete dump artifact groups instead of orphaning request pairs', async () => {
     await mkdir(dumpDir)
     await writeAged(
