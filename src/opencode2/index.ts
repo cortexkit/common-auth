@@ -23,7 +23,11 @@ export {
 export type { ServerSentEvent } from './sse.js'
 export { watchServerSentEvents } from './sse.js'
 export type {
+  AccountHeadersResult,
   AccountRequest,
+  Attempt,
+  AttemptEndReason,
+  AttemptOutcome,
   ChooseAccountInput,
   EventVerdict,
   HeaderEdits,

@@ -44,6 +44,17 @@ export interface EventVerdict<Q> {
   readonly outputStarted?: boolean
   readonly quota?: Q
   readonly limit?: LimitSignal
+  /**
+   * This is the last event of the response (completed or failed); the
+   * attempt ends here. On WebSocket this is the only way an attempt ends
+   * normally, because the socket stays open between responses.
+   */
+  readonly done?: boolean
+  /**
+   * The response failed with this message. Ends the attempt with
+   * `error.reason` `failed`; implies `done`.
+   */
+  readonly error?: string
 }
 
 /**
@@ -70,6 +81,69 @@ export interface AccountRequest extends RequestScope {
   readonly accountId: string
 }
 
+/**
+ * One physical send: created when an account is chosen for a request, and
+ * handed back on every hook call and event that belongs to that send, so a
+ * plugin can tie a response, a frame, a limit, a retry decision and the end
+ * of the send to the credential it chose for it.
+ *
+ * `A` is the plugin's own per-attempt value, returned by `accountHeaders`
+ * next to the headers (a served credential receipt, say); the installer
+ * only carries it.
+ */
+export interface Attempt<A = unknown> extends AccountRequest {
+  /** Unique within one installation. */
+  readonly attemptId: string
+  /**
+   * The transport that carried the send. `undefined` until `http.request` or
+   * `experimental.ws.handshake` has run for it: an account chosen in
+   * `model.request` is chosen before the host has picked the transport.
+   */
+  readonly transport: Transport | undefined
+  /** What `accountHeaders` returned as `attempt`, if anything. */
+  readonly data: A | undefined
+}
+
+/**
+ * Why an attempt ended without completing.
+ *
+ * - `failed`: the response stream errored, or the adapter's `inspectEvent`
+ *   reported the response as failed;
+ * - `cancelled`: the host cancelled the HTTP response body (the user stopped
+ *   the turn, say);
+ * - `abandoned`: the attempt was still open when a newer attempt of the same
+ *   session and kind began, its session was forgotten, its record was
+ *   dropped for space, or the installation was disposed. A WebSocket closed
+ *   or cancelled mid-response ends this way, since the host has no hook for
+ *   either.
+ */
+export type AttemptEndReason = 'failed' | 'cancelled' | 'abandoned'
+
+/** How an attempt ended, as `onAttemptEnd` reports it. */
+export interface AttemptOutcome {
+  /** The HTTP status of the response, when an HTTP response was seen. */
+  readonly status?: number
+  /** Output from this attempt had reached the user. */
+  readonly outputStarted: boolean
+  /** The account-level refusal recorded for this attempt, if any. */
+  readonly limit?: LimitSignal
+  /** Absent when the response completed, whatever its status. */
+  readonly error?: {
+    readonly reason: AttemptEndReason
+    readonly message?: string
+  }
+}
+
+/**
+ * `accountHeaders` may return the header edits alone, or the edits together
+ * with a per-attempt value that the installer hands back in
+ * `Attempt.data`.
+ */
+export interface AccountHeadersResult<A = unknown> {
+  readonly headers: HeaderEdits
+  readonly attempt?: A
+}
+
 /** A host-supplied error, as the retry hook reports it. */
 export interface HostError {
   readonly type: string
@@ -80,8 +154,9 @@ export interface HostError {
 /**
  * Everything provider-specific the installer needs. `Q` is the plugin's own
  * quota reading type; the installer only carries it to the `quota` event.
+ * `A` is the plugin's per-attempt value (see `Attempt`).
  */
-export interface OpenCode2AuthAdapter<Q = unknown> {
+export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
   /** Every hook is scoped to this provider; other providers are untouched. */
   readonly providerID: string
   /**
@@ -97,14 +172,26 @@ export interface OpenCode2AuthAdapter<Q = unknown> {
    * `model.request`, `http.request` and `experimental.ws.handshake`. The last
    * two run after the host has applied its own credential, so these headers
    * win on the wire.
+   *
+   * Called once per attempt, when the account is chosen. Returning
+   * `{headers, attempt}` instead of the bare edits stores `attempt` as the
+   * attempt's `data`, handed back on everything that belongs to the attempt.
    */
-  accountHeaders(input: AccountRequest): Promise<HeaderEdits> | HeaderEdits
+  accountHeaders(
+    input: AccountRequest,
+  ):
+    | Promise<HeaderEdits | AccountHeadersResult<A>>
+    | HeaderEdits
+    | AccountHeadersResult<A>
   /**
    * Optional request rewrite (URL, body) before the account headers are
    * applied. Return `undefined` to keep the request.
    */
   rewriteRequest?(
-    input: AccountRequest & { readonly request: Request },
+    input: AccountRequest & {
+      readonly request: Request
+      readonly attempt: Attempt<A>
+    },
   ): Promise<Request | undefined> | Request | undefined
   /**
    * Optional response rewrite (body stream, status). It receives the
@@ -115,14 +202,44 @@ export interface OpenCode2AuthAdapter<Q = unknown> {
     input: AccountRequest & {
       readonly request: Request
       readonly response: Response
+      readonly attempt: Attempt<A>
     },
   ): Promise<Response | undefined> | Response | undefined
   /** Optional WebSocket URL rewrite. Return `undefined` to keep the URL. */
   rewriteHandshakeURL?(
-    input: AccountRequest & { readonly url: string },
+    input: AccountRequest & {
+      readonly url: string
+      readonly attempt: Attempt<A>
+    },
   ): string | undefined
+  /**
+   * Optional rewrite of each outgoing WebSocket frame of this provider,
+   * from `experimental.ws.send`. Return the frame to send, or `undefined` to
+   * send it unchanged.
+   *
+   * The rewrite must be a deterministic function of the frame (stable for
+   * the session): the host chains turns with `previous_response_id` by
+   * diffing its own request as it was before this hook ran, so the server
+   * only stays in step when every frame is rewritten the same way. Do not
+   * touch `input` or `previous_response_id`. Adding or changing settings
+   * fields uniformly keeps the follow-up turn incremental.
+   *
+   * It runs for every frame, including one no attempt can be tied to
+   * (`attempt` is then `undefined`), so the rewrite never depends on
+   * attribution.
+   */
+  rewriteWebSocketFrame?(
+    input: RequestScope & {
+      readonly attempt: Attempt<A> | undefined
+      readonly frame: string
+    },
+  ): Promise<string | undefined> | string | undefined
   /** Quota carried in HTTP response headers. */
-  quotaFromHeaders?(headers: Headers, status: number): Q | undefined
+  quotaFromHeaders?(
+    headers: Headers,
+    status: number,
+    attempt: Attempt<A>,
+  ): Q | undefined
   /**
    * Recognises an account-level refusal from an HTTP response before its
    * body is streamed. `body()` reads a copy, so the host still gets the body.
@@ -131,21 +248,41 @@ export interface OpenCode2AuthAdapter<Q = unknown> {
     readonly status: number
     readonly headers: Headers
     readonly body: () => Promise<string>
+    readonly attempt: Attempt<A>
   }): Promise<LimitSignal | undefined> | LimitSignal | undefined
   /**
    * Inspects one server-sent event (`data` payload) or one WebSocket frame.
-   * Detects output, quota and refusals inside the stream.
+   * Detects output, quota, refusals and the end of the response inside the
+   * stream.
    */
   inspectEvent?(input: {
     readonly transport: Transport
     readonly data: string
     readonly event?: string
+    readonly attempt: Attempt<A>
   }): EventVerdict<Q> | undefined
   /**
    * Recognises an account-level refusal from the error the host hands the
-   * retry hook, for refusals no other hook saw.
+   * retry hook, for refusals no other hook saw. `attempt` is the attempt
+   * the retry hook judged.
    */
-  limitFromError?(error: HostError): LimitSignal | undefined
+  limitFromError?(
+    error: HostError,
+    attempt: Attempt<A>,
+  ): LimitSignal | undefined
+  /**
+   * Called once per attempt when it ends: an HTTP response body finished,
+   * errored or was cancelled; an HTTP response with an error status or no
+   * body arrived; an event's verdict said `done` or `error`; or the attempt
+   * was abandoned (see `AttemptEndReason`). Errors are logged and never
+   * reach the host. The retry hook waits for this call to settle before it
+   * decides, so a plugin that records a refusal here has it in place when
+   * `chooseAccount` runs again.
+   */
+  onAttemptEnd?(
+    attempt: Attempt<A>,
+    outcome: AttemptOutcome,
+  ): Promise<void> | void
 }
 
 export interface OpenCode2AuthLogger {
@@ -180,18 +317,24 @@ export type SelectingHook =
   | 'http.request'
   | 'experimental.ws.handshake'
 
-export interface OpenCode2AuthEvents<Q> {
+/**
+ * Every event that belongs to one attempt carries it as `handle` (the
+ * `retry` event already uses `attempt` for the host's retry count).
+ */
+export interface OpenCode2AuthEvents<Q, A = unknown> {
   /** An account was picked for a model request. */
   readonly select: AccountRequest & {
     readonly hook: SelectingHook
     readonly previousAccountId?: string
     readonly rerouteFrom?: ChooseAccountInput['rerouteFrom']
+    readonly handle: Attempt<A>
   }
   /** A quota reading, attributed through this installer's own record. */
   readonly quota: AccountRequest & {
     readonly transport: Transport
     readonly status?: number
     readonly quota: Q
+    readonly handle: Attempt<A>
   }
   /**
    * An account-level refusal. The retry hook waits for every listener of
@@ -202,6 +345,7 @@ export interface OpenCode2AuthEvents<Q> {
     readonly via: Transport | 'error'
     readonly limit: LimitSignal
     readonly outputStarted: boolean
+    readonly handle: Attempt<A>
   }
   /** The retry hook ran for this provider. */
   readonly retry: {
@@ -212,19 +356,21 @@ export interface OpenCode2AuthEvents<Q> {
     readonly reason: RetryReason
     readonly hostDecision: SessionRetryDecision
     readonly decision: SessionRetryDecision
+    /** The attempt the decision was about, when it had an account. */
+    readonly handle?: Attempt<A>
   }
 }
 
 export type OpenCode2AuthEventName = keyof OpenCode2AuthEvents<unknown>
 
-export interface OpenCode2AuthInstallation<Q> {
+export interface OpenCode2AuthInstallation<Q, A = unknown> {
   /**
    * Listens to an event. Listener errors are logged and never reach the
    * host. Returns a function that removes the listener.
    */
   on<E extends OpenCode2AuthEventName>(
     event: E,
-    listener: (payload: OpenCode2AuthEvents<Q>[E]) => void | Promise<void>,
+    listener: (payload: OpenCode2AuthEvents<Q, A>[E]) => void | Promise<void>,
   ): () => void
   /** The account last chosen for a session and request kind. */
   accountFor(sessionID: string, kind: RequestKind): string | undefined
