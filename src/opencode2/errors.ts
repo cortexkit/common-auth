@@ -1,0 +1,35 @@
+/**
+ * Why an OpenCode 2 auth hook refused a request.
+ *
+ * - `no-account`: the adapter had no account to offer for this request, so
+ *   the request is stopped before the host picks a transport.
+ * - `host-credential-on-wire`: after every rewrite, a header still carried
+ *   one of the host's placeholder credentials. Sending it would leak a
+ *   non-routable value to the provider and fail with a confusing error.
+ */
+export type OpenCode2AuthFailureKind = 'no-account' | 'host-credential-on-wire'
+
+export class OpenCode2AuthError extends Error {
+  readonly kind: OpenCode2AuthFailureKind
+  readonly providerID: string
+  readonly sessionID: string
+  readonly requestKind: string
+
+  constructor(details: {
+    kind: OpenCode2AuthFailureKind
+    providerID: string
+    sessionID: string
+    requestKind: string
+    message?: string
+  }) {
+    super(
+      details.message ??
+        `${details.providerID} ${details.requestKind} request refused (${details.kind})`,
+    )
+    this.name = 'OpenCode2AuthError'
+    this.kind = details.kind
+    this.providerID = details.providerID
+    this.sessionID = details.sessionID
+    this.requestKind = details.requestKind
+  }
+}
