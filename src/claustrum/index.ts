@@ -1,2 +1,105 @@
-// Placeholder so the export resolves until this subpath is built.
-export {}
+// Claustrum vault custody shared by the auth plugins: scoped enrollment (run
+// from setup), discovery of this consumer's vault accounts as rows for this
+// package's `/routing` subpath, per-send authorization, 401 reporting, the
+// declined-account interlock and the host-slot guard. Needs the optional
+// peer `@cortexkit/claustrum-client`.
+import {
+  ClaustrumClient,
+  type ClaustrumClientOptions,
+} from '@cortexkit/claustrum-client'
+import type { ClaustrumScopedClient } from './custody.js'
+
+export {
+  ClaustrumCredentialError,
+  type ClaustrumReporterSource,
+  type EnrollmentTokenFile,
+} from '@cortexkit/claustrum-client'
+export {
+  ClaustrumConsumer,
+  type ClaustrumConsumerOptions,
+  type SendOptions,
+} from './consumer.js'
+export {
+  type ClaustrumFamily,
+  type ClaustrumScopedAttempt,
+  type ClaustrumScopedClient,
+  ClaustrumScopedCustody,
+  type ClaustrumScopedIdentity,
+  decideScopedRetryAfter401,
+  type IdentityParser,
+  isScopedCredentialRotation,
+  type ScopedRetryReason,
+  SERVING_MARGIN_MS,
+  type SkippedVaultRecord,
+  type VaultCredential,
+  type VaultCredentialType,
+  type VaultInventory,
+} from './custody.js'
+export {
+  type ClaustrumEnrollmentClient,
+  type ClaustrumEnrollmentConnection,
+  ClaustrumEnrollmentManager,
+  type ClaustrumEnrollmentPaths,
+  type ClaustrumEnrollmentResetResult,
+  type ClaustrumEnrollmentStatus,
+  classifyEnrollmentError,
+  connectClaustrumEnrollmentClient,
+  type EnrollmentDisposition,
+  enrollmentName,
+  getClaustrumEnrollmentPaths,
+  hostEnrollmentPaths,
+  RETRYABLE_ENROLLMENT_CODES,
+  readClaustrumEnrollmentStatus,
+  readClaustrumEnrollmentToken,
+  resetClaustrumEnrollmentState,
+  TERMINAL_ENROLLMENT_CODES,
+} from './enrollment.js'
+export {
+  ClaustrumConsumerError,
+  type ClaustrumConsumerFailureKind,
+  type ClaustrumLogger,
+} from './errors.js'
+export {
+  assertHostSlotMatchesMode,
+  assertNotCustodyPlaceholder,
+  CUSTODY_PLACEHOLDER_PREFIX,
+  classifyHostSlot,
+  custodyPlaceholder,
+  custodyPlaceholderKey,
+  type HostSlotContent,
+  isCustodyPlaceholder,
+  isCustodyPlaceholderValue,
+} from './host-slot.js'
+export {
+  acceptAccount,
+  type DeclinedAccount,
+  declineAccount,
+  isDeclined,
+  pruneDeclined,
+} from './interlock.js'
+export {
+  type AccountMapper,
+  acceptVaultRoute,
+  DEFAULT_ROUTE_PREFIX,
+  declineVaultRoute,
+  mutateVaultRoster,
+  type ProjectionOptions,
+  projectVaultRoster,
+  readVaultRoster,
+  recordVaultQuota,
+  refreshVaultRoster,
+  type VaultRosterFile,
+  type VaultRosterRow,
+  vaultRoutingRows,
+} from './roster.js'
+
+/**
+ * Connect the client that lists and fetches this consumer's vault credentials
+ * on the request path. `connectionFile` is required: this library
+ * reads no environment, so the plugin resolves the vault's connection file.
+ */
+export function connectClaustrumScopedClient(
+  options: ClaustrumClientOptions & { connectionFile: string },
+): Promise<ClaustrumScopedClient> {
+  return ClaustrumClient.connect(options)
+}
