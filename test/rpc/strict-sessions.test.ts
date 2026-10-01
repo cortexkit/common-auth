@@ -120,7 +120,8 @@ describe('strict notification sessions', () => {
     const b = await two.drain({ lastReceivedId: 0, sessionId: 'session-b' })
     expect(texts(a.body.messages)).toEqual(['a1'])
     expect(texts(b.body.messages)).toEqual(['b1'])
-    // A acknowledging through B's id on the other server prunes only A's.
+    // session-a acknowledging up to session-b's notice id, through server
+    // two, prunes only session-a's notices: session-b still gets its own.
     const lastB = b.body.messages?.[0]?.id ?? 0
     await two.drain({ lastReceivedId: lastB, sessionId: 'session-a' })
     expect(

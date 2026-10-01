@@ -223,7 +223,8 @@ describe('command failure projection', () => {
       { kind: 'text', id: 'key', label: 'Key', masked: true },
       { kind: 'text', id: 'header', label: 'Header', value: '***REDACTED***' },
     ])
-    // Left alone, the masked input still gives the action its current value.
+    // An apply that sends no value for the masked `key` input still gives
+    // the action that input's current value.
     await apply(menu, notes().invocation, {
       sectionId: 'cache',
       actionId: 'set',

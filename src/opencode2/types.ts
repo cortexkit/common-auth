@@ -224,9 +224,24 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
    * alter, drop or reorder the `input` items the host put in the frame, and
    * never touch `previous_response_id`: the host's next frame assumes the
    * server holds exactly what it sent. Adding items to `input`, or adding or
-   * changing settings fields, is safe when done the same way for every
-   * frame: the added items become part of the server's history and the
-   * follow-up turn stays incremental.
+   * changing settings fields, keeps the host's order and continuation when
+   * done the same way for every frame: the added items become part of the
+   * server's history and the follow-up turn stays incremental.
+   *
+   * What inserting `input` items into every frame does not keep is the
+   * equivalence of the two ways a history reaches the server (settings
+   * fields carry no history, so they are not affected). Incrementally, each
+   * frame carries only
+   * the new items, so an item the rewrite inserts into every frame lands at
+   * every network boundary of the accumulated history. After a reconnect the
+   * host replays the whole history in one frame, and the same rewrite
+   * inserts that item once. The two server-side histories, and their cache
+   * prefixes, then differ. A rewrite that only adds or changes settings
+   * fields is unaffected. An adapter that inserts `input` items must show,
+   * for its own insertion, that the accumulated incremental history equals
+   * the rewritten full replay (including across tool loops), or accept the
+   * divergence and name what it costs (a cache miss and a different prompt
+   * after every reconnect).
    *
    * It runs for every frame, including one no attempt can be tied to
    * (`attempt` is then `undefined`), so the rewrite never depends on
