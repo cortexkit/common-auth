@@ -45,6 +45,7 @@ import {
   type PoolCredential,
   type PoolRow,
   type QuotaCodec,
+  type RotateCredential,
   type StoredCredential,
 } from './schema.js'
 import {
@@ -121,9 +122,15 @@ export interface PoolStore {
     credential: StoredCredential
     credentialEpoch: number
   }>
+  /**
+   * Refreshes the secret a row holds without changing its account or
+   * endpoint. Since 0.4.1 an API key may leave out `baseURL` and `authHeader`
+   * to keep the row's, and one that gives another is refused
+   * (`endpoint-mismatch`) before writing: that is a `replace`.
+   */
   rotate(
     id: string,
-    credential: PoolCredential,
+    credential: RotateCredential,
     input?: { identity?: string },
     options?: RowOperationOptions,
   ): Promise<{ id: string; credential: StoredCredential }>

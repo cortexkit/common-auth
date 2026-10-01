@@ -31,6 +31,15 @@ export type ApiKeyCredential = {
 
 export type PoolCredential = OAuthCredential | ApiKeyCredential
 
+/**
+ * What `rotate` takes. Rotation refreshes the secret of the endpoint a row
+ * already has, so an API key may leave out `baseURL` (and `authHeader`) to
+ * keep the row's; one it gives must equal the row's.
+ */
+export type RotateCredential =
+  | OAuthCredential
+  | (Omit<ApiKeyCredential, 'baseURL'> & { baseURL?: string })
+
 /** A credential as stored: an OAuth credential also carries its refresh stamp. */
 export type StoredCredential =
   | (OAuthCredential & { lastRefreshedAt?: number })
@@ -186,12 +195,20 @@ export function stampFor(
   }
 }
 
+/**
+ * A credential epoch is a positive safe integer. Above `MAX_SAFE_INTEGER`,
+ * adding one may give back the same number, so a replace would not move the
+ * epoch and nothing could tell the old credential's work from the new one's.
+ */
+export function isCredentialEpoch(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 1
+}
+
 /** A well-formed stamp, or undefined for anything else (which is ignored). */
 export function parseStamp(raw: unknown): CredentialStamp | undefined {
   if (!isRecord(raw)) return undefined
   const epoch = raw.credentialEpoch
-  if (typeof epoch !== 'number' || !Number.isInteger(epoch) || epoch < 1)
-    return undefined
+  if (!isCredentialEpoch(epoch)) return undefined
   if (typeof raw.digest !== 'string') return undefined
   if (!('binding' in raw)) return { credentialEpoch: epoch, digest: raw.digest }
   const binding = raw.binding
@@ -316,8 +333,7 @@ interface ParsedEntry {
 function parseEntry(raw: unknown, codec: QuotaCodec): ParsedEntry | undefined {
   if (!isRecord(raw)) return undefined
   const epoch = raw.credentialEpoch
-  if (typeof epoch !== 'number' || !Number.isInteger(epoch) || epoch < 1)
-    return undefined
+  if (!isCredentialEpoch(epoch)) return undefined
   if ('needsFirstReading' in raw && typeof raw.needsFirstReading !== 'boolean')
     return undefined
   if ('disabledReason' in raw && typeof raw.disabledReason !== 'string')
@@ -562,7 +578,10 @@ export function storedCredential(
   }
 }
 
-export function credentialProblem(credential: unknown): string | undefined {
+export function credentialProblem(
+  credential: unknown,
+  options: { baseURLOptional?: boolean } = {},
+): string | undefined {
   if (!isRecord(credential)) return 'credential must be an object'
   if (credential.type === 'oauth') {
     if (typeof credential.refresh !== 'string' || !credential.refresh.trim())
@@ -574,7 +593,8 @@ export function credentialProblem(credential: unknown): string | undefined {
       return 'api credential needs an api key'
     if (credential.apiKey.trim() !== credential.apiKey)
       return 'api key must not carry surrounding whitespace'
-    if (!isValidBaseURL(credential.baseURL))
+    const omitted = options.baseURLOptional && credential.baseURL === undefined
+    if (!omitted && !isValidBaseURL(credential.baseURL))
       return 'api credential needs a valid baseURL'
     return undefined
   }

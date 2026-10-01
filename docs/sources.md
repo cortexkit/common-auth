@@ -474,6 +474,19 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | store | A first-identity lookup completing after a replacement is refused (attribution) | new (neither copy) | a first-identity lookup that completes after a replacement is refused |
 | store | recordIdentity of another known account is refused (identity-mismatch) | new (neither copy) | recordIdentity of another known account is refused |
 | store | recordIdentity without a captured credential epoch is refused before writing | new (neither copy) | recordIdentity without a captured credential epoch is refused before writing |
+| store | An API-key rotation to another baseURL is refused (endpoint-mismatch), files unchanged | new (neither copy) | an api-key rotation naming another baseURL is refused before writing and the row keeps its key at its endpoint |
+| store | An API-key rotation to another authHeader is refused (endpoint-mismatch) | new (neither copy) | an api-key rotation naming another authHeader is refused before writing |
+| store | An API-key rotation leaving out the endpoint keeps the row's | new (neither copy) | an api-key rotation that leaves out baseURL and authHeader keeps the row endpoint |
+| store | An API-key rotation naming the row's endpoint refreshes the key | new (neither copy) | an api-key rotation naming the row endpoint refreshes the key |
+| store | An API-key rotation naming an invalid baseURL is invalid input | new (neither copy) | an api-key rotation naming an invalid baseURL is refused as invalid input |
+| store | A re-add of a held API key at another endpoint is refused (endpoint-mismatch) | new (neither copy) | a re-add of a held api key at another endpoint is refused and adds no row |
+| store | A re-add of a held API key without authHeader keeps the row's header | new (neither copy) | a re-add of a held api key leaving out authHeader keeps the row header |
+| store | A re-add of a held OAuth credential naming another known account is refused (identity-mismatch) | new (neither copy) | a re-add of a held oauth credential naming another known account is refused |
+| store | Completing a credential-less row refuses another endpoint or known account | new (neither copy) | add completing a credential-less row refuses another endpoint or another known account |
+| store | A config epoch above the safe integer range makes the row invalid, never a candidate | new (neither copy) | a config epoch above the safe integer range makes the row invalid, and a replace interrupted after its state write never makes it a candidate |
+| store | A replace at the largest safe epoch is refused before writing | new (neither copy) | a replace at the largest safe epoch is refused before writing and the row is unchanged |
+| store | A stamp epoch above the safe integer range is ignored | new (neither copy) | a credential stamp naming an epoch above the safe integer range is ignored, so no reader completes the row to it |
+| store | A captured epoch above the safe integer range is invalid input for recordIdentity and recordQuota | new (neither copy) | identity and quota records refuse a captured epoch above the safe integer range as invalid input before writing |
 | store | A roster row left without a credential is completed at epoch 1 by a re-run add | new (neither copy) | a roster row left without a credential is completed at epoch 1 by a re-run add |
 | store | Two processes adding rows concurrently lose no write | new (neither copy) | two processes adding rows concurrently lose no write |
 | store | Every row operation and refresh called from an after-persist hook rejects immediately and the refresh still completes | new (neither copy) | every row operation and refresh called from an after-persist hook rejects immediately and the refresh still completes |
@@ -812,6 +825,9 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | claustrum | Only a complete reply removes an account | new (neither copy) | a complete reply that no longer lists an account removes it |
 | claustrum | A credential re-listed under another account leaves the stale row | new (neither copy) | a credential an incomplete reply re-lists under another account is never authorized or quota-recorded under its old account |
 | claustrum | The quota fence needs the served credential and account | anthropic-auth/packages/core/src/claustrum-scoped.ts | a quota observation must name the served credential and account, and an absent side never matches a known one |
+| claustrum | A proven account read into a never-bound row binds it; a later other account inherits nothing | new (neither copy) | a reading with a proven account on a row that has never had one binds that account, so a later list naming another account inherits no quota |
+| claustrum | An accountless reading on a never-bound row is kept and binds nothing (absent/absent) | new (neither copy) | a reading with no account on a row that has never had one is kept and binds nothing |
+| claustrum | A proven account never binds an accountless row of several credentials | new (neither copy) | a reading with a proven account on an accountless row with several credentials is refused |
 | claustrum | Asserted identity is kept apart from expected identity | new (neither copy) | the receipt keeps what the vault asserted apart from what the roster expected |
 | claustrum | requireAssertion demands the vault's own credential and account assertion | anthropic-auth/packages/core/src/claustrum-scoped.ts | requireAssertion refuses a receipt unless the vault asserts the credential id and the expected account identity |
 | claustrum | The consumer passes requireAssertion to every authorization | new (neither copy) | requireAssertion applies to every authorization the consumer makes |

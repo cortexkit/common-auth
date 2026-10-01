@@ -49,6 +49,7 @@ export type {
   PoolCredential,
   PoolRow,
   QuotaCodec,
+  RotateCredential,
   StoredCredential,
 } from './schema.js'
 export {
