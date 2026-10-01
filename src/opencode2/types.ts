@@ -220,9 +220,13 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
    * The rewrite must be a deterministic function of the frame (stable for
    * the session): the host chains turns with `previous_response_id` by
    * diffing its own request as it was before this hook ran, so the server
-   * only stays in step when every frame is rewritten the same way. Do not
-   * touch `input` or `previous_response_id`. Adding or changing settings
-   * fields uniformly keeps the follow-up turn incremental.
+   * only stays in step when every frame is rewritten the same way. Never
+   * alter, drop or reorder the `input` items the host put in the frame, and
+   * never touch `previous_response_id`: the host's next frame assumes the
+   * server holds exactly what it sent. Adding items to `input`, or adding or
+   * changing settings fields, is safe when done the same way for every
+   * frame: the added items become part of the server's history and the
+   * follow-up turn stays incremental.
    *
    * It runs for every frame, including one no attempt can be tied to
    * (`attempt` is then `undefined`), so the rewrite never depends on
