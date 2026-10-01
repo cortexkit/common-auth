@@ -155,8 +155,9 @@ const CREDENTIAL_STATE_FIELDS = [
 ]
 
 /**
- * The endpoint an API-key roster row sends its key to, read as every reader
- * loads it (a missing or unknown header is a bearer header).
+ * The endpoint an API-key roster row sends its key to, as `buildRawRows` loads
+ * it: the trimmed `baseURL`, and a bearer header unless the row names
+ * `x-api-key`.
  */
 function rowEndpoint(raw: Record<string, unknown>): {
   baseURL: string
@@ -364,9 +365,10 @@ export async function addRow(
               row.invalid === undefined && row.fingerprint === fingerprint,
           )
           if (same) {
-            // The same secret is the same credential, so a re-add is a
-            // rotation of that row: an identity or endpoint it gives must be
-            // the row's, never dropped in favour of the row's.
+            // The same secret is the same credential, so re-adding it rotates
+            // that row. An identity or endpoint given with it must match the
+            // row's; a different one is refused rather than silently replaced
+            // by what the row already holds.
             if (
               identity !== undefined &&
               same.identity !== undefined &&
