@@ -98,18 +98,18 @@ export function drainNotifications(
   lastReceivedId = 0,
   sessionId?: string,
 ): RpcNotification[] {
-  const strict = scope.requireSession === true
-  if (strict && !isSessionId(sessionId))
+  // A strict queue holds only session-scoped notifications (its push refuses
+  // the rest), so the ordinary match below already gives a strict drain
+  // nothing but its own session's notifications.
+  if (scope.requireSession === true && !isSessionId(sessionId))
     throw new RpcSessionRequiredError('drain')
   const value = state(scope)
   const now = Date.now()
   if (sessionId !== undefined) value.lastDrainAtBySession.set(sessionId, now)
   const matches = (n: RpcNotification) =>
-    strict
-      ? n.sessionId === sessionId
-      : sessionId === undefined ||
-        n.sessionId === undefined ||
-        n.sessionId === sessionId
+    sessionId === undefined ||
+    n.sessionId === undefined ||
+    n.sessionId === sessionId
   if (lastReceivedId > 0) {
     value.queue = value.queue.filter((n) => {
       if (n.id > lastReceivedId) return true
