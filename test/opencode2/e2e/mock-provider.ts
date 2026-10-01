@@ -12,7 +12,16 @@ export type AccountName = keyof typeof ACCOUNTS
 export type Identity = AccountName | 'none'
 
 /** How the next agent-loop request of an account is refused. */
-export type RejectMode = 'rate-limit' | 'usage-limit' | 'after-output'
+export type RejectMode =
+  | 'rate-limit'
+  | 'usage-limit'
+  | 'after-output'
+  | 'unauthorized'
+
+/** The header the test plugin uses to put each attempt's value on the wire. */
+export const RECEIPT_HEADER = 'x-mock-receipt'
+/** The field the test plugin's frame rewrite adds to every frame. */
+export const MARKER_FIELD = 'common_auth_marker'
 
 export interface WireRecord {
   readonly transport: 'http' | 'ws'
@@ -24,6 +33,14 @@ export interface WireRecord {
   readonly forbiddenSeen: boolean
   readonly previousResponseID?: string
   readonly rejected?: RejectMode
+  /** The `RECEIPT_HEADER` the request or handshake carried. */
+  readonly receipt?: string
+  /** A frame's `MARKER_FIELD`, if it had one. */
+  readonly marker?: unknown
+  /** How many `input` items a frame carried. */
+  readonly inputItems?: number
+  /** The id of the response the mock sent back for a frame. */
+  readonly responseID?: string
 }
 
 function identify(headers: Headers): Identity {
@@ -196,6 +213,10 @@ export function startMockProvider(forbidden: readonly string[]): MockProvider {
     return rejects.splice(index, 1)[0]?.mode
   }
   type Socket = { connection: number; identity: Identity }
+  const receiptOf = (headers: Headers) => {
+    const receipt = headers.get(RECEIPT_HEADER)
+    return receipt === null ? {} : { receipt }
+  }
 
   const server = Bun.serve<Socket>({
     hostname: '127.0.0.1',
@@ -211,6 +232,7 @@ export function startMockProvider(forbidden: readonly string[]): MockProvider {
           connection,
           identity,
           forbiddenSeen,
+          ...receiptOf(request.headers),
         })
         if (server.upgrade(request, { data: { connection, identity } }))
           return undefined
@@ -237,7 +259,14 @@ export function startMockProvider(forbidden: readonly string[]): MockProvider {
         identity,
         forbiddenSeen,
         ...(rejected ? { rejected } : {}),
+        ...receiptOf(request.headers),
       })
+      if (rejected === 'unauthorized') {
+        return Response.json(
+          { error: { type: 'invalid_api_key', message: 'Unauthorized' } },
+          { status: 401 },
+        )
+      }
       if (rejected === 'rate-limit' || rejected === 'usage-limit') {
         return Response.json(
           { error: rejected === 'rate-limit' ? RATE_LIMIT : USAGE_LIMIT },
@@ -270,11 +299,15 @@ export function startMockProvider(forbidden: readonly string[]): MockProvider {
       message(socket, message) {
         const { connection, identity } = socket.data
         const index = ++requests
-        let frame: { previous_response_id?: string } = {}
+        let frame: Record<string, unknown> & {
+          previous_response_id?: string
+          input?: unknown
+        } = {}
         try {
           frame = JSON.parse(String(message))
         } catch {}
         const rejected = takeReject(identity)
+        const id = `resp_ws_c${connection}_${index}`
         records.push({
           transport: 'ws',
           action: 'frame',
@@ -286,9 +319,13 @@ export function startMockProvider(forbidden: readonly string[]): MockProvider {
             ? { previousResponseID: frame.previous_response_id }
             : {}),
           ...(rejected ? { rejected } : {}),
+          ...(MARKER_FIELD in frame ? { marker: frame[MARKER_FIELD] } : {}),
+          ...(Array.isArray(frame.input)
+            ? { inputItems: frame.input.length }
+            : {}),
+          responseID: id,
         })
         const send = (event: unknown) => socket.send(JSON.stringify(event))
-        const id = `resp_ws_c${connection}_${index}`
         send(quotaFrame(identity))
         if (rejected === 'rate-limit') {
           send(responseEvents('', id)[0])

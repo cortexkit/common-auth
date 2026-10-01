@@ -112,6 +112,7 @@ async function collect(
 async function runScenario(
   transport: Transport,
   turns: Turn[],
+  options: { markFrames?: boolean; receiptOnWire?: boolean } = {},
 ): Promise<ScenarioResult> {
   const root = await mkdtemp(join(tmpdir(), 'common-auth-oc2-e2e-'))
   const project = join(root, 'project')
@@ -124,6 +125,8 @@ async function runScenario(
   const env = isolatedEnv(root, {
     COMMON_AUTH_E2E_PLUGIN_LOG: pluginLog,
     COMMON_AUTH_E2E_CONTROL: control,
+    ...(options.markFrames ? { COMMON_AUTH_E2E_MARK_FRAMES: '1' } : {}),
+    ...(options.receiptOnWire ? { COMMON_AUTH_E2E_RECEIPT_ON_WIRE: '1' } : {}),
   })
   const config = {
     plugins: [pluginDir],
@@ -434,6 +437,84 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
         ['output-started', { retry: false }],
       ])
       expect(result.stdout[0]).toContain('PARTIAL-FROM-A')
+    })
+  }, 180_000)
+
+  test('an http 401 is attributed to the attempt that sent it, with its value', async () => {
+    const result = await runScenario(
+      'http',
+      [{ account: 'A' }, { account: 'A', reject: 'unauthorized' }],
+      { receiptOnWire: true },
+    )
+    verify(result, () => {
+      expect(result.exits[0]).toBe(0)
+      expectRecipeFired(result)
+      const sent = primaries(result.wire)
+      expect(pick(sent, 'identity', 'rejected')).toEqual([
+        'A:',
+        'A:unauthorized',
+      ])
+      const [served, refused] = sent.map((record) => record.receipt)
+      expect(served).toMatch(/^A-primary-\d+$/)
+      expect(refused).toMatch(/^A-primary-\d+$/)
+      expect(refused).not.toBe(served)
+      // Every HTTP request carried its own attempt's receipt, and each end
+      // reported the status of the response to that request.
+      const ends = events(result.plugin, 'end').filter(
+        (entry) => entry.kind === 'primary',
+      )
+      expect(pick(ends, 'receipt', 'transport', 'status', 'error')).toEqual([
+        `${served}:http:200:`,
+        `${refused}:http:401:`,
+      ])
+      expect(
+        pick(events(result.plugin, 'error-response'), 'receipt', 'status'),
+      ).toEqual([`${refused}:401`])
+      // Title requests run beside the primary ones; each ends with its own
+      // receipt and status.
+      const titles = result.wire.filter((record) => record.kind === 'title')
+      expect(titles.length).toBeGreaterThan(0)
+      const titleEnds = events(result.plugin, 'end').filter(
+        (entry) => entry.kind === 'title',
+      )
+      expect(pick(titleEnds, 'receipt', 'status')).toEqual(
+        titles.map((record) => `${record.receipt}:200`),
+      )
+    })
+  }, 180_000)
+
+  test('a websocket frame rewrite reaches every frame and the follow-up turn stays incremental', async () => {
+    const result = await runScenario(
+      'websocket',
+      [{ account: 'A' }, { account: 'A' }],
+      { markFrames: true },
+    )
+    verify(result, () => {
+      expect(result.exits).toEqual([0, 0])
+      expectRecipeFired(result)
+      const frames = primaries(result.wire)
+      expect(pick(frames, 'connection', 'identity', 'marker')).toEqual([
+        '1:A:common-auth-e2e',
+        '1:A:common-auth-e2e',
+      ])
+      // The host diffed the second turn against its own pre-rewrite
+      // request: it chained on the first response and sent only the new
+      // input.
+      const [first, second] = frames
+      expect(first?.previousResponseID).toBeUndefined()
+      expect(second?.previousResponseID).toBe(first?.responseID)
+      expect(second?.inputItems).toBe(1)
+      // Each frame was rewritten with the attempt whose handshake opened
+      // or reused the socket for that turn.
+      const ends = events(result.plugin, 'end').filter(
+        (entry) => entry.transport === 'ws',
+      )
+      expect(pick(ends, 'error')).toEqual(['', ''])
+      const receipts = pick(ends, 'receipt')
+      expect(new Set(receipts).size).toBe(2)
+      expect(pick(events(result.plugin, 'rewrite'), 'receipt')).toEqual(
+        receipts,
+      )
     })
   }, 180_000)
 

@@ -3,15 +3,28 @@
 // control file the test rewrites between turns; every installer event is
 // appended to a log the test reads afterwards. Both paths come from the
 // host's environment, which the test sets.
+//
+// Each attempt gets a receipt (`<account>-<kind>-<n>`) from `accountHeaders`,
+// kept as the attempt's value and, when the test asks, also sent on the wire
+// in a header, so the test can check that what the installer hands back
+// belongs to the request that actually went out. The header is opt-in
+// because the host keys a session's WebSocket on its handshake headers: a
+// header that changes per attempt opens a new socket every turn.
 import { appendFileSync, readFileSync } from 'node:fs'
 import {
-  type HeaderEdits,
+  type AccountHeadersResult,
   installOpenCode2Auth,
   type LimitSignal,
 } from '../../../src/opencode2/index.js'
+import { MARKER_FIELD, RECEIPT_HEADER } from './mock-provider.js'
 
 const LOG = process.env.COMMON_AUTH_E2E_PLUGIN_LOG ?? ''
 const CONTROL = process.env.COMMON_AUTH_E2E_CONTROL ?? ''
+/** Set by the test to turn on the WebSocket frame rewrite. */
+const MARK_FRAMES = process.env.COMMON_AUTH_E2E_MARK_FRAMES === '1'
+/** Set by the test to send each attempt's receipt in a header. */
+const RECEIPT_ON_WIRE = process.env.COMMON_AUTH_E2E_RECEIPT_ON_WIRE === '1'
+const MARK = 'common-auth-e2e'
 const ACCOUNTS: Record<string, { token: string; id: string }> = {
   A: { token: 'tok-A', id: 'acct-A' },
   B: { token: 'tok-B', id: 'acct-B' },
@@ -51,7 +64,8 @@ export default {
   id: 'cortexkit.common-auth.e2e-placement',
   async setup(ctx: Parameters<typeof installOpenCode2Auth>[0]) {
     const limited = new Set<string>()
-    const installation = await installOpenCode2Auth<{ used: number }>(
+    let receipts = 0
+    const installation = await installOpenCode2Auth<{ used: number }, string>(
       ctx,
       {
         providerID: 'openai',
@@ -66,19 +80,30 @@ export default {
           })
           return accountId
         },
-        accountHeaders({ accountId }): HeaderEdits {
+        accountHeaders({ accountId, kind }): AccountHeadersResult<string> {
           const account = ACCOUNTS[accountId]
-          if (!account) return {}
+          if (!account) return { headers: {} }
+          receipts += 1
+          const receipt = `${accountId}-${kind}-${receipts}`
           return {
-            authorization: `Bearer ${account.token}`,
-            'x-mock-account': account.id,
+            headers: {
+              authorization: `Bearer ${account.token}`,
+              'x-mock-account': account.id,
+              ...(RECEIPT_ON_WIRE ? { [RECEIPT_HEADER]: receipt } : {}),
+            },
+            attempt: receipt,
           }
         },
         quotaFromHeaders(headers) {
           const used = headers.get('x-mock-used-percent')
           return used === null ? undefined : { used: Number(used) }
         },
-        async limitFromResponse({ status, body }) {
+        async limitFromResponse({ status, body, attempt }) {
+          log('error-response', {
+            kind: attempt.kind,
+            status,
+            receipt: attempt.data,
+          })
           if (status !== 429) return undefined
           let code = ''
           try {
@@ -98,8 +123,34 @@ export default {
           if (event.type === 'response.output_text.delta')
             return { outputStarted: true }
           const limit = limitOf(event)
-          return limit ? { limit } : undefined
+          const done =
+            event.type === 'response.completed' ||
+            event.type === 'response.failed' ||
+            event.type === 'error'
+          if (!limit && !done) return undefined
+          return { ...(limit ? { limit } : {}), ...(done ? { done } : {}) }
         },
+        onAttemptEnd(attempt, outcome) {
+          log('end', {
+            kind: attempt.kind,
+            transport: attempt.transport,
+            receipt: attempt.data,
+            status: outcome.status,
+            outputStarted: outcome.outputStarted,
+            error: outcome.error?.reason,
+          })
+        },
+        ...(MARK_FRAMES
+          ? {
+              rewriteWebSocketFrame({ frame, attempt }) {
+                log('rewrite', { receipt: attempt?.data })
+                return JSON.stringify({
+                  ...JSON.parse(frame),
+                  [MARKER_FIELD]: MARK,
+                })
+              },
+            }
+          : {}),
       },
       { logger: { warn: (message, data) => log('warn', { message, data }) } },
     )
@@ -135,6 +186,7 @@ export default {
         reason: event.reason,
         hostDecision: event.hostDecision,
         decision: event.decision,
+        receipt: event.handle?.data,
       }),
     )
     log('setup')
