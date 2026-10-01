@@ -10,3 +10,5 @@ Rows for the gated tests in `placement.e2e.test.ts`. They run only with `COMMON_
 | opencode2 placement | An HTTP usage limit the host would not retry moves the turn to the next account | new (neither copy) | http usage-limit refusal the host would not retry moves to the next account |
 | opencode2 placement | A WebSocket refusal after output is not retried | new (neither copy) | websocket refusal after output is not retried |
 | opencode2 placement | An HTTP refusal after output is not retried | new (neither copy) | http refusal after output is not retried |
+| opencode2 placement | An HTTP 401 ends the attempt whose receipt went out on that request, with its status and its value; error-response classification and title requests get their own attempts | new (neither copy) | an http 401 is attributed to the attempt that sent it, with its value |
+| opencode2 placement | A field added to every WebSocket frame by the frame rewrite reaches the wire, the socket is reused, and the follow-up turn still chains on `previous_response_id` with only the new input | new (neither copy) | a websocket frame rewrite reaches every frame and the follow-up turn stays incremental |
