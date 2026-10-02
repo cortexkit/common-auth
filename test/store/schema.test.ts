@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { watch } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { POOL_KEY, PoolOperationError } from '../../src/store/index.js'
 import {
   isAccountStore,
@@ -279,8 +278,22 @@ describe('store shapes', () => {
   })
 
   it('the unlocked legacy config read never observes a partial file during library writes', async () => {
-    const store = s.open()
+    // Each config write's temp file, read from the directory at the moment
+    // just before its rename. fs.watch is not used: on macOS it reports
+    // neither every event nor every file name, so it cannot prove this.
+    const configTemps: number[] = []
+    const store = s.open({
+      onStep: async (step) => {
+        if (step !== 'before-config-write') return
+        const names = await readdir(s.dir)
+        configTemps.push(
+          names.filter((name) => /^openai-auth\.json\..+\.tmp$/.test(name))
+            .length,
+        )
+      },
+    })
     await store.add({ id: 'seed', credential: oauth('r-seed') })
+    configTemps.length = 0
     const observed: string[] = []
     let stop = false
     const reader = (async () => {
@@ -291,21 +304,15 @@ describe('store shapes', () => {
         await new Promise((resolve) => setImmediate(resolve))
       }
     })()
-    const names: string[] = []
-    const watcher = watch(s.dir, (_event, name) => {
-      if (name) names.push(String(name))
-    })
     for (let index = 0; index < 20; index++)
       await store.add({ id: `r${index}`, credential: oauth(`r-${index}`) })
     stop = true
     await reader
-    watcher.close()
     expect(observed.length).toBeGreaterThan(0)
     for (const text of observed) expect(() => JSON.parse(text)).not.toThrow()
-    // Every config write went through a temp file renamed into place.
-    expect(names.some((name) => /openai-auth\.json\..+\.tmp$/.test(name))).toBe(
-      true,
-    )
+    // Every config write went through a temp file renamed into place: each
+    // of the 20 adds saw exactly one config temp file before its rename.
+    expect(configTemps).toEqual(Array(20).fill(1))
     const legacy = await loadAccounts(s.paths)
     expect(legacy?.accounts.length).toBe(21)
   })
