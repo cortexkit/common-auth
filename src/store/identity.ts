@@ -43,6 +43,22 @@ export function disableIn(tx: RowEditor, id: string, reason: string): void {
 }
 
 /**
+ * Marks a row enabled: `enabled: true` in the roster row and no
+ * `disabledReason` in its entry. A row without an entry is not given one.
+ */
+export function enableIn(tx: RowEditor, id: string): void {
+  const raw = tx.rosterRow(id)
+  if (!raw) return
+  raw.enabled = true
+  const entry = tx.entry(id)
+  if (entry && 'disabledReason' in entry) {
+    const next = { ...entry }
+    delete next.disabledReason
+    tx.setEntry(id, next)
+  }
+}
+
+/**
  * Two enabled OAuth rows with one wire identity are the same account: the
  * earlier row in roster order stays enabled and every later one is disabled
  * with a reason. Returns the ids it disabled.

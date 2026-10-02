@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Attribution } from './attribution.js'
 import { PoolOperationError } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
@@ -5,6 +6,7 @@ import {
   DUPLICATE_IDENTITY_REASON,
   disableIdentityDuplicates,
   disableIn,
+  enableIn,
   recordIdentityIn,
 } from './identity.js'
 import {
@@ -18,8 +20,11 @@ import {
   acceptProviderState,
   mergedProviderState,
   type ProviderStateWrite,
+  planProviderStateIn,
   providerStateCoverage,
+  type RowTransitionMutator,
   replacementProviderState,
+  type UpdateProviderStateResult,
 } from './provider-state.js'
 import type { PoolLockSpec } from './refresh-lock.js'
 import {
@@ -51,7 +56,12 @@ import {
   stateFieldsFor,
   storedCredential,
 } from './schema.js'
-import { bindReplacement } from './torn.js'
+import {
+  applyTransition,
+  bindReplacement,
+  type StampedTransition,
+  TRANSITION_STAMP_KEY,
+} from './torn.js'
 
 export type FailureHook = (
   rowId: string,
@@ -819,88 +829,171 @@ export async function rotateRow(
 }
 
 /**
- * Marks a row disabled. Since 0.2.3 it takes the row lock and the caller's
- * extra locks before the store locks, as the other row writes do, so it waits
- * for a refresh of the row instead of landing during its provider call.
+ * Options of `disable` and `enable`. A call that passes neither
+ * `attribution` nor `providerState` behaves exactly as it did before 0.7.0.
  */
-export async function disableRow(
-  rt: StoreRuntime,
-  id: string,
-  reason: string,
-  options: RowToggleOptions = {},
-): Promise<{ id: string }> {
-  assertNotInsideHook('disable')
-  return runOperation(
-    rt.ctx,
-    'disable',
-    id,
-    options.onFailure,
-    async (locks, progress) => {
-      const { row: seen } = await readRow(rt, 'disable', id)
-      await locks.acquire(rowLockSpec(rt, seen))
-      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
-      return withTransaction(
-        rt.ctx,
-        locks,
-        progress,
-        { operation: 'disable', rowId: id },
-        async (tx) => {
-          const row = tx.row(id)
-          if (!row || !tx.rosterRow(id)) throw unknownRow('disable', id)
-          if (rowLockKey(row) !== rowLockKey(seen))
-            throw keyChanged('disable', id)
-          disableIn(tx, id, reason)
-          await tx.commitConfig()
-          return { id }
-        },
-      )
-    },
-  )
+export interface RowTransitionOptions extends RowToggleOptions {
+  /**
+   * The credential epoch and recorded identity the caller's evidence for the
+   * transition was obtained under (as `recordQuota`'s attribution: an
+   * identity left out means the row had none). The call is refused
+   * (`attribution`, retryable, nothing written) once the row holds another
+   * epoch or identity, so a provider's late answer about a replaced
+   * credential never disables, or switches back on, the row now holding its
+   * successor.
+   */
+  attribution?: Attribution
+  /**
+   * A provider-state change made in the same transaction as the transition,
+   * under the rules of `updateProviderState` (codec validation, the stamp
+   * rebound to the value, `unbound-credential` for a row no stamp of this
+   * store can bind it to); it requires `attribution`. The value and the
+   * enabled flag land together: no reader, and no crash at any write point,
+   * shows one without the other. Returning `DECLINE_TRANSITION` declines the
+   * whole call and writes nothing.
+   */
+  providerState?: RowTransitionMutator
+}
+
+export interface RowTransitionResult {
+  id: string
+  /** The provider-state mutator declined: nothing was written. */
+  declined?: true
+  /**
+   * Set when a provider-state mutator ran and did not decline: what it did
+   * to the value, as `updateProviderState` reports it.
+   */
+  providerStateOutcome?: UpdateProviderStateResult['outcome']
+  /** The provider state the row now holds, when a mutator ran and left one. */
+  providerState?: unknown
 }
 
 /**
- * Clears a row's `enabled: false` and its `disabledReason` in one config
- * write. An OAuth row whose recorded identity another enabled OAuth row holds
- * stays disabled and the call refuses (`duplicate-identity`): the same rule
- * that makes `add` store such a row disabled. Enabling a row that is already
- * enabled writes nothing.
+ * The flag a `disable` or `enable` sets: disabled with a reason, or enabled.
  */
-export async function enableRow(
+type RowFlag = { enabled: false; reason: string } | { enabled: true }
+
+/**
+ * `disable` and `enable` in one place. Takes the row lock, then the extra
+ * locks, then the store locks, as every row write does, so it waits for a
+ * refresh of the row instead of landing during its provider call.
+ *
+ * With a provider-state mutator that changes the value, the transition is
+ * written as a replace is: the state file first, carrying the value and, in
+ * the stamp, the transition itself; then the config, flipping the row and
+ * recording the transition's mark (see `torn.ts`). A stop between the two
+ * leaves a row every reader shows transitioned beside its new value. When
+ * the config already says what the transition would write (an `enable` of
+ * an enabled row), the value alone is written, in one state write.
+ */
+async function transitionRow(
   rt: StoreRuntime,
+  operation: 'disable' | 'enable',
   id: string,
-  options: RowToggleOptions = {},
-): Promise<{ id: string }> {
-  assertNotInsideHook('enable')
+  flag: RowFlag,
+  options: RowTransitionOptions,
+): Promise<RowTransitionResult> {
+  assertNotInsideHook(operation)
+  const { ctx } = rt
+  const codec = ctx.providerState
+  const fence = options.attribution
+  const mutator = options.providerState
   return runOperation(
-    rt.ctx,
-    'enable',
+    ctx,
+    operation,
     id,
     options.onFailure,
     async (locks, progress) => {
-      const { row: seen } = await readRow(rt, 'enable', id)
+      if (
+        fence !== undefined &&
+        !isCredentialEpoch(isRecord(fence) ? fence.credentialEpoch : undefined)
+      )
+        throw refusal(
+          operation,
+          id,
+          'invalid-input',
+          'the attribution must name a credential epoch that is a positive safe integer',
+        )
+      if (mutator !== undefined) {
+        if (typeof mutator !== 'function')
+          throw refusal(
+            operation,
+            id,
+            'invalid-input',
+            'the provider-state mutator must be a function',
+          )
+        // A provider-state value belongs to one credential, so a change to
+        // it must say which credential it was decided for.
+        if (fence === undefined)
+          throw refusal(
+            operation,
+            id,
+            'invalid-input',
+            'a provider-state change needs the attribution of the credential it is for',
+          )
+        if (!codec)
+          throw refusal(
+            operation,
+            id,
+            'invalid-input',
+            'the store was opened without a provider-state codec',
+          )
+      }
+      const { row: seen } = await readRow(rt, operation, id)
       await locks.acquire(rowLockSpec(rt, seen))
       for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
       return withTransaction(
-        rt.ctx,
+        ctx,
         locks,
         progress,
-        { operation: 'enable', rowId: id },
-        async (tx) => {
-          const row = requireUsableRow('enable', id, tx.row(id))
+        { operation, rowId: id },
+        async (tx): Promise<RowTransitionResult> => {
+          const loaded = tx.row(id)
+          const row = flag.enabled
+            ? requireUsableRow('enable', id, loaded)
+            : loaded
+          if (!row || !tx.rosterRow(id)) throw unknownRow(operation, id)
           if (rowLockKey(row) !== rowLockKey(seen))
-            throw keyChanged('enable', id)
-          if (row.enabled && row.disabledReason === undefined) return { id }
-          if (row.type === 'oauth' && row.identity !== undefined) {
-            const holder = tx
-              .rows()
-              .find(
-                (other) =>
-                  other.id !== id &&
-                  other.invalid === undefined &&
-                  other.type === 'oauth' &&
-                  other.enabled &&
-                  other.identity === row.identity,
+            throw keyChanged(operation, id)
+          if (fence !== undefined) {
+            // An invalid entry has no epoch to compare the fence with.
+            if (row.invalid)
+              throw refusal(
+                operation,
+                id,
+                'invalid-row',
+                `row ${id} failed validation`,
               )
+            if (
+              (row.credentialEpoch ?? 1) !== fence.credentialEpoch ||
+              row.identity !== fence.identity
+            )
+              throw refusal(
+                operation,
+                id,
+                'attribution',
+                `the ${operation} of ${id} was issued for a credential or account the row no longer holds`,
+                true,
+              )
+          }
+          // An enable of a row that is already enabled has nothing to write
+          // to the config; a disable always rewrites it, as it always has.
+          const writesConfig =
+            !flag.enabled || !row.enabled || row.disabledReason !== undefined
+          if (flag.enabled && writesConfig && row.type === 'oauth') {
+            const holder =
+              row.identity === undefined
+                ? undefined
+                : tx
+                    .rows()
+                    .find(
+                      (other) =>
+                        other.id !== id &&
+                        other.invalid === undefined &&
+                        other.type === 'oauth' &&
+                        other.enabled &&
+                        other.identity === row.identity,
+                    )
             if (holder)
               throw refusal(
                 'enable',
@@ -909,20 +1002,107 @@ export async function enableRow(
                 `row ${holder.id} is enabled with the same identity as row ${id}`,
               )
           }
-          const raw = tx.rosterRow(id) as Record<string, unknown>
-          raw.enabled = true
-          const entry = tx.entry(id)
-          if (entry && 'disabledReason' in entry) {
-            const next = { ...entry }
-            delete next.disabledReason
-            tx.setEntry(id, next)
+          if (mutator === undefined || codec === undefined) {
+            if (!writesConfig) return { id }
+            if (flag.enabled) enableIn(tx, id)
+            else disableIn(tx, id, flag.reason)
+            await tx.commitConfig()
+            return { id }
           }
+          if (!row.credential)
+            throw refusal(
+              operation,
+              id,
+              'no-credential',
+              `row ${id} holds no credential`,
+            )
+          // Disabling a credential the strict store cannot prove is safe,
+          // which is why an attribution alone does not ask for a bound row;
+          // writing a provider state for one is not.
+          requireBound(operation, row)
+          const plan = await planProviderStateIn(
+            tx,
+            codec,
+            operation,
+            row,
+            mutator,
+            true,
+          )
+          if (plan.kind === 'declined') return { id, declined: true }
+          const result: RowTransitionResult = {
+            id,
+            providerStateOutcome:
+              plan.kind === 'unchanged'
+                ? 'unchanged'
+                : plan.value === undefined
+                  ? 'cleared'
+                  : 'updated',
+            ...(plan.value !== undefined ? { providerState: plan.value } : {}),
+          }
+          if (plan.kind === 'unchanged') {
+            if (writesConfig) {
+              if (flag.enabled) enableIn(tx, id)
+              else disableIn(tx, id, flag.reason)
+              await tx.commitConfig()
+            }
+            return result
+          }
+          if (!writesConfig) {
+            tx.setStateAccount(id, plan.account)
+            await tx.commitState()
+            return result
+          }
+          const transition: StampedTransition = flag.enabled
+            ? { mark: randomUUID(), enabled: true }
+            : { mark: randomUUID(), enabled: false, reason: flag.reason }
+          const stamp = plan.account[CREDENTIAL_STAMP_KEY] as Record<
+            string,
+            unknown
+          >
+          tx.setStateAccount(id, {
+            ...plan.account,
+            [CREDENTIAL_STAMP_KEY]: {
+              ...stamp,
+              [TRANSITION_STAMP_KEY]: transition,
+            },
+          })
+          await tx.commitState()
+          applyTransition(tx, id, transition)
           await tx.commitConfig()
-          return { id }
+          return result
         },
       )
     },
   )
+}
+
+/**
+ * Marks a row disabled with a reason. See `RowTransitionOptions` for the
+ * attributed form, which may change the provider state with it.
+ */
+export function disableRow(
+  rt: StoreRuntime,
+  id: string,
+  reason: string,
+  options: RowTransitionOptions = {},
+): Promise<RowTransitionResult> {
+  return transitionRow(rt, 'disable', id, { enabled: false, reason }, options)
+}
+
+/**
+ * Clears a row's `enabled: false` and its `disabledReason` in one config
+ * write. An OAuth row whose recorded identity another enabled OAuth row holds
+ * stays disabled and the call refuses (`duplicate-identity`): the same rule
+ * that makes `add` store such a row disabled. Enabling a row that is already
+ * enabled writes nothing. See `RowTransitionOptions` for the attributed
+ * form, which may change the provider state with it.
+ */
+export function enableRow(
+  rt: StoreRuntime,
+  id: string,
+  options: RowTransitionOptions = {},
+): Promise<RowTransitionResult> {
+  return transitionRow(rt, 'enable', id, { enabled: true }, options)
 }
 
 /**
