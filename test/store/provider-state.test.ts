@@ -619,6 +619,22 @@ test('strict stamps refuse a provider-state update on an unbound row, and so doe
   expect(lenient.kind).toBe('unbound-credential')
   expect(lenient.message).toContain('no stamp of this store')
   expect(await s.bytes()).toEqual(before)
+
+  // A stamp that names another identity than the row records: a provider
+  // state written under it would never be shown, so the write is refused.
+  await editConfig((config) => {
+    config.accounts[1].accountId = 'acct-other'
+  })
+  const named = await s.bytes()
+  const otherIdentity = await rejectionOf(
+    open().updateProviderState(
+      'b',
+      { credentialEpoch: 1, identity: 'acct-other' },
+      () => ({ project: 'P9' }),
+    ),
+  )
+  expect(otherIdentity.kind).toBe('unbound-credential')
+  expect(await s.bytes()).toEqual(named)
 })
 
 test('a foreign edit of the credential-bound part hides the provider state, and of the rest does not', async () => {
