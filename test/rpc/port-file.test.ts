@@ -72,7 +72,7 @@ describe('port-file', () => {
   test('discover returns live entry matching the expected pid instead of newer live entry', async () => {
     const expectedPid = spawnLivePid()
     await writeFile(
-      join(dir, 'port-expected.json'),
+      join(dir, `port-${expectedPid}.json`),
       JSON.stringify({
         port: 1,
         token: 'expected',
@@ -82,7 +82,7 @@ describe('port-file', () => {
       'utf8',
     )
     await writeFile(
-      join(dir, 'port-newer-other.json'),
+      join(dir, `port-${process.pid}.json`),
       JSON.stringify({
         port: 2,
         token: 'newer-other',
@@ -99,18 +99,19 @@ describe('port-file', () => {
   })
 
   test('discover falls back to newest live entry when expected pid matches none', async () => {
+    const olderPid = spawnLivePid()
     await writeFile(
-      join(dir, 'port-older.json'),
+      join(dir, `port-${olderPid}.json`),
       JSON.stringify({
         port: 1,
         token: 'older',
-        pid: process.pid,
+        pid: olderPid,
         startedAt: 1,
       }),
       'utf8',
     )
     await writeFile(
-      join(dir, 'port-newer.json'),
+      join(dir, `port-${process.pid}.json`),
       JSON.stringify({
         port: 2,
         token: 'newer',
@@ -126,18 +127,19 @@ describe('port-file', () => {
   })
 
   test('discover still picks newest live entry when expected pid is undefined', async () => {
+    const olderPid = spawnLivePid()
     await writeFile(
-      join(dir, 'port-older.json'),
+      join(dir, `port-${olderPid}.json`),
       JSON.stringify({
         port: 1,
         token: 'older',
-        pid: process.pid,
+        pid: olderPid,
         startedAt: 1,
       }),
       'utf8',
     )
     await writeFile(
-      join(dir, 'port-newer.json'),
+      join(dir, `port-${process.pid}.json`),
       JSON.stringify({
         port: 2,
         token: 'newer',
@@ -154,7 +156,7 @@ describe('port-file', () => {
 
   test('discover never returns a dead pid even when it matches expected pid', async () => {
     await writeFile(
-      join(dir, 'port-live.json'),
+      join(dir, `port-${process.pid}.json`),
       JSON.stringify({
         port: 1,
         token: 'live',
@@ -164,7 +166,7 @@ describe('port-file', () => {
       'utf8',
     )
     await writeFile(
-      join(dir, 'port-dead.json'),
+      join(dir, 'port-99999999.json'),
       JSON.stringify({
         port: 2,
         token: 'dead',
@@ -186,12 +188,13 @@ describe('port-file', () => {
       token: 'matched',
       pid: process.pid,
     })
+    const otherPid = spawnLivePid()
     await writeFile(
-      join(dir, 'port-newer-other.json'),
+      join(dir, `port-${otherPid}.json`),
       JSON.stringify({
         port: 2,
         token: 'other',
-        pid: spawnLivePid(),
+        pid: otherPid,
         startedAt: Date.now() + 1,
       }),
       'utf8',
@@ -398,11 +401,13 @@ test('numeric startedAt is written; non-numeric startedAt sorts last without rej
   expect(typeof JSON.parse(await Bun.file(file).text()).startedAt).toBe(
     'number',
   )
+  const otherPid = spawnLivePid()
   await writeFile(
-    join(dir, 'port-unknown.json'),
+    join(dir, `port-${otherPid}.json`),
     JSON.stringify({
       port: 2,
-      pid: process.pid,
+      pid: otherPid,
+      token: 'unknown',
       startedAt: '9999999999999999',
     }),
   )
@@ -412,23 +417,25 @@ test('numeric startedAt is written; non-numeric startedAt sorts last without rej
 })
 
 test('discovery unlinks usable dead entries, ignores missing finite ports and preserves usable live entries', async () => {
-  const live = join(dir, 'port-live.json')
-  const dead = join(dir, 'port-dead.json')
-  const unusable = join(dir, 'port-unusable.json')
+  const live = join(dir, `port-${process.pid}.json`)
+  const dead = join(dir, 'port-99999999.json')
+  const unusable = join(dir, `port-${process.ppid}.json`)
   await writeFile(
     live,
-    JSON.stringify({ pid: process.pid, port: 1, startedAt: 1 }),
+    JSON.stringify({ pid: process.pid, port: 1, token: 'live', startedAt: 1 }),
   )
   await writeFile(
     dead,
-    JSON.stringify({ pid: 99999999, port: 2, startedAt: 2 }),
+    JSON.stringify({ pid: 99999999, port: 2, token: 'dead', startedAt: 2 }),
   )
-  await writeFile(unusable, JSON.stringify({ pid: process.pid }))
+  await writeFile(
+    unusable,
+    JSON.stringify({ pid: process.ppid, token: 'no-port' }),
+  )
   expect((await discoverPortFile(dir))?.port).toBe(1)
-  expect((await readdir(dir)).sort()).toEqual([
-    'port-live.json',
-    'port-unusable.json',
-  ])
+  expect((await readdir(dir)).sort()).toEqual(
+    [`port-${process.pid}.json`, `port-${process.ppid}.json`].sort(),
+  )
 })
 
 test('managed directory predicate treats prefixes literally and preserves unprefixed legacy names', () => {

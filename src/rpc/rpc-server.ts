@@ -41,17 +41,59 @@ export interface RpcServerOptions {
   timeoutMs?: number
   // Bounds request delivery only (requestTimeout/headersTimeout).
   receiptTimeoutMs?: number
+  /**
+   * Answer an `apply` call whose handler is still running after this many
+   * milliseconds with 504 `{error: 'handler deadline exceeded'}`. The handler
+   * is not cancelled; its eventual result is discarded. Unset by default,
+   * when only the socket inactivity timeout (`timeoutMs`) bounds a handler,
+   * by destroying the socket.
+   */
+  applyDeadlineMs?: number
 }
+
+/**
+ * Thrown by an `apply` or `drain` handler to refuse a request with a 4xx
+ * status. Its message is sent on the wire as `{error: message}`, so it must
+ * be written for the client and never quote a credential. Any other error a
+ * handler throws answers 500 with a fixed code.
+ */
+export class RpcRequestError extends Error {
+  readonly status: number
+  constructor(status: number, message: string) {
+    if (!Number.isInteger(status) || status < 400 || status > 499)
+      throw new RangeError(`RpcRequestError status must be 4xx, got ${status}`)
+    super(message)
+    this.name = 'RpcRequestError'
+    this.status = status
+  }
+}
+
+const MAX_BODY_BYTES = 1_000_000
+
+/** The request body exceeded the cap; answered 413. */
+class BodyTooLargeError extends Error {}
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
+    const tooLarge = () => {
+      // Keep reading and discarding the rest, so the client finishes sending
+      // and can read the 413 instead of seeing a reset connection.
+      req.removeAllListeners('data')
+      req.on('data', () => {})
+      req.resume()
+      reject(new BodyTooLargeError('body too large'))
+    }
+    const declared = Number(req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      tooLarge()
+      return
+    }
     const chunks: Buffer[] = []
     let size = 0
     req.on('data', (chunk: Buffer) => {
       size += chunk.length
-      if (size > 1_000_000) {
-        req.destroy()
-        reject(new Error('body too large'))
+      if (size > MAX_BODY_BYTES) {
+        tooLarge()
         return
       }
       chunks.push(chunk)
@@ -59,6 +101,26 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
     req.on('error', reject)
   })
+}
+
+class ApplyDeadlineError extends Error {}
+
+/** Settle with `work`, or reject at `ms` while `work` keeps running. */
+async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new ApplyDeadlineError('apply deadline exceeded')),
+      ms,
+    )
+  })
+  // A handler that fails after its deadline has nobody left to answer.
+  work.catch(() => {})
+  try {
+    return await Promise.race([work, deadline])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function tokenOk(header: string | undefined, token: string): boolean {
@@ -88,24 +150,43 @@ export async function startRpcServer(
   server.headersTimeout = receiptTimeoutMs
 
   async function dispatch(req: IncomingMessage, res: ServerResponse) {
-    const json = (status: number, value: unknown) => {
-      // Guard against writing to a socket that was destroyed (e.g. when
-      // readBody rejected after req.destroy() on an oversized body).
+    const json = (
+      status: number,
+      value: unknown,
+      headers: Record<string, string> = {},
+    ) => {
+      // Guard against writing to a socket that is already gone (the
+      // inactivity timeout destroys it).
       if (res.headersSent || res.writableEnded || res.destroyed) return
-      res.writeHead(status, { 'content-type': 'application/json' })
+      res.writeHead(status, { 'content-type': 'application/json', ...headers })
       res.end(JSON.stringify(value))
     }
     try {
-      const url = req.url ?? ''
-      if (req.method === 'GET' && url === '/health')
+      // Route on the pathname alone, so a query string does not turn a known
+      // method into a 404.
+      const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname
+      if (req.method === 'GET' && path === '/health')
         return json(200, { ok: true })
-      if (req.method !== 'POST' || !url.startsWith('/rpc/'))
+      if (req.method !== 'POST' || !path.startsWith('/rpc/'))
         return json(404, { error: 'not found' })
       if (!tokenOk(req.headers.authorization, token))
         return json(401, { error: 'unauthorized' })
-      const method = url.slice('/rpc/'.length)
-      const body = await readBody(req)
-      const params = JSON.parse(body || '{}') as Record<string, unknown>
+      const method = path.slice('/rpc/'.length)
+      let body: string
+      try {
+        body = await readBody(req)
+      } catch (error) {
+        if (!(error instanceof BodyTooLargeError)) throw error
+        // Close the connection after answering: the rest of the oversized
+        // body is not worth keeping the socket for.
+        return json(413, { error: 'body too large' }, { connection: 'close' })
+      }
+      let params: Record<string, unknown>
+      try {
+        params = JSON.parse(body || '{}') as Record<string, unknown>
+      } catch {
+        return json(400, { error: 'invalid json' })
+      }
       if (method === 'pending-notifications') {
         if (options.requireSession === true && !isSessionId(params.sessionId))
           return json(400, { error: 'session required' })
@@ -124,11 +205,31 @@ export async function startRpcServer(
         return json(200, { messages })
       }
       if (method === 'apply') {
-        const result = await options.apply(params as unknown as ApplyRequest)
+        const work = Promise.resolve(
+          options.apply(params as unknown as ApplyRequest),
+        )
+        const result =
+          options.applyDeadlineMs === undefined
+            ? await work
+            : await withDeadline(work, options.applyDeadlineMs)
         return json(200, result)
       }
       return json(404, { error: 'unknown method' })
     } catch (error) {
+      if (error instanceof RpcRequestError) {
+        log.debug('rpc request refused', {
+          pid: process.pid,
+          status: error.status,
+        })
+        return json(error.status, { error: error.message })
+      }
+      if (error instanceof ApplyDeadlineError) {
+        log.warn('rpc apply deadline exceeded', {
+          pid: process.pid,
+          deadlineMs: options.applyDeadlineMs,
+        })
+        return json(504, { error: 'handler deadline exceeded' })
+      }
       // A handler's exception can quote a request or a credential, so its
       // text goes to the plugin's log channel only; the wire gets a fixed code.
       log.warn('rpc request failed', {

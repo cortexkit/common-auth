@@ -20,7 +20,17 @@ export interface PortFileEntry {
   startedAt: number
 }
 
+/**
+ * A PID a liveness probe may address. `process.kill(0 | negative, 0)` signals
+ * a process group rather than a process, and an unsafe integer cannot name a
+ * real process, so neither is ever probed.
+ */
+function isProbeablePid(pid: unknown): pid is number {
+  return typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 0
+}
+
 function pidAlive(pid: number): boolean {
+  if (!isProbeablePid(pid)) return false
   try {
     process.kill(pid, 0)
     return true
@@ -58,15 +68,38 @@ export function getRpcDir(
   )
 }
 
-function isUsablePortFileEntry(value: unknown): value is PortFileEntry {
+/** The PID a port file's name claims, or undefined for a malformed name. */
+function filenamePid(name: string): number | undefined {
+  const match = /^port-(\d+)\.json$/.exec(name)
+  return match ? Number(match[1]) : undefined
+}
+
+/**
+ * An entry a client may connect to: its PID is probeable and matches the PID
+ * in its file name (a mismatch means the file was not written by the server
+ * it names), its port is a real TCP port, and its token is non-empty (an
+ * absent token would otherwise be sent as `Bearer undefined`).
+ */
+function isUsablePortFileEntry(
+  value: unknown,
+  name: string,
+): value is PortFileEntry {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    return false
+  const { pid, port, token } = value as {
+    pid?: unknown
+    port?: unknown
+    token?: unknown
+  }
   return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    typeof (value as { pid?: unknown }).pid === 'number' &&
-    Number.isFinite((value as { pid: number }).pid) &&
-    typeof (value as { port?: unknown }).port === 'number' &&
-    Number.isFinite((value as { port: number }).port)
+    isProbeablePid(pid) &&
+    filenamePid(name) === pid &&
+    typeof port === 'number' &&
+    Number.isInteger(port) &&
+    port >= 1 &&
+    port <= 65_535 &&
+    typeof token === 'string' &&
+    token.length > 0
   )
 }
 
@@ -101,11 +134,17 @@ export async function writePortFile(
     const full: PortFileEntry = { ...entry, startedAt: Date.now() }
     const target = join(dir, `port-${entry.pid}.json`)
     const tmp = `${target}.${process.pid}.tmp`
-    await writeFile(tmp, JSON.stringify(full), {
-      encoding: 'utf8',
-      mode: 0o600,
-    })
-    await rename(tmp, target)
+    try {
+      await writeFile(tmp, JSON.stringify(full), {
+        encoding: 'utf8',
+        mode: 0o600,
+      })
+      await rename(tmp, target)
+    } catch (error) {
+      // The staged file carries the server token; never leave it behind.
+      await unlink(tmp).catch(() => {})
+      throw error
+    }
     return target
   }
   try {
@@ -162,7 +201,7 @@ export async function sweepRpcState(
         await removeCorruptPortFile(portFile, log)
         continue
       }
-      if (!isUsablePortFileEntry(parsed)) {
+      if (!isUsablePortFileEntry(parsed, name)) {
         await removeCorruptPortFile(portFile, log)
         continue
       }
@@ -173,9 +212,20 @@ export async function sweepRpcState(
   }
 }
 
+export interface DiscoverPortFileOptions {
+  /**
+   * Return only the expected PID's entry, or null; never fall back to
+   * another live server. Without an expected PID nothing matches, so the
+   * result is null. Off by default, when a missing or unmatched expected PID
+   * falls back to the newest live entry.
+   */
+  exactPid?: boolean
+}
+
 export async function discoverPortFile(
   dir: string,
   expectedPid?: number,
+  options: DiscoverPortFileOptions = {},
 ): Promise<PortFileEntry | null> {
   let names: string[]
   try {
@@ -190,7 +240,7 @@ export async function discoverPortFile(
       const parsed = JSON.parse(
         await readFile(join(dir, name), 'utf8'),
       ) as PortFileEntry
-      if (isUsablePortFileEntry(parsed)) {
+      if (isUsablePortFileEntry(parsed, name)) {
         if (pidAlive(parsed.pid)) live.push(parsed)
         else await unlink(join(dir, name)).catch(() => {})
       }
@@ -201,6 +251,7 @@ export async function discoverPortFile(
     expectedPid !== undefined && expectedPid >= 1
       ? live.filter((entry) => entry.pid === expectedPid)
       : []
+  if (options.exactPid === true && candidates.length === 0) return null
   const entries = candidates.length > 0 ? candidates : live
   const sortTime = (entry: PortFileEntry) =>
     typeof entry.startedAt === 'number' && Number.isFinite(entry.startedAt)

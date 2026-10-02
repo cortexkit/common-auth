@@ -260,22 +260,19 @@ describe('rpc-server', () => {
     stop = server.stop
     const base = `http://127.0.0.1:${server.port}`
 
-    // ASCII body > 1 MB bytes
+    // ASCII body > 1 MB bytes. The server answers 413 rather than dropping
+    // the connection, so the client can tell an oversized request apart
+    // from a dead server.
     const huge = 'x'.repeat(1_000_001)
-    let rejected = false
-    try {
-      await fetch(`${base}/rpc/apply`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${server.token}`,
-        },
-        body: JSON.stringify({ command: 'test', arguments: huge }),
-      })
-    } catch {
-      rejected = true
-    }
-    expect(rejected).toBe(true)
+    const res = await fetch(`${base}/rpc/apply`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${server.token}`,
+      },
+      body: JSON.stringify({ command: 'test', arguments: huge }),
+    })
+    expect(res.status).toBe(413)
   })
 
   test('rejects multibyte body where byte length exceeds limit but string length does not', async () => {
@@ -299,20 +296,15 @@ describe('rpc-server', () => {
     // The full JSON payload byte length must also exceed 1 MB
     expect(Buffer.byteLength(body, 'utf8')).toBeGreaterThan(1_000_000)
 
-    let rejected = false
-    try {
-      await fetch(`${base}/rpc/apply`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${server.token}`,
-        },
-        body,
-      })
-    } catch {
-      rejected = true
-    }
-    expect(rejected).toBe(true)
+    const res = await fetch(`${base}/rpc/apply`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${server.token}`,
+      },
+      body,
+    })
+    expect(res.status).toBe(413)
   })
 
   test('destroys a socket that stalls part-way through sending a request', async () => {
