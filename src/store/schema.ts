@@ -57,13 +57,18 @@ export interface QuotaCodec {
  * `none`: the row holds no credential, so there is nothing to stamp.
  * `bound`: the stamp was written with this credential (its digest matches),
  * names the row's credential epoch (1 for a row without a per-row entry),
- * and any identity or endpoint it records is the row's.
+ * any identity or endpoint it records is the row's, and its dispatch digest
+ * matches everything a request would send (the OAuth access and refresh
+ * tokens; the API key with its `baseURL` and `authHeader`).
  * `missing`: the credential carries no stamp (written by a writer that does
  * not know about stamps, or one that dropped it).
  * `malformed`: the stamp is not one this store writes (wrong shape, or an
  * epoch outside the positive safe integers).
  * `mismatched`: the stamp was written for another credential, epoch,
- * identity or endpoint than the row now holds.
+ * identity, endpoint, or token to send than the row now holds.
+ * `legacy`: a well-formed stamp that agrees with the row as far as it goes
+ * but has no dispatch digest (written by 0.4.3 or earlier), so it does not
+ * prove the access token or the endpoint the row would send.
  */
 export type CredentialStampStatus =
   | 'none'
@@ -71,6 +76,7 @@ export type CredentialStampStatus =
   | 'missing'
   | 'malformed'
   | 'mismatched'
+  | 'legacy'
 
 /** One row of the pool as loaded. */
 export interface PoolRow {
@@ -128,8 +134,9 @@ export interface PoolRow {
 export const CREDENTIAL_STAMP_KEY = POOL_KEY
 
 /**
- * The config-side half of a replacement: the identity the new credential
- * belongs to (absent: none is known) and, for an API key, its endpoint.
+ * What the config holds for a credential when its stamp is written: the
+ * identity it belongs to (absent: none is known yet) and, for an API key, its
+ * endpoint. For a replace it is the config the replace is about to write.
  */
 export interface CredentialBinding {
   identity?: string
@@ -141,14 +148,27 @@ export interface CredentialBinding {
  * Written beside every credential the store puts in the state file. It names
  * the credential epoch the credential belongs to and a digest of its secret,
  * so a stamp left beside a credential another writer put there afterwards is
- * recognisable and ignored. A replace also records the binding it gives the
- * row, which is what lets a reader complete a replace that stopped after
- * writing the credential.
+ * recognisable and ignored.
+ *
+ * `digest` covers only the refresh token or API key: it names the credential
+ * lineage, and torn-replace detection matches it, including against stamps
+ * older versions wrote, so it keeps that exact definition. `dispatch` covers
+ * everything a request sends (see `dispatchDigest`), so a token or endpoint
+ * changed beside an unchanged lineage secret is caught; stamps written by
+ * 0.4.3 or earlier lack it.
+ *
+ * `binding` is the config the credential was written beside (see
+ * `CredentialBinding`); every write since 0.4.4 records it, earlier versions
+ * only on replace. `replace` marks a stamp written by a replace, which is
+ * what lets a reader complete a replace that stopped after writing the
+ * credential: a stamp from any other write is never completed as torn.
  */
 export interface CredentialStamp {
   credentialEpoch: number
   digest: string
+  dispatch?: string
   binding?: CredentialBinding
+  replace?: true
 }
 
 export type ConfigClassification =
@@ -219,15 +239,46 @@ export function credentialDigest(
     .digest('hex')
 }
 
+/**
+ * The digest of everything a request made with the credential sends: the
+ * OAuth access token (or its absence) and refresh token, or the API key with
+ * the `baseURL` and header it is sent to. Its input prefix differs from both
+ * the fingerprint's and `credentialDigest`'s, so it never equals either. The
+ * parts are JSON-encoded as a list, so no two credentials share an input.
+ */
+export function dispatchDigest(
+  credential: PoolCredential | StoredCredential,
+): string {
+  const parts =
+    credential.type === 'oauth'
+      ? ['oauth', credential.access ?? null, credential.refresh]
+      : [
+          'api',
+          credential.apiKey,
+          credential.baseURL.trim(),
+          credential.authHeader ?? 'authorization-bearer',
+        ]
+  return createHash('sha256')
+    .update(`credential-dispatch\0${JSON.stringify(parts)}`)
+    .digest('hex')
+}
+
+/**
+ * The stamp for a credential written into a row at `credentialEpoch`, beside
+ * the config `binding` describes. `replace` is set only by a replace.
+ */
 export function stampFor(
   credential: PoolCredential | StoredCredential,
   credentialEpoch: number,
-  binding?: CredentialBinding,
+  binding: CredentialBinding,
+  options: { replace?: boolean } = {},
 ): CredentialStamp {
   return {
     credentialEpoch,
     digest: credentialDigest(credential),
-    ...(binding ? { binding: { ...binding } } : {}),
+    dispatch: dispatchDigest(credential),
+    binding: { ...binding },
+    ...(options.replace ? { replace: true as const } : {}),
   }
 }
 
@@ -246,7 +297,19 @@ export function parseStamp(raw: unknown): CredentialStamp | undefined {
   const epoch = raw.credentialEpoch
   if (!isCredentialEpoch(epoch)) return undefined
   if (typeof raw.digest !== 'string') return undefined
-  if (!('binding' in raw)) return { credentialEpoch: epoch, digest: raw.digest }
+  if ('dispatch' in raw && typeof raw.dispatch !== 'string') return undefined
+  if ('replace' in raw && raw.replace !== true) return undefined
+  const marks = {
+    ...(typeof raw.dispatch === 'string' ? { dispatch: raw.dispatch } : {}),
+    ...(raw.replace === true ? { replace: true as const } : {}),
+  }
+  // Every stamp that carries a dispatch digest is written with a binding; one
+  // without is not a stamp this store writes, and it would leave the row's
+  // identity unchecked.
+  if (!('binding' in raw))
+    return 'dispatch' in raw || 'replace' in raw
+      ? undefined
+      : { credentialEpoch: epoch, digest: raw.digest }
   const binding = raw.binding
   if (!isRecord(binding)) return undefined
   if (
@@ -264,6 +327,7 @@ export function parseStamp(raw: unknown): CredentialStamp | undefined {
   return {
     credentialEpoch: epoch,
     digest: raw.digest,
+    ...marks,
     binding: {
       ...(typeof binding.identity === 'string'
         ? { identity: binding.identity }
@@ -284,7 +348,12 @@ export function parseStamp(raw: unknown): CredentialStamp | undefined {
  * be the row's recorded identity, and an endpoint it names must be the one
  * the row sends its API key to. A binding without an identity says none was
  * known when it was written, so an identity learnt since does not contradict
- * it.
+ * it. That is the exact boundary of what a stamp proves about identity: an
+ * identity recorded after the stamp (by `recordIdentity`, or by the config
+ * write of a rotate or refresh that learnt it) is not covered until the next
+ * stamp write on the row, which records it. Recording an identity stays a
+ * config-only write, so no crash can leave a stamp naming an identity the
+ * config never received.
  */
 function bindingAgrees(
   binding: CredentialBinding,
@@ -326,6 +395,8 @@ function stampStatusOf(
   if (stamp.credentialEpoch !== credentialEpoch) return 'mismatched'
   if (stamp.binding && !bindingAgrees(stamp.binding, credential, identity))
     return 'mismatched'
+  if (stamp.dispatch === undefined) return 'legacy'
+  if (stamp.dispatch !== dispatchDigest(credential)) return 'mismatched'
   return 'bound'
 }
 

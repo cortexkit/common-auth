@@ -212,11 +212,43 @@ function onRowEndpoint(
 }
 
 /**
+ * The binding of a credential written into a row without a replace: the
+ * config as it stands in `tx` when the credential is written. The identity is
+ * the roster row's recorded one, read the way `buildRawRows` reads it; an
+ * identity this same operation records afterwards is left out, because the
+ * state file is written first and a crash before the config write must not
+ * leave a stamp naming an identity the config never received. An API key's
+ * endpoint is the one it was checked against (see `onRowEndpoint`).
+ */
+function bindingInTx(
+  tx: Transaction,
+  id: string,
+  stored: StoredCredential,
+): CredentialBinding {
+  const raw = tx.rosterRow(id)
+  const identity =
+    isRecord(raw) && typeof raw.accountId === 'string' && raw.accountId
+      ? raw.accountId
+      : undefined
+  return {
+    ...(identity !== undefined ? { identity } : {}),
+    ...(stored.type === 'api'
+      ? {
+          baseURL: stored.baseURL,
+          authHeader: stored.authHeader ?? 'authorization-bearer',
+        }
+      : {}),
+  }
+}
+
+/**
  * Writes a credential into the state file (one write), stamped with the
- * credential epoch the row's entry holds in `tx` (1 without an entry) and,
- * for a replace, the binding the config is about to get. A rotation is the
- * same lineage: no epoch bump, no identity or quota change. An API key must
- * belong to the endpoint the row holds in `tx` (see `onRowEndpoint`).
+ * credential epoch the row's entry holds in `tx` (1 without an entry) and a
+ * binding: for a replace, the one the config is about to get (and the stamp
+ * is marked as a replace's); for every other write, the row's config as it
+ * stands in `tx` (see `bindingInTx`). A rotation is the same lineage: no
+ * epoch bump, no identity or quota change. An API key must belong to the
+ * endpoint the row holds in `tx` (see `onRowEndpoint`).
  */
 export async function rotateIn(
   rt: StoreRuntime,
@@ -254,7 +286,8 @@ export async function rotateIn(
     [CREDENTIAL_STAMP_KEY]: stampFor(
       stored,
       typeof epoch === 'number' ? epoch : 1,
-      extra.binding,
+      extra.binding ?? bindingInTx(tx, id, stored),
+      { replace: extra.binding !== undefined },
     ),
   })
   await tx.commitState(stored)

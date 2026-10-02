@@ -31,7 +31,21 @@ import {
  * credential beside an old one, and that stamp then says nothing. A stamp at
  * or behind the config's epoch is never torn: this store's own writes leave
  * the state file ahead of the config, never behind it.
+ *
+ * Only a replace's stamp is ever completed. Since 0.4.4 every stamp carries a
+ * binding, so a replace's says so itself (`replace: true`); a stamp written
+ * by 0.4.3 or earlier has no dispatch digest, and those versions wrote a
+ * binding only on replace, so such a stamp with a binding is a replace's. A
+ * stamp from any other write that sits ahead of the config was not left by a
+ * crash (those writes keep the row's epoch), and completing it would rewrite
+ * the row's identity and drop its quota on a foreign writer's say-so.
  */
+
+/** Whether a well-formed stamp was written by a replace. */
+function isReplaceStamp(stamp: CredentialStamp): boolean {
+  if (!stamp.binding) return false
+  return stamp.replace === true || stamp.dispatch === undefined
+}
 
 /** Stamps of rows torn between the two writes of a replace, by row id. */
 export function tornStamps(
@@ -51,7 +65,7 @@ export function tornStamps(
       : undefined
     if (!isRecord(account)) continue
     const stamp = parseStamp(account[CREDENTIAL_STAMP_KEY])
-    if (!stamp?.binding) continue
+    if (!stamp?.binding || !isReplaceStamp(stamp)) continue
     if (stamp.digest !== credentialDigest(row.credential)) continue
     // A row without an entry is at epoch 1, as everywhere else.
     if (stamp.credentialEpoch <= (row.credentialEpoch ?? 1)) continue

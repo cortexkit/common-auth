@@ -149,6 +149,47 @@ const CRAFTS: Craft[] = [
         accounts.a.commonAuthPool.binding = { identity: 'acct-other' }
       }),
   },
+  {
+    title: 'an access-only swap',
+    status: 'mismatched',
+    edit: () =>
+      editState((accounts) => {
+        accounts.a.access = 'access-foreign'
+      }),
+  },
+  {
+    title: 'a stamp without a dispatch digest (as 0.4.3 wrote it)',
+    status: 'legacy',
+    edit: () =>
+      editState((accounts) => {
+        delete accounts.a.commonAuthPool.dispatch
+        delete accounts.a.commonAuthPool.binding
+      }),
+  },
+  {
+    title: 'a stamp with a dispatch digest but no binding',
+    status: 'malformed',
+    edit: () =>
+      editState((accounts) => {
+        delete accounts.a.commonAuthPool.binding
+      }),
+  },
+  {
+    title: 'a non-string dispatch digest',
+    status: 'malformed',
+    edit: () =>
+      editState((accounts) => {
+        accounts.a.commonAuthPool.dispatch = 42
+      }),
+  },
+  {
+    title: 'a replace mark that is not true',
+    status: 'malformed',
+    edit: () =>
+      editState((accounts) => {
+        accounts.a.commonAuthPool.replace = 'yes'
+      }),
+  },
   { title: 'a bound stamp', status: 'bound', edit: async () => {} },
 ]
 
