@@ -124,15 +124,15 @@ export type TestQuota = { used: number }
  * `plan.limited`; tests change both between requests. Events are JSON objects:
  * `delta` starts output, `quota` reports usage, `refused` is a limit.
  */
-export function fakeAdapter(
+export function fakeAdapter<A = unknown>(
   plan: { next: string; limited: Set<string> } = {
     next: 'A',
     limited: new Set(),
   },
-  overrides: Partial<OpenCode2AuthAdapter<TestQuota>> = {},
+  overrides: Partial<OpenCode2AuthAdapter<TestQuota, A>> = {},
 ) {
   const choices: Array<Record<string, unknown>> = []
-  const adapter: OpenCode2AuthAdapter<TestQuota> = {
+  const adapter: OpenCode2AuthAdapter<TestQuota, A> = {
     providerID: PROVIDER,
     chooseAccount(input) {
       choices.push({ ...input })

@@ -24,7 +24,7 @@ import {
 
 const ENABLED = process.env.COMMON_AUTH_OPENCODE2_E2E === '1'
 const REUSE_CLI_DIR = process.env.COMMON_AUTH_OPENCODE2_E2E_CLI_DIR
-export const OPENCODE_CLI_VERSION = '2.0.21'
+export const OPENCODE_CLI_VERSION = '2.0.22'
 const PROVIDER = 'openai'
 const PLACEHOLDER = placeholderSecret(PROVIDER)
 const PASSWORD = 'common-auth-e2e-loopback-only'
@@ -267,6 +267,24 @@ function expectRecipeFired(result: ScenarioResult) {
   // placeholder and no account.
   expect(result.wire.filter((record) => record.forbiddenSeen)).toEqual([])
   expect(result.wire.filter((record) => record.identity === 'none')).toEqual([])
+  // The host carried the attempt mark from model.request onto every request
+  // and handshake, naming an attempt model.request started for that kind,
+  // and the installer removed it before the wire.
+  const marks = events(result.plugin, 'mark')
+  const onWire = (transport: string, action: string) =>
+    result.wire.filter(
+      (record) => record.transport === transport && record.action === action,
+    ).length
+  const marked = (transport: string) =>
+    marks.filter((entry) => entry.transport === transport).length
+  // One http.request per HTTP request; the handshake hook runs for every
+  // model call on WebSocket, including those that reuse the socket.
+  expect(marked('http')).toBe(onWire('http', 'request'))
+  expect(marked('ws')).toBeGreaterThanOrEqual(onWire('ws', 'handshake'))
+  const started = new Set(pick(selects, 'kind', 'attemptId'))
+  const named = pick(marks, 'kind', 'mark')
+  expect(named.filter((mark) => !started.has(mark))).toEqual([])
+  expect(result.wire.filter((record) => record.attemptMark)).toEqual([])
 }
 
 describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {

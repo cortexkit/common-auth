@@ -2,6 +2,7 @@
 // speaking just enough HTTP SSE and WebSocket for one OpenCode 2 turn. It
 // records which account each request arrived under, so the placement test can
 // check what really reached the wire.
+import { ATTEMPT_HEADER } from '../../../src/opencode2/index.js'
 
 export const ACCOUNTS = {
   A: { token: 'tok-A', id: 'acct-A', used: 11 },
@@ -35,6 +36,8 @@ export interface WireRecord {
   readonly rejected?: RejectMode
   /** The `RECEIPT_HEADER` the request or handshake carried. */
   readonly receipt?: string
+  /** The installer's attempt mark, which must never reach the wire. */
+  readonly attemptMark?: string
   /** A frame's `MARKER_FIELD`, if it had one. */
   readonly marker?: unknown
   /** How many `input` items a frame carried. */
@@ -215,7 +218,11 @@ export function startMockProvider(forbidden: readonly string[]): MockProvider {
   type Socket = { connection: number; identity: Identity }
   const receiptOf = (headers: Headers) => {
     const receipt = headers.get(RECEIPT_HEADER)
-    return receipt === null ? {} : { receipt }
+    const attemptMark = headers.get(ATTEMPT_HEADER)
+    return {
+      ...(receipt === null ? {} : { receipt }),
+      ...(attemptMark === null ? {} : { attemptMark }),
+    }
   }
 
   const server = Bun.serve<Socket>({
