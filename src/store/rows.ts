@@ -14,6 +14,13 @@ import {
   type Transaction,
   withTransaction,
 } from './mutate.js'
+import {
+  acceptProviderState,
+  mergedProviderState,
+  type ProviderStateWrite,
+  providerStateCoverage,
+  replacementProviderState,
+} from './provider-state.js'
 import type { PoolLockSpec } from './refresh-lock.js'
 import {
   readRow,
@@ -24,6 +31,7 @@ import {
   unknownRow,
 } from './runtime.js'
 import {
+  boundProviderStateDigest,
   CREDENTIAL_STAMP_KEY,
   type CredentialBinding,
   credentialProblem,
@@ -33,6 +41,7 @@ import {
   isRecord,
   type PoolCredential,
   type PoolRow,
+  PROVIDER_STATE_KEY,
   type RotateCredential,
   rosterRowFor,
   rotationStamp,
@@ -137,6 +146,25 @@ export interface AddInput {
   credential: PoolCredential
   identity?: string
   label?: string
+  /**
+   * Provider state for the credential, written in the same state write as
+   * the credential (needs the store's provider-state codec). On an `add`
+   * that rotates a row already holding this secret it is merged with the
+   * row's value (`ProviderStateCodec.merge`); left out, that row keeps its
+   * value.
+   */
+  providerState?: unknown
+}
+
+/** What `replace` and `rotate` take beside the credential. */
+export interface CredentialWriteInput {
+  identity?: string
+  /**
+   * Provider state written in the same state write as the credential. For
+   * `rotate` it is merged with the row's value; left out, the row keeps its
+   * value. For `replace` see `ProviderStateCodec.onReplace`.
+   */
+  providerState?: unknown
 }
 
 export type AddResult = {
@@ -265,10 +293,25 @@ export async function rotateIn(
     clearErrors?: boolean
     binding?: CredentialBinding
     identity?: string
+    providerState?: ProviderStateWrite
   } = {},
 ): Promise<StoredCredential> {
   const credential = onRowEndpoint(tx, id, given)
   const prior = tx.stateAccount(id)
+  const stateWrite = extra.providerState ?? { kind: 'keep' }
+  const epoch = tx.entry(id)?.credentialEpoch
+  const credentialEpoch = typeof epoch === 'number' ? epoch : 1
+  // The provider state goes in the same state write as the credential and
+  // its stamp, so no reader ever sees one without the other. A kept value is
+  // bound by the new stamp only if the old one bound it to this row at the
+  // epoch being written; a replace moves the epoch, so it never keeps one.
+  const providerStateBinding = providerStateCoverage(
+    rt.ctx.providerState,
+    stateWrite,
+    prior,
+    prior && Object.hasOwn(prior, PROVIDER_STATE_KEY) ? tx.row(id) : undefined,
+    credentialEpoch,
+  )
   const priorStamp =
     typeof prior?.lastRefreshedAt === 'number'
       ? prior.lastRefreshedAt
@@ -284,16 +327,23 @@ export async function rotateIn(
     delete kept.lastQuotaRefreshError
     delete kept.quota
   }
+  if (stateWrite.kind === 'clear') delete kept[PROVIDER_STATE_KEY]
+  else if (stateWrite.kind === 'set')
+    kept[PROVIDER_STATE_KEY] = stateWrite.value
   const stored = storedCredential(credential, stamp)
-  const epoch = tx.entry(id)?.credentialEpoch
   tx.setStateAccount(id, {
     ...kept,
     ...stateFieldsFor(credential, stamp),
     [CREDENTIAL_STAMP_KEY]: stampFor(
       stored,
-      typeof epoch === 'number' ? epoch : 1,
+      credentialEpoch,
       extra.binding ?? bindingInTx(tx, id, stored, extra.identity),
-      { replace: extra.binding !== undefined },
+      {
+        replace: extra.binding !== undefined,
+        ...(providerStateBinding !== undefined
+          ? { providerState: providerStateBinding }
+          : {}),
+      },
     ),
   })
   await tx.commitState(stored)
@@ -315,12 +365,23 @@ async function stampIdentityIn(
   identity: string,
 ): Promise<void> {
   if (!row.credential || row.stamp !== 'bound') return
+  const account = tx.stateAccount(row.id)
+  // The provider state stays bound across the identity being learnt: the old
+  // stamp bound it to the row with no identity, the new one to the identity
+  // the config is about to record.
+  const providerState = boundProviderStateDigest(
+    account,
+    row.credential,
+    row.credentialEpoch ?? 1,
+    row.identity,
+  )
   tx.setStateAccount(row.id, {
-    ...(tx.stateAccount(row.id) ?? {}),
+    ...(account ?? {}),
     [CREDENTIAL_STAMP_KEY]: stampFor(
       row.credential,
       row.credentialEpoch ?? 1,
       bindingInTx(tx, row.id, row.credential, identity),
+      providerState !== undefined ? { providerState } : {},
     ),
   })
   await tx.commitState()
@@ -407,6 +468,15 @@ export async function addRow(
     options.onFailure,
     async (locks, progress) => {
       checkInput('add', id, credential)
+      const incoming =
+        input.providerState === undefined
+          ? undefined
+          : acceptProviderState(
+              ctx.providerState,
+              'add',
+              id,
+              input.providerState,
+            )
       if (ctx.removedIds.has(id))
         throw refusal(
           'add',
@@ -446,7 +516,19 @@ export async function addRow(
               identity !== same.identity
             )
               throw identityMismatch('add', same.id)
-            const stored = await rotateIn(rt, tx, same.id, credential)
+            const stored = await rotateIn(rt, tx, same.id, credential, {
+              ...(incoming !== undefined
+                ? {
+                    providerState: mergedProviderState(
+                      ctx.providerState,
+                      'add',
+                      same.id,
+                      same.providerState,
+                      incoming,
+                    ),
+                  }
+                : {}),
+            })
             return { id: same.id, outcome: 'rotated', credential: stored }
           }
           const existing = rows.find((row) => row.id === id)
@@ -487,6 +569,9 @@ export async function addRow(
               })
             const stored = await rotateIn(rt, tx, id, credential, {
               clearErrors: true,
+              ...(incoming !== undefined
+                ? { providerState: { kind: 'set', value: incoming } }
+                : {}),
             })
             if (!existing.hasEntry) await tx.commitConfig()
             return { id, outcome: 'completed', credential: stored }
@@ -525,7 +610,11 @@ export async function addRow(
           // roster row could load beside a credential left under its id by an
           // interrupted removal. Nothing of such a leftover entry is kept.
           tx.dropStateAccount(id)
-          const stored = await rotateIn(rt, tx, id, credential)
+          const stored = await rotateIn(rt, tx, id, credential, {
+            ...(incoming !== undefined
+              ? { providerState: { kind: 'set', value: incoming } }
+              : {}),
+          })
           await tx.commitConfig()
           return { id, outcome, credential: stored }
         },
@@ -544,7 +633,7 @@ export async function replaceRow(
   rt: StoreRuntime,
   id: string,
   credential: PoolCredential,
-  input: { identity?: string } = {},
+  input: CredentialWriteInput = {},
   options: RowOperationOptions = {},
 ): Promise<{
   id: string
@@ -560,6 +649,15 @@ export async function replaceRow(
     options.onFailure,
     async (locks, progress) => {
       checkInput('replace', id, credential)
+      const incoming =
+        input.providerState === undefined
+          ? undefined
+          : acceptProviderState(
+              ctx.providerState,
+              'replace',
+              id,
+              input.providerState,
+            )
       const { row: seen } = await readRow(rt, 'replace', id)
       await locks.acquire(rowLockSpec(rt, seen))
       if (credential.type === 'oauth')
@@ -587,6 +685,15 @@ export async function replaceRow(
               'invalid-row',
               `row ${id}'s credential epoch cannot advance past ${Number.MAX_SAFE_INTEGER}; remove the row and add the new credential as a new row`,
             )
+          // Decided before anything is written: a hook that throws or
+          // returns a value the codec rejects leaves the row as it was.
+          const providerState = replacementProviderState(
+            ctx.providerState,
+            row,
+            credentialEpoch,
+            input.identity,
+            incoming,
+          )
           const binding: CredentialBinding = {
             ...(input.identity !== undefined
               ? { identity: input.identity }
@@ -610,6 +717,7 @@ export async function replaceRow(
           const stored = await rotateIn(rt, tx, id, credential, {
             clearErrors: true,
             binding,
+            providerState,
           })
           await tx.commitConfig()
           return { id, credential: stored, credentialEpoch }
@@ -625,7 +733,7 @@ export async function rotateRow(
   rt: StoreRuntime,
   id: string,
   credential: RotateCredential,
-  input: { identity?: string } = {},
+  input: CredentialWriteInput = {},
   options: RowOperationOptions = {},
 ): Promise<{ id: string; credential: StoredCredential }> {
   assertNotInsideHook('rotate')
@@ -637,6 +745,15 @@ export async function rotateRow(
     options.onFailure,
     async (locks, progress) => {
       checkInput('rotate', id, credential)
+      const incoming =
+        input.providerState === undefined
+          ? undefined
+          : acceptProviderState(
+              ctx.providerState,
+              'rotate',
+              id,
+              input.providerState,
+            )
       const { row: seen } = await readRow(rt, 'rotate', id)
       await locks.acquire(rowLockSpec(rt, seen))
       if (input.identity !== undefined && credential.type === 'oauth')
@@ -669,6 +786,17 @@ export async function rotateRow(
               : undefined
           const stored = await rotateIn(rt, tx, id, credential, {
             identity: learnt,
+            ...(incoming !== undefined
+              ? {
+                  providerState: mergedProviderState(
+                    ctx.providerState,
+                    'rotate',
+                    id,
+                    row.providerState,
+                    incoming,
+                  ),
+                }
+              : {}),
           })
           let configChanged = false
           if (!row.hasEntry) {

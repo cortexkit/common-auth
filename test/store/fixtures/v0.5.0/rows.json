@@ -1,0 +1,73 @@
+{
+  "status": "ready",
+  "schemaVersion": 1,
+  "rows": [
+    {
+      "id": "a",
+      "type": "oauth",
+      "enabled": true,
+      "needsFirstReading": false,
+      "hasEntry": true,
+      "candidate": true,
+      "label": "A",
+      "addedAt": 1700000000000,
+      "identity": "acct-a",
+      "credential": {
+        "type": "oauth",
+        "refresh": "ref-a",
+        "access": "acc-a",
+        "expires": 4000000000000,
+        "lastRefreshedAt": 1700000000000
+      },
+      "fingerprint": "5f89137be7a275a438a9e07eb3984856737cb86d64f3702380eb0c4942c74616",
+      "credentialEpoch": 1,
+      "quota": {
+        "readings": [
+          {
+            "used": 1
+          }
+        ]
+      },
+      "stamp": "bound"
+    },
+    {
+      "id": "b",
+      "type": "api",
+      "enabled": false,
+      "needsFirstReading": false,
+      "hasEntry": true,
+      "candidate": false,
+      "addedAt": 1700000001000,
+      "credential": {
+        "type": "api",
+        "apiKey": "key-b",
+        "baseURL": "https://api.example.test/v1",
+        "authHeader": "authorization-bearer"
+      },
+      "fingerprint": "b6f8d9fb7b6b0bca0786354a599b106705d2318a328e5177d533aa84f24d6931",
+      "credentialEpoch": 1,
+      "disabledReason": "manual",
+      "stamp": "bound"
+    },
+    {
+      "id": "c",
+      "type": "oauth",
+      "enabled": true,
+      "needsFirstReading": true,
+      "hasEntry": true,
+      "candidate": true,
+      "addedAt": 1700000002000,
+      "identity": "acct-c",
+      "credential": {
+        "type": "oauth",
+        "refresh": "ref-c2",
+        "access": "acc-c2",
+        "expires": 4000000000000,
+        "lastRefreshedAt": 1700000003000
+      },
+      "fingerprint": "aa8a69e00f65465ea85401e264353dedc773fb1c614621347d2c9e10e7034b12",
+      "credentialEpoch": 2,
+      "stamp": "bound"
+    }
+  ]
+}

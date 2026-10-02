@@ -25,6 +25,7 @@ import {
   POOL_ROWS_KEY,
   POOL_SCHEMA_VERSION,
   type PoolRow,
+  type ProviderStateCodec,
   type QuotaCodec,
   rosterRowIn,
   type StoredCredential,
@@ -47,6 +48,8 @@ export interface StoreContext {
   configPath: string
   statePath: string
   codec: QuotaCodec
+  /** The provider-state codec; without one no row shows a provider state. */
+  providerState?: ProviderStateCodec
   now: () => number
   storeLocks: readonly PoolLockSpec[]
   lockDefaults: PoolLockOptions
@@ -114,6 +117,7 @@ export async function readPool(ctx: StoreContext): Promise<ReadResult> {
     state: state.state,
     rows: loadRows(config.config, state.state, ctx.codec, {
       requireCredentialStamps: ctx.requireCredentialStamps === true,
+      ...(ctx.providerState ? { providerState: ctx.providerState } : {}),
     }),
   }
 }
@@ -180,6 +184,9 @@ export class Transaction {
   rows(): PoolRow[] {
     return loadRows(this.config, this.state, this.ctx.codec, {
       requireCredentialStamps: this.ctx.requireCredentialStamps === true,
+      ...(this.ctx.providerState
+        ? { providerState: this.ctx.providerState }
+        : {}),
     })
   }
 

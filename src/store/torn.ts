@@ -13,6 +13,7 @@ import {
   entryIn,
   isRecord,
   type PoolRow,
+  type ProviderStateCodec,
   parseStamp,
   type QuotaCodec,
   rosterRowIn,
@@ -240,7 +241,10 @@ export function loadRows(
   config: Record<string, unknown>,
   state: Record<string, unknown>,
   codec: QuotaCodec,
-  options: { requireCredentialStamps?: boolean } = {},
+  options: {
+    requireCredentialStamps?: boolean
+    providerState?: ProviderStateCodec
+  } = {},
 ): PoolRow[] {
   const { config: whole, torn } = completeTornRows(
     config,
@@ -248,7 +252,10 @@ export function loadRows(
     codec,
     options,
   )
-  const rows = buildRawRows(whole, state, codec)
+  // A torn replace wrote its provider state beside the new credential, under
+  // the stamp naming the new epoch, so the completed row shows the new
+  // credential with the state written for it, never with the old one.
+  const rows = buildRawRows(whole, state, codec, options.providerState)
   for (const row of rows) {
     if (torn.includes(row.id)) {
       row.torn = true

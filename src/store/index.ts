@@ -17,6 +17,10 @@ export type {
   PoolStore,
 } from './pool.js'
 export { openPoolStore } from './pool.js'
+export type {
+  ProviderStateMutator,
+  UpdateProviderStateResult,
+} from './provider-state.js'
 export type { PullHook, PullRequest } from './pull.js'
 export type {
   ProviderRefresh,
@@ -33,6 +37,7 @@ export { POOL_LOCK_DEFAULTS } from './refresh-lock.js'
 export type {
   AddInput,
   AddResult,
+  CredentialWriteInput,
   FailureHook,
   RemoveOptions,
   RemoveResult,
@@ -49,6 +54,9 @@ export type {
   OAuthCredential,
   PoolCredential,
   PoolRow,
+  ProviderStateCodec,
+  ProviderStateDrop,
+  ProviderStateReplacement,
   QuotaCodec,
   RotateCredential,
   StoredCredential,
@@ -59,6 +67,7 @@ export {
   POOL_KEY,
   POOL_ROWS_KEY,
   POOL_SCHEMA_VERSION,
+  PROVIDER_STATE_KEY,
   REFRESH_STAMP_TOLERANCE_MS,
   rowLockKey,
 } from './schema.js'

@@ -1,0 +1,46 @@
+{
+  "accounts": {
+    "a": {
+      "access": "acc-a",
+      "refresh": "ref-a",
+      "expires": 4000000000000,
+      "lastRefreshedAt": 1700000000000,
+      "commonAuthPool": {
+        "credentialEpoch": 1,
+        "digest": "6f8e57bd523e12549131ebe39ffffc6307ca4dbed0c5db9193225cf9bb97ae44",
+        "dispatch": "4df3ff99882509f1973f8d35606c45edcfed1d1e5160b12a47559f0e5201b5dc",
+        "binding": {
+          "identity": "acct-a"
+        }
+      }
+    },
+    "b": {
+      "apiKey": "key-b",
+      "commonAuthPool": {
+        "credentialEpoch": 1,
+        "digest": "a09885419be2ab0e52e71367c0fc5d0fc27ced514921db17d4d7624ab900d1f7",
+        "dispatch": "889ecca81fdb2a0146d403c04f5df29e34e80848725943617ce7d6b8e468e9b1",
+        "binding": {
+          "baseURL": "https://api.example.test/v1",
+          "authHeader": "authorization-bearer"
+        }
+      }
+    },
+    "c": {
+      "commonAuthPool": {
+        "credentialEpoch": 2,
+        "digest": "e8924f16d60fb89431346f0435d80dc321ee2b2b18c860eb2b01d2beb02d9f13",
+        "dispatch": "46ba876ad1862e4ddc1a0eeddbec980a240ca13f323fbb0a83883450ea33a23e",
+        "binding": {
+          "identity": "acct-c"
+        },
+        "replace": true
+      },
+      "access": "acc-c2",
+      "refresh": "ref-c2",
+      "expires": 4000000000000,
+      "lastRefreshedAt": 1700000003000
+    }
+  },
+  "version": 1
+}

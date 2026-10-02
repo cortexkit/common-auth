@@ -12,6 +12,7 @@ export type PoolOperation =
   | 'reorder'
   | 'updateSettings'
   | 'recordIdentity'
+  | 'updateProviderState'
   | 'refresh'
   | 'pull'
 
@@ -62,6 +63,7 @@ export type PoolFailureKind =
   | 'provider'
   | 'pull'
   | 'invalid-quota'
+  | 'invalid-provider-state'
   | 'after-persist-hook'
   | 'unexpected'
 
