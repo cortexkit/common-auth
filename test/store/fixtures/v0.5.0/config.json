@@ -1,0 +1,51 @@
+{
+  "accounts": [
+    {
+      "id": "a",
+      "label": "A",
+      "type": "oauth",
+      "addedAt": 1700000000000,
+      "accountId": "acct-a"
+    },
+    {
+      "id": "b",
+      "type": "api",
+      "addedAt": 1700000001000,
+      "baseURL": "https://api.example.test/v1",
+      "authHeader": "authorization-bearer",
+      "enabled": false
+    },
+    {
+      "id": "c",
+      "type": "oauth",
+      "addedAt": 1700000002000,
+      "accountId": "acct-c"
+    }
+  ],
+  "commonAuthPool": {
+    "rows": {
+      "a": {
+        "credentialEpoch": 1,
+        "needsFirstReading": false,
+        "quota": {
+          "readings": [
+            {
+              "used": 1
+            }
+          ]
+        }
+      },
+      "b": {
+        "credentialEpoch": 1,
+        "needsFirstReading": false,
+        "disabledReason": "manual"
+      },
+      "c": {
+        "credentialEpoch": 2,
+        "needsFirstReading": true
+      }
+    },
+    "schemaVersion": 1
+  },
+  "version": 1
+}

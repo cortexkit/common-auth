@@ -2,6 +2,7 @@ import { PoolOperationError } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
 import { recordIdentityIn } from './identity.js'
 import { type Progress, runOperation, withTransaction } from './mutate.js'
+import { acceptProviderState, mergedProviderState } from './provider-state.js'
 import type { PoolLockSpec } from './refresh-lock.js'
 import { type FailureHook, rotateIn } from './rows.js'
 import {
@@ -28,6 +29,14 @@ export interface ProviderRefreshResult {
   expiresIn?: number
   /** The account's wire identity, when the provider reports one. */
   identity?: string
+  /**
+   * Provider state that changes with the new token (needs the store's
+   * provider-state codec). It is merged with the row's value on disk
+   * (`ProviderStateCodec.merge`) and written in the same state write as the
+   * rotated credential, under the same commit fence. Left out, the row keeps
+   * its value.
+   */
+  providerState?: unknown
 }
 
 export type ProviderRefresh = (
@@ -208,6 +217,16 @@ export async function refreshRow(
           'the provider returned no refresh token',
           true,
         )
+      const incoming =
+        result.providerState === undefined
+          ? undefined
+          : acceptProviderState(
+              ctx.providerState,
+              'refresh',
+              id,
+              result.providerState,
+              'the provider state the provider returned',
+            )
 
       const commit = await withTransaction(
         ctx,
@@ -260,6 +279,17 @@ export async function refreshRow(
           const stored = await rotateIn(rt, tx, id, credential, {
             stamp: rotationStamp(prior, now),
             identity: learnt,
+            ...(incoming !== undefined
+              ? {
+                  providerState: mergedProviderState(
+                    ctx.providerState,
+                    'refresh',
+                    id,
+                    current.providerState,
+                    incoming,
+                  ),
+                }
+              : {}),
           })
           let identity = current.identity
           if (learnt !== undefined) {

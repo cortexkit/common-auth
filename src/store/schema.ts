@@ -52,6 +52,75 @@ export interface QuotaCodec {
 }
 
 /**
+ * What `ProviderStateCodec.onReplace` is told about a replacement: the row,
+ * the credential epoch the new credential starts, the identity the replace
+ * records (absent: none), and the provider state the caller handed to
+ * `replace`, if any.
+ */
+export interface ProviderStateReplacement {
+  id: string
+  credentialEpoch: number
+  identity?: string
+  incoming?: unknown
+}
+
+/**
+ * Codec for the provider state a plugin keeps beside each row's credential
+ * (a project id, a device fingerprint, eligibility times: whatever belongs to
+ * that credential). The store never interprets the value: it stores it as
+ * JSON, asks `validate` before every write and on every load, and calls the
+ * hooks below where two values meet. Every hook is synchronous and runs
+ * under the store locks.
+ */
+export interface ProviderStateCodec {
+  validate(value: unknown): boolean
+  /**
+   * The part of a (valid) value that belongs to the credential: what is true
+   * of the account the credential signs in to, such as a project id or a
+   * device fingerprint, as opposed to what the plugin merely tracks about
+   * its use, such as a cooldown or a cursor. The credential stamp covers the
+   * digest of exactly this projection, so a foreign edit of it hides the
+   * value, while the rest may change through `updateProviderState` without
+   * the stamp being rewritten. It must be a pure function of the value that
+   * returns JSON with a deterministic key order. Without it the whole value
+   * is credential-bound.
+   */
+  credentialBound?(value: unknown): unknown
+  /**
+   * Combines the value on disk with one a write brings (`add` of a secret the
+   * pool already holds, `rotate`, or a refresh whose provider returned a
+   * state). Called only when the row has a value on disk; without it the
+   * incoming value replaces the stored one. Its result is validated.
+   */
+  merge?(onDisk: unknown, incoming: unknown): unknown
+  /**
+   * The provider state of a row once `replace` gives it a new credential
+   * epoch. `previous` is the old credential's value (undefined when the row
+   * shows none). Returning undefined clears it. Without this hook a replace
+   * keeps the value handed to `replace` and otherwise clears the state.
+   */
+  onReplace?(
+    previous: unknown | undefined,
+    replacement: ProviderStateReplacement,
+  ): unknown | undefined
+}
+
+/**
+ * Why a row shows no provider state although the state file holds one for it.
+ *
+ * `uncovered`: the value's credential-bound part (see
+ * `ProviderStateCodec.credentialBound`) is not the one this store last
+ * wrote beside the row's credential at its credential epoch and recorded
+ * identity. Another writer edited it, or
+ * wrote the credential beside it without knowing about it (an older version
+ * of this library, which drops the coverage, or a writer that does not know
+ * the pool at all), or it belongs to an earlier credential of the row.
+ * `invalid`: the value is covered but the codec rejects it, or the store was
+ * opened without a provider-state codec.
+ */
+export type ProviderStateDrop = 'uncovered' | 'invalid'
+
+/**
  * What the stamp beside a row's credential proves (see `CredentialStamp`).
  *
  * `none`: the row holds no credential, so there is nothing to stamp.
@@ -98,6 +167,18 @@ export interface PoolRow {
   disabledReason?: string
   /** The opaque quota map, as validated by the codec. */
   quota?: unknown
+  /**
+   * The opaque provider state kept beside the credential, as validated by
+   * the provider-state codec. Absent when the row has none, or when the one
+   * on disk is not shown (see `providerStateDropped`).
+   */
+  providerState?: unknown
+  /**
+   * Set when the state file holds a provider state for the row that is not
+   * shown, and why. The value stays on disk untouched until a write on the
+   * row sets or clears it; the row itself stays usable.
+   */
+  providerStateDropped?: ProviderStateDrop
   hasEntry: boolean
   /** A row that may be refreshed, pulled for, or admitted. */
   candidate: boolean
@@ -166,6 +247,12 @@ export interface CredentialBinding {
  * only on replace. `replace` marks a stamp written by a replace, which is
  * what lets a reader complete a replace that stopped after writing the
  * credential: a stamp from any other write is never completed as torn.
+ *
+ * `providerState` is the digest of the credential-bound part of the provider
+ * state beside the credential (see `providerStateDigest`); it is absent when
+ * the row has none, so the stamp of a row without provider state is exactly
+ * what 0.5.0 wrote. It is apart from `digest` and `dispatch`, which keep
+ * their meaning: the credential's stamp status never depends on it.
  */
 export interface CredentialStamp {
   credentialEpoch: number
@@ -173,7 +260,14 @@ export interface CredentialStamp {
   dispatch?: string
   binding?: CredentialBinding
   replace?: true
+  providerState?: string
 }
+
+/**
+ * Key, inside a state-file account entry, of the provider state kept beside
+ * the credential. Older readers ignore it.
+ */
+export const PROVIDER_STATE_KEY = 'commonAuthProviderState'
 
 export type ConfigClassification =
   | { status: 'ready'; exists: boolean; config: Record<string, unknown> }
@@ -287,7 +381,7 @@ export function stampFor(
   credential: PoolCredential | StoredCredential,
   credentialEpoch: number,
   binding: CredentialBinding,
-  options: { replace?: boolean } = {},
+  options: { replace?: boolean; providerState?: string } = {},
 ): CredentialStamp {
   return {
     credentialEpoch,
@@ -295,7 +389,59 @@ export function stampFor(
     dispatch: dispatchDigest(credential),
     binding: { ...binding },
     ...(options.replace ? { replace: true as const } : {}),
+    ...(options.providerState !== undefined
+      ? { providerState: options.providerState }
+      : {}),
   }
+}
+
+/**
+ * The digest a stamp carries for a provider state: of its credential-bound
+ * part (`ProviderStateCodec.credentialBound`, the whole value without it), as
+ * it serializes. The store only ever stores values that survive a JSON round
+ * trip unchanged, so the digest of a value read back from disk equals the one
+ * computed when it was written. Its input prefix differs from every other
+ * digest the store writes.
+ */
+export function providerStateDigest(
+  codec: Pick<ProviderStateCodec, 'credentialBound'> | undefined,
+  value: unknown,
+): string {
+  const bound = codec?.credentialBound ? codec.credentialBound(value) : value
+  return createHash('sha256')
+    .update(`provider-state\0${JSON.stringify(bound ?? null)}`)
+    .digest('hex')
+}
+
+/**
+ * The provider-state digest of the stamp in a state-file account entry, when
+ * that stamp binds it to this row: written with this credential (its lineage
+ * digest matches), at this credential epoch, naming this recorded identity.
+ * Whether the value beside it still has that digest is checked apart, by
+ * `providerStateFields`; this alone is what a write that keeps the value
+ * carries into the stamp it writes, so a value no stamp of this store bound
+ * to the row stays unbound rather than being vouched for, and one edited
+ * after it was bound stays detectably edited.
+ */
+export function boundProviderStateDigest(
+  account: unknown,
+  credential: PoolCredential | StoredCredential | undefined,
+  credentialEpoch: number | undefined,
+  identity: string | undefined,
+): string | undefined {
+  if (!credential || credentialEpoch === undefined) return undefined
+  if (!isRecord(account) || !Object.hasOwn(account, PROVIDER_STATE_KEY))
+    return undefined
+  const stamp = parseStamp(account[CREDENTIAL_STAMP_KEY])
+  if (
+    !stamp ||
+    stamp.providerState === undefined ||
+    stamp.digest !== credentialDigest(credential) ||
+    stamp.credentialEpoch !== credentialEpoch ||
+    stamp.binding?.identity !== identity
+  )
+    return undefined
+  return stamp.providerState
 }
 
 /**
@@ -315,15 +461,20 @@ export function parseStamp(raw: unknown): CredentialStamp | undefined {
   if (typeof raw.digest !== 'string') return undefined
   if ('dispatch' in raw && typeof raw.dispatch !== 'string') return undefined
   if ('replace' in raw && raw.replace !== true) return undefined
+  if ('providerState' in raw && typeof raw.providerState !== 'string')
+    return undefined
   const marks = {
     ...(typeof raw.dispatch === 'string' ? { dispatch: raw.dispatch } : {}),
     ...(raw.replace === true ? { replace: true as const } : {}),
+    ...(typeof raw.providerState === 'string'
+      ? { providerState: raw.providerState }
+      : {}),
   }
-  // Every stamp that carries a dispatch digest is written with a binding; one
-  // without is not a stamp this store writes, and it would leave the row's
-  // identity unchecked.
+  // Every stamp that carries a dispatch digest or a provider-state digest is
+  // written with a binding; one without is not a stamp this store writes,
+  // and it would leave the row's identity unchecked.
   if (!('binding' in raw))
-    return 'dispatch' in raw || 'replace' in raw
+    return 'dispatch' in raw || 'replace' in raw || 'providerState' in raw
       ? undefined
       : { credentialEpoch: epoch, digest: raw.digest }
   const binding = raw.binding
@@ -617,6 +768,7 @@ export function buildRawRows(
   config: Record<string, unknown>,
   state: Record<string, unknown>,
   codec: QuotaCodec,
+  providerCodec?: ProviderStateCodec,
 ): PoolRow[] {
   const entries = entriesOf(config)
   const stateAccounts = stateAccountsOf(state)
@@ -646,6 +798,9 @@ export function buildRawRows(
     const entry = hasEntry ? parseEntry(entries[id], codec) : undefined
     const credential = credentialFor(raw, stateAccounts[id])
     const enabled = raw.enabled !== false
+    // A row without a per-row entry is at credential epoch 1 (the epoch the
+    // store stamps and later gives it), so its stamp is checked against 1.
+    const stampEpoch = entry ? entry.credentialEpoch : hasEntry ? undefined : 1
     const identity =
       typeof raw.accountId === 'string' && raw.accountId
         ? raw.accountId
@@ -668,14 +823,14 @@ export function buildRawRows(
         ? { disabledReason: entry.disabledReason }
         : {}),
       ...(entry && 'quota' in entry ? { quota: entry.quota } : {}),
-      // A row without a per-row entry is at credential epoch 1 (the epoch the
-      // store stamps and later gives it), so its stamp is checked against 1.
-      stamp: stampStatusOf(
-        credential,
-        entry ? entry.credentialEpoch : hasEntry ? undefined : 1,
-        identity,
+      ...providerStateFields(
         stateAccounts[id],
+        credential,
+        stampEpoch,
+        identity,
+        providerCodec,
       ),
+      stamp: stampStatusOf(credential, stampEpoch, identity, stateAccounts[id]),
     }
     if (hasEntry && !entry) {
       row.invalid = 'entry'
@@ -685,6 +840,40 @@ export function buildRawRows(
     rows.push(row)
   }
   return rows
+}
+
+/**
+ * The provider-state fields of a loaded row. A value on disk is shown only
+ * when the stamp beside the credential binds a provider state to this row's
+ * credential, epoch and identity (see `boundProviderStateDigest`), the codec
+ * accepts the value, and the value's credential-bound part has the digest
+ * that stamp names. Otherwise the row says why it shows none and stays
+ * usable: the value is the plugin's own derived data, which it can rebuild,
+ * and the credential beside it may well be sound.
+ */
+function providerStateFields(
+  account: unknown,
+  credential: StoredCredential | undefined,
+  credentialEpoch: number | undefined,
+  identity: string | undefined,
+  codec: ProviderStateCodec | undefined,
+): Pick<PoolRow, 'providerState' | 'providerStateDropped'> {
+  if (!isRecord(account) || !Object.hasOwn(account, PROVIDER_STATE_KEY))
+    return {}
+  const digest = boundProviderStateDigest(
+    account,
+    credential,
+    credentialEpoch,
+    identity,
+  )
+  if (digest === undefined) return { providerStateDropped: 'uncovered' }
+  const value = account[PROVIDER_STATE_KEY]
+  // The value is validated before it is projected, so the projection only
+  // ever sees a value of the shape the codec accepts.
+  if (!codec?.validate(value)) return { providerStateDropped: 'invalid' }
+  if (providerStateDigest(codec, value) !== digest)
+    return { providerStateDropped: 'uncovered' }
+  return { providerState: value }
 }
 
 /** The row-lock key: recorded wire identity when known, else the local id. */

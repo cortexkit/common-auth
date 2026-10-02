@@ -8,6 +8,11 @@ import {
   readPool,
   type StoreContext,
 } from './mutate.js'
+import {
+  type ProviderStateMutator,
+  type UpdateProviderStateResult,
+  updateProviderStateRow,
+} from './provider-state.js'
 import { type PullHook, PullScheduler } from './pull.js'
 import {
   type ProviderRefresh,
@@ -25,6 +30,7 @@ import {
   type AddInput,
   type AddResult,
   addRow,
+  type CredentialWriteInput,
   disableRow,
   enableRow,
   type RemoveOptions,
@@ -44,6 +50,7 @@ import {
   POOL_SCHEMA_VERSION,
   type PoolCredential,
   type PoolRow,
+  type ProviderStateCodec,
   type QuotaCodec,
   type RotateCredential,
   type StoredCredential,
@@ -63,6 +70,13 @@ export interface OpenPoolStoreOptions {
   configPath: string
   statePath: string
   quota: QuotaCodec
+  /**
+   * The codec of the provider state kept beside each row's credential (see
+   * `ProviderStateCodec`). Without it no row shows a provider state, and
+   * every write that would set one refuses (`invalid-input`); writes that
+   * leave it alone keep the value on disk as it is, and `replace` clears it.
+   */
+  providerState?: ProviderStateCodec
   /**
    * Refuse every credential this store did not stamp (default false, which
    * loads unstamped and mis-stamped credentials as older writers left them).
@@ -125,10 +139,15 @@ export interface PoolStore {
     dropKeys?: readonly string[]
   }): Promise<{ status: InitializeOutcome }>
   add(input: AddInput, options?: RowOperationOptions): Promise<AddResult>
+  /**
+   * Gives a row a new credential and a new credential epoch. Since 0.6.0 the
+   * row's provider state is whatever `ProviderStateCodec.onReplace` returns;
+   * without that hook it is `input.providerState`, else cleared.
+   */
   replace(
     id: string,
     credential: PoolCredential,
-    input?: { identity?: string },
+    input?: CredentialWriteInput,
     options?: RowOperationOptions,
   ): Promise<{
     id: string
@@ -144,9 +163,21 @@ export interface PoolStore {
   rotate(
     id: string,
     credential: RotateCredential,
-    input?: { identity?: string },
+    input?: CredentialWriteInput,
     options?: RowOperationOptions,
   ): Promise<{ id: string; credential: StoredCredential }>
+  /**
+   * Changes a row's provider state without touching its credential (since
+   * 0.6.0), under the row lock, `extraLocks` and the store locks. Refuses
+   * (`attribution`) once the row has moved off the credential epoch or
+   * identity in `fence`, and (`unknown-row`) once it is removed.
+   */
+  updateProviderState(
+    id: string,
+    fence: Attribution,
+    mutator: ProviderStateMutator,
+    options?: RowToggleOptions,
+  ): Promise<UpdateProviderStateResult>
   /**
    * Sets `enabled: false` and the entry's `disabledReason`. Takes the row
    * lock, then `extraLocks`, then the store locks (the row lock and
@@ -268,6 +299,7 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     configPath: options.configPath,
     statePath: options.statePath,
     codec: options.quota,
+    ...(options.providerState ? { providerState: options.providerState } : {}),
     now: options.now ?? Date.now,
     storeLocks: options.storeLocks ?? [
       { name: 'save', path: options.configPath },
@@ -330,6 +362,8 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
       replaceRow(rt, id, credential, input, callOptions),
     rotate: (id, credential, input, callOptions) =>
       rotateRow(rt, id, credential, input, callOptions),
+    updateProviderState: (id, fence, mutator, callOptions) =>
+      updateProviderStateRow(rt, id, fence, mutator, callOptions),
     disable: (id, reason, callOptions) =>
       disableRow(rt, id, reason, callOptions),
     enable: (id, callOptions) => enableRow(rt, id, callOptions),
