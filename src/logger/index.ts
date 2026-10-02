@@ -5,6 +5,8 @@ export type {
   InitLoggerOptions,
   Level,
   LoggerInstance,
+  LoggerOptions,
+  SinkOnlyLoggerOptions,
 } from './engine.js'
 export {
   createLogger,

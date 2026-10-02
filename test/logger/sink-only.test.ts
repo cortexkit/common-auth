@@ -6,6 +6,7 @@ import {
   createCaptureSink,
   createLoggerInstance,
   type InitLoggerOptions,
+  type LoggerOptions,
 } from '../../src/logger/index.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
@@ -67,6 +68,19 @@ it('a sink-only logger instance prints nothing and creates no file', async () =>
 
 it('a logger without a file or a capture sink does not type-check', () => {
   // @ts-expect-error A logger needs a file, a capture sink, or both.
-  const options: InitLoggerOptions = { level: 'info' }
+  const options: LoggerOptions = { level: 'info' }
   expect(options.level).toBe('info')
+})
+
+it('a type picked from the file options still requires the file', () => {
+  // openai-auth derives its host options with Pick<InitLoggerOptions, 'file' |
+  // 'level'> and passes them on. Over a union that pick made `file` optional
+  // and the result fit neither branch; InitLoggerOptions stays the file shape.
+  type HostOptions = Pick<InitLoggerOptions, 'file' | 'level'>
+  // @ts-expect-error The picked type keeps `file` required.
+  const missing: HostOptions = { level: 'info' }
+  const host: HostOptions = { file: () => '', level: 'info' }
+  const instance = createLoggerInstance({ ...host })
+  expect(missing.level).toBe('info')
+  expect(typeof instance.createLogger).toBe('function')
 })

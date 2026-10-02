@@ -19,12 +19,8 @@ const ORDER: Record<Level, number> = {
 const MAX_BYTES = 5 * 1024 * 1024
 const ROTATE_KEEP = 3
 
-interface LoggerOptionsBase extends RedactionOptions {
-  /** Level floor applied when no `setLogLevel` call has overridden it. */
-  level?: Level | (() => Level | undefined)
-}
-
-interface FileLoggerOptions {
+/** A logger that writes to a file, and to a capture sink when one is given. */
+export interface InitLoggerOptions extends RedactionOptions {
   /** Receives every emitted record, scrubbed, alongside the file. */
   captureSink?: CaptureSink
   /**
@@ -36,21 +32,30 @@ interface FileLoggerOptions {
    * captured once at init would keep writing to the old one.
    */
   file: string | (() => string)
+  /** Level floor applied when no `setLogLevel` call has overridden it. */
+  level?: Level | (() => Level | undefined)
 }
 
-interface SinkOnlyLoggerOptions {
-  /**
-   * Receives every emitted record, scrubbed. With no `file`, this sink is
-   * the logger's only destination: nothing is written to disk or printed,
-   * for a host that forwards records to its own log.
-   */
+/**
+ * A logger with no file: the capture sink is its only destination. Nothing
+ * is written to disk or printed, for a host that forwards records to its own
+ * log.
+ */
+export interface SinkOnlyLoggerOptions extends RedactionOptions {
+  /** Receives every emitted record, scrubbed. */
   captureSink: CaptureSink
   file?: undefined
+  /** Level floor applied when no `setLogLevel` call has overridden it. */
+  level?: Level | (() => Level | undefined)
 }
 
-/** A logger writes to a file, to a capture sink, or to both. */
-export type InitLoggerOptions = LoggerOptionsBase &
-  (FileLoggerOptions | SinkOnlyLoggerOptions)
+/**
+ * What a logger is configured with: a file (`InitLoggerOptions`, the shape
+ * every release before this one accepted, kept as its own interface so a
+ * caller deriving a type from it with `Pick` or `extends` keeps compiling) or
+ * a capture sink alone.
+ */
+export type LoggerOptions = InitLoggerOptions | SinkOnlyLoggerOptions
 
 export interface ChannelLogger {
   error(message: string, data?: unknown): void
@@ -75,7 +80,7 @@ export interface LoggerInstance {
    * alone, because it is the operator's explicit choice and outranks the
    * floor a host computed at start-up.
    */
-  configure(options: InitLoggerOptions): void
+  configure(options: LoggerOptions): void
   /** Operator override of the level floor; undefined removes it. */
   setLogLevel(level: Level | undefined): void
   /**
@@ -134,7 +139,7 @@ interface Engine extends LoggerInstance {
  * command a host forgot to wire into a crash, and buffering would hold
  * credential-bearing lines for a configuration that may never arrive.
  */
-function createEngine(options?: InitLoggerOptions): Engine {
+function createEngine(options?: LoggerOptions): Engine {
   let logFileSource: string | (() => string) | undefined
   let initLevelSource: Level | (() => Level | undefined) | undefined
   let runtimeLevel: Level | undefined
@@ -143,7 +148,7 @@ function createEngine(options?: InitLoggerOptions): Engine {
   let buffer: string[] = []
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  function configure(next: InitLoggerOptions): void {
+  function configure(next: LoggerOptions): void {
     logFileSource = next.file
     initLevelSource = next.level
     redactor = createRedactor(next)
@@ -277,9 +282,7 @@ function createEngine(options?: InitLoggerOptions): Engine {
  * uses this instead of `initLogger`, so neither replaces the other's file,
  * level, redaction or capture sink.
  */
-export function createLoggerInstance(
-  options: InitLoggerOptions,
-): LoggerInstance {
+export function createLoggerInstance(options: LoggerOptions): LoggerInstance {
   const { configure, createLogger, setLogLevel, flushLogs } =
     createEngine(options)
   return { configure, createLogger, setLogLevel, flushLogs }
@@ -298,7 +301,7 @@ const defaultEngine = createEngine()
  * by `setLogLevel` is deliberately left alone, because it is the operator's
  * explicit choice and outranks the floor a host computed at start-up.
  */
-export function initLogger(options: InitLoggerOptions): LoggerInstance {
+export function initLogger(options: LoggerOptions): LoggerInstance {
   defaultEngine.configure(options)
   const { configure, createLogger, setLogLevel, flushLogs } = defaultEngine
   return { configure, createLogger, setLogLevel, flushLogs }
