@@ -246,7 +246,10 @@ for (const invalidation of ['foreign', 'expired', 'unreadable']) {
         caught = error
       }
       expect(caught).toBeInstanceOf(LockOwnershipError)
-      expect((caught as LockOwnershipError).details).toEqual({ target, name })
+      expect((caught as LockOwnershipError).details).toMatchObject({
+        target,
+        name,
+      })
     } finally {
       await lock?.release()
     }

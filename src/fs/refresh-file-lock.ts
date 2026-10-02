@@ -15,6 +15,27 @@ export function isLostMarkerRaceError(error: unknown): boolean {
   return code === 'ENOENT' || code === 'EINVAL' || code === 'ENOTDIR'
 }
 
+export interface LockLoss {
+  readonly reason:
+    | 'taken-over'
+    | 'expired'
+    | 'unreadable'
+    | 'renewal-failed'
+    | 'marker-lost'
+  readonly expectedOwnerId: string
+  readonly observedOwnerId?: string
+  readonly observedExpiresAt?: number
+}
+
+export interface RefreshFileLock {
+  readonly ownerId: string
+  assertOwned(): Promise<void>
+  release(): Promise<void>
+  /** Resolves once on detected loss; remains pending after an owner's release. */
+  whenLost(): Promise<LockLoss>
+  hasLost(): boolean
+}
+
 export async function acquireRefreshFileLock(options: {
   name: string
   ttlMs: number
@@ -41,16 +62,40 @@ export async function acquireRefreshFileLock(options: {
       | 'renewal-finished'
       | 'release-owner-confirmed',
   ) => void | Promise<void>
-}): Promise<{
-  release: () => Promise<void>
-  assertOwned: () => Promise<void>
-} | null> {
+}): Promise<RefreshFileLock | null> {
   const lockPath = lockPathFor(options.path, options.name)
   const legacyOwnerPath = join(lockPath, 'owner.json')
   const ownerId = randomUUID()
   const now = options.now ?? Date.now
   let renewTimer: ReturnType<typeof setTimeout> | null = null
   let released = false
+  let loss: LockLoss | undefined
+  let resolveLoss!: (loss: LockLoss) => void
+  const lostPromise = new Promise<LockLoss>((resolve) => {
+    resolveLoss = resolve
+  })
+
+  function recordLoss(
+    reason: LockLoss['reason'],
+    owner?: { ownerId?: unknown; expiresAt?: unknown },
+  ) {
+    if (loss || released) return
+    loss = Object.freeze({
+      reason,
+      expectedOwnerId: ownerId,
+      ...(typeof owner?.ownerId === 'string'
+        ? { observedOwnerId: owner.ownerId }
+        : {}),
+      ...(typeof owner?.expiresAt === 'number'
+        ? { observedExpiresAt: owner.expiresAt }
+        : {}),
+    })
+    if (renewTimer) {
+      clearRefreshLockRenewalTimeout(renewTimer)
+      renewTimer = null
+    }
+    resolveLoss(loss)
+  }
   let renewalInFlight: Promise<void> | null = null
   // Only the owner of this exclusively-created marker may remove or renew a
   // lock. A contender recovering a stale marker can accidentally rename a newer
@@ -241,7 +286,7 @@ export async function acquireRefreshFileLock(options: {
   }
 
   function scheduleRenewal() {
-    if (!options.renew || released) return
+    if (!options.renew || released || loss) return
     const intervalMs =
       options.renewIntervalMs ?? Math.max(1_000, Math.floor(options.ttlMs / 3))
     renewTimer = setRefreshLockRenewalTimeout(() => {
@@ -251,33 +296,44 @@ export async function acquireRefreshFileLock(options: {
           const markerAcquired = await withEvictionMarker(async () => {
             const owner = await readOwner()
             const currentNow = now()
-            if (released || owner?.ownerId !== ownerId) {
+            if (released || loss) {
+              shouldReschedule = false
+              return
+            }
+            if (owner?.ownerId !== ownerId) {
+              recordLoss('taken-over', owner)
               shouldReschedule = false
               return
             }
             // An expired lease is no longer ours to extend; a contender may
             // already be eligible to acquire it.
-            if (Number(owner?.expiresAt) <= currentNow) {
+            if (!(Number(owner?.expiresAt) > currentNow)) {
+              recordLoss('expired', owner)
               shouldReschedule = false
               return
             }
             if (options.onStep) await options.onStep('renewal-owner-confirmed')
-            if (released) {
+            if (released || loss) {
               shouldReschedule = false
               return
             }
             if (!(await ownsEvictionMarker())) return
             if (options.onStep) await options.onStep('renewal-write-fenced')
-            if (released) {
+            if (released || loss) {
               shouldReschedule = false
               return
             }
             if (!(await ownsEvictionMarker())) return
             if (options.onStep) await options.onStep('renewal-write-ready')
+            if (released || loss) {
+              shouldReschedule = false
+              return
+            }
             await writeOwner()
             if (!(await ownsEvictionMarker())) {
               // If marker ownership cannot be read, stop claiming the lease
               // and remove only a record that still carries our owner id.
+              recordLoss('marker-lost')
               shouldReschedule = false
               await relinquishLockAfterMarkerLoss()
               return
@@ -287,7 +343,15 @@ export async function acquireRefreshFileLock(options: {
             await options.onStep('renewal-marker-unavailable')
           }
         } catch {
-          // Transient marker and filesystem failures retry on the next interval.
+          // Retry transient failures only while the lease can still be verified.
+          try {
+            const owner = await readOwner()
+            if (owner?.ownerId !== ownerId) recordLoss('taken-over', owner)
+            else if (!(Number(owner?.expiresAt) > now()))
+              recordLoss('expired', owner)
+          } catch {
+            recordLoss('renewal-failed')
+          }
         } finally {
           if (options.onStep) {
             try {
@@ -296,7 +360,7 @@ export async function acquireRefreshFileLock(options: {
               // Errors from the onStep observer must not reject the renewal.
             }
           }
-          if (shouldReschedule && !released) scheduleRenewal()
+          if (shouldReschedule && !released && !loss) scheduleRenewal()
         }
       })()
       renewalInFlight = renewal
@@ -362,21 +426,36 @@ export async function acquireRefreshFileLock(options: {
   scheduleRenewal()
 
   return {
+    ownerId,
+    whenLost: () => lostPromise,
+    hasLost: () => loss !== undefined,
     assertOwned: async () => {
+      let observed: { ownerId?: unknown; expiresAt?: unknown } | undefined
       try {
         const owner = await readOwner()
+        observed = owner
         if (
           !released &&
+          !loss &&
           owner?.ownerId === ownerId &&
           Number(owner?.expiresAt) > now()
         )
           return
+        recordLoss(owner?.ownerId !== ownerId ? 'taken-over' : 'expired', owner)
       } catch {
         // Unreadable ownership is not evidence of a valid lease.
+        recordLoss('unreadable')
       }
       throw new LockOwnershipError({
         target: options.path,
         name: options.name,
+        expectedOwnerId: ownerId,
+        ...(typeof observed?.ownerId === 'string'
+          ? { observedOwnerId: observed.ownerId }
+          : {}),
+        ...(typeof observed?.expiresAt === 'number'
+          ? { observedExpiresAt: observed.expiresAt }
+          : {}),
       })
     },
     release: async () => {

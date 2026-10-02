@@ -19,6 +19,15 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | fs | Acquisition writes private newline-terminated owner bytes | reference/openai-auth/packages/core/src/refresh-file-lock.ts | acquisition writes private newline-terminated owner bytes |
 | fs | Eviction marker has a private distinct evicter identity | reference/openai-auth/packages/core/src/refresh-file-lock.ts | eviction marker has a private distinct evicter identity |
 | fs | Reads expired legacy owner.json despite a fresh directory mtime | reference/openai-auth/packages/core/src/refresh-file-lock.ts | reads expired legacy owner.json despite a fresh directory mtime |
+| fs | Observable persisted identity, renewal takeover, sticky loss and stopped renewal | new (neither copy) | observes takeover on the next renewal and stops renewing |
+| fs | Assertion takeover details and successor-safe repeated release | new (neither copy) | assertOwned observes takeover with ownership details without renewal |
+| fs | Assertion loss cancels scheduled renewal | new (neither copy) | assertion loss cancels a pending renewal timer |
+| fs | Assertion loss fences paused renewal writes | new (neither copy) | assertion loss fences an already in-flight renewal |
+| fs | Unreadable ownership is observable on assertion | new (neither copy) | assertOwned observes unreadable ownership |
+| fs | Owner release is not lease loss | new (neither copy) | owner release is idempotent and leaves the loss promise pending |
+| fs | Terminal renewal read failure signals loss | new (neither copy) | observes terminal renewal failure when the owner file becomes unreadable |
+| fs | Renewal errors reverify live ownership before retrying | new (neither copy) | renewal errors stop immediately when ownership cannot remain live |
+| fs | Expired renewal signals loss | new (neither copy) | observes expiry when renewal cannot extend an expired lease |
 | fs | Creates a missing parent directory before acquiring the lock | reference/openai-auth/packages/core/src/refresh-file-lock.ts | creates a missing parent directory before acquiring the lock |
 | fs | Allows only one contender when the parent directory is missing | reference/openai-auth/packages/core/src/refresh-file-lock.ts | allows only one contender when the parent directory is missing |
 | fs | Does not let a stalled renewal overwrite a successor that stole its marker | reference/openai-auth/packages/core/src/refresh-file-lock.ts | does not let a stalled renewal overwrite a successor that stole its marker |
