@@ -248,7 +248,7 @@ test('preferences ownership loss after staging rejects without committing or lea
     caught = error
   }
   expect(caught).toBeInstanceOf(LockOwnershipError)
-  expect((caught as LockOwnershipError).details).toEqual({
+  expect((caught as LockOwnershipError).details).toMatchObject({
     target: file,
     name: 'preferences',
   })

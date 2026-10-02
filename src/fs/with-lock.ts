@@ -13,9 +13,17 @@ export class LockContentionError extends Error {
   }
 }
 
+export interface LockOwnershipDetails {
+  target: string
+  name: string
+  expectedOwnerId?: string
+  observedOwnerId?: string
+  observedExpiresAt?: number
+}
+
 export class LockOwnershipError extends Error {
-  readonly details: { target: string; name: string }
-  constructor(details: { target: string; name: string }) {
+  readonly details: LockOwnershipDetails
+  constructor(details: LockOwnershipDetails) {
     super(`Lost ${details.name} lock for ${details.target}`)
     this.name = 'LockOwnershipError'
     this.details = details

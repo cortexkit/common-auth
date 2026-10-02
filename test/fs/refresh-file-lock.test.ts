@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
+import {
+  acquireRefreshFileLock,
+  LockOwnershipError,
+} from '../../src/fs/index.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 let dir: string
@@ -55,6 +58,287 @@ async function readLockOwner(lockPath: string) {
 }
 
 describe('acquireRefreshFileLock', () => {
+  it('observes takeover on the next renewal and stops renewing', async () => {
+    const path = join(dir, 'observed.json')
+    const lockPath = `${path}.observed.lock`
+    const tick = deferred()
+    let ticks = 0
+    const lock = (await acquireRefreshFileLock({
+      path,
+      name: 'observed',
+      ttlMs: 10_000,
+      renew: true,
+      renewIntervalMs: 20,
+      onStep: (step) => {
+        if (step === 'renewal-finished') {
+          ticks++
+          tick.resolve()
+        }
+      },
+    }))!
+    try {
+      expect(lock.ownerId).toBe((await readLockOwner(lockPath)).ownerId)
+      await withTimeout(tick.promise, 1_000)
+      expect(lock.hasLost()).toBe(false)
+      const successor = { ownerId: 'successor', expiresAt: Date.now() + 10_000 }
+      await writeFile(lockPath, JSON.stringify(successor))
+      const loss = await withTimeout(lock.whenLost(), 1_000)
+      expect(loss).toMatchObject({
+        reason: 'taken-over',
+        expectedOwnerId: lock.ownerId,
+        observedOwnerId: 'successor',
+        observedExpiresAt: successor.expiresAt,
+      })
+      expect(lock.hasLost()).toBe(true)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const stoppedTicks = ticks
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      expect(ticks).toBe(stoppedTicks)
+      await writeFile(
+        lockPath,
+        JSON.stringify({
+          ownerId: lock.ownerId,
+          expiresAt: Date.now() + 10_000,
+        }),
+      )
+      await expect(lock.assertOwned()).rejects.toBeInstanceOf(
+        LockOwnershipError,
+      )
+      expect(await lock.whenLost()).toBe(loss)
+      await writeFile(lockPath, JSON.stringify(successor))
+      await lock.release()
+      await lock.release()
+      expect(await readLockOwner(lockPath)).toEqual(successor)
+    } finally {
+      await lock.release()
+    }
+  })
+
+  it('assertOwned observes takeover with ownership details without renewal', async () => {
+    const path = join(dir, 'assert-observed.json')
+    const lock = (await acquireRefreshFileLock({
+      path,
+      name: 'assert',
+      ttlMs: 10_000,
+    }))!
+    const successor = {
+      ownerId: 'assert-successor',
+      expiresAt: Date.now() + 10_000,
+    }
+    await writeFile(`${path}.assert.lock`, JSON.stringify(successor))
+    try {
+      await lock.assertOwned()
+      throw new Error('assertOwned accepted takeover')
+    } catch (error) {
+      expect(error).toBeInstanceOf(LockOwnershipError)
+      expect((error as LockOwnershipError).message).toBe(
+        `Lost assert lock for ${path}`,
+      )
+      expect((error as LockOwnershipError).details).toMatchObject({
+        expectedOwnerId: lock.ownerId,
+        observedOwnerId: successor.ownerId,
+        observedExpiresAt: successor.expiresAt,
+      })
+    }
+    expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe(
+      'taken-over',
+    )
+    expect(lock.hasLost()).toBe(true)
+    await lock.release()
+    await lock.release()
+    expect(await readLockOwner(`${path}.assert.lock`)).toEqual(successor)
+  })
+
+  it('assertion loss cancels a pending renewal timer', async () => {
+    const path = join(dir, 'cancel-timer.json')
+    let ticks = 0
+    const lock = (await acquireRefreshFileLock({
+      path,
+      name: 'cancel',
+      ttlMs: 10_000,
+      renew: true,
+      renewIntervalMs: 50,
+      onStep: (step) => {
+        if (step === 'renewal-finished') ticks++
+      },
+    }))!
+    try {
+      await writeFile(
+        `${path}.cancel.lock`,
+        JSON.stringify({
+          ownerId: 'successor',
+          expiresAt: Date.now() + 10_000,
+        }),
+      )
+      await expect(lock.assertOwned()).rejects.toBeInstanceOf(
+        LockOwnershipError,
+      )
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      expect(ticks).toBe(0)
+    } finally {
+      await lock.release()
+    }
+  })
+
+  it('assertion loss fences an already in-flight renewal', async () => {
+    for (const seam of [
+      'renewal-owner-confirmed',
+      'renewal-write-fenced',
+      'renewal-write-ready',
+    ] as const) {
+      const path = join(dir, `inflight-loss-${seam}.json`)
+      const paused = deferred()
+      const resume = deferred()
+      const finished = deferred()
+      const lock = (await acquireRefreshFileLock({
+        path,
+        name: 'inflight',
+        ttlMs: 10_000,
+        renew: true,
+        renewIntervalMs: 10,
+        onStep: async (step) => {
+          if (step === seam) {
+            paused.resolve()
+            await resume.promise
+          }
+          if (step === 'renewal-finished') finished.resolve()
+        },
+      }))!
+      try {
+        await withTimeout(paused.promise, 1_000)
+        const successor = {
+          ownerId: 'successor',
+          expiresAt: Date.now() + 10_000,
+        }
+        await writeFile(`${path}.inflight.lock`, JSON.stringify(successor))
+        await expect(lock.assertOwned()).rejects.toBeInstanceOf(
+          LockOwnershipError,
+        )
+        resume.resolve()
+        await withTimeout(finished.promise, 1_000)
+        expect(await readLockOwner(`${path}.inflight.lock`)).toEqual(successor)
+      } finally {
+        resume.resolve()
+        await lock.release()
+      }
+    }
+  })
+
+  it('assertOwned observes unreadable ownership', async () => {
+    const path = join(dir, 'unreadable.json')
+    const lock = (await acquireRefreshFileLock({
+      path,
+      name: 'unreadable',
+      ttlMs: 10_000,
+    }))!
+    await writeFile(`${path}.unreadable.lock`, 'invalid json')
+    await expect(lock.assertOwned()).rejects.toBeInstanceOf(LockOwnershipError)
+    expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe(
+      'unreadable',
+    )
+    expect(lock.hasLost()).toBe(true)
+    await lock.release()
+  })
+
+  it('owner release is idempotent and leaves the loss promise pending', async () => {
+    const path = join(dir, 'released.json')
+    const lock = (await acquireRefreshFileLock({
+      path,
+      name: 'released',
+      ttlMs: 10_000,
+    }))!
+    let lost = false
+    void lock.whenLost().then(() => {
+      lost = true
+    })
+    await lock.release()
+    await lock.release()
+    await expect(lock.assertOwned()).rejects.toBeInstanceOf(LockOwnershipError)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(lock.hasLost()).toBe(false)
+    expect(lost).toBe(false)
+    expect(existsSync(`${path}.released.lock`)).toBe(false)
+  })
+
+  it('observes terminal renewal failure when the owner file becomes unreadable', async () => {
+    const path = join(dir, 'failed.json')
+    const lockPath = `${path}.failed.lock`
+    const lock = (await acquireRefreshFileLock({
+      path,
+      name: 'failed',
+      ttlMs: 10_000,
+      renew: true,
+      renewIntervalMs: 20,
+    }))!
+    try {
+      await writeFile(lockPath, 'invalid json')
+      expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe(
+        'renewal-failed',
+      )
+      expect(lock.hasLost()).toBe(true)
+      await expect(lock.assertOwned()).rejects.toBeInstanceOf(
+        LockOwnershipError,
+      )
+    } finally {
+      await lock.release()
+    }
+  })
+
+  it('renewal errors stop immediately when ownership cannot remain live', async () => {
+    for (const reason of ['taken-over', 'expired'] as const) {
+      const path = join(dir, `error-${reason}.json`)
+      const finished = deferred()
+      const lock = (await acquireRefreshFileLock({
+        path,
+        name: 'error',
+        ttlMs: 10_000,
+        renew: true,
+        renewIntervalMs: 50,
+        onStep: async (step) => {
+          if (step === 'renewal-owner-confirmed') {
+            const owner = await readLockOwner(`${path}.error.lock`)
+            await writeFile(
+              `${path}.error.lock`,
+              JSON.stringify(
+                reason === 'taken-over'
+                  ? { ...owner, ownerId: 'successor' }
+                  : { ...owner, expiresAt: 0 },
+              ),
+            )
+            throw new Error('renewal failed after ownership changed')
+          }
+          if (step === 'renewal-finished') finished.resolve()
+        },
+      }))!
+      try {
+        await withTimeout(finished.promise, 1_000)
+        expect(lock.hasLost()).toBe(true)
+        expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe(reason)
+      } finally {
+        await lock.release()
+      }
+    }
+  })
+
+  it('observes expiry when renewal cannot extend an expired lease', async () => {
+    const path = join(dir, 'expired.json')
+    let now = 100
+    const lock = (await acquireRefreshFileLock({
+      path,
+      name: 'expired',
+      ttlMs: 10,
+      now: () => now,
+      renew: true,
+      renewIntervalMs: 20,
+    }))!
+    try {
+      now = 111
+      expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe('expired')
+      expect(lock.hasLost()).toBe(true)
+    } finally {
+      await lock.release()
+    }
+  })
   it('creates a missing parent directory before acquiring the lock', async () => {
     const path = join(dir, 'missing-sub', 'state.json')
     const lockPath = `${path}.missing-parent.lock`
@@ -306,6 +590,10 @@ describe('acquireRefreshFileLock', () => {
     await withTimeout(renewalFinished.promise, 1_000)
 
     expect(existsSync(lockPath)).toBe(false)
+    expect((await withTimeout(first!.whenLost(), 1_000)).reason).toBe(
+      'marker-lost',
+    )
+    expect(first!.hasLost()).toBe(true)
     await first?.release()
     await successor?.release()
   })
@@ -405,7 +693,13 @@ describe('acquireRefreshFileLock', () => {
     const after = await readLockOwner(lockPath)
     expect(after.ownerId).toBe(before.ownerId)
     expect(after.expiresAt).toBeGreaterThan(before.expiresAt)
+    expect(lock!.hasLost()).toBe(false)
+    let lossObserved = false
+    void lock!.whenLost().then(() => {
+      lossObserved = true
+    })
     await lock?.release()
+    expect(lossObserved).toBe(false)
   })
 
   it('reschedules after a renewal marker failure throws', async () => {
@@ -446,7 +740,13 @@ describe('acquireRefreshFileLock', () => {
     const after = await readLockOwner(lockPath)
     expect(after.ownerId).toBe(before.ownerId)
     expect(after.expiresAt).toBeGreaterThan(before.expiresAt)
+    expect(lock!.hasLost()).toBe(false)
+    let lossObserved = false
+    void lock!.whenLost().then(() => {
+      lossObserved = true
+    })
     await lock?.release()
+    expect(lossObserved).toBe(false)
   })
 
   it('retries release after recovering a stale marker', async () => {
