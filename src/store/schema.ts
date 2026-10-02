@@ -575,7 +575,8 @@ export function buildRawRows(
         ? { disabledReason: entry.disabledReason }
         : {}),
       ...(entry && 'quota' in entry ? { quota: entry.quota } : {}),
-      // A row without a per-row entry is at epoch 1, as everywhere else.
+      // A row without a per-row entry is at credential epoch 1 (the epoch the
+      // store stamps and later gives it), so its stamp is checked against 1.
       stamp: stampStatusOf(
         credential,
         entry ? entry.credentialEpoch : hasEntry ? undefined : 1,

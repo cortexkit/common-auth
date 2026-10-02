@@ -59,7 +59,11 @@ export interface StoreContext {
   hold?: (point: HoldPoint, rowId: string) => void | Promise<void>
   /** Ids whose per-row entry a library write dropped in this process. */
   removedIds: Set<string>
-  /** See `OpenPoolStoreOptions.requireCredentialStamps`. */
+  /**
+   * When true, rows whose credential stamp is not bound load `unbound` and
+   * the operations that use a credential refuse them (see
+   * `OpenPoolStoreOptions.requireCredentialStamps`).
+   */
   requireCredentialStamps?: boolean
 }
 
