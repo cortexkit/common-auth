@@ -946,6 +946,38 @@ describe('installOpenCode2Auth concurrent attempts of one session and kind', () 
       'opencode2 auth tied a send without its attempt mark to the newest of several waiting attempts',
     ])
   })
+
+  test('a mark naming an attempt of another session or kind is ignored', async () => {
+    const turn = accountsInTurn(['A', 'B'])
+    const { adapter, seen } = trackingAdapter({
+      chooseAccount: turn.chooseAccount,
+    })
+    const { host } = await install(adapter, seen)
+    const s1 = await modelRequest(host, 's1')
+    const stray = await httpRequest(host, 's2', 'primary', s1.headers)
+    expect(stray.request.headers.get('authorization')).toBe('Bearer tok-B')
+    const own = await httpRequest(host, 's1', 'primary', s1.headers)
+    expect(own.request.headers.get('authorization')).toBe('Bearer tok-A')
+    expect(seen).toEqual(['select:s1/primary#1', 'select:s2/primary#2'])
+  })
+
+  test('an attempt the retry hook judged while open is abandoned by the next attempt', async () => {
+    const { adapter, ends } = trackingAdapter()
+    const { host } = await install(adapter)
+    const first = await modelRequest(host, 's1')
+    // Sent, but no response ever comes (the connection failed).
+    await httpRequest(host, 's1', 'primary', first.headers)
+    await retry(host, 's1')
+    await settle()
+    expect(ends).toEqual([])
+    await modelRequest(host, 's1')
+    await settle()
+    expect(
+      ends.map(({ data, outcome }) => [data, outcome.error?.message]),
+    ).toEqual([
+      ['s1/primary#1', 'a newer attempt of its session and kind began'],
+    ])
+  })
 })
 
 describe('installOpenCode2Auth answeredBy', () => {
