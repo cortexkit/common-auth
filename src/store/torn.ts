@@ -16,6 +16,7 @@ import {
   parseStamp,
   type QuotaCodec,
   rosterRowIn,
+  type StoredCredential,
   setEntryIn,
 } from './schema.js'
 
@@ -49,6 +50,15 @@ import {
  * store leaves the row as it is on disk (`legacy`, unbound) rather than act
  * on it; a store without the option completes it as before.
  *
+ * A strict store also completes a replace only when its stamp describes what
+ * the completed row would send: the stamp's dispatch digest must be that of
+ * the credential beside it, with an API key moved to the endpoint the binding
+ * names. The lineage digest alone covers the refresh token or API key, so
+ * without this check another writer that changed only the access token, the
+ * expiry or the endpoint would still have the strict store rewrite the row's
+ * epoch, identity and quota before refusing the row as unbound. A store
+ * without the option never compared dispatch digests here and still does not.
+ *
  * A write that gives a row its first identity (`recordIdentity`, or a
  * `rotate` or refresh that learns one) follows the same order: the stamp
  * naming the identity first, then the config recording it. A crash between
@@ -57,6 +67,29 @@ import {
  * does not record; that is completed forward the same way, by recording the
  * identity.
  */
+
+/**
+ * The credential a torn replace leaves once its config write lands: the
+ * credential loaded beside the stamp, with the endpoint the stamp's binding
+ * names. Only an API key's endpoint lives in the config (an OAuth credential
+ * is entirely in the state file, which the replace has already written). A
+ * replace that moves a key to a new endpoint leaves the old `baseURL` and
+ * `authHeader` in the config until its config write, so the binding's
+ * `baseURL` and `authHeader` are the ones the replacement will be sent with.
+ */
+function projectedReplacement(
+  credential: StoredCredential,
+  binding: CredentialBinding,
+): StoredCredential {
+  if (credential.type !== 'api') return credential
+  return {
+    ...credential,
+    ...(binding.baseURL !== undefined ? { baseURL: binding.baseURL } : {}),
+    ...(binding.authHeader !== undefined
+      ? { authHeader: binding.authHeader }
+      : {}),
+  }
+}
 
 /** Whether a well-formed stamp was written by a replace. */
 function isReplaceStamp(stamp: CredentialStamp): boolean {
@@ -94,8 +127,22 @@ export function tornStamps(
     const epoch = row.credentialEpoch ?? 1
     if (stamp.credentialEpoch > epoch) {
       if (!isReplaceStamp(stamp)) continue
-      if (options.requireCredentialStamps && stamp.dispatch === undefined)
-        continue
+      if (options.requireCredentialStamps) {
+        if (stamp.dispatch === undefined) continue
+        // `digest` covers only the refresh token or API key, so another
+        // writer may still have changed the access token, the expiry or the
+        // endpoint the stamp names. `dispatch` covers all of what a request
+        // sends; completing the replace when it disagrees would move the
+        // row's epoch, identity and quota on a stamp that does not describe
+        // the credential. So the replacement as it would be sent (the loaded
+        // credential with the binding's endpoint) must have the stamp's
+        // dispatch digest; otherwise the row stays as on disk (unbound).
+        if (
+          stamp.dispatch !==
+          dispatchDigest(projectedReplacement(row.credential, stamp.binding))
+        )
+          continue
+      }
       torn.set(row.id, {
         kind: 'replace',
         stamp: { ...stamp, binding: stamp.binding },
