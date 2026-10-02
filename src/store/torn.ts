@@ -1,5 +1,7 @@
 import {
   disableIdentityDuplicates,
+  disableIn,
+  enableIn,
   type RowEditor,
   recordIdentityIn,
 } from './identity.js'
@@ -67,7 +69,80 @@ import {
  * exactly (digest and dispatch digest), that names an identity the config
  * does not record; that is completed forward the same way, by recording the
  * identity.
+ *
+ * An attributed `disable` or `enable` that also changes the provider state
+ * follows the same order. Its state write carries the new value and, in the
+ * stamp, the transition (`transition: {mark, enabled, reason?}`, see
+ * `StampedTransition`); its config write then flips the row and records the
+ * transition's mark in the row's entry (`transitionMark`). A stamp bound to
+ * the row (this credential, epoch and identity, the binding that also shows
+ * the provider state beside it) whose transition mark the entry does not
+ * record is such a write stopped between its two writes, and is completed
+ * forward the same way: readers are shown the row disabled or enabled as the
+ * transition says, beside the value written with it. Once the config records
+ * the mark the transition says nothing more, so a later `enable` or
+ * `disable` of the row is never undone by it; a credential write drops it
+ * with the rest of the old stamp.
  */
+
+/** Key, inside a credential stamp, of an attributed enable or disable. */
+export const TRANSITION_STAMP_KEY = 'transition'
+
+/**
+ * Key, inside a per-row config entry, of the mark of the last transition the
+ * config carries out. Older readers ignore it.
+ */
+export const TRANSITION_MARK_KEY = 'transitionMark'
+
+/**
+ * An attributed enable or disable as its state write records it: `mark` is
+ * unique to that write, `enabled` is the flag it sets, and `reason` the
+ * disabled reason (a disable's only).
+ */
+export interface StampedTransition {
+  mark: string
+  enabled: boolean
+  reason?: string
+}
+
+/** The well-formed transition in a raw stamp, or undefined. */
+function stampedTransition(rawStamp: unknown): StampedTransition | undefined {
+  if (!isRecord(rawStamp)) return undefined
+  const raw = rawStamp[TRANSITION_STAMP_KEY]
+  if (!isRecord(raw)) return undefined
+  if (typeof raw.mark !== 'string' || raw.mark.length === 0) return undefined
+  if (raw.enabled === true) return { mark: raw.mark, enabled: true }
+  if (raw.enabled === false && typeof raw.reason === 'string')
+    return { mark: raw.mark, enabled: false, reason: raw.reason }
+  return undefined
+}
+
+/**
+ * Carries a transition out in a config being edited: the row's enabled flag
+ * and reason as the transition says, and its mark recorded in the entry (a
+ * row without an entry gets one at epoch 1, as `disableIn` gives it). An
+ * enable then applies the duplicate-identity rule, as every write that
+ * enables an OAuth row with a known identity does: the earlier row in roster
+ * order keeps the identity.
+ */
+export function applyTransition(
+  editor: RowEditor,
+  id: string,
+  transition: StampedTransition,
+): void {
+  if (transition.enabled) enableIn(editor, id)
+  else disableIn(editor, id, transition.reason ?? '')
+  if (!editor.rosterRow(id)) return
+  const entry = editor.entry(id) ?? {
+    credentialEpoch: 1,
+    needsFirstReading: true,
+  }
+  editor.setEntry(id, { ...entry, [TRANSITION_MARK_KEY]: transition.mark })
+  if (!transition.enabled) return
+  const row = editor.rows().find((candidate) => candidate.id === id)
+  if (row?.type === 'oauth' && row.identity !== undefined)
+    disableIdentityDuplicates(editor, row.identity)
+}
 
 /**
  * The credential a torn replace leaves once its config write lands: the
@@ -105,6 +180,7 @@ export type TornCompletion =
       stamp: CredentialStamp & { binding: CredentialBinding }
     }
   | { kind: 'identity'; identity: string }
+  | { kind: 'transition'; transition: StampedTransition }
 
 /** Rows left between the two writes of an operation, by row id. */
 export function tornStamps(
@@ -156,6 +232,16 @@ export function tornStamps(
       row.identity === undefined
     ) {
       torn.set(row.id, { kind: 'identity', identity: stamp.binding.identity })
+    } else if (
+      stamp.credentialEpoch === epoch &&
+      stamp.binding.identity === row.identity
+    ) {
+      const transition = stampedTransition(account[CREDENTIAL_STAMP_KEY])
+      if (
+        transition &&
+        entryIn(config, row.id)?.[TRANSITION_MARK_KEY] !== transition.mark
+      )
+        torn.set(row.id, { kind: 'transition', transition })
     }
   }
   return torn
@@ -221,6 +307,8 @@ export function completeTornRows(
   for (const [id, completion] of completions) {
     if (completion.kind === 'identity')
       recordIdentityIn(editor, id, completion.identity)
+    else if (completion.kind === 'transition')
+      applyTransition(editor, id, completion.transition)
     else if (completion.stamp.binding.identity !== undefined)
       disableIdentityDuplicates(editor, completion.stamp.binding.identity)
   }

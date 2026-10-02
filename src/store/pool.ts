@@ -39,6 +39,8 @@ import {
   type ReorderResult,
   type RowOperationOptions,
   type RowToggleOptions,
+  type RowTransitionOptions,
+  type RowTransitionResult,
   recordRowIdentity,
   removeRow,
   reorderRows,
@@ -181,19 +183,25 @@ export interface PoolStore {
   /**
    * Sets `enabled: false` and the entry's `disabledReason`. Takes the row
    * lock, then `extraLocks`, then the store locks (the row lock and
-   * `extraLocks` since 0.2.3).
+   * `extraLocks` since 0.2.3). Since 0.7.0 it may be fenced on the
+   * credential the caller's evidence is about (`attribution`) and carry a
+   * provider-state change that lands with it (`providerState`); see
+   * `RowTransitionOptions`.
    */
   disable(
     id: string,
     reason: string,
-    options?: RowToggleOptions,
-  ): Promise<{ id: string }>
+    options?: RowTransitionOptions,
+  ): Promise<RowTransitionResult>
   /**
    * Clears `enabled: false` and `disabledReason` (since 0.2.3); refuses with
    * `duplicate-identity` when another enabled OAuth row holds the row's
-   * identity. Locks as `disable`.
+   * identity. Locks as `disable`, and takes the same options since 0.7.0.
    */
-  enable(id: string, options?: RowToggleOptions): Promise<{ id: string }>
+  enable(
+    id: string,
+    options?: RowTransitionOptions,
+  ): Promise<RowTransitionResult>
   /**
    * Deletes the roster row, its per-row entry and its state-file credential
    * (since 0.2.3). Locks as `disable`; `protect` can refuse the id.

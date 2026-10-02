@@ -19,8 +19,10 @@ export type {
 export { openPoolStore } from './pool.js'
 export type {
   ProviderStateMutator,
+  RowTransitionMutator,
   UpdateProviderStateResult,
 } from './provider-state.js'
+export { DECLINE_TRANSITION } from './provider-state.js'
 export type { PullHook, PullRequest } from './pull.js'
 export type {
   ProviderRefresh,
@@ -46,6 +48,8 @@ export type {
   ReorderResult,
   RowOperationOptions,
   RowToggleOptions,
+  RowTransitionOptions,
+  RowTransitionResult,
 } from './rows.js'
 export type { PullReason } from './runtime.js'
 export type {

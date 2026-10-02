@@ -1,7 +1,7 @@
 import type { Attribution } from './attribution.js'
 import type { PoolOperation } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
-import { runOperation, withTransaction } from './mutate.js'
+import { runOperation, type Transaction, withTransaction } from './mutate.js'
 import type { RowToggleOptions } from './rows.js'
 import {
   readRow,
@@ -293,76 +293,156 @@ export async function updateProviderStateRow(
               `the provider state for ${id} was read for a credential or account the row no longer holds`,
               true,
             )
-          const account = tx.stateAccount(id)
-          const rawStamp = account?.[CREDENTIAL_STAMP_KEY]
-          const stamp = parseStamp(rawStamp)
-          if (
-            !isRecord(rawStamp) ||
-            !stamp?.binding ||
-            stamp.digest !== credentialDigest(row.credential) ||
-            stamp.credentialEpoch !== epoch ||
-            stamp.binding.identity !== row.identity
+          const plan = await planProviderStateIn(
+            tx,
+            codec,
+            operation,
+            row,
+            mutator,
           )
-            throw refusal(
-              operation,
-              id,
-              'unbound-credential',
-              `row ${id}'s credential carries no stamp of this store to bind a provider state to (stamp ${row.stamp}); rotate or replace it first`,
-            )
-          const current =
-            row.providerState === undefined
-              ? undefined
-              : structuredClone(row.providerState)
-          const returned = await runInsideHook(operation, () =>
-            mutator(current, row),
-          )
-          const next =
-            returned === undefined
-              ? undefined
-              : acceptProviderState(
-                  codec,
-                  operation,
-                  id,
-                  returned,
-                  'the provider state the mutator returned',
-                )
-          const held =
-            account !== undefined && Object.hasOwn(account, PROVIDER_STATE_KEY)
-          if (
-            next === undefined
-              ? !held
-              : row.providerState !== undefined &&
-                JSON.stringify(row.providerState) === JSON.stringify(next)
-          )
+          if (plan.kind !== 'changed')
             return {
               id,
               outcome: 'unchanged',
-              ...(next !== undefined ? { providerState: next } : {}),
+              ...(plan.kind === 'unchanged' && plan.value !== undefined
+                ? { providerState: plan.value }
+                : {}),
             }
-          const nextAccount: Record<string, unknown> = { ...account }
-          if (next === undefined) {
-            delete nextAccount[PROVIDER_STATE_KEY]
-            const nextStamp: Record<string, unknown> = { ...rawStamp }
-            delete nextStamp.providerState
-            nextAccount[CREDENTIAL_STAMP_KEY] = nextStamp
-          } else {
-            nextAccount[PROVIDER_STATE_KEY] = next
-            const digest = providerStateDigest(codec, next)
-            // A change confined to the part the codec does not bind to the
-            // credential leaves the stamp exactly as it was.
-            if (stamp.providerState !== digest)
-              nextAccount[CREDENTIAL_STAMP_KEY] = {
-                ...rawStamp,
-                providerState: digest,
-              }
-          }
-          tx.setStateAccount(id, nextAccount)
+          tx.setStateAccount(id, plan.account)
           await tx.commitState()
-          return next === undefined
+          return plan.value === undefined
             ? { id, outcome: 'cleared' }
-            : { id, outcome: 'updated', providerState: next }
+            : { id, outcome: 'updated', providerState: plan.value }
         },
       )
     },
   )
+}
+
+/**
+ * Returned by the provider-state mutator of an attributed `disable` or
+ * `enable` to decline the whole transition: nothing is written, neither the
+ * provider state nor the row's enabled flag, and the call resolves with
+ * `declined: true`. A mutator declines when the state it is shown is newer
+ * than what its caller saw, such as an eligibility recorded after the
+ * request whose refusal is being acted on. It is a value of its own because
+ * `undefined` already means "clear the provider state". `Symbol.for` keeps it
+ * equal across two copies of this module loaded in one process.
+ */
+export const DECLINE_TRANSITION: unique symbol = Symbol.for(
+  '@cortexkit/common-auth/store/decline-transition',
+)
+
+/**
+ * The provider-state mutator of an attributed `disable` or `enable`: as
+ * `ProviderStateMutator`, and it may also return `DECLINE_TRANSITION`.
+ */
+export type RowTransitionMutator = (
+  current: unknown | undefined,
+  row: PoolRow,
+) =>
+  | unknown
+  | typeof DECLINE_TRANSITION
+  | Promise<unknown | typeof DECLINE_TRANSITION>
+
+/**
+ * What a provider-state mutator asks of a row, worked out under the locks
+ * before anything is written. `changed` carries the row's whole next
+ * state-file account entry (the value, and the stamp rebound to it when its
+ * credential-bound part moved); `value` is the next value, absent when it is
+ * cleared.
+ */
+export type ProviderStatePlan =
+  | { kind: 'declined' }
+  | { kind: 'unchanged'; value?: unknown }
+  | { kind: 'changed'; value?: unknown; account: Record<string, unknown> }
+
+/**
+ * Runs a provider-state mutator for a row loaded under every lock and
+ * already checked by the caller (present, valid, inside its attribution
+ * fence), and plans the write. Refuses (`no-credential`) a row holding no
+ * credential, and (`unbound-credential`) one whose credential carries no
+ * stamp of this store at the row's epoch and identity: no stamp could bind
+ * the value, so no reader would ever show it. `DECLINE_TRANSITION` is
+ * honoured only when `declinable` is set; elsewhere it is not JSON and is
+ * refused as such.
+ */
+export async function planProviderStateIn(
+  tx: Transaction,
+  codec: ProviderStateCodec,
+  operation: PoolOperation,
+  row: PoolRow,
+  mutator: ProviderStateMutator | RowTransitionMutator,
+  declinable = false,
+): Promise<ProviderStatePlan> {
+  const id = row.id
+  const credential = row.credential
+  if (!credential)
+    throw refusal(
+      operation,
+      id,
+      'no-credential',
+      `row ${id} holds no credential`,
+    )
+  const epoch = row.credentialEpoch ?? 1
+  const account = tx.stateAccount(id)
+  const rawStamp = account?.[CREDENTIAL_STAMP_KEY]
+  const stamp = parseStamp(rawStamp)
+  if (
+    !isRecord(rawStamp) ||
+    !stamp?.binding ||
+    stamp.digest !== credentialDigest(credential) ||
+    stamp.credentialEpoch !== epoch ||
+    stamp.binding.identity !== row.identity
+  )
+    throw refusal(
+      operation,
+      id,
+      'unbound-credential',
+      `row ${id}'s credential carries no stamp of this store to bind a provider state to (stamp ${row.stamp}); rotate or replace it first`,
+    )
+  const current =
+    row.providerState === undefined
+      ? undefined
+      : structuredClone(row.providerState)
+  const returned = await runInsideHook(operation, () => mutator(current, row))
+  if (declinable && returned === DECLINE_TRANSITION) return { kind: 'declined' }
+  const next =
+    returned === undefined
+      ? undefined
+      : acceptProviderState(
+          codec,
+          operation,
+          id,
+          returned,
+          'the provider state the mutator returned',
+        )
+  const held =
+    account !== undefined && Object.hasOwn(account, PROVIDER_STATE_KEY)
+  if (
+    next === undefined
+      ? !held
+      : row.providerState !== undefined &&
+        JSON.stringify(row.providerState) === JSON.stringify(next)
+  )
+    return { kind: 'unchanged', ...(next !== undefined ? { value: next } : {}) }
+  const nextAccount: Record<string, unknown> = { ...account }
+  if (next === undefined) {
+    delete nextAccount[PROVIDER_STATE_KEY]
+    const nextStamp: Record<string, unknown> = { ...rawStamp }
+    delete nextStamp.providerState
+    nextAccount[CREDENTIAL_STAMP_KEY] = nextStamp
+  } else {
+    nextAccount[PROVIDER_STATE_KEY] = next
+    const digest = providerStateDigest(codec, next)
+    // A change confined to the part the codec does not bind to the
+    // credential leaves the stamp exactly as it was.
+    if (stamp.providerState !== digest)
+      nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest }
+  }
+  return {
+    kind: 'changed',
+    ...(next !== undefined ? { value: next } : {}),
+    account: nextAccount,
+  }
 }
