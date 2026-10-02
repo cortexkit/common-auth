@@ -50,7 +50,7 @@ async function editConfig(edit: (config: ParsedJson) => void): Promise<void> {
   await s.writeConfig(config)
 }
 
-/** The roster row with this id, inside a parsed config. */
+/** The entry of the config's `accounts` array (the roster) with this id. */
 function rosterOf(config: ParsedJson, id = 'a'): ParsedJson {
   return config.accounts.find((raw: ParsedJson) => raw.id === id)
 }
@@ -271,8 +271,9 @@ describe('stamps written by 0.4.3 or earlier', () => {
       .open()
       .add({ id: 'k', credential: apiKey('key-old', { baseURL: OLD_URL }) })
     // The state half of a 0.4.3 replace, with the config half never written:
-    // the new credential beside a stamp holding the lineage digest and the
-    // binding, ahead of the config's epoch, with no dispatch digest.
+    // the new credential beside a stamp of the shape 0.4.3 wrote (epoch 2,
+    // while the config is still at epoch 1; `digest` and `binding`; no
+    // `dispatch` and no `replace` mark).
     const fresh = oauth('r-new')
     await editState((accounts) => {
       accounts.a = {

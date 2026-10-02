@@ -369,8 +369,10 @@ export function parseStamp(raw: unknown): CredentialStamp | undefined {
  * before the config, so this store never leaves a config identity beside a
  * stamp that names none or another: that is another writer's doing and is
  * `mismatched`. The reverse, a stamp naming an identity beside a config that
- * has none, is such a write stopped between its two writes; `loadRows` shows
- * it completed (see `torn.ts`), and only the raw row is `mismatched`.
+ * has none, is such a write stopped between its two writes: the row as
+ * `buildRawRows` reads it from the files is `mismatched`, but `loadRows`,
+ * which every reader goes through, shows it with the identity recorded (see
+ * `torn.ts`), where it is `bound`.
  */
 function bindingAgrees(
   binding: CredentialBinding,

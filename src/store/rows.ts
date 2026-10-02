@@ -304,9 +304,10 @@ export async function rotateIn(
  * Restamps a bound row's credential, unchanged, so its stamp names the
  * identity the caller is about to record in the config (same epoch, same
  * credential, one state write). Written before the config for the reason
- * `bindingInTx` gives. A row whose stamp is not bound gets no new stamp: that
- * would prove a credential this store never proved, so its identity is
- * recorded in the config only, as before 0.4.4, and the row stays unbound.
+ * `bindingInTx` gives. A row whose stamp is not bound (possible only without
+ * `requireCredentialStamps`) gets no new stamp, because a fresh stamp would
+ * vouch for a credential this store never proved: its identity is recorded in
+ * the config only, and the row keeps the stamp status it had.
  */
 async function stampIdentityIn(
   tx: Transaction,

@@ -186,7 +186,8 @@ export function completeTornRows(
  * With `requireCredentialStamps`, a row whose stamp is not `bound` is marked
  * `unbound` and is never a candidate either. A torn row is shown with the
  * stamp of the interrupted write, which binds the completed row, so it is not
- * unbound: it stays out of routing only until its completion is written.
+ * unbound; once a store write puts its completion on disk it is no longer
+ * torn and is a candidate again like any other row.
  */
 export function loadRows(
   config: Record<string, unknown>,
