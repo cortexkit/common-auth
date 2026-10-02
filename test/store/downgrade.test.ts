@@ -150,6 +150,8 @@ describe('downgrade through the vendored writers', () => {
     await store.disable('k', 'manual')
     const after = await s.config()
     expect(after[POOL_KEY].rows.x).toBeUndefined()
+    // The dropped entry's epoch is recorded, so a later add of x starts past it.
+    expect(after[POOL_KEY].retiredEpochs).toEqual({ x: 1 })
     expect(after[POOL_KEY].plantedKey).toEqual({ keep: 'me' })
     expect(after.main).toEqual({ type: 'opencode', provider: 'openai' })
     expect(after.claustrum.rowHistory).toEqual(['x'])
@@ -171,7 +173,7 @@ describe('downgrade through the vendored writers', () => {
     expect(final.rows.map((row) => [row.id, row.credentialEpoch])).toEqual([
       ['a', 1],
       ['k', 1],
-      ['x', 1],
+      ['x', 2],
     ])
   })
 })

@@ -27,6 +27,8 @@ import {
   type PoolRow,
   type ProviderStateCodec,
   type QuotaCodec,
+  retireEpochsIn,
+  rosterOf,
   rosterRowIn,
   type StoredCredential,
   setEntryIn,
@@ -276,13 +278,24 @@ export class Transaction {
    * Writes the config: legacy `version: 1` and the legacy roster beside
    * `commonAuthPool`, every other top-level key and every unrecognised pool
    * key untouched. Entries for ids no longer in the roster are dropped here,
-   * and remembered so the id is not reused in this process.
+   * and remembered so the id is not reused in this process. Every id the
+   * write drops (a roster row the files held when the transaction read them,
+   * or an entry left without one) has its epoch recorded in the config (see
+   * `retireEpochsIn`), which is what keeps a later `add` of the id, from any
+   * process, past every epoch an attribution could name.
    */
   async commitConfig(options: { counted?: boolean } = {}): Promise<void> {
     const roster = this.roster()
     const rosterIds = new Set<string>()
     for (const raw of roster)
       if (isRecord(raw) && typeof raw.id === 'string') rosterIds.add(raw.id)
+    const dropped = new Set<string>()
+    for (const raw of rosterOf(this.snapshot.config))
+      if (isRecord(raw) && typeof raw.id === 'string' && !rosterIds.has(raw.id))
+        dropped.add(raw.id)
+    for (const id of Object.keys(this.entries()))
+      if (!rosterIds.has(id)) dropped.add(id)
+    retireEpochsIn(this.config, dropped)
     const entries = this.entries()
     const kept: Record<string, unknown> = {}
     for (const [id, entry] of Object.entries(entries)) {

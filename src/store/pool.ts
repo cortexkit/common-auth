@@ -140,6 +140,13 @@ export interface PoolStore {
   initialize(input?: {
     dropKeys?: readonly string[]
   }): Promise<{ status: InitializeOutcome }>
+  /**
+   * Adds a row, or completes or rotates the row already holding the id or
+   * the secret. A new row starts at credential epoch 1; since 0.8.0 one
+   * whose id the pool held before starts one past the highest epoch that id
+   * held (see `Attribution`), and an id that held `Number.MAX_SAFE_INTEGER`
+   * refuses (`id-removed`) before writing.
+   */
   add(input: AddInput, options?: RowOperationOptions): Promise<AddResult>
   /**
    * Gives a row a new credential and a new credential epoch. Since 0.6.0 the
