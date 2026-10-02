@@ -10,6 +10,7 @@ import {
 import {
   deferred,
   oauth,
+  type ParsedJson,
   rejectionOf,
   type Scenario,
   scenario,
@@ -265,6 +266,51 @@ test('an attributed disable stopped at any write point shows the row either befo
     const after = await rowOf(reader, 'a')
     expect(after.torn).toBeUndefined()
     expect(after.candidate).toBe(true)
+  }
+})
+
+test('a disable stopped between its writes is shown only while its stamp binds the row', async () => {
+  const edits: Record<string, (config: ParsedJson, state: ParsedJson) => void> =
+    {
+      // An older version's replace moved the config to another epoch.
+      'epoch moved': (config) => {
+        config.commonAuthPool.rows.a.credentialEpoch = 2
+      },
+      'identity changed': (config) => {
+        config.accounts[0].accountId = 'acct-other'
+      },
+      // A transition this store would not write says nothing.
+      'no reason': (_config, state) => {
+        delete state.accounts.a.commonAuthPool.transition.reason
+      },
+    }
+  for (const [name, edit] of Object.entries(edits)) {
+    s.cleanup()
+    s = await scenario()
+    await addA(open())
+    await rejectionOf(
+      ineligible(
+        open({
+          onStep: (step) => {
+            if (step === 'after-state-write') throw new Error('stopped')
+          },
+        }),
+      ),
+    )
+    const config = await s.config()
+    const state = await s.state()
+    edit(config, state)
+    await s.writeConfig(config)
+    await s.writeState(state)
+    const a = await rowOf(open(), 'a')
+    expect(`${name}: ${a.enabled} ${a.torn}`).toBe(`${name}: true undefined`)
+    // The provider state written with the transition is hidden with it,
+    // except where only the transition itself is malformed.
+    expect(`${name}: ${JSON.stringify(a.providerState ?? null)}`).toBe(
+      name === 'no reason'
+        ? `${name}: {"project":"P1","ineligibleAt":100}`
+        : `${name}: null`,
+    )
   }
 })
 
