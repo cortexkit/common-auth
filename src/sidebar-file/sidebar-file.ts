@@ -81,6 +81,16 @@ export interface SidebarFileOptions<T> {
    * that the lock was lost. Without it such a write is only reported.
    */
   repair?: SidebarRepair<T>
+  /**
+   * Name of the lock writers coordinate on, as `<path>.<lockName>.lock`.
+   * Defaults to `'sidebar-write'`. It names both the lock a write takes and
+   * the lock whose ownership is checked before the rename, so a takeover of
+   * this name refuses the write. A plugin keeping an existing writer's lock
+   * identity passes that writer's name; mutual exclusion with that writer is
+   * promised only while it holds a live lease of the same name in the same
+   * lock-file format, not for its stale-lock reclamation or renewal.
+   */
+  lockName?: string
 }
 
 export interface SidebarFile<T> {
@@ -135,6 +145,7 @@ export function createSidebarFile<T>(
   }
   const lockOptions = {
     ...WRITER_LOCK_CONSTANTS.sidebar,
+    name: options.lockName ?? WRITER_LOCK_CONSTANTS.sidebar.name,
     timeoutMs: options.timeoutMs ?? WRITER_LOCK_CONSTANTS.sidebar.timeoutMs,
   }
   /**

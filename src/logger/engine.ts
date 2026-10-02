@@ -19,7 +19,13 @@ const ORDER: Record<Level, number> = {
 const MAX_BYTES = 5 * 1024 * 1024
 const ROTATE_KEEP = 3
 
-export interface InitLoggerOptions extends RedactionOptions {
+interface LoggerOptionsBase extends RedactionOptions {
+  /** Level floor applied when no `setLogLevel` call has overridden it. */
+  level?: Level | (() => Level | undefined)
+}
+
+interface FileLoggerOptions {
+  /** Receives every emitted record, scrubbed, alongside the file. */
   captureSink?: CaptureSink
   /**
    * Path of the file lines are appended to, or a function returning it.
@@ -30,9 +36,21 @@ export interface InitLoggerOptions extends RedactionOptions {
    * captured once at init would keep writing to the old one.
    */
   file: string | (() => string)
-  /** Level floor applied when no `setLogLevel` call has overridden it. */
-  level?: Level | (() => Level | undefined)
 }
+
+interface SinkOnlyLoggerOptions {
+  /**
+   * Receives every emitted record, scrubbed. With no `file`, this sink is
+   * the logger's only destination: nothing is written to disk or printed,
+   * for a host that forwards records to its own log.
+   */
+  captureSink: CaptureSink
+  file?: undefined
+}
+
+/** A logger writes to a file, to a capture sink, or to both. */
+export type InitLoggerOptions = LoggerOptionsBase &
+  (FileLoggerOptions | SinkOnlyLoggerOptions)
 
 export interface ChannelLogger {
   error(message: string, data?: unknown): void
@@ -192,7 +210,8 @@ function createEngine(options?: InitLoggerOptions): Engine {
     message: string,
     data?: unknown,
   ) {
-    if (logFileSource === undefined) return
+    // Unconfigured (neither a file nor a sink) stays a silent no-op.
+    if (logFileSource === undefined && captureSink === undefined) return
     try {
       if (ORDER[level] > ORDER[configuredLevel()]) return
       const scrubbedMessage = redactor.redactStrings(message) as string
@@ -215,6 +234,8 @@ function createEngine(options?: InitLoggerOptions): Engine {
           data: scrubbedData,
         })
       } catch {}
+      // A sink-only logger has no file to buffer lines for.
+      if (logFileSource === undefined) return
       buffer.push(line)
       if (buffer.length >= 50) flushLogs()
       else schedule()

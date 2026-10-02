@@ -35,6 +35,24 @@ export interface NotificationScope {
    * session, which plugins that drain from one process-wide TUI rely on.
    */
   requireSession?: boolean
+  /**
+   * What a drain with no session id returns, and what it acknowledges.
+   *
+   * - `'all'` (default): every queued notification, broadcasts and every
+   *   session's targeted ones; a sessionless acknowledgement removes
+   *   nothing. A plugin that drains from one process-wide TUI relies on this.
+   * - `'broadcast-only'`: broadcasts only (notifications pushed without a
+   *   session), never a session's targeted ones, for a TUI that polls before
+   *   it knows its session. A sessionless acknowledgement removes the
+   *   acknowledged broadcasts and leaves every targeted notification queued.
+   *   It also answers `isTuiConnected(scope, undefined)`: true while any
+   *   drain on the queue, with or without a session, happened within the
+   *   connection window.
+   *
+   * The option governs each call made with this scope; it does not split the
+   * queue, so a push through a scope without it lands in the same queue.
+   */
+  sessionlessDrain?: 'all' | 'broadcast-only'
 }
 
 /** A strict notification scope was used without a session id. */
@@ -55,6 +73,8 @@ type Queue = {
   queue: RpcNotification[]
   nextId: number
   lastDrainAtBySession: Map<string, number>
+  /** Last drain by anyone, with or without a session id. */
+  lastDrainAtAny: number
 }
 const queues = new Map<string, Queue>()
 function state(scope: NotificationScope): Queue {
@@ -66,7 +86,12 @@ function state(scope: NotificationScope): Queue {
   ])
   let value = queues.get(key)
   if (!value) {
-    value = { queue: [], nextId: 1, lastDrainAtBySession: new Map() }
+    value = {
+      queue: [],
+      nextId: 1,
+      lastDrainAtBySession: new Map(),
+      lastDrainAtAny: 0,
+    }
     queues.set(key, value)
   }
   return value
@@ -105,27 +130,45 @@ export function drainNotifications(
     throw new RpcSessionRequiredError('drain')
   const value = state(scope)
   const now = Date.now()
+  value.lastDrainAtAny = now
   if (sessionId !== undefined) value.lastDrainAtBySession.set(sessionId, now)
+  const broadcastOnly = scope.sessionlessDrain === 'broadcast-only'
   const matches = (n: RpcNotification) =>
-    sessionId === undefined ||
-    n.sessionId === undefined ||
-    n.sessionId === sessionId
+    sessionId === undefined
+      ? !broadcastOnly || n.sessionId === undefined
+      : n.sessionId === undefined || n.sessionId === sessionId
   if (lastReceivedId > 0) {
     value.queue = value.queue.filter((n) => {
       if (n.id > lastReceivedId) return true
-      if (sessionId === undefined) return true
+      // A sessionless ack in broadcast-only mode consumes the broadcasts it
+      // was shown; in the default mode it consumes nothing, since it was
+      // shown targeted notifications other sessions still have to receive.
+      if (sessionId === undefined)
+        return !broadcastOnly || n.sessionId !== undefined
       return n.sessionId !== sessionId
     })
   }
   return value.queue.filter((n) => n.id > lastReceivedId && matches(n))
 }
 
+/**
+ * True when a TUI drained within the last 3000 ms. With a session id, that
+ * session drained. Without one, a broadcast-only scope answers whether any
+ * drain happened; a default scope answers false, since it only tracks
+ * sessions.
+ */
 export function isTuiConnected(
   scope: NotificationScope,
-  sessionId: string,
+  sessionId: string | undefined,
 ): boolean {
   const now = Date.now()
-  const at = state(scope).lastDrainAtBySession.get(sessionId) ?? 0
+  const value = state(scope)
+  const at =
+    sessionId !== undefined
+      ? (value.lastDrainAtBySession.get(sessionId) ?? 0)
+      : scope.sessionlessDrain === 'broadcast-only'
+        ? value.lastDrainAtAny
+        : 0
   return at > 0 && now - at < TUI_CONNECTED_WINDOW_MS
 }
 
@@ -134,4 +177,5 @@ export function resetNotificationsForTest(scope: NotificationScope): void {
   value.queue = []
   value.nextId = 1
   value.lastDrainAtBySession.clear()
+  value.lastDrainAtAny = 0
 }
