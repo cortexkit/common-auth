@@ -158,6 +158,14 @@ const CRAFTS: Craft[] = [
       }),
   },
   {
+    title: 'an expiry-only change',
+    status: 'mismatched',
+    edit: () =>
+      editState((accounts) => {
+        accounts.a.expires = 1
+      }),
+  },
+  {
     title: 'a stamp without a dispatch digest (as 0.4.3 wrote it)',
     status: 'legacy',
     edit: () =>

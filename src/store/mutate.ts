@@ -224,8 +224,9 @@ export class Transaction {
   }
 
   /**
-   * Writes the config of every row torn between the writes of a replace as
-   * that replace would have left it (see `completeTornRows`), in one config
+   * Writes the config of every row torn between the writes of a replace, or
+   * of a write giving it its first identity, as that write would have left it
+   * (see `completeTornRows`), in one config
    * write ahead of the operation's own. The write is counted apart from the
    * operation's: it is setup, like a pull giving a row its entry, so a later
    * refusal still reports `before-first-write`.
@@ -235,6 +236,7 @@ export class Transaction {
       this.config,
       this.state,
       this.ctx.codec,
+      { requireCredentialStamps: this.ctx.requireCredentialStamps === true },
     )
     if (torn.length === 0) return
     this.config = config

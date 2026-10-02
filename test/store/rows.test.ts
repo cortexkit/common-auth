@@ -265,7 +265,15 @@ describe('failure values carry the commit phase', () => {
     })
     expect(hooked).toEqual([error])
     expect((await s.state()).accounts.a.refresh).toBe('r-rotated')
-    expect((await rowsOf())[0]?.identity).toBeUndefined()
+    // The rotated credential's stamp names the identity being learnt, so the
+    // row is shown with it, completed forward, and is no candidate until the
+    // config write lands; the config itself does not record it yet.
+    expect((await rowsOf())[0]).toMatchObject({
+      identity: 'acct-1',
+      torn: true,
+      candidate: false,
+    })
+    expect((await s.config()).accounts[0].accountId).toBeUndefined()
   })
 
   it('ownership lost before the config write of replace reports after-first-write with the committed credential and leaves the row torn', async () => {
@@ -309,8 +317,10 @@ describe('failure values carry the commit phase', () => {
     const disableError = await rejectionOf(
       expiringAt('before-config-write').disable('a', 'manual', { onFailure }),
     )
+    // recordIdentity on a bound row writes the stamp naming the identity
+    // before the config, so its first write is the state write.
     const identityError = await rejectionOf(
-      expiringAt('before-config-write').recordIdentity(
+      expiringAt('before-state-write').recordIdentity(
         'a',
         'acct',
         { credentialEpoch: 1 },

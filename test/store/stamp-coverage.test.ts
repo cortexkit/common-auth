@@ -72,7 +72,7 @@ const MISMATCHED = {
   strictCandidate: false,
   strictUnbound: true,
   defaultCandidate: true,
-}
+} as const
 
 function provider(calls: string[], identity?: string) {
   return async (credential: { refresh: string }) => {
@@ -263,7 +263,7 @@ describe('stamps written by 0.4.3 or earlier', () => {
     })
   })
 
-  it('an interrupted replace written by 0.4.3 is still completed forward by a default-mode load', async () => {
+  it('an interrupted replace written by 0.4.3 is still completed forward by a default-mode load, and never by a strict store', async () => {
     await s
       .open()
       .add({ id: 'a', credential: oauth('r-old'), identity: 'acct-old' })
@@ -294,12 +294,67 @@ describe('stamps written by 0.4.3 or earlier', () => {
         },
       }
     })
+    const configBefore = (await s.bytes()).config
+
+    // A strict store does not act on a stamp that proves nothing about the
+    // token sent: the rows load as on disk, legacy and unbound, and its
+    // writes and pulls leave the config's half of the replace unwritten.
+    let strictPulls = 0
+    const tight = strict({
+      pull: async () => {
+        strictPulls++
+        return 'reading'
+      },
+    })
+    await tight.load()
+    await tight.pullsSettled()
+    for (const id of ['a', 'k']) {
+      const row = await rowOf(tight, id)
+      expect({
+        id,
+        stamp: row.stamp,
+        unbound: row.unbound,
+        candidate: row.candidate,
+        torn: row.torn,
+        epoch: row.credentialEpoch,
+      }).toEqual({
+        id,
+        stamp: 'legacy',
+        unbound: true,
+        candidate: false,
+        torn: undefined,
+        epoch: 1,
+      })
+    }
+    expect((await rowOf(tight)).identity).toBe('acct-old')
+    await tight.disable('k', 'probe')
+    await tight.enable('k')
+    const afterStrict = await s.config()
+    expect({
+      pulls: strictPulls,
+      epochs: [
+        afterStrict.commonAuthPool.rows.a.credentialEpoch,
+        afterStrict.commonAuthPool.rows.k.credentialEpoch,
+      ],
+      identity: rosterOf(afterStrict).accountId,
+      baseURL: rosterOf(afterStrict, 'k').baseURL,
+    }).toEqual({
+      pulls: 0,
+      epochs: [1, 1],
+      identity: 'acct-old',
+      baseURL: OLD_URL,
+    })
+    // Disabling and enabling `k` rewrote the config with the same content.
+    await s.writeConfig(JSON.parse(configBefore as string))
+
+    // The same files under a default store: completed forward as before.
     const shown = await rowOf(s.open())
     expect(shown).toMatchObject({
       torn: true,
       candidate: false,
       credentialEpoch: 2,
       identity: 'acct-new',
+      stamp: 'legacy',
     })
     const reader = s.open({ pull: async () => 'reading' })
     await reader.load()
@@ -375,7 +430,7 @@ describe('stamps written by 0.4.3 or earlier', () => {
   }, 30_000)
 })
 
-describe('an identity learnt after the stamp', () => {
+describe('an identity learnt after the credential was stamped', () => {
   function crashChild(task: Record<string, unknown>) {
     return runChild({
       configPath: s.configPath,
@@ -384,46 +439,103 @@ describe('an identity learnt after the stamp', () => {
     })
   }
 
-  it('recordIdentity writes only the config; after a crash right after it the row is bound, and the next stamp write binds the identity', async () => {
-    await strict().add({ id: 'a', credential: oauth('r-a') })
-    const stateBefore = (await s.bytes()).state
-    const child = crashChild({
-      op: 'recordIdentity',
-      id: 'a',
-      identity: 'acct-a',
-      credentialEpoch: 1,
-      exitAt: 'after-config-write',
-    })
-    expect(await child.exited).toBe(CRASH_EXIT_CODE)
-    expect((await s.bytes()).state).toBe(stateBefore)
-    expect(child.output()).not.toContain('step:before-state-write')
-    expect(await rowOf(strict())).toMatchObject({
-      identity: 'acct-a',
-      stamp: 'bound',
-      candidate: true,
-    })
-
-    // The boundary: until the next stamp write, the stamp names no identity,
-    // so an identity another writer records in its place is not detected.
-    await editConfig((config) => {
-      rosterOf(config).accountId = 'acct-foreign'
-    })
-    expect((await rowOf(strict())).stamp).toBe('bound')
-    await editConfig((config) => {
-      rosterOf(config).accountId = 'acct-a'
-    })
-
-    await strict().refresh('a', provider([]))
+  it('first identity learning must bind the learned identity against later config drift', async () => {
+    const store = strict()
+    await store.add({ id: 'a', credential: oauth('r-a') })
+    await store.recordIdentity('a', 'acct-a', { credentialEpoch: 1 })
     expect((await s.state()).accounts.a.commonAuthPool.binding).toEqual({
       identity: 'acct-a',
     })
     await editConfig((config) => {
+      rosterOf(config).accountId = 'acct-b'
+    })
+    const before = await s.bytes()
+    const error = await rejectionOf(
+      store.recordQuota(
+        'a',
+        { credentialEpoch: 1, identity: 'acct-b' },
+        'filed-as-b',
+      ),
+    )
+    expect(error.kind).toBe('unbound-credential')
+    expect(await s.bytes()).toEqual(before)
+    expect(await admission()).toEqual(MISMATCHED)
+  })
+
+  it('a config identity beside a stamp that names none is mismatched', async () => {
+    await strict().add({ id: 'a', credential: oauth('r-a') })
+    await editConfig((config) => {
       rosterOf(config).accountId = 'acct-foreign'
     })
     expect(await admission()).toEqual(MISMATCHED)
-  }, 30_000)
+  })
 
-  it('a refresh that learns the identity and crashes before its config write leaves the row bound with no identity', async () => {
+  it('recordIdentity stamps the identity before the config, and a crash at each of its write points is whole or completed forward', async () => {
+    const STEPS = [
+      'before-state-write',
+      'after-state-write',
+      'before-config-write',
+      'after-config-write',
+    ] as const
+    for (const step of STEPS) {
+      s.cleanup()
+      s = await scenario()
+      await strict().add({ id: 'a', credential: oauth('r-a') })
+      const child = crashChild({
+        op: 'recordIdentity',
+        id: 'a',
+        identity: 'acct-a',
+        credentialEpoch: 1,
+        exitAt: step,
+      })
+      expect(await child.exited).toBe(CRASH_EXIT_CODE)
+      const stamped = step !== 'before-state-write'
+      const recorded = step === 'after-config-write'
+      const row = await rowOf(strict())
+      expect({
+        step,
+        binding: (await s.state()).accounts.a.commonAuthPool.binding,
+        configIdentity: rosterOf(await s.config()).accountId,
+        identity: row.identity,
+        stamp: row.stamp,
+        torn: row.torn,
+        candidate: row.candidate,
+      }).toEqual({
+        step,
+        binding: stamped ? { identity: 'acct-a' } : {},
+        configIdentity: recorded ? 'acct-a' : undefined,
+        identity: stamped ? 'acct-a' : undefined,
+        stamp: 'bound',
+        torn: stamped && !recorded ? true : undefined,
+        candidate: !(stamped && !recorded),
+      })
+
+      // The next store write completes the config; the identity is then
+      // bound, and a config drift to another account is mismatched.
+      const store = strict()
+      await store.disable('a', 'probe')
+      await store.enable('a')
+      const after = await rowOf(store)
+      expect({
+        step,
+        configIdentity: rosterOf(await s.config()).accountId,
+        torn: after.torn,
+        candidate: after.candidate,
+      }).toEqual({
+        step,
+        configIdentity: stamped ? 'acct-a' : undefined,
+        torn: undefined,
+        candidate: true,
+      })
+      if (!stamped) continue
+      await editConfig((config) => {
+        rosterOf(config).accountId = 'acct-b'
+      })
+      expect({ step, ...(await admission()) }).toEqual({ step, ...MISMATCHED })
+    }
+  }, 60_000)
+
+  it('a refresh that learns the identity and crashes before its config write is shown with the identity and completed by the next write', async () => {
     await strict().add({ id: 'a', credential: oauth('r-a') })
     const child = crashChild({
       op: 'refresh',
@@ -437,21 +549,29 @@ describe('an identity learnt after the stamp', () => {
     expect({
       refresh: row.credential?.type === 'oauth' && row.credential.refresh,
       identity: row.identity,
+      configIdentity: rosterOf(await s.config()).accountId,
       stamp: row.stamp,
+      torn: row.torn,
       candidate: row.candidate,
       binding: (await s.state()).accounts.a.commonAuthPool.binding,
     }).toEqual({
       refresh: 'r-a2',
-      identity: undefined,
+      identity: 'acct-a',
+      configIdentity: undefined,
       stamp: 'bound',
-      candidate: true,
-      binding: {},
+      torn: true,
+      candidate: false,
+      binding: { identity: 'acct-a' },
     })
-    await strict().recordIdentity('a', 'acct-a', { credentialEpoch: 1 })
+    const reader = strict({ pull: async () => 'reading' })
+    await reader.load()
+    await reader.pullsSettled()
+    expect(rosterOf(await s.config()).accountId).toBe('acct-a')
     expect(await rowOf(strict())).toMatchObject({
       identity: 'acct-a',
       stamp: 'bound',
       candidate: true,
+      quota: { readings: ['reading'] },
     })
   }, 30_000)
 })
