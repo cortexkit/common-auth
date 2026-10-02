@@ -3,7 +3,7 @@ import { PoolOperationError } from './errors.js'
 import type { PoolLogger } from './hooks.js'
 import { type Progress, toFailure, withTransaction } from './mutate.js'
 import { LockStack } from './refresh-lock.js'
-import type { PullReason, StoreRuntime } from './runtime.js'
+import { type PullReason, requireBound, type StoreRuntime } from './runtime.js'
 import type { StoredCredential } from './schema.js'
 
 /** What a pull is issued with: the credential and its attribution tuple. */
@@ -67,6 +67,16 @@ export class PullScheduler {
         { operation: 'pull', rowId: id },
         async (tx): Promise<PullRequest | undefined> => {
           const row = tx.row(id)
+          // A row that would pull but for its unbound credential refuses, so
+          // the failure hook hears of it instead of the pull vanishing.
+          if (
+            row?.unbound &&
+            row.enabled &&
+            row.type === 'oauth' &&
+            row.credential &&
+            !row.invalid
+          )
+            requireBound('pull', row)
           // Disabled, API-key and credential-less rows never pull.
           if (!row?.candidate || row.type !== 'oauth') return undefined
           if (!row.hasEntry) {

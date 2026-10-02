@@ -62,6 +62,23 @@ export function unknownRow(
   })
 }
 
+/**
+ * Refuses a row the store was told to distrust: opened with
+ * `requireCredentialStamps`, a row whose credential stamp is not bound loads
+ * `unbound` (see `PoolRow.unbound`). Called on every locked read of the row
+ * an operation acts on, before it calls a provider or writes, so a credential
+ * another writer swapped in while the operation waited is refused too.
+ */
+export function requireBound(operation: PoolOperation, row: PoolRow): void {
+  if (row.unbound)
+    throw refusal(
+      operation,
+      row.id,
+      'unbound-credential',
+      `row ${row.id}'s credential is not the one this store stamped for it (stamp ${row.stamp}); replace it with fresh material`,
+    )
+}
+
 export function refusal(
   operation: PoolOperation,
   id: string,

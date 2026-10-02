@@ -59,6 +59,12 @@ export interface StoreContext {
   hold?: (point: HoldPoint, rowId: string) => void | Promise<void>
   /** Ids whose per-row entry a library write dropped in this process. */
   removedIds: Set<string>
+  /**
+   * When true, rows whose credential stamp is not bound load `unbound` and
+   * the operations that use a credential refuse them (see
+   * `OpenPoolStoreOptions.requireCredentialStamps`).
+   */
+  requireCredentialStamps?: boolean
 }
 
 export interface Snapshot {
@@ -106,7 +112,9 @@ export async function readPool(ctx: StoreContext): Promise<ReadResult> {
     stateExists: state.exists,
     config: config.config,
     state: state.state,
-    rows: loadRows(config.config, state.state, ctx.codec),
+    rows: loadRows(config.config, state.state, ctx.codec, {
+      requireCredentialStamps: ctx.requireCredentialStamps === true,
+    }),
   }
 }
 
@@ -170,7 +178,9 @@ export class Transaction {
    * `PoolRow.torn`).
    */
   rows(): PoolRow[] {
-    return loadRows(this.config, this.state, this.ctx.codec)
+    return loadRows(this.config, this.state, this.ctx.codec, {
+      requireCredentialStamps: this.ctx.requireCredentialStamps === true,
+    })
   }
 
   row(id: string): PoolRow | undefined {

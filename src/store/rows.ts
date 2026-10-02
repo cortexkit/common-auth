@@ -18,6 +18,7 @@ import type { PoolLockSpec } from './refresh-lock.js'
 import {
   readRow,
   refusal,
+  requireBound,
   rowLockSpec,
   type StoreRuntime,
   unknownRow,
@@ -365,6 +366,11 @@ export async function addRow(
               row.invalid === undefined && row.fingerprint === fingerprint,
           )
           if (same) {
+            // Re-adding a secret whose stamp is not proved would rotate it in
+            // and keep the identity and quota recorded beside it, making that
+            // unproved record look bound. The add is refused instead, and the
+            // caller replaces the row, which starts a new credential epoch.
+            requireBound('add', same)
             // The same secret is the same credential, so re-adding it rotates
             // that row. An identity or endpoint given with it must match the
             // row's; a different one is refused rather than silently replaced
@@ -389,6 +395,10 @@ export async function addRow(
                 'id-exists',
                 `row ${id} already holds a credential`,
               )
+            // Completing a credential-less row keeps its epoch, identity and
+            // quota; when stamps are required those belong to no proved
+            // credential, so the row must be replaced instead.
+            requireBound('add', existing)
             if (existing.type !== credential.type)
               throw refusal(
                 'add',
@@ -576,6 +586,9 @@ export async function rotateRow(
           const row = requireUsableRow('rotate', id, tx.row(id), credential)
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged('rotate', id)
+          // A rotation keeps the row's epoch, identity and quota, so it must
+          // never be what stamps an unproved row as bound.
+          requireBound('rotate', row)
           // A rotation stays with one account: it may record the first
           // identity the row learns, but a credential of another known
           // account is a replacement (new epoch, quota and errors dropped).
@@ -958,6 +971,7 @@ export async function recordRowIdentity(
           const row = requireUsableRow('recordIdentity', id, tx.row(id))
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged('recordIdentity', id)
+          requireBound('recordIdentity', row)
           if ((row.credentialEpoch ?? 1) !== captured)
             throw refusal(
               'recordIdentity',

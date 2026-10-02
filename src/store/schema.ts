@@ -51,6 +51,27 @@ export interface QuotaCodec {
   merge(stored: unknown | undefined, observation: unknown): unknown
 }
 
+/**
+ * What the stamp beside a row's credential proves (see `CredentialStamp`).
+ *
+ * `none`: the row holds no credential, so there is nothing to stamp.
+ * `bound`: the stamp was written with this credential (its digest matches),
+ * names the row's credential epoch (1 for a row without a per-row entry),
+ * and any identity or endpoint it records is the row's.
+ * `missing`: the credential carries no stamp (written by a writer that does
+ * not know about stamps, or one that dropped it).
+ * `malformed`: the stamp is not one this store writes (wrong shape, or an
+ * epoch outside the positive safe integers).
+ * `mismatched`: the stamp was written for another credential, epoch,
+ * identity or endpoint than the row now holds.
+ */
+export type CredentialStampStatus =
+  | 'none'
+  | 'bound'
+  | 'missing'
+  | 'malformed'
+  | 'mismatched'
+
 /** One row of the pool as loaded. */
 export interface PoolRow {
   id: string
@@ -83,6 +104,21 @@ export interface PoolRow {
    * the next store write on it writes the config to match.
    */
   torn?: true
+  /**
+   * Whether the credential is the one the store last stamped for this row
+   * (see `CredentialStampStatus`). Every row the store loads carries it; a
+   * torn row reports the stamp of the row as it is shown completed. It is
+   * optional only so that rows built by hand (test fixtures) still type.
+   */
+  stamp?: CredentialStampStatus
+  /**
+   * Set only when the store was opened with `requireCredentialStamps` and
+   * the row's `stamp` is not `bound`: the row is never a candidate, and
+   * `refresh`, quota pulls, `recordQuota`, `recordIdentity`, `rotate` and a
+   * re-`add` onto it refuse with `unbound-credential`. Only `replace` (or a
+   * new row) makes it usable again.
+   */
+  unbound?: true
 }
 
 /**
@@ -241,6 +277,56 @@ export function parseStamp(raw: unknown): CredentialStamp | undefined {
         : {}),
     },
   }
+}
+
+/**
+ * Whether a binding a stamp records is the row's: an identity it names must
+ * be the row's recorded identity, and an endpoint it names must be the one
+ * the row sends its API key to. A binding without an identity says none was
+ * known when it was written, so an identity learnt since does not contradict
+ * it.
+ */
+function bindingAgrees(
+  binding: CredentialBinding,
+  credential: StoredCredential,
+  identity: string | undefined,
+): boolean {
+  if (binding.identity !== undefined && binding.identity !== identity)
+    return false
+  if (
+    binding.baseURL !== undefined &&
+    (credential.type !== 'api' || credential.baseURL !== binding.baseURL)
+  )
+    return false
+  if (
+    binding.authHeader !== undefined &&
+    (credential.type !== 'api' || credential.authHeader !== binding.authHeader)
+  )
+    return false
+  return true
+}
+
+/**
+ * The stamp status of a loaded row (see `CredentialStampStatus`).
+ * `credentialEpoch` is undefined only when the row's per-row entry exists but
+ * failed validation, in which case no stamp can match it.
+ */
+function stampStatusOf(
+  credential: StoredCredential | undefined,
+  credentialEpoch: number | undefined,
+  identity: string | undefined,
+  account: unknown,
+): CredentialStampStatus {
+  if (!credential) return 'none'
+  if (!isRecord(account) || !Object.hasOwn(account, CREDENTIAL_STAMP_KEY))
+    return 'missing'
+  const stamp = parseStamp(account[CREDENTIAL_STAMP_KEY])
+  if (!stamp) return 'malformed'
+  if (stamp.digest !== credentialDigest(credential)) return 'mismatched'
+  if (stamp.credentialEpoch !== credentialEpoch) return 'mismatched'
+  if (stamp.binding && !bindingAgrees(stamp.binding, credential, identity))
+    return 'mismatched'
+  return 'bound'
 }
 
 /** A parsed file, or the reason it could not be parsed. */
@@ -457,6 +543,7 @@ export function buildRawRows(
           hasEntry: Object.hasOwn(entries, id),
           candidate: false,
           invalid: 'roster',
+          stamp: 'none',
         })
       continue
     }
@@ -466,6 +553,10 @@ export function buildRawRows(
     const entry = hasEntry ? parseEntry(entries[id], codec) : undefined
     const credential = credentialFor(raw, stateAccounts[id])
     const enabled = raw.enabled !== false
+    const identity =
+      typeof raw.accountId === 'string' && raw.accountId
+        ? raw.accountId
+        : undefined
     const row: PoolRow = {
       id,
       type,
@@ -475,9 +566,7 @@ export function buildRawRows(
       candidate: false,
       ...(typeof raw.label === 'string' ? { label: raw.label } : {}),
       ...(typeof raw.addedAt === 'number' ? { addedAt: raw.addedAt } : {}),
-      ...(typeof raw.accountId === 'string' && raw.accountId
-        ? { identity: raw.accountId }
-        : {}),
+      ...(identity !== undefined ? { identity } : {}),
       ...(credential
         ? { credential, fingerprint: fingerprintOf(credential) }
         : {}),
@@ -486,6 +575,14 @@ export function buildRawRows(
         ? { disabledReason: entry.disabledReason }
         : {}),
       ...(entry && 'quota' in entry ? { quota: entry.quota } : {}),
+      // A row without a per-row entry is at credential epoch 1 (the epoch the
+      // store stamps and later gives it), so its stamp is checked against 1.
+      stamp: stampStatusOf(
+        credential,
+        entry ? entry.credentialEpoch : hasEntry ? undefined : 1,
+        identity,
+        stateAccounts[id],
+      ),
     }
     if (hasEntry && !entry) {
       row.invalid = 'entry'

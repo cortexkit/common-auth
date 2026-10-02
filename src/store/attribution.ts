@@ -1,7 +1,12 @@
 import { PoolOperationError } from './errors.js'
 import { type Progress, toFailure, withTransaction } from './mutate.js'
 import { LockStack } from './refresh-lock.js'
-import { refusal, type StoreRuntime, unknownRow } from './runtime.js'
+import {
+  refusal,
+  requireBound,
+  type StoreRuntime,
+  unknownRow,
+} from './runtime.js'
 import { isCredentialEpoch } from './schema.js'
 
 /**
@@ -57,6 +62,7 @@ export async function recordQuota(
             'no-credential',
             `row ${id} holds no credential`,
           )
+        requireBound('pull', row)
         const entry = tx.entry(id)
         if (
           row.torn ||
