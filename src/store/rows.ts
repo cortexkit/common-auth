@@ -44,6 +44,7 @@ import {
   idProblem,
   isCredentialEpoch,
   isRecord,
+  nextAddEpochIn,
   type PoolCredential,
   type PoolRow,
   PROVIDER_STATE_KEY,
@@ -586,6 +587,17 @@ export async function addRow(
             if (!existing.hasEntry) await tx.commitConfig()
             return { id, outcome: 'completed', credential: stored }
           }
+          // An id the pool held before starts past every epoch it held, so
+          // work attributed to the earlier row's credential, from this
+          // process or another, never matches the new one.
+          const credentialEpoch = nextAddEpochIn(tx.config, id)
+          if (!isCredentialEpoch(credentialEpoch))
+            throw refusal(
+              'add',
+              id,
+              'id-removed',
+              `id ${id} has held every credential epoch and is not reused; add the credential under another id`,
+            )
           tx.roster().push(
             rosterRowFor({
               id,
@@ -596,7 +608,7 @@ export async function addRow(
             }),
           )
           tx.setEntry(id, {
-            credentialEpoch: 1,
+            credentialEpoch,
             needsFirstReading: credential.type === 'oauth',
           })
           let outcome: AddResult['outcome'] = 'added'
@@ -1113,7 +1125,9 @@ export function enableRow(
  * between the two leaves a row every reader already sees as removed, with
  * only an orphaned state entry that no reader loads; calling `remove` again
  * drops that entry (`completed`). As with every id the store drops, the id is
- * not reused by `add` in this process.
+ * not reused by `add` in this process, and the config write records the
+ * row's credential epoch, so an `add` of the id in any other process starts
+ * past it (see `nextAddEpochIn`).
  */
 export async function removeRow(
   rt: StoreRuntime,

@@ -7,7 +7,7 @@ import {
   type PoolCredential,
   type WriteStep,
 } from '../../src/store/index.js'
-import { CRASH_EXIT_CODE, listCodec } from './helpers.js'
+import { CRASH_EXIT_CODE, listCodec, objectStateCodec } from './helpers.js'
 
 type Task = {
   configPath: string
@@ -27,6 +27,11 @@ type Task = {
   ids?: string[]
   credential?: PoolCredential
   identity?: string
+  /**
+   * add: the provider state written with the credential. When given, the
+   * child's store is opened with `objectStateCodec`.
+   */
+  providerState?: unknown
   /** recordIdentity: the credential epoch the identity lookup was issued for. */
   credentialEpoch?: number
   count?: number
@@ -47,6 +52,9 @@ const store = openPoolStore({
   configPath: task.configPath,
   statePath: task.statePath,
   quota: listCodec,
+  ...(task.providerState !== undefined
+    ? { providerState: objectStateCodec }
+    : {}),
   // A crashed child leaves its leases behind; short unrenewed leases let the
   // surviving process take the locks over within a test's time budget.
   lockOptions: { ttlMs: task.ttlMs ?? 1_000, renew: task.renew ?? false },
@@ -64,6 +72,9 @@ try {
       id: task.id,
       credential: task.credential as PoolCredential,
       ...identity,
+      ...(task.providerState !== undefined
+        ? { providerState: task.providerState }
+        : {}),
     })
   } else if (task.op === 'replace') {
     await store.replace(task.id, task.credential as PoolCredential, identity)

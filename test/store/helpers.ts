@@ -7,6 +7,7 @@ import {
   type OpenPoolStoreOptions,
   openPoolStore,
   type PoolStore,
+  type ProviderStateCodec,
   type QuotaCodec,
 } from '../../src/store/index.js'
 import { makeTempDir } from '../fixtures/scratch.js'
@@ -23,6 +24,16 @@ export const listCodec: QuotaCodec = {
       observation,
     ],
   }),
+}
+
+/**
+ * A provider-state codec that accepts any plain object and binds all of it to
+ * the credential. The child process opens its store with it when a task
+ * carries a provider state, so both processes compute the same digests.
+ */
+export const objectStateCodec: ProviderStateCodec = {
+  validate: (value) =>
+    value !== null && typeof value === 'object' && !Array.isArray(value),
 }
 
 // Parsed store files are inspected field by field in assertions.

@@ -6,6 +6,15 @@ export const POOL_KEY = 'commonAuthPool'
 export const POOL_SCHEMA_VERSION = 1
 /** Property of `commonAuthPool` holding the per-row entries, keyed by local id. */
 export const POOL_ROWS_KEY = 'rows'
+/**
+ * Property of `commonAuthPool` (since 0.8.0) holding, per id, the highest
+ * credential epoch a row with that id held when the store last dropped it
+ * from the pool. A row added later under the same id starts past it (see
+ * `nextAddEpochIn`), so an attribution taken for the dropped row never
+ * matches the new one. Older readers ignore it, and older writers keep it
+ * as they keep every pool key they do not know.
+ */
+export const POOL_RETIRED_EPOCHS_KEY = 'retiredEpochs'
 /** The `version` older readers of the same files expect at the top level. */
 export const LEGACY_STORE_VERSION = 1
 /**
@@ -726,12 +735,17 @@ export function rosterRowIn(
   )
 }
 
+/** The pool object of a config, created (empty) when absent. */
+function ensurePool(config: Record<string, unknown>): Record<string, unknown> {
+  if (!isRecord(config[POOL_KEY])) config[POOL_KEY] = {}
+  return config[POOL_KEY] as Record<string, unknown>
+}
+
 /** The per-row entries of a config, created (empty) when absent. */
 export function ensureEntries(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (!isRecord(config[POOL_KEY])) config[POOL_KEY] = {}
-  const pool = config[POOL_KEY] as Record<string, unknown>
+  const pool = ensurePool(config)
   if (!isRecord(pool[POOL_ROWS_KEY])) pool[POOL_ROWS_KEY] = {}
   return pool[POOL_ROWS_KEY] as Record<string, unknown>
 }
@@ -757,6 +771,95 @@ export function setEntryIn(
     writable: true,
     configurable: true,
   })
+}
+
+/**
+ * The credential epoch recorded for a dropped id (see
+ * `POOL_RETIRED_EPOCHS_KEY`), or undefined when none is. A value that is not
+ * a credential epoch counts as none.
+ */
+export function retiredEpochIn(
+  config: Record<string, unknown>,
+  id: string,
+): number | undefined {
+  const pool = config[POOL_KEY]
+  if (!isRecord(pool)) return undefined
+  const retired = pool[POOL_RETIRED_EPOCHS_KEY]
+  if (!isRecord(retired) || !Object.hasOwn(retired, id)) return undefined
+  const epoch = retired[id]
+  return isCredentialEpoch(epoch) ? epoch : undefined
+}
+
+/**
+ * The epoch a per-row entry claims, read without validating the rest of the
+ * entry, or undefined when it names none a reader would accept.
+ */
+function entryEpochIn(
+  config: Record<string, unknown>,
+  id: string,
+): number | undefined {
+  const epoch = entryIn(config, id)?.credentialEpoch
+  return isCredentialEpoch(epoch) ? epoch : undefined
+}
+
+/**
+ * The credential epoch `add` gives a new row with this id: one past the
+ * highest epoch the id is known to have held, which is the epoch recorded
+ * when the store dropped it, or the epoch of an entry left behind by a writer
+ * that removed only its roster row; 1 for an id the pool never held.
+ *
+ * An attribution names a row by id and credential epoch (and identity), and
+ * an id is chosen by the plugin, so it is often the same one again (`main`).
+ * Were a re-added row to start at epoch 1 again, an attribution taken for the
+ * removed row's credential would match the new credential exactly, in this
+ * process or any other. Starting past every earlier epoch makes such an
+ * attribution fail as it does after a `replace`. The result may lie past the
+ * safe integers (an id whose last row was at `Number.MAX_SAFE_INTEGER`);
+ * `add` refuses such an id.
+ */
+export function nextAddEpochIn(
+  config: Record<string, unknown>,
+  id: string,
+): number {
+  return (
+    Math.max(retiredEpochIn(config, id) ?? 0, entryEpochIn(config, id) ?? 0) + 1
+  )
+}
+
+/**
+ * Records, in a config being written, the epochs of the ids it drops: for
+ * each, the epoch its entry claims (1 for a row without one, the epoch such a
+ * row is at), kept only when above what is already recorded, so the record
+ * for an id never goes down. Valid recorded values of other ids are kept; a
+ * record that is not an object, or a value in it that is not an epoch, says
+ * nothing and is replaced. An entry whose epoch cannot be read records 1.
+ */
+export function retireEpochsIn(
+  config: Record<string, unknown>,
+  dropped: Iterable<string>,
+): void {
+  const ids = [...dropped]
+  if (ids.length === 0) return
+  const pool = ensurePool(config)
+  const previous = isRecord(pool[POOL_RETIRED_EPOCHS_KEY])
+    ? (pool[POOL_RETIRED_EPOCHS_KEY] as Record<string, unknown>)
+    : {}
+  const next: Record<string, unknown> = {}
+  const define = (id: string, epoch: number) =>
+    Object.defineProperty(next, id, {
+      value: epoch,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    })
+  for (const [id, epoch] of Object.entries(previous))
+    if (isCredentialEpoch(epoch)) define(id, epoch)
+  for (const id of ids)
+    define(
+      id,
+      Math.max(retiredEpochIn(config, id) ?? 0, entryEpochIn(config, id) ?? 1),
+    )
+  pool[POOL_RETIRED_EPOCHS_KEY] = next
 }
 
 /**
