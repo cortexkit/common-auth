@@ -156,7 +156,15 @@ describe('crash windows, with the observer surviving', () => {
     expect(await child.exited).toBe(CRASH_EXIT_CODE)
     let row = await rowOf('a')
     expect(row?.credential).toMatchObject({ refresh: 'r-rotated' })
-    expect(row?.identity).toBeUndefined()
+    // The rotated credential's stamp names the identity being learnt: the row
+    // is shown with it, completed forward and no candidate, while the config
+    // still lacks it.
+    expect(row).toMatchObject({
+      identity: 'acct-1',
+      torn: true,
+      candidate: false,
+    })
+    expect((await s.config()).accounts[0].accountId).toBeUndefined()
     await s.open().refresh('a', async (credential) => {
       expect(credential.refresh).toBe('r-rotated')
       return {
@@ -167,7 +175,12 @@ describe('crash windows, with the observer surviving', () => {
       }
     })
     row = await rowOf('a')
-    expect(row).toMatchObject({ identity: 'acct-1', credentialEpoch: 1 })
+    expect(row).toMatchObject({
+      identity: 'acct-1',
+      credentialEpoch: 1,
+      candidate: true,
+    })
+    expect(row?.torn).toBeUndefined()
   })
 
   it('a crash after the state write of a rotate with nothing to record is indistinguishable from completion', async () => {

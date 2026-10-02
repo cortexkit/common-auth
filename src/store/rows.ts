@@ -212,11 +212,48 @@ function onRowEndpoint(
 }
 
 /**
+ * The binding of a credential written into a row without a replace: the
+ * config as it stands in `tx`, plus the identity the same operation is about
+ * to record (`learnt`), if any. The identity is the roster row's recorded
+ * one, read the way `buildRawRows` reads it. A learnt identity is stamped
+ * before the config records it, so a crash between the two writes leaves a
+ * stamp naming an identity the config lacks, which every reader completes
+ * forward (see `torn.ts`); the reverse order would leave a config identity
+ * no stamp proves. An API key's endpoint is the one it was checked against
+ * (see `onRowEndpoint`).
+ */
+function bindingInTx(
+  tx: Transaction,
+  id: string,
+  stored: StoredCredential,
+  learnt?: string,
+): CredentialBinding {
+  const raw = tx.rosterRow(id)
+  const identity =
+    learnt ??
+    (isRecord(raw) && typeof raw.accountId === 'string' && raw.accountId
+      ? raw.accountId
+      : undefined)
+  return {
+    ...(identity !== undefined ? { identity } : {}),
+    ...(stored.type === 'api'
+      ? {
+          baseURL: stored.baseURL,
+          authHeader: stored.authHeader ?? 'authorization-bearer',
+        }
+      : {}),
+  }
+}
+
+/**
  * Writes a credential into the state file (one write), stamped with the
- * credential epoch the row's entry holds in `tx` (1 without an entry) and,
- * for a replace, the binding the config is about to get. A rotation is the
- * same lineage: no epoch bump, no identity or quota change. An API key must
- * belong to the endpoint the row holds in `tx` (see `onRowEndpoint`).
+ * credential epoch the row's entry holds in `tx` (1 without an entry) and a
+ * binding: for a replace, the one the config is about to get (and the stamp
+ * is marked as a replace's); for every other write, the row's config as it
+ * stands in `tx` with the identity the operation is about to record
+ * (`identity`, see `bindingInTx`). A rotation is the same lineage: no epoch
+ * bump, no identity or quota change. An API key must belong to the endpoint
+ * the row holds in `tx` (see `onRowEndpoint`).
  */
 export async function rotateIn(
   rt: StoreRuntime,
@@ -227,6 +264,7 @@ export async function rotateIn(
     stamp?: number
     clearErrors?: boolean
     binding?: CredentialBinding
+    identity?: string
   } = {},
 ): Promise<StoredCredential> {
   const credential = onRowEndpoint(tx, id, given)
@@ -254,11 +292,38 @@ export async function rotateIn(
     [CREDENTIAL_STAMP_KEY]: stampFor(
       stored,
       typeof epoch === 'number' ? epoch : 1,
-      extra.binding,
+      extra.binding ?? bindingInTx(tx, id, stored, extra.identity),
+      { replace: extra.binding !== undefined },
     ),
   })
   await tx.commitState(stored)
   return stored
+}
+
+/**
+ * Restamps a bound row's credential, unchanged, so its stamp names the
+ * identity the caller is about to record in the config (same epoch, same
+ * credential, one state write). Written before the config for the reason
+ * `bindingInTx` gives. A row whose stamp is not bound (possible only without
+ * `requireCredentialStamps`) gets no new stamp, because a fresh stamp would
+ * vouch for a credential this store never proved: its identity is recorded in
+ * the config only, and the row keeps the stamp status it had.
+ */
+async function stampIdentityIn(
+  tx: Transaction,
+  row: PoolRow,
+  identity: string,
+): Promise<void> {
+  if (!row.credential || row.stamp !== 'bound') return
+  tx.setStateAccount(row.id, {
+    ...(tx.stateAccount(row.id) ?? {}),
+    [CREDENTIAL_STAMP_KEY]: stampFor(
+      row.credential,
+      row.credentialEpoch ?? 1,
+      bindingInTx(tx, row.id, row.credential, identity),
+    ),
+  })
+  await tx.commitState()
 }
 
 function checkInput(
@@ -598,7 +663,13 @@ export async function rotateRow(
             input.identity !== row.identity
           )
             throw identityMismatch('rotate', id)
-          const stored = await rotateIn(rt, tx, id, credential)
+          const learnt =
+            input.identity !== undefined && row.identity === undefined
+              ? input.identity
+              : undefined
+          const stored = await rotateIn(rt, tx, id, credential, {
+            identity: learnt,
+          })
           let configChanged = false
           if (!row.hasEntry) {
             tx.setEntry(id, {
@@ -982,6 +1053,10 @@ export async function recordRowIdentity(
             )
           if (row.identity !== undefined && row.identity !== identity)
             throw identityMismatch('recordIdentity', id)
+          // The stamp names the identity first; a crash before the config
+          // write leaves a row every reader completes forward.
+          if (row.identity === undefined)
+            await stampIdentityIn(tx, row, identity)
           const disabled = recordIdentityIn(tx, id, identity)
           await tx.commitConfig()
           return { id, disabled }

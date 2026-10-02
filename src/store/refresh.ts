@@ -250,13 +250,21 @@ export async function refreshRow(
             refresh: result.refresh,
             expires: result.expires,
           }
+          const learnt =
+            current.identity === undefined && result.identity
+              ? result.identity
+              : undefined
+          // The rotated credential's stamp names a learnt identity before the
+          // config records it, so a crash between the two writes is completed
+          // forward rather than leaving an identity no stamp proves.
           const stored = await rotateIn(rt, tx, id, credential, {
             stamp: rotationStamp(prior, now),
+            identity: learnt,
           })
           let identity = current.identity
-          if (current.identity === undefined && result.identity) {
-            recordIdentityIn(tx, id, result.identity)
-            identity = result.identity
+          if (learnt !== undefined) {
+            recordIdentityIn(tx, id, learnt)
+            identity = learnt
             await tx.commitConfig()
           }
           return { stored, identity, refused: undefined }
