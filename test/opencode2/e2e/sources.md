@@ -1,6 +1,6 @@
 # OpenCode 2 placement contract provenance
 
-Rows for the gated tests in `placement.e2e.test.ts`. They run only with `COMMON_AUTH_OPENCODE2_E2E=1`, in the `opencode2-placement` CI job, which checks this table against its own JUnit artifact with `scripts/check-sources.mjs`. Every test also asserts that the plugin set up once, that every account was chosen in `model.request`, that no installer warning was logged, and that no request reached the mock provider with the host's placeholder credential or without an account.
+Rows for the gated tests in `placement.e2e.test.ts`. They run only with `COMMON_AUTH_OPENCODE2_E2E=1`, in the `opencode2-placement` CI job, which checks this table against its own JUnit artifact with `scripts/check-sources.mjs`. Every test also asserts that the plugin set up once, that every account was chosen in `model.request`, that no installer warning was logged, that every HTTP request and handshake reached the transport hooks with the attempt mark of an attempt `model.request` started for its kind, and that no request reached the mock provider with the host's placeholder credential, with the attempt mark, or without an account.
 
 | component | behaviour | origin | test |
 | --- | --- | --- | --- |
