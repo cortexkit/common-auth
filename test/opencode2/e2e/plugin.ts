@@ -13,6 +13,7 @@
 import { appendFileSync, readFileSync } from 'node:fs'
 import {
   type AccountHeadersResult,
+  ATTEMPT_HEADER,
   installOpenCode2Auth,
   type LimitSignal,
 } from '../../../src/opencode2/index.js'
@@ -65,6 +66,34 @@ export default {
   async setup(ctx: Parameters<typeof installOpenCode2Auth>[0]) {
     const limited = new Set<string>()
     let receipts = 0
+    // Registered before the installer, so they run before its transport
+    // hooks: they record the attempt mark the host carried from
+    // model.request onto the request and the handshake.
+    await ctx.session.hook(
+      'http.request',
+      (draft) => {
+        log('mark', {
+          transport: 'http',
+          kind: draft.kind,
+          mark: draft.request.headers.get(ATTEMPT_HEADER),
+        })
+      },
+      { providerID: 'openai' },
+    )
+    await ctx.session.hook(
+      'experimental.ws.handshake',
+      (draft) => {
+        const name = Object.keys(draft.headers).find(
+          (header) => header.toLowerCase() === ATTEMPT_HEADER,
+        )
+        log('mark', {
+          transport: 'ws',
+          kind: draft.kind,
+          mark: name === undefined ? null : draft.headers[name],
+        })
+      },
+      { providerID: 'openai' },
+    )
     const installation = await installOpenCode2Auth<{ used: number }, string>(
       ctx,
       {
@@ -159,6 +188,7 @@ export default {
         kind: event.kind,
         accountId: event.accountId,
         hook: event.hook,
+        attemptId: event.handle.attemptId,
       }),
     )
     installation.on('quota', (event) =>

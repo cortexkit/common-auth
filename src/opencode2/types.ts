@@ -64,12 +64,16 @@ export interface EventVerdict<Q> {
 export type HeaderEdits = Readonly<Record<string, string | null>>
 
 export interface ChooseAccountInput extends RequestScope {
-  /** The account the previous attempt of this session and kind used. */
+  /**
+   * The account of the attempt this one retries, when the retry hook just
+   * asked the host to retry an attempt of this session and kind; otherwise
+   * the account of the newest attempt of this session and kind.
+   */
   readonly previousAccountId?: string
   /**
-   * Set when the previous attempt was refused for a limit before any output
-   * and the retry hook asked the host to try again. The adapter should not
-   * pick `accountId` again unless it has nothing else.
+   * Set when the attempt this one retries was refused for a limit before any
+   * output and the retry hook asked the host to try again. The adapter
+   * should not pick `accountId` again unless it has nothing else.
    */
   readonly rerouteFrom?: {
     readonly accountId: string
@@ -100,8 +104,28 @@ export interface Attempt<A = unknown> extends AccountRequest {
    * `model.request` is chosen before the host has picked the transport.
    */
   readonly transport: Transport | undefined
-  /** What `accountHeaders` returned as `attempt`, if anything. */
+  /**
+   * What `accountHeaders` returned as `attempt`, if anything, or what
+   * `answeredBy` replaced it with.
+   */
   readonly data: A | undefined
+  /**
+   * Set when `answeredBy` said another account answered this attempt's HTTP
+   * response: the account `chooseAccount` picked. `accountId` is then the
+   * account that answered, and everything from the response on is attributed
+   * to it.
+   */
+  readonly reboundFrom?: string
+}
+
+/**
+ * The account that actually answered an HTTP response, as `answeredBy`
+ * reports it. `data`, when the key is present, replaces the attempt's `data`
+ * (the answering account's own credential receipt, say).
+ */
+export interface ResponseAccount<A = unknown> {
+  readonly accountId: string
+  readonly data?: A
 }
 
 /**
@@ -111,11 +135,12 @@ export interface Attempt<A = unknown> extends AccountRequest {
  *   reported the response as failed;
  * - `cancelled`: the host cancelled the HTTP response body (the user stopped
  *   the turn, say);
- * - `abandoned`: the attempt was still open when a newer attempt of the same
- *   session and kind began, its session was forgotten, its record was
- *   dropped for space, or the installation was disposed. A WebSocket closed
- *   or cancelled mid-response ends this way, since the host has no hook for
- *   either.
+ * - `abandoned`: the attempt can no longer be observed: it was on WebSocket
+ *   (or the retry hook had already judged it) when a newer attempt of the
+ *   same session and kind began, another attempt of its session and kind
+ *   went out over WebSocket, its session was forgotten, it was dropped for
+ *   space, or the installation was disposed. A WebSocket closed or cancelled
+ *   mid-response ends this way, since the host has no hook for either.
  */
 export type AttemptEndReason = 'failed' | 'cancelled' | 'abandoned'
 
@@ -205,6 +230,25 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
       readonly attempt: Attempt<A>
     },
   ): Promise<Response | undefined> | Response | undefined
+  /**
+   * Optional. For an adapter whose own sender can move a request to another
+   * account after `rewriteRequest` (a bridge that answers a 401 or 403 by
+   * retrying on the next account, say): runs first in `http.response`,
+   * before quota, refusal, output or end detection, and returns the account
+   * that actually answered, or `undefined` when the attempt's own account
+   * did. A different account rebinds the attempt to it (`Attempt.accountId`
+   * becomes that account and `reboundFrom` the one chosen), so the response's
+   * quota, refusal, stream events, end and any retry reroute are attributed
+   * to the answering account, once, and never to the chosen one. What the
+   * sender saw from the chosen account before it moved on (the 401 itself)
+   * never reaches the installer: the adapter accounts for it itself.
+   * Throwing ends the attempt as `failed` and fails the response hook.
+   */
+  answeredBy?(input: {
+    readonly request: Request
+    readonly response: Response
+    readonly attempt: Attempt<A>
+  }): Promise<ResponseAccount<A> | undefined> | ResponseAccount<A> | undefined
   /** Optional WebSocket URL rewrite. Return `undefined` to keep the URL. */
   rewriteHandshakeURL?(
     input: AccountRequest & {
@@ -315,7 +359,7 @@ export interface InstallOpenCode2AuthOptions {
    * adapter's provider.
    */
   readonly hostCredentials?: readonly string[]
-  /** Most `sessionID:kind` records kept before the oldest is dropped. */
+  /** Most attempts kept before the oldest is abandoned and dropped. */
   readonly maxRecords?: number
   readonly logger?: OpenCode2AuthLogger
 }
@@ -391,11 +435,16 @@ export interface OpenCode2AuthInstallation<Q, A = unknown> {
     event: E,
     listener: (payload: OpenCode2AuthEvents<Q, A>[E]) => void | Promise<void>,
   ): () => void
-  /** The account last chosen for a session and request kind. */
+  /**
+   * The account of the newest attempt of a session and request kind (after
+   * any `answeredBy` rebind). With several attempts of one session and kind
+   * in flight it names only the newest; each attempt's own account is on its
+   * handle.
+   */
   accountFor(sessionID: string, kind: RequestKind): string | undefined
-  /** Drops every record of a session. Session deletion does this itself. */
+  /** Drops every attempt of a session. Session deletion does this itself. */
   forgetSession(sessionID: string): void
-  /** Number of `sessionID:kind` records held. */
+  /** Number of attempts held. */
   readonly size: number
   /** Removes every hook and stops listening for session deletion. */
   dispose(): Promise<void>

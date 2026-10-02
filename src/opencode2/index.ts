@@ -1,6 +1,7 @@
 export type { OpenCode2AuthFailureKind } from './errors.js'
 export { OpenCode2AuthError } from './errors.js'
 export {
+  ATTEMPT_HEADER,
   applyHeaderEdits,
   DEFAULT_MAX_RECORDS,
   installOpenCode2Auth,
@@ -42,6 +43,7 @@ export type {
   OpenCode2HookContext,
   RequestKind,
   RequestScope,
+  ResponseAccount,
   RetryReason,
   SelectingHook,
   Transport,

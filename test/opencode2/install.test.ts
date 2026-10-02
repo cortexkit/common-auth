@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  ATTEMPT_HEADER,
   installOpenCode2Auth,
   OpenCode2AuthError,
   placeholderSecret,
@@ -15,12 +16,21 @@ import {
 
 const PLACEHOLDER = `Bearer ${placeholderSecret(PROVIDER)}`
 
-function httpDraft(kind: 'primary' | 'title' = 'primary', sessionID = 'ses_1') {
+/**
+ * An HTTP request as the host builds it: from the headers `model.request` left
+ * (`carried`), with the host's own credential applied over them.
+ */
+function httpDraft(
+  kind: 'primary' | 'title' = 'primary',
+  sessionID = 'ses_1',
+  carried: Record<string, string> = {},
+) {
   return {
     ...scopeFor(kind, sessionID),
     request: new Request('https://provider.invalid/v1/responses', {
       method: 'POST',
       headers: {
+        ...carried,
         authorization: PLACEHOLDER,
         'content-type': 'application/json',
       },
@@ -35,11 +45,14 @@ async function sendHttp(
   response: Response = new Response('ok'),
   sessionID = 'ses_1',
 ) {
-  await host.fire('model.request', {
+  const model = await host.fire('model.request', {
     ...scopeFor(kind, sessionID),
     headers: { authorization: PLACEHOLDER } as Record<string, string>,
   })
-  const request = await host.fire('http.request', httpDraft(kind, sessionID))
+  const request = await host.fire(
+    'http.request',
+    httpDraft(kind, sessionID, model.headers),
+  )
   const reply = await host.fire('http.response', {
     ...scopeFor(kind, sessionID),
     request: request.request,
@@ -53,11 +66,17 @@ async function sendWs(
   frames: unknown[],
   kind: 'primary' | 'title' = 'primary',
 ) {
-  await host.fire('model.request', { ...scopeFor(kind), headers: {} })
+  const model = await host.fire('model.request', {
+    ...scopeFor(kind),
+    headers: {} as Record<string, string>,
+  })
   const handshake = await host.fire('experimental.ws.handshake', {
     ...scopeFor(kind),
     url: 'wss://provider.invalid/v1/responses',
-    headers: { Authorization: PLACEHOLDER } as Record<string, string>,
+    headers: { ...model.headers, Authorization: PLACEHOLDER } as Record<
+      string,
+      string
+    >,
   })
   for (const frame of frames) {
     await host.fire('experimental.ws.receive', {
@@ -107,9 +126,11 @@ describe('installOpenCode2Auth', () => {
       ...scopeFor('primary'),
       headers: { Authorization: PLACEHOLDER } as Record<string, string>,
     })
+    // The mark names the attempt for the transport hook that sends it.
     expect(primary.headers).toEqual({
       authorization: 'Bearer tok-A',
       'x-account': 'A',
+      [ATTEMPT_HEADER]: 'attempt-1',
     })
     plan.next = 'B'
     await host.fire('model.request', { ...scopeFor('title'), headers: {} })
@@ -142,10 +163,18 @@ describe('installOpenCode2Auth', () => {
     const host = fakeHost()
     const { adapter } = fakeAdapter()
     await installOpenCode2Auth(host.ctx, adapter)
-    await host.fire('model.request', { ...scopeFor(), headers: {} })
-    const draft = await host.fire('http.request', httpDraft())
+    const model = await host.fire('model.request', {
+      ...scopeFor(),
+      headers: {} as Record<string, string>,
+    })
+    const draft = await host.fire(
+      'http.request',
+      httpDraft('primary', 'ses_1', model.headers),
+    )
     expect(draft.request.headers.get('authorization')).toBe('Bearer tok-A')
     expect(draft.request.headers.get('x-account')).toBe('A')
+    // The attempt mark never reaches the wire.
+    expect(draft.request.headers.has(ATTEMPT_HEADER)).toBe(false)
     expect(draft.request.headers.get('content-type')).toBe('application/json')
     expect(await draft.request.text()).toBe('{"input":[]}')
   })

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  ATTEMPT_HEADER,
   type AttemptOutcome,
+  type ChooseAccountInput,
   installOpenCode2Auth,
   type OpenCode2AuthAdapter,
   placeholderSecret,
@@ -28,7 +30,7 @@ function trackingAdapter(
   const seen: string[] = []
   const ends: Array<{ data: string | undefined; outcome: AttemptOutcome }> = []
   let issued = 0
-  const base = fakeAdapter().adapter
+  const base = fakeAdapter<string>().adapter
   const adapter: OpenCode2AuthAdapter<TestQuota, string> = {
     ...base,
     accountHeaders({ accountId, sessionID, kind }) {
@@ -104,16 +106,21 @@ const modelRequest = (
     headers: {} as Record<string, string>,
   })
 
+/**
+ * `carried` stands for the headers `model.request` left, which the host
+ * builds the request from (the attempt mark among them).
+ */
 const httpRequest = (
   host: ReturnType<typeof fakeHost>,
   sessionID: string,
   kind: Kind = 'primary',
+  carried: Record<string, string> = {},
 ) =>
   host.fire('http.request', {
     ...scopeFor(kind, sessionID),
     request: new Request('https://provider.invalid/v1/responses', {
       method: 'POST',
-      headers: { authorization: PLACEHOLDER },
+      headers: { ...carried, authorization: PLACEHOLDER },
       body: '{}',
     }),
   })
@@ -135,11 +142,15 @@ const handshake = (
   host: ReturnType<typeof fakeHost>,
   sessionID: string,
   kind: Kind = 'primary',
+  carried: Record<string, string> = {},
 ) =>
   host.fire('experimental.ws.handshake', {
     ...scopeFor(kind, sessionID),
     url: 'wss://provider.invalid/v1/responses',
-    headers: { authorization: PLACEHOLDER } as Record<string, string>,
+    headers: { ...carried, authorization: PLACEHOLDER } as Record<
+      string,
+      string
+    >,
   })
 
 const receive = (
@@ -662,6 +673,409 @@ describe('installOpenCode2Auth attempts', () => {
     await settle()
     expect(warnings).toEqual([
       'opencode2 auth onAttemptEnd threw; the request is unaffected',
+    ])
+  })
+})
+
+/** A body that sends `events` and then fails the way a dropped connection does. */
+function breakingBody(events: unknown[], message: string) {
+  const encoder = new TextEncoder()
+  let pulls = 0
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (pulls++ === 0) controller.enqueue(encoder.encode(sse(events)))
+      else controller.error(new Error(message))
+    },
+  })
+}
+
+/** `chooseAccount` handing out `accounts` in turn, keeping each input. */
+function accountsInTurn(accounts: string[]) {
+  const inputs: ChooseAccountInput[] = []
+  return {
+    inputs,
+    chooseAccount(input: ChooseAccountInput) {
+      inputs.push({ ...input })
+      return accounts.shift()
+    },
+  }
+}
+
+describe('installOpenCode2Auth concurrent attempts of one session and kind', () => {
+  test('two in-flight http attempts of one session and kind keep their own account, body, response, error and retry', async () => {
+    const turn = accountsInTurn(['A', 'B', 'C'])
+    const { adapter, seen, ends } = trackingAdapter({
+      chooseAccount: turn.chooseAccount,
+      rewriteRequest: ({ request, attempt }) => {
+        seen.push(`rewrite:${attempt.data}`)
+        return new Request(request, {
+          body: JSON.stringify({ account: attempt.accountId }),
+        })
+      },
+      limitFromError: (_error, attempt) => {
+        seen.push(`error:${attempt.data}`)
+        return { reason: 'reset' }
+      },
+    })
+    const { host, installation } = await install(adapter, seen)
+    const accounts: string[] = []
+    installation.on('quota', (event) => {
+      accounts.push(`quota:${event.accountId}:${event.quota.used}`)
+    })
+    installation.on('limit', (event) => {
+      accounts.push(`limit:${event.accountId}`)
+    })
+    const retries: Array<[string | undefined, string, unknown]> = []
+    installation.on('retry', (event) => {
+      retries.push([event.accountId, event.reason, event.decision])
+    })
+
+    const a = await modelRequest(host, 's1')
+    const b = await modelRequest(host, 's1')
+    const sentA = await httpRequest(host, 's1', 'primary', a.headers)
+    const sentB = await httpRequest(host, 's1', 'primary', b.headers)
+    expect(
+      [sentA, sentB].map((sent) => [
+        sent.request.headers.get('authorization'),
+        sent.request.headers.get('x-account'),
+        sent.request.headers.has(ATTEMPT_HEADER),
+      ]),
+    ).toEqual([
+      ['Bearer tok-A', 'A', false],
+      ['Bearer tok-B', 'B', false],
+    ])
+    expect(await sentA.request.text()).toBe('{"account":"A"}')
+    expect(await sentB.request.text()).toBe('{"account":"B"}')
+
+    // A answers late, after B went out, and its stream breaks.
+    const repliedA = await httpResponse(
+      host,
+      's1',
+      sentA.request,
+      new Response(
+        breakingBody([{ type: 'quota', used: 91 }], 'connection reset'),
+        { headers: { 'x-quota-used': '90' } },
+      ),
+    )
+    await repliedA.response.text().catch(() => undefined)
+    // The retry is about A: B is still in flight and keeps going.
+    await retry(host, 's1')
+    await settle()
+    expect(ends.map(({ data }) => data)).toEqual(['s1/primary#1'])
+
+    const repliedB = await httpResponse(
+      host,
+      's1',
+      sentB.request,
+      new Response(sse([{ type: 'quota', used: 12 }, { type: 'delta' }]), {
+        headers: { 'x-quota-used': '10' },
+      }),
+    )
+    await repliedB.response.text()
+    // The host's retry of A starts the next attempt.
+    await modelRequest(host, 's1')
+    await settle()
+
+    expect(byValue(seen)).toEqual({
+      's1/primary#1': [
+        'select',
+        'rewrite',
+        'headers',
+        'quota',
+        'http-event',
+        'quota',
+        'end',
+        'error',
+        'limit',
+        'retry',
+      ],
+      's1/primary#2': [
+        'select',
+        'rewrite',
+        'headers',
+        'quota',
+        'http-event',
+        'quota',
+        'http-event',
+        'end',
+      ],
+      's1/primary#3': ['select'],
+    })
+    expect(accounts).toEqual([
+      'quota:A:90',
+      'quota:A:91',
+      'limit:A',
+      'quota:B:10',
+      'quota:B:12',
+    ])
+    expect(retries).toEqual([['A', 'reroute', { retry: true, delay: 0 }]])
+    expect(ends.map(({ data, outcome }) => [data, outcome])).toEqual([
+      [
+        's1/primary#1',
+        {
+          status: 200,
+          outputStarted: false,
+          error: { reason: 'failed', message: 'connection reset' },
+        },
+      ],
+      ['s1/primary#2', { status: 200, outputStarted: true }],
+    ])
+    // The retried attempt is told about A, never about B.
+    expect(turn.inputs[2]).toMatchObject({
+      previousAccountId: 'A',
+      rerouteFrom: { accountId: 'A', limit: { reason: 'reset' } },
+    })
+    expect(installation.accountFor('s1', 'primary')).toBe('C')
+  })
+
+  test('a retry that cannot tell open attempts apart keeps the host decision and touches neither', async () => {
+    const turn = accountsInTurn(['A', 'B'])
+    const { adapter, seen, ends } = trackingAdapter({
+      chooseAccount: turn.chooseAccount,
+    })
+    const { host, installation } = await install(adapter, seen)
+    const retries: unknown[] = []
+    installation.on('retry', (event) => {
+      retries.push([event.handle?.data, event.reason, event.decision])
+    })
+    const a = await modelRequest(host, 's1')
+    const b = await modelRequest(host, 's1')
+    // Sent in the opposite order to their model.request: the mark, not the
+    // order, ties each send to its attempt.
+    const sentB = await httpRequest(host, 's1', 'primary', b.headers)
+    const sentA = await httpRequest(host, 's1', 'primary', a.headers)
+    expect(sentA.request.headers.get('authorization')).toBe('Bearer tok-A')
+    expect(sentB.request.headers.get('authorization')).toBe('Bearer tok-B')
+
+    await retry(host, 's1')
+    await settle()
+    expect(ends).toEqual([])
+    // Once B fails, the retry is about B; A stays open.
+    await httpResponse(
+      host,
+      's1',
+      sentB.request,
+      new Response('expired', { status: 401 }),
+    )
+    await retry(host, 's1')
+    const repliedA = await httpResponse(
+      host,
+      's1',
+      sentA.request,
+      new Response('ok', { headers: { 'x-quota-used': '7' } }),
+    )
+    await repliedA.response.text()
+    await settle()
+    expect(retries).toEqual([
+      [undefined, 'host-decides', { retry: true, delay: 100 }],
+      ['s1/primary#2', 'host-decides', { retry: true, delay: 100 }],
+    ])
+    expect(seen.filter((entry) => entry.startsWith('error:'))).toEqual([
+      'error:s1/primary#2',
+    ])
+    expect(ends.map(({ data, outcome }) => [data, outcome.status])).toEqual([
+      ['s1/primary#2', 401],
+      ['s1/primary#1', 200],
+    ])
+    expect(seen.filter((entry) => entry.startsWith('quota:'))).toEqual([
+      'quota:s1/primary#1',
+    ])
+  })
+
+  test('websocket attempts of one session and kind stay serial: each handshake binds its own attempt and ends the one before', async () => {
+    const turn = accountsInTurn(['A', 'B'])
+    const { adapter, seen, ends } = trackingAdapter({
+      chooseAccount: turn.chooseAccount,
+    })
+    const { host } = await install(adapter, seen)
+    const a = await modelRequest(host, 's1')
+    const b = await modelRequest(host, 's1')
+    const shookA = await handshake(host, 's1', 'primary', a.headers)
+    await receive(host, 's1', { type: 'quota', used: 30 })
+    const shookB = await handshake(host, 's1', 'primary', b.headers)
+    await receive(host, 's1', { type: 'quota', used: 40 })
+    await receive(host, 's1', { type: 'delta' })
+    await receive(host, 's1', { type: 'done' })
+    await settle()
+    expect([shookA.headers, shookB.headers]).toEqual([
+      { authorization: 'Bearer tok-A', 'x-account': 'A' },
+      { authorization: 'Bearer tok-B', 'x-account': 'B' },
+    ])
+    expect(byValue(seen)).toEqual({
+      's1/primary#1': ['select', 'ws-event', 'quota', 'end'],
+      's1/primary#2': [
+        'select',
+        'ws-event',
+        'quota',
+        'ws-event',
+        'ws-event',
+        'end',
+      ],
+    })
+    expect(ends.map(({ data, outcome }) => [data, outcome])).toEqual([
+      [
+        's1/primary#1',
+        {
+          outputStarted: false,
+          error: {
+            reason: 'abandoned',
+            message:
+              'a newer attempt of its session and kind went out over WebSocket',
+          },
+        },
+      ],
+      ['s1/primary#2', { outputStarted: true }],
+    ])
+  })
+
+  test('a send without its mark among several waiting attempts goes to the newest, with one warning', async () => {
+    const turn = accountsInTurn(['A', 'B', 'C'])
+    const { adapter } = trackingAdapter({ chooseAccount: turn.chooseAccount })
+    const host = fakeHost()
+    const warned: string[] = []
+    await installOpenCode2Auth<TestQuota, string>(host.ctx, adapter, {
+      logger: { warn: (message) => void warned.push(message) },
+    })
+    await modelRequest(host, 's1')
+    await modelRequest(host, 's1')
+    const first = await httpRequest(host, 's1')
+    await modelRequest(host, 's1')
+    await httpRequest(host, 's1')
+    expect(first.request.headers.get('authorization')).toBe('Bearer tok-B')
+    expect(warned).toEqual([
+      'opencode2 auth tied a send without its attempt mark to the newest of several waiting attempts',
+    ])
+  })
+})
+
+describe('installOpenCode2Auth answeredBy', () => {
+  test('a response another account answered is attributed to that account only, once', async () => {
+    const turn = accountsInTurn(['A', 'C'])
+    const { adapter, seen, ends } = trackingAdapter({
+      chooseAccount: turn.chooseAccount,
+      // The adapter's own sender moved the request on to another account
+      // and says which in a response header.
+      answeredBy: ({ response, attempt }) => {
+        seen.push(`answered:${attempt.data}`)
+        const by = response.headers.get('x-answered-by')
+        return by === null
+          ? undefined
+          : { accountId: by, data: `${attempt.data}->${by}` }
+      },
+    })
+    const { host, installation } = await install(adapter, seen)
+    const accounts: string[] = []
+    installation.on('quota', (event) => {
+      accounts.push(`quota:${event.accountId}:${event.quota.used}`)
+    })
+    installation.on('limit', (event) => {
+      accounts.push(`limit:${event.accountId}`)
+    })
+    installation.on('retry', (event) => {
+      accounts.push(`retry:${event.accountId}:${event.reason}`)
+    })
+    const first = await modelRequest(host, 's1')
+    const sent = await httpRequest(host, 's1', 'primary', first.headers)
+    await httpResponse(
+      host,
+      's1',
+      sent.request,
+      new Response('slow down', {
+        status: 429,
+        headers: { 'x-answered-by': 'B', 'x-quota-used': '70' },
+      }),
+    )
+    await retry(host, 's1')
+    const second = await modelRequest(host, 's1')
+    const resent = await httpRequest(host, 's1', 'primary', second.headers)
+    const served = await httpResponse(
+      host,
+      's1',
+      resent.request,
+      new Response('ok', { headers: { 'x-quota-used': '5' } }),
+    )
+    await served.response.text()
+    await settle()
+
+    expect(accounts).toEqual([
+      'quota:B:70',
+      'limit:B',
+      'retry:B:reroute',
+      'quota:C:5',
+    ])
+    expect(seen).toEqual([
+      'select:s1/primary#1',
+      'answered:s1/primary#1',
+      'headers:s1/primary#1->B',
+      'quota:s1/primary#1->B',
+      'response:s1/primary#1->B',
+      'limit:s1/primary#1->B',
+      'end:s1/primary#1->B',
+      'retry:s1/primary#1->B',
+      'select:s1/primary#2',
+      'answered:s1/primary#2',
+      'headers:s1/primary#2',
+      'quota:s1/primary#2',
+      'end:s1/primary#2',
+    ])
+    expect(
+      ends.map(({ data, outcome }) => [data, outcome.status, outcome.limit]),
+    ).toEqual([
+      ['s1/primary#1->B', 429, { reason: 'too-many', status: 429 }],
+      ['s1/primary#2', 200, undefined],
+    ])
+    expect(turn.inputs[1]).toMatchObject({
+      previousAccountId: 'B',
+      rerouteFrom: { accountId: 'B' },
+    })
+  })
+
+  test('the rebound attempt names the chosen account it moved from', async () => {
+    const handles: Array<Record<string, unknown>> = []
+    const { adapter } = trackingAdapter({
+      answeredBy: () => ({ accountId: 'B' }),
+      onAttemptEnd: (attempt) => {
+        handles.push({ ...attempt })
+      },
+    })
+    const { host, installation } = await install(adapter)
+    const model = await modelRequest(host, 's1')
+    const sent = await httpRequest(host, 's1', 'primary', model.headers)
+    await httpResponse(host, 's1', sent.request, new Response(null))
+    await settle()
+    // Without `data` in the answer the attempt keeps its own value.
+    expect(handles).toMatchObject([
+      { accountId: 'B', reboundFrom: 'A', data: 's1/primary#1' },
+    ])
+    expect(installation.accountFor('s1', 'primary')).toBe('B')
+  })
+
+  test('a throwing answeredBy ends the attempt as failed and attributes nothing', async () => {
+    const { adapter, seen, ends } = trackingAdapter({
+      answeredBy: () => {
+        throw new Error('bridge state lost')
+      },
+    })
+    const { host } = await install(adapter, seen)
+    const model = await modelRequest(host, 's1')
+    const sent = await httpRequest(host, 's1', 'primary', model.headers)
+    const thrown = await httpResponse(
+      host,
+      's1',
+      sent.request,
+      new Response('slow down', {
+        status: 429,
+        headers: { 'x-quota-used': '9' },
+      }),
+    ).catch((error: Error) => error.message)
+    await settle()
+    expect(thrown).toBe('bridge state lost')
+    expect(seen).toEqual(['select:s1/primary#1', 'end:s1/primary#1'])
+    expect(ends.map(({ outcome }) => outcome)).toEqual([
+      {
+        outputStarted: false,
+        error: { reason: 'failed', message: 'bridge state lost' },
+      },
     ])
   })
 })

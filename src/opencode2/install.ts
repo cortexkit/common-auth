@@ -18,6 +18,7 @@ import type {
   OpenCode2HookContext,
   RequestKind,
   RequestScope,
+  ResponseAccount,
   RetryReason,
   SelectingHook,
   Transport,
@@ -25,35 +26,67 @@ import type {
 
 export const DEFAULT_MAX_RECORDS = 512
 
+/**
+ * The request header `model.request` sets to the attempt it started. The
+ * host builds the HTTP request and the WebSocket handshake from the headers
+ * `model.request` leaves, so `http.request` and `experimental.ws.handshake`
+ * read it to find their own attempt among several of one session and kind,
+ * and remove it: it never reaches the wire.
+ */
+export const ATTEMPT_HEADER = 'x-common-auth-attempt'
+
 type OpenAttempt<A> = { -readonly [K in keyof Attempt<A>]: Attempt<A>[K] }
 type AttemptError = NonNullable<AttemptOutcome['error']>
 
 /**
  * One attempt: an account chosen for one send of one session and request
- * kind. The latest attempt of each `sessionID:kind` is kept, because neither
- * quota headers nor stream events name the account, and the retry hook names
- * only the session: every reading is attributed through this record.
+ * kind. Several attempts of one session and kind can be open at once.
+ * Neither quota headers nor stream events name the account, and the retry
+ * hook names only the session, so every reading is attributed through the
+ * attempt it was tied to.
  */
 interface AttemptRecord<A> {
+  /** Unique within the installation; also the attempt's `attemptId`. */
+  readonly id: string
+  readonly key: string
   readonly scope: RequestScope
-  /** `undefined` when the adapter had no account for this attempt. */
-  readonly accountId: string | undefined
+  /**
+   * `undefined` when the adapter had no account for this attempt. Changes
+   * only when `answeredBy` rebinds the attempt.
+   */
+  accountId: string | undefined
   readonly headers: HeaderEdits
-  readonly seq: number
   /** The handle given to the adapter and listeners; absent without an account. */
   readonly attempt: OpenAttempt<A> | undefined
   /**
    * The transport hook that carried this attempt. A second transport hook
-   * for the same session and kind is a new send and gets a new attempt.
+   * for the same attempt is a new send and gets a new attempt.
    */
   transport?: Transport
   status?: number
   outputStarted: boolean
   limit?: { readonly signal: LimitSignal; readonly delivered: Promise<void> }
-  /** Set by the retry hook when it asked the host to retry elsewhere. */
-  rerouteFrom?: { readonly accountId: string; readonly limit: LimitSignal }
+  /** Set once the retry hook has decided about this attempt. */
+  judged?: boolean
+  /** Set when the retry hook asked the host to retry it on another account. */
+  rerouted?: boolean
   /** Set when the attempt ended; settles once `onAttemptEnd` has. */
   ended?: Promise<void>
+  /** Why the attempt ended without completing, when it did. */
+  endError?: AttemptError
+}
+
+/**
+ * What the retry hook decided about an attempt it asked the host to retry,
+ * waiting for the next attempt of the same session and kind.
+ */
+interface PendingRetry {
+  readonly sessionID: string
+  readonly accountId: string
+  readonly rerouteFrom?: {
+    readonly accountId: string
+    readonly limit: LimitSignal
+  }
 }
 
 type HookDraft = {
@@ -147,10 +180,12 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
  * Installs multi-account auth on OpenCode 2's own provider drivers. Every
  * hook is scoped to `adapter.providerID`:
  *
- * - `model.request` picks the account for the request's `sessionID:kind`,
- *   which starts a new attempt, and sets its headers;
- * - `http.request` and `experimental.ws.handshake` set them again, because
- *   the host applies its own credential after `model.request`;
+ * - `model.request` picks the account for one model call of a session and
+ *   request kind, which starts a new attempt, sets its headers and marks the
+ *   request with the attempt (`ATTEMPT_HEADER`);
+ * - `http.request` and `experimental.ws.handshake` find the attempt by that
+ *   mark, remove it and set the account headers again, because the host
+ *   applies its own credential after `model.request`;
  * - `experimental.ws.send` (only when the adapter rewrites frames) rewrites
  *   each outgoing frame;
  * - `http.response` and `experimental.ws.receive` read quota, refusals,
@@ -160,20 +195,20 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
  *   before any output, so `model.request` runs again and can pick another
  *   account, and refuses to retry once output has started.
  *
- * Attribution. An HTTP response belongs to the attempt whose `http.request`
- * produced its request object, and to nothing else. The host hands
- * `http.response` the request object the `http.request` hooks left, so a
- * different object means a later hook replaced it; nothing then proves which
- * send the response answers (an earlier attempt's send may still be in
- * flight, and only the newest attempt of each session and kind is kept), and
- * its feedback is dropped rather than guessed by recency. No marker can ride
- * on the request instead: the host builds the wire request from that same
- * object, so a marker would be sent to the provider. A WebSocket frame
- * belongs to the newest attempt of its session and kind only while that
- * attempt went out over WebSocket and has not ended: the host runs one
- * exchange at a time per session socket, so frames between one handshake
- * and the next belong to the earlier attempt. Anything else is attributed to
- * no attempt and reaches no adapter callback or listener.
+ * Attribution. A send belongs to the attempt named by the mark
+ * `model.request` left on it, so several attempts of one session and kind
+ * can be in flight at once, each on its own account. An HTTP response
+ * belongs to the attempt whose `http.request` produced its request object,
+ * and to nothing else. The host hands `http.response` the request object the
+ * `http.request` hooks left, so a different object means a later hook
+ * replaced it; nothing then proves which send the response answers, and its
+ * feedback is dropped rather than guessed by recency. A WebSocket frame
+ * names no attempt, so frames go to the newest open attempt of their session
+ * and kind that went out over WebSocket, and an older one is abandoned as
+ * soon as a newer attempt of that session and kind begins or goes out over
+ * WebSocket: the host runs one exchange at a time on a session's socket.
+ * Anything else is attributed to no attempt and reaches no adapter callback
+ * or listener.
  */
 export async function installOpenCode2Auth<Q, A = unknown>(
   ctx: OpenCode2HookContext,
@@ -186,9 +221,13 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   const forbidden = (
     options.hostCredentials ?? [placeholderSecret(providerID)]
   ).filter((value) => value !== '')
-  const records = new Map<string, AttemptRecord<A>>()
+  /** Every attempt still held, oldest first. */
+  const attempts = new Map<string, AttemptRecord<A>>()
   const byRequest = new WeakMap<Request, AttemptRecord<A>>()
+  /** Retries the retry hook asked for, by `sessionID:kind`. */
+  const pendingRetries = new Map<string, PendingRetry>()
   let warnedUnprovenResponse = false
+  let warnedUnmarkedSend = false
   const listeners = new Map<
     OpenCode2AuthEventName,
     Set<(payload: never) => void | Promise<void>>
@@ -245,21 +284,31 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       ...(rec.limit ? { limit: rec.limit.signal } : {}),
       ...(error ? { error } : {}),
     }
+    if (error) rec.endError = error
     rec.ended = deliverEnd(rec.attempt, outcome)
   }
 
   const abandon = (rec: AttemptRecord<A>, message: string) =>
     finish(rec, { reason: 'abandoned', message })
 
+  /** The attempts of one session and kind, oldest first. */
+  const attemptsOf = (key: string) =>
+    [...attempts.values()].filter((rec) => rec.key === key)
+  const newestOf = (key: string) => attemptsOf(key).at(-1)
+
+  /** Forgets an attempt, and its key's pending retry once nothing else holds the key. */
+  const drop = (rec: AttemptRecord<A>) => {
+    attempts.delete(rec.id)
+    if (!attemptsOf(rec.key).length) pendingRetries.delete(rec.key)
+  }
+
   const remember = (rec: AttemptRecord<A>) => {
-    const key = keyOf(rec.scope.sessionID, rec.scope.kind)
-    records.delete(key)
-    records.set(key, rec)
-    while (records.size > maxRecords) {
-      const oldest = records.entries().next().value
+    attempts.set(rec.id, rec)
+    while (attempts.size > maxRecords) {
+      const oldest = attempts.values().next().value
       if (oldest === undefined) break
-      abandon(oldest[1], 'dropped to keep the record bound')
-      records.delete(oldest[0])
+      abandon(oldest, 'dropped to keep the record bound')
+      drop(oldest)
     }
   }
 
@@ -290,21 +339,43 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     }
   }
 
+  /**
+   * Retires the attempts a new attempt of the same session and kind
+   * supersedes. One that has ended is dropped. One still open stays when it
+   * may yet be sent or answered (waiting for its transport, or an HTTP send
+   * whose response will name it), since another call of the same session and
+   * kind may run beside this one. One on WebSocket is abandoned, because
+   * frames name no attempt and the host runs one exchange at a time on a
+   * session's socket; one the retry hook already judged is abandoned too,
+   * because the host has finished with that call.
+   */
+  const supersede = (key: string) => {
+    for (const rec of attemptsOf(key)) {
+      if (rec.ended || !rec.attempt) {
+        drop(rec)
+      } else if (rec.transport === 'ws' || rec.judged) {
+        abandon(rec, 'a newer attempt of its session and kind began')
+        drop(rec)
+      }
+    }
+  }
+
   const select = async (
     scope: RequestScope,
     hook: SelectingHook,
     transport?: Transport,
   ): Promise<AttemptRecord<A>> => {
-    const prior = records.get(keyOf(scope.sessionID, scope.kind))
-    if (prior) abandon(prior, 'a newer attempt of its session and kind began')
+    const key = keyOf(scope.sessionID, scope.kind)
+    const retried = pendingRetries.get(key)
+    pendingRetries.delete(key)
+    const previousAccountId = retried?.accountId ?? newestOf(key)?.accountId
+    supersede(key)
     const input: ChooseAccountInput = {
       ...scope,
-      ...(prior?.accountId === undefined
+      ...(previousAccountId === undefined ? {} : { previousAccountId }),
+      ...(retried?.rerouteFrom === undefined
         ? {}
-        : { previousAccountId: prior.accountId }),
-      ...(prior?.rerouteFrom === undefined
-        ? {}
-        : { rerouteFrom: prior.rerouteFrom }),
+        : { rerouteFrom: retried.rerouteFrom }),
     }
     const accountId = await adapter.chooseAccount(input)
     let headers: HeaderEdits = {}
@@ -318,19 +389,20 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         headers = result
       }
     }
-    const id = ++seq
+    const id = `attempt-${++seq}`
     const rec: AttemptRecord<A> = {
+      id,
+      key,
       scope,
       accountId,
       headers,
-      seq: id,
       attempt:
         accountId === undefined
           ? undefined
           : {
               ...scope,
               accountId,
-              attemptId: `attempt-${id}`,
+              attemptId: id,
               transport,
               data,
             },
@@ -355,20 +427,49 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     return rec
   }
 
-  // The transport hooks normally follow `model.request` and carry the
-  // attempt it started. Choosing here too keeps a request that skipped it
-  // from going out under the host credential, and a second send without a
-  // `model.request` in between from reusing the first send's attempt.
+  // The transport hooks normally follow `model.request` and carry the mark
+  // of the attempt it started. Choosing here too keeps a request that skipped
+  // it from going out under the host credential, and a second send of the
+  // same attempt from reusing the first send's attempt.
   const bind = async (
     scope: RequestScope,
     hook: SelectingHook,
     transport: Transport,
+    mark: string | undefined,
   ): Promise<AttemptRecord<A>> => {
-    const rec = records.get(keyOf(scope.sessionID, scope.kind))
+    const key = keyOf(scope.sessionID, scope.kind)
+    let rec = mark === undefined ? undefined : attempts.get(mark)
+    if (rec?.key !== key) rec = undefined
+    if (!rec) {
+      // No mark: the newest attempt of the session and kind is the only
+      // candidate the hook can name. Say so once when that is a guess.
+      rec = newestOf(key)
+      const waiting = attemptsOf(key).filter(
+        (other) => other.transport === undefined && !other.ended,
+      )
+      if (waiting.length > 1 && !warnedUnmarkedSend) {
+        warnedUnmarkedSend = true
+        warn(
+          'opencode2 auth tied a send without its attempt mark to the newest of several waiting attempts',
+          { sessionID: scope.sessionID, kind: scope.kind },
+        )
+      }
+    }
     if (!rec || rec.transport !== undefined || rec.ended)
-      return select(scope, hook, transport)
-    rec.transport = transport
-    if (rec.attempt) rec.attempt.transport = transport
+      rec = await select(scope, hook, transport)
+    else {
+      rec.transport = transport
+      if (rec.attempt) rec.attempt.transport = transport
+    }
+    if (transport === 'ws') {
+      for (const other of attemptsOf(key)) {
+        if (other !== rec && other.transport === 'ws')
+          abandon(
+            other,
+            'a newer attempt of its session and kind went out over WebSocket',
+          )
+      }
+    }
     return rec
   }
 
@@ -382,10 +483,13 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     }
   }
 
-  const liveOn = (rec: AttemptRecord<A> | undefined, transport: Transport) =>
-    rec?.attempt !== undefined && rec.transport === transport && !rec.ended
-      ? rec
-      : undefined
+  /** The attempt a frame of this session and kind belongs to, if any. */
+  const liveOnSocket = (sessionID: string, kind: string) => {
+    const rec = attemptsOf(keyOf(sessionID, kind))
+      .filter((each) => each.transport === 'ws')
+      .at(-1)
+    return rec?.attempt !== undefined && !rec.ended ? rec : undefined
+  }
 
   const noteLimit = (
     rec: AttemptRecord<A>,
@@ -445,18 +549,47 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     else if (verdict.done) finish(rec)
   }
 
-  const pickForRetry = (sessionID: string): AttemptRecord<A> | undefined => {
-    let refused: AttemptRecord<A> | undefined
-    let primary: AttemptRecord<A> | undefined
-    let latest: AttemptRecord<A> | undefined
-    for (const rec of records.values()) {
-      if (rec.scope.sessionID !== sessionID) continue
-      if (!latest || rec.seq > latest.seq) latest = rec
-      if (rec.scope.kind === 'primary') primary = rec
-      if (rec.limit && !rec.rerouteFrom && (!refused || rec.seq > refused.seq))
-        refused = rec
-    }
-    return refused ?? primary ?? latest
+  /** Moves an attempt to the account that answered its response. */
+  const rebind = (rec: AttemptRecord<A>, answered: ResponseAccount<A>) => {
+    const attempt = rec.attempt
+    if (!attempt || answered.accountId === rec.accountId) return
+    attempt.reboundFrom ??= attempt.accountId
+    attempt.accountId = answered.accountId
+    if ('data' in answered) attempt.data = answered.data
+    rec.accountId = answered.accountId
+  }
+
+  const failedOutcome = (rec: AttemptRecord<A>) =>
+    !rec.attempt ||
+    rec.endError !== undefined ||
+    (rec.status !== undefined && rec.status >= 400)
+
+  /**
+   * The attempt a retry is about. The retry hook names only the session, so:
+   * the newest refused attempt not yet rerouted; else, among the session's
+   * primary attempts (or all of them when it has none), the only one, the
+   * newest that failed and was not yet judged, the only one still open, or
+   * the newest. Two or more open with nothing else to tell them apart is
+   * `ambiguous`: deciding for one could reroute or end the other.
+   */
+  const pickForRetry = (
+    sessionID: string,
+  ): AttemptRecord<A> | 'ambiguous' | undefined => {
+    const held = [...attempts.values()].filter(
+      (rec) => rec.scope.sessionID === sessionID,
+    )
+    const refused = held.filter((rec) => rec.limit && !rec.rerouted).at(-1)
+    if (refused) return refused
+    const primary = held.filter((rec) => rec.scope.kind === 'primary')
+    const pool = primary.length > 0 ? primary : held
+    if (pool.length <= 1) return pool[0]
+    const failed = pool
+      .filter((rec) => !rec.judged && failedOutcome(rec))
+      .at(-1)
+    if (failed) return failed
+    const open = pool.filter((rec) => rec.attempt && !rec.ended)
+    if (open.length > 1) return 'ambiguous'
+    return open[0] ?? pool.at(-1)
   }
 
   const scoped = { providerID }
@@ -467,7 +600,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       async (draft) => {
         const rec = await select(scopeOf(draft), 'model.request')
         if (rec.accountId === undefined) throw noAccount(rec.scope)
-        applyHeaderEdits(draft.headers, rec.headers)
+        applyHeaderEdits(draft.headers, {
+          ...rec.headers,
+          [ATTEMPT_HEADER]: rec.id,
+        })
       },
       scoped,
     ),
@@ -476,13 +612,21 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     await ctx.session.hook(
       'http.request',
       async (draft) => {
-        const rec = await bind(scopeOf(draft), 'http.request', 'http')
+        const mark = draft.request.headers.get(ATTEMPT_HEADER) ?? undefined
+        const rec = await bind(scopeOf(draft), 'http.request', 'http', mark)
         const account = accountOf(rec)
         const attempt = rec.attempt
         if (!account || !attempt) throw noAccount(rec.scope)
         await failing(rec, async () => {
           let request = draft.request
           if (adapter.rewriteRequest) {
+            if (mark !== undefined) {
+              // The mark is the installer's own; the adapter's rewrite never
+              // sees it.
+              const unmarked = new Headers(request.headers)
+              unmarked.delete(ATTEMPT_HEADER)
+              request = new Request(request, { headers: unmarked })
+            }
             request =
               (await adapter.rewriteRequest({
                 ...account,
@@ -491,6 +635,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
               })) ?? request
           }
           const headers = new Headers(request.headers)
+          headers.delete(ATTEMPT_HEADER)
           applyHeaderEditsTo(headers, rec.headers)
           guard(rec.scope, headers.entries())
           const final = new Request(request, { headers })
@@ -516,10 +661,21 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           }
           return
         }
-        const account = accountOf(rec)
-        const attempt = rec?.attempt
-        if (!rec || !account || !attempt) return
         const original = draft.response
+        if (adapter.answeredBy && rec.attempt) {
+          const attempt = rec.attempt
+          const answered = await failing(rec, async () =>
+            adapter.answeredBy?.({
+              request: draft.request,
+              response: original,
+              attempt,
+            }),
+          )
+          if (answered) rebind(rec, answered)
+        }
+        const account = accountOf(rec)
+        const attempt = rec.attempt
+        if (!account || !attempt) return
         rec.status = original.status
         const quota = adapter.quotaFromHeaders?.(
           original.headers,
@@ -581,10 +737,17 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     await ctx.session.hook(
       'experimental.ws.handshake',
       async (draft) => {
+        let mark: string | undefined
+        for (const name of Object.keys(draft.headers)) {
+          if (name.toLowerCase() !== ATTEMPT_HEADER) continue
+          mark ??= draft.headers[name]
+          delete draft.headers[name]
+        }
         const rec = await bind(
           scopeOf(draft),
           'experimental.ws.handshake',
           'ws',
+          mark,
         )
         const account = accountOf(rec)
         const attempt = rec.attempt
@@ -610,10 +773,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         'experimental.ws.send',
         async (draft) => {
           const scope = scopeOf(draft)
-          const rec = liveOn(
-            records.get(keyOf(scope.sessionID, scope.kind)),
-            'ws',
-          )
+          const rec = liveOnSocket(scope.sessionID, scope.kind)
           const frame = await rewriteFrame({
             ...scope,
             attempt: rec?.attempt,
@@ -629,10 +789,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     await ctx.session.hook(
       'experimental.ws.receive',
       (draft) => {
-        const rec = liveOn(
-          records.get(keyOf(draft.sessionID, draft.kind)),
-          'ws',
-        )
+        const rec = liveOnSocket(draft.sessionID, draft.kind)
         if (!rec) return
         try {
           inspect(rec, 'ws', draft.frame)
@@ -649,11 +806,26 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     await ctx.session.hook(
       'retry',
       async (draft) => {
-        const rec = pickForRetry(draft.sessionID)
-        if (!rec) return
+        const picked = pickForRetry(draft.sessionID)
+        if (!picked) return
         const hostDecision = draft.decision
+        if (picked === 'ambiguous') {
+          // Nothing tells which open attempt failed: keep the host's
+          // decision and leave every attempt as it is.
+          await emit('retry', {
+            sessionID: draft.sessionID,
+            attempt: draft.attempt,
+            reason: 'host-decides',
+            hostDecision,
+            decision: hostDecision,
+          })
+          return
+        }
+        const rec = picked
+        rec.judged = true
         let decision: SessionRetryDecision = hostDecision
         let reason: RetryReason
+        let rerouteFrom: PendingRetry['rerouteFrom']
         const attempt = rec.attempt
         if (rec.accountId === undefined || !attempt) {
           decision = { retry: false }
@@ -673,10 +845,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           if (rec.ended) await rec.ended
           if (rec.limit) {
             await rec.limit.delivered
-            rec.rerouteFrom = {
-              accountId: rec.accountId,
-              limit: rec.limit.signal,
-            }
+            rec.rerouted = true
+            rerouteFrom = { accountId: rec.accountId, limit: rec.limit.signal }
             // No delay: the next attempt goes to another account, and the
             // host would otherwise wait out the refused account's backoff,
             // or not retry at all for errors it deems final.
@@ -687,6 +857,16 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           }
         }
         draft.decision = decision
+        // The host's retry runs `model.request` again for this attempt's
+        // session and kind; that next attempt, and no other attempt of the
+        // session, is told what this one ended with.
+        if (decision.retry && rec.accountId !== undefined) {
+          pendingRetries.set(rec.key, {
+            sessionID: rec.scope.sessionID,
+            accountId: rec.accountId,
+            ...(rerouteFrom === undefined ? {} : { rerouteFrom }),
+          })
+        }
         await emit('retry', {
           sessionID: draft.sessionID,
           ...(rec.accountId === undefined ? {} : { accountId: rec.accountId }),
@@ -703,10 +883,13 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   )
 
   const forgetSession = (sessionID: string) => {
-    for (const [key, rec] of records) {
+    for (const rec of [...attempts.values()]) {
       if (rec.scope.sessionID !== sessionID) continue
       abandon(rec, 'its session was forgotten')
-      records.delete(key)
+      attempts.delete(rec.id)
+    }
+    for (const [key, pending] of pendingRetries) {
+      if (pending.sessionID === sessionID) pendingRetries.delete(key)
     }
   }
 
@@ -744,19 +927,20 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       }
     },
     accountFor(sessionID, kind) {
-      return records.get(keyOf(sessionID, kind))?.accountId
+      return newestOf(keyOf(sessionID, kind))?.accountId
     },
     forgetSession,
     get size() {
-      return records.size
+      return attempts.size
     },
     async dispose() {
       if (disposed) return
       disposed = true
       abort.abort()
-      for (const rec of records.values())
+      for (const rec of attempts.values())
         abandon(rec, 'the installation was disposed')
-      records.clear()
+      attempts.clear()
+      pendingRetries.clear()
       listeners.clear()
       await Promise.all(
         registrations.map(async (registration) => {
