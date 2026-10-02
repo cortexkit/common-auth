@@ -1016,9 +1016,10 @@ async function transitionRow(
               'no-credential',
               `row ${id} holds no credential`,
             )
-          // Disabling a credential the strict store cannot prove is safe,
-          // which is why an attribution alone does not ask for a bound row;
-          // writing a provider state for one is not.
+          // A strict store refuses here, but not for an attribution alone:
+          // disabling or enabling a row whose credential the store cannot
+          // prove is harmless (an unbound row is never a candidate), while
+          // writing a provider state would vouch for that credential.
           requireBound(operation, row)
           const plan = await planProviderStateIn(
             tx,

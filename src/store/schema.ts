@@ -190,9 +190,11 @@ export interface PoolRow {
    * it belongs to, and the config still holds the replaced row. Also set when
    * a write that gives a row its first identity (`recordIdentity`, or a
    * `rotate` or refresh that learns one) stopped after stamping the identity
-   * and before recording it in the config. The row is shown as the write
-   * leaves it once completed, is never a candidate, and the next store write
-   * on it writes the config to match.
+   * and before recording it in the config, and when an attributed `disable`
+   * or `enable` that changed the provider state stopped after its state
+   * write and before flipping the row in the config. The row is shown as the
+   * write leaves it once completed, is never a candidate, and the next store
+   * write on it writes the config to match.
    */
   torn?: true
   /**
