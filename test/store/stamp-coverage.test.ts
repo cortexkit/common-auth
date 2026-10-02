@@ -462,6 +462,23 @@ describe('an identity learnt after the credential was stamped', () => {
     expect(await admission()).toEqual(MISMATCHED)
   })
 
+  it('a default-mode recordIdentity on a row whose stamp is not bound records the identity in the config only and stamps nothing', async () => {
+    await s.open().add({ id: 'a', credential: oauth('r-a') })
+    await editState((accounts) => {
+      delete accounts.a.commonAuthPool
+    })
+    const stateBefore = (await s.bytes()).state
+    await s.open().recordIdentity('a', 'acct-a', { credentialEpoch: 1 })
+    expect((await s.bytes()).state).toBe(stateBefore)
+    expect(rosterOf(await s.config()).accountId).toBe('acct-a')
+    expect(await admission()).toEqual({
+      stamp: 'missing',
+      strictCandidate: false,
+      strictUnbound: true,
+      defaultCandidate: true,
+    })
+  })
+
   it('a config identity beside a stamp that names none is mismatched', async () => {
     await strict().add({ id: 'a', credential: oauth('r-a') })
     await editConfig((config) => {
