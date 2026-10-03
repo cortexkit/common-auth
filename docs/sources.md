@@ -1082,3 +1082,7 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | opencode2 | Host-driven refresh returns a placeholder and never calls the pool | new (neither copy) | host refresh hands back a placeholder and never calls the pool |
 | opencode2 | Placeholder credentials are recognised per integration and carry no routable secret | new (neither copy) | placeholder credentials are recognised and carry no routable secret |
 | opencode2 | The server-sent event watcher forwards bytes unchanged and reassembles events split across chunks | new (neither copy) | passes the body through unchanged and reports events split across chunks |
+| rpc | Split HTTP/1.0 headers and UTF-8 JSON bodies, with and without length | new (neither copy) | raw RPC transport reads split headers and UTF-8 bodies with or without Content-Length |
+| rpc | Truncated, reset and stalled responses fail within total deadline without socket leaks | new (neither copy) | raw RPC transport rejects truncated, reset and stalled bodies and closes sockets |
+| rpc | Length overruns, Transfer-Encoding, malformed JSON and HTTP errors fail closed | new (neither copy) | raw RPC transport rejects length overruns, transfer encoding, invalid JSON and non-2xx |
+| rpc | Header and body byte caps enforced without waiting for EOF | new (neither copy) | raw RPC transport bounds headers and response bodies before EOF |
