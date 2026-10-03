@@ -384,7 +384,7 @@ Differences from each plugin's current behaviour:
 - antigravity-auth: the same sections replace its seven OpenCode commands; `/gemini-dump` is not kept. Its Pi package registers no command today; adopting gives it the one command.
 ### ./claustrum
 
-Vault custody through scoped enrollment, extracted from anthropic-auth main 77e4c900 (`packages/core/src/claustrum.ts`, `claustrum-enrollment.ts`, `claustrum-scoped.ts`, `claustrum-scoped-roster.ts`, `claustrum-scoped-runtime.ts`, about 1 900 lines) and its tests; openai-auth's handle-based custody is not the model and nothing of it moves. Needs the optional peer `@cortexkit/claustrum-client` (>= 0.5.0); importing `/claustrum` without it fails, every other subpath is unaffected. No environment reads and no host paths: the plugin passes the vault connection file, the token and roster paths, its clock and its logger.
+The `/claustrum` subpath lets a plugin enroll with a credential vault and use the vault's scoped credentials for account discovery and authorization. It was adapted from anthropic-auth's enrollment, scoped-client, roster and runtime modules and their tests; openai-auth's handle-based custody was not carried over. It needs the optional peer `@cortexkit/claustrum-client` (>= 0.4.0); CI runs the full Claustrum test suite and typechecks the source against exactly 0.4.0. Importing `/claustrum` without that peer fails, while every other subpath is unaffected. The plugin supplies the vault connection file, token and roster paths, clock and logger; the library reads no environment variables or host paths.
 
 **What the plugin supplies.**
 

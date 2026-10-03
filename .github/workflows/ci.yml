@@ -21,6 +21,8 @@ jobs:
         run: bun run build
       - name: Typecheck
         run: bun run typecheck
+      - name: Claustrum 0.4.0 compatibility
+        run: bun run check:claustrum-040
       - name: Lint
         run: bun run lint
       - name: Test
