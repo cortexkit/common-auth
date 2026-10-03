@@ -9,6 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { buildTui } from '@cortexkit/common-auth/tui-build'
 import { makeTempDir } from '../fixtures/scratch.js'
 
@@ -102,6 +103,47 @@ test('builds of one source graph from two checkout directories emit byte-identic
   } finally {
     await rm(first, { recursive: true, force: true })
     await rm(second, { recursive: true, force: true })
+  }
+})
+
+test('two shared files with identical contents stay two modules with their own state', async () => {
+  const root = await makeTempDir('fixture-tui-twins-')
+  try {
+    // Same bytes and same basename at two paths: a name derived from the
+    // contents would fold them into one module and one counter.
+    const counter = 'let n = 0\nexport const bump = (): number => ++n\n'
+    const sources: Record<string, string> = {
+      'package.json': '{ "name": "fixture-twins", "type": "module" }\n',
+      'src/a/counter.ts': counter,
+      'src/b/counter.ts': counter,
+      'src/tui/entry.ts': [
+        "export { bump as bumpA } from '../a/counter.ts'",
+        "export { bump as bumpB } from '../b/counter.ts'",
+        '',
+      ].join('\n'),
+    }
+    for (const [path, content] of Object.entries(sources)) {
+      await mkdir(dirname(join(root, path)), { recursive: true })
+      await writeFile(join(root, path), content)
+    }
+    const destination = join(root, 'out')
+    const result = await buildTui(
+      join(root, 'src/tui/entry.ts'),
+      'raw',
+      destination,
+      { inline: [] },
+    )
+    const shared = result.emitted.filter((path) => path.startsWith('shared/'))
+    expect(shared).toHaveLength(2)
+    expect(new Set(shared).size).toBe(2)
+    const entry = await readFile(join(destination, 'entry.js'), 'utf8')
+    for (const path of shared) expect(entry).toContain(`./${path}`)
+    const module = await import(
+      pathToFileURL(join(destination, 'entry.js')).href
+    )
+    expect([module.bumpA(), module.bumpA(), module.bumpB()]).toEqual([1, 2, 1])
+  } finally {
+    await rm(root, { recursive: true, force: true })
   }
 })
 
