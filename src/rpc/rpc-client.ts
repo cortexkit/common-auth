@@ -1,4 +1,4 @@
-import { Agent, request as httpRequest } from 'node:http'
+import { connect, type Socket } from 'node:net'
 import type {
   ApplyRequest,
   ApplyResult,
@@ -33,7 +33,6 @@ async function call<T>(
   expectedPid: number | undefined,
   discoverOptions: DiscoverPortFileOptions,
   onSelected: ((entry: PortFileEntry | null) => void) | undefined,
-  agent: Agent,
   method: string,
   params: Record<string, unknown>,
   timeoutMs = DEFAULT_RPC_TIMEOUT_MS,
@@ -42,72 +41,108 @@ async function call<T>(
   onSelected?.(entry)
   if (!entry) return null
 
-  // node:http request bypasses HTTP_PROXY/http_proxy for loopback connections
-  // under Bun, and an explicit Agent bypasses NODE_USE_ENV_PROXY under Node 24.5+.
+  // A raw loopback socket never consults runtime HTTP proxy settings, which
+  // otherwise can expose the bearer token to a configured proxy. timeoutMs is
+  // a total deadline for connect, request and the full response, not idle time.
   return new Promise<T | null>((resolve) => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
-
+    let socket: Socket | undefined
     let settled = false
     const done = (value: T | null) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      socket?.destroy()
       resolve(value)
     }
+    const timer = setTimeout(() => done(null), timeoutMs)
 
     try {
       const body = JSON.stringify(params)
-      const req = httpRequest(
-        {
-          hostname: '127.0.0.1',
-          port: entry.port,
-          path: `/rpc/${method}`,
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'content-length': Buffer.byteLength(body),
-            authorization: `Bearer ${entry.token}`,
-          },
-          agent,
-          signal: controller.signal,
-        },
-        (res) => {
-          const statusCode = res.statusCode ?? 0
-          if (statusCode < 200 || statusCode >= 300) {
-            res.resume()
-            done(null)
-            return
-          }
-          let text = ''
-          res.setEncoding('utf8')
-          res.on('data', (chunk: string) => {
-            text += chunk
-          })
-          res.on('end', () => {
-            try {
-              done(JSON.parse(text) as T)
-            } catch {
-              done(null)
+      socket = connect({ host: '127.0.0.1', port: entry.port })
+      socket.on('connect', () => {
+        // HTTP/1.0 avoids chunked responses; explicitly request connection close
+        // because older Bun servers can keep delayed HTTP/1.0 replies open.
+        socket?.write(
+          `POST /rpc/${method} HTTP/1.0\r\n` +
+            `Host: 127.0.0.1:${entry.port}\r\n` +
+            'Connection: close\r\n' +
+            'Content-Type: application/json\r\n' +
+            `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+            `Authorization: Bearer ${entry.token}\r\n\r\n` +
+            body,
+        )
+      })
+      const chunks: Buffer[] = []
+      let bytes = 0
+      let headerBytes: number | undefined
+      let contentLength: number | undefined
+      let prefix = Buffer.alloc(0)
+      const finishBody = () => {
+        if (headerBytes === undefined) return done(null)
+        try {
+          const payload = Buffer.concat(chunks).subarray(headerBytes)
+          done(JSON.parse(payload.toString('utf8')) as T)
+        } catch {
+          done(null)
+        }
+      }
+      socket.on('data', (chunk: Buffer) => {
+        if (settled) return
+        bytes += chunk.length
+        chunks.push(chunk)
+        if (headerBytes === undefined) {
+          prefix = Buffer.concat([prefix, chunk])
+          const separator = prefix.indexOf('\r\n\r\n')
+          if (separator >= 0) headerBytes = separator + 4
+          if ((headerBytes ?? prefix.length) > 16 * 1024) return done(null)
+          if (headerBytes !== undefined) {
+            const headers = prefix
+              .subarray(0, separator)
+              .toString('latin1')
+              .split('\r\n')
+            const status = /^HTTP\/1\.[01] (\d{3})(?: |$)/.exec(
+              headers[0] ?? '',
+            )
+            if (!status || Number(status[1]) < 200 || Number(status[1]) >= 300)
+              return done(null)
+            for (const header of headers.slice(1)) {
+              const colon = header.indexOf(':')
+              const name = header.slice(0, colon).toLowerCase()
+              const value = header.slice(colon + 1).trim()
+              if (name === 'transfer-encoding') return done(null)
+              if (name === 'content-length') {
+                if (contentLength !== undefined || !/^\d+$/.test(value))
+                  return done(null)
+                contentLength = Number(value)
+                if (
+                  !Number.isSafeInteger(contentLength) ||
+                  contentLength > 8 * 1024 * 1024
+                )
+                  return done(null)
+              }
             }
-          })
-          res.on('error', () => {
-            done(null)
-          })
-          res.on('close', () => {
-            if (!res.readableEnded) done(null)
-          })
-        },
-      )
-
-      req.on('error', () => {
-        done(null)
+            prefix = Buffer.alloc(0)
+          }
+        }
+        const bodyBytes = bytes - (headerBytes ?? bytes)
+        if (bodyBytes > 8 * 1024 * 1024) return done(null)
+        if (contentLength !== undefined) {
+          if (bodyBytes > contentLength) return done(null)
+          // Bun 1.3.14 can keep an async HTTP/1.0 reply open after sending
+          // its complete Content-Length body; don't wait for EOF in that case.
+          if (bodyBytes === contentLength) finishBody()
+        }
       })
-      req.on('close', () => {
-        done(null)
+      socket.on('end', () => {
+        if (
+          contentLength !== undefined &&
+          bytes - (headerBytes ?? 0) !== contentLength
+        )
+          return done(null)
+        finishBody()
       })
-
-      req.end(body)
+      socket.on('error', () => done(null))
+      socket.on('close', () => done(null))
     } catch {
       done(null)
     }
@@ -133,10 +168,6 @@ export function createRpcClient(
   const discoverOptions: DiscoverPortFileOptions = {
     exactPid: options.exactPid,
   }
-  // An explicit Agent ensures requests go direct rather than through
-  // proxy settings (e.g. Node 24.5+ NODE_USE_ENV_PROXY on http.globalAgent).
-  // keepAlive is disabled so sockets are not pooled or leaked across calls.
-  const agent = new Agent({ keepAlive: false })
   let reportedSelection = false
   const reportSelected = (entry: PortFileEntry | null) => {
     if (reportedSelection) return
@@ -152,7 +183,6 @@ export function createRpcClient(
         expectedPid,
         discoverOptions,
         reportSelected,
-        agent,
         'pending-notifications',
         { lastReceivedId, sessionId },
       )
@@ -164,7 +194,6 @@ export function createRpcClient(
         expectedPid,
         discoverOptions,
         reportSelected,
-        agent,
         'apply',
         {
           ...request,
