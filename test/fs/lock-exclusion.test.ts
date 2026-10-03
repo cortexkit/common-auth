@@ -303,17 +303,17 @@ describe('a new record is complete the moment the lock path names it', () => {
     const resume = deferred()
     let armed = true
     const originalWriteFile = fs.writeFile
-    // An exclusive create of a lock record (of the lock path itself, or of a
-    // private name beside it) opens the file and then writes it; this holds
-    // the first one between the two, as an event-loop stall would.
+    // An exclusive create opens the file and then writes it. A creator that
+    // creates the lock path itself that way is held between the two, as an
+    // event-loop stall would hold it. A creator that publishes its record
+    // some other way is not held, and must then be refused by the contender.
     const writeSpy = spyOn(fs, 'writeFile').mockImplementation((async (
       ...args: Parameters<typeof fs.writeFile>
     ) => {
       const [file, data, options] = args
       if (
         armed &&
-        String(file).startsWith(lockPath) &&
-        !String(file).includes('.evicting') &&
+        String(file) === lockPath &&
         (options as { flag?: string } | undefined)?.flag === 'wx'
       ) {
         armed = false
@@ -334,7 +334,18 @@ describe('a new record is complete the moment the lock path names it', () => {
     let contender: RefreshFileLock | null = null
     const creating = acquireRefreshFileLock({ path, name, ttlMs: 60_000 })
     try {
-      await withTimeout(held.promise, 1_000)
+      const first = await withTimeout(
+        Promise.race([
+          held.promise.then(() => 'held' as const),
+          creating.then(() => 'created' as const),
+        ]),
+        1_000,
+      )
+      if (first === 'created') {
+        creator = await creating
+        expect(creator).not.toBeNull()
+        bodies.enter('creator')
+      }
       // A contender whose lease is short and whose clock runs ahead judges an
       // empty file at the lock path dead by its age.
       contender = await acquireRefreshFileLock({
@@ -345,8 +356,10 @@ describe('a new record is complete the moment the lock path names it', () => {
       })
       if (contender) bodies.enter('contender')
       resume.resolve()
-      creator = await withTimeout(creating, 1_000)
-      if (creator) bodies.enter('creator')
+      if (first === 'held') {
+        creator = await withTimeout(creating, 1_000)
+        if (creator) bodies.enter('creator')
+      }
       expect(bodies.overlaps).toEqual([])
     } finally {
       resume.resolve()
