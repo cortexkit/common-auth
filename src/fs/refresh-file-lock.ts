@@ -1,10 +1,99 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import {
+  type FileHandle,
+  link,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { LockOwnershipError, lockPathFor } from './with-lock.js'
 
 const setRefreshLockRenewalTimeout = globalThis.setTimeout.bind(globalThis)
 const clearRefreshLockRenewalTimeout = globalThis.clearTimeout.bind(globalThis)
+
+// How a lease record changes hands safely.
+//
+// A path cannot be compared-and-swapped: any "read the path, check it, then
+// rename or delete the path" leaves a gap in which a process that stalls (a
+// starved event loop, a slow disk) can act on a record that is no longer the
+// one it checked, and so replace or delete a successor's lease. This module
+// therefore never changes a lease record by its path once the record exists:
+//
+// - The holder renews and gives up its lease by writing its own record in
+//   place, through a file handle on which it has just read its own owner id.
+//   A handle stays on the file it opened even if the path is later renamed or
+//   unlinked, so a holder that stalls after its check and is replaced in the
+//   meantime writes into its own discarded file and touches nothing of the
+//   successor's. Nobody ever writes another holder's owner id into an
+//   existing record (a new holder always creates a new file), so a file whose
+//   owner id was ours when read through the handle is still ours later.
+// - A contender clears an expired record by renaming it to a private name and
+//   judging that file, which is no longer reachable by the lock path; if it
+//   turns out to be live, it goes back with link(), which fails instead of
+//   replacing a record created meanwhile.
+// - Every record has the same length, so an in-place rewrite is one write of
+//   the same size and the file never has a moment at another length. Each
+//   record also carries a short hash of its owner id and expiry (`check`). A
+//   read that overlaps an in-place write could in principle see some old and
+//   some new bytes: POSIX makes read() and write() on a regular file atomic
+//   with respect to each other only between threads, and Linux's buffered
+//   reads do not take the lock that writes take, so this is not relied on.
+//   A record whose hash does not match is treated as unreadable, which every
+//   reader already handles: contenders fall back to the file's mtime, and an
+//   owner's assertOwned fails closed. Releases before this one ignore the
+//   field and read `ownerId` and `expiresAt` as before; the padding is JSON
+//   whitespace.
+//
+// Nothing is fsynced: a lease only means something while its holder runs, so
+// after a crash or power loss there is no holder left for it to protect.
+const LEASE_RECORD_BYTES = 128
+// The expiry a released record is rewritten to: in the past for every clock.
+const RELEASED_EXPIRES_AT = 0
+
+interface LeaseRecord {
+  readonly ownerId?: unknown
+  readonly expiresAt?: unknown
+  readonly check?: unknown
+}
+
+function leaseCheck(ownerId: unknown, expiresAt: unknown): string {
+  return createHash('sha256')
+    .update(JSON.stringify([ownerId, expiresAt]))
+    .digest('hex')
+    .slice(0, 16)
+}
+
+function serializeLease(ownerId: string, expiresAt: number): Buffer {
+  const json = JSON.stringify({
+    ownerId,
+    expiresAt,
+    check: leaseCheck(ownerId, expiresAt),
+  })
+  return Buffer.from(`${json.padEnd(LEASE_RECORD_BYTES - 1, ' ')}\n`, 'utf8')
+}
+
+/**
+ * Parses a lease record and verifies its `check` when it has one. Records
+ * written before the field existed have none and are read as they always were.
+ * Throws, like a JSON syntax error, when the check does not match.
+ */
+function parseLease(text: string): LeaseRecord {
+  const record: unknown = JSON.parse(text)
+  if (record === null || typeof record !== 'object') return {}
+  const lease = record as LeaseRecord
+  if (
+    'check' in lease &&
+    lease.check !== leaseCheck(lease.ownerId, lease.expiresAt)
+  )
+    throw new Error('Lease record failed its integrity check')
+  return lease
+}
 
 // A concurrent contender renaming the freshly-created eviction-marker directory
 // away surfaces the vanished parent differently per platform: ENOENT on Linux,
@@ -53,6 +142,7 @@ export async function acquireRefreshFileLock(options: {
       | 'stale-marker-stat'
       | 'stale-marker-claimed'
       | 'stale-lock-confirmed'
+      | 'stale-lock-moved-aside'
       | 'eviction-marker-acquired'
       | 'renewal-owner-confirmed'
       | 'renewal-marker-unavailable'
@@ -64,7 +154,6 @@ export async function acquireRefreshFileLock(options: {
   ) => void | Promise<void>
 }): Promise<RefreshFileLock | null> {
   const lockPath = lockPathFor(options.path, options.name)
-  const legacyOwnerPath = join(lockPath, 'owner.json')
   const ownerId = randomUUID()
   const now = options.now ?? Date.now
   let renewTimer: ReturnType<typeof setTimeout> | null = null
@@ -107,28 +196,88 @@ export async function acquireRefreshFileLock(options: {
   const EVICT_TTL = 5_000
   const MAX_STEAL_ATTEMPTS = 8
 
-  async function readOwner() {
+  // Reads a record by pathname. Used to look, never to decide a change: the
+  // path may name a different record by the time anything acts on it.
+  async function readLeaseAt(path: string): Promise<LeaseRecord> {
     try {
-      return JSON.parse(await readFile(lockPath, 'utf8'))
+      return parseLease(await readFile(path, 'utf8'))
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code !== 'EISDIR') throw error
-      return JSON.parse(await readFile(legacyOwnerPath, 'utf8'))
+      // Very old releases made the lock a directory holding owner.json.
+      return parseLease(await readFile(join(path, 'owner.json'), 'utf8'))
     }
   }
 
-  async function writeOwner() {
-    // Readers must see a complete lease, even while renewal is writing.
-    const tempPath = `${lockPath}.${randomUUID()}.tmp`
+  function readOwner() {
+    return readLeaseAt(lockPath)
+  }
+
+  // Reads the record in the file the handle has open, wherever that file now
+  // is, with one positioned read of the whole file.
+  async function readLeaseThrough(handle: FileHandle) {
+    const { size } = await handle.stat()
+    const buffer = Buffer.alloc(size)
+    const { bytesRead } = await handle.read(buffer, 0, size, 0)
+    return {
+      record: parseLease(buffer.toString('utf8', 0, bytesRead)),
+      size,
+    }
+  }
+
+  // Rewrites the file the handle has open with our record. Callers first read
+  // our own owner id through the same handle, so this only ever overwrites a
+  // record of ours. `size` is the length that read saw; our records all have
+  // the same length, so the truncate only runs on a file someone else edited.
+  async function writeLeaseThrough(
+    handle: FileHandle,
+    expiresAt: number,
+    size: number,
+  ) {
+    const bytes = serializeLease(ownerId, expiresAt)
+    await handle.write(bytes, 0, bytes.length, 0)
+    if (size > bytes.length) await handle.truncate(bytes.length)
+  }
+
+  // Gives up our lease in the file the handle has open: if the record there is
+  // ours, its expiry moves into the past so a contender may take the lock at
+  // once. A record that is not ours is left exactly as it is.
+  async function expireThrough(handle: FileHandle) {
+    const { record, size } = await readLeaseThrough(handle)
+    if (record.ownerId !== ownerId) return false
+    await writeLeaseThrough(handle, RELEASED_EXPIRES_AT, size)
+    return true
+  }
+
+  // Expires the record now at the lock path if, read through the opened file,
+  // it is ours. Reports whether it was.
+  async function expireOwnRecordAtPath() {
+    let handle: FileHandle
     try {
-      await writeFile(
-        tempPath,
-        `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`,
-        { encoding: 'utf8', mode: 0o600, flag: 'wx' },
-      )
-      await rename(tempPath, lockPath)
+      handle = await open(lockPath, 'r+')
+    } catch {
+      // Missing, or a legacy directory: there is no record of ours to expire.
+      return false
+    }
+    try {
+      return await expireThrough(handle)
+    } catch {
+      return false
     } finally {
-      await rm(tempPath, { force: true }).catch(() => {})
+      await handle.close().catch(() => {})
+    }
+  }
+
+  // Whether the file the handle has open is still the one at the lock path.
+  async function handleIsAtLockPath(handle: FileHandle) {
+    try {
+      const [opened, current] = await Promise.all([
+        handle.stat({ bigint: true }),
+        stat(lockPath, { bigint: true }),
+      ])
+      return opened.ino === current.ino && opened.dev === current.dev
+    } catch {
+      return false
     }
   }
 
@@ -136,8 +285,8 @@ export async function acquireRefreshFileLock(options: {
     try {
       await writeFile(
         lockPath,
-        `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`,
-        { encoding: 'utf8', mode: 0o600, flag: 'wx' },
+        serializeLease(ownerId, now() + options.ttlMs),
+        { mode: 0o600, flag: 'wx' },
       )
       return true
     } catch (error) {
@@ -149,8 +298,8 @@ export async function acquireRefreshFileLock(options: {
         try {
           await writeFile(
             lockPath,
-            `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`,
-            { encoding: 'utf8', mode: 0o600, flag: 'wx' },
+            serializeLease(ownerId, now() + options.ttlMs),
+            { mode: 0o600, flag: 'wx' },
           )
           return true
         } catch (retryError) {
@@ -169,18 +318,67 @@ export async function acquireRefreshFileLock(options: {
     )
   }
 
-  async function lockIsLive() {
+  async function leaseIsLiveAt(path: string) {
     try {
-      const currentOwner = await readOwner()
-      return Number(currentOwner?.expiresAt) > now()
+      const currentOwner = await readLeaseAt(path)
+      return Number(currentOwner.expiresAt) > now()
     } catch {
+      // Unreadable, including a record that fails its integrity check: judge
+      // it by when it was last written.
       try {
-        const current = await stat(lockPath)
+        const current = await stat(path)
         return current.mtimeMs + options.ttlMs > now()
       } catch {
         // Lock doesn't exist — safe to acquire.
         return false
       }
+    }
+  }
+
+  function lockIsLive() {
+    return leaseIsLiveAt(lockPath)
+  }
+
+  // Clears an expired record off the lock path so the exclusive create can
+  // succeed, and reports whether the path is now free. The record is renamed
+  // to a private name first, which takes exactly the file at the path at that
+  // instant, and liveness is judged on that file. If it is live (this
+  // contender paused after its own liveness check, and someone's lease is
+  // there now) it goes back with link(), which, unlike rename(), fails rather
+  // than replace a record another contender created while the path was empty.
+  // In that last case the displaced holder finds its record missing or
+  // foreign at its next assertOwned or renewal and stops.
+  async function reapExpiredLease() {
+    const asidePath = `${lockPath}.${randomUUID()}.reaping`
+    try {
+      await rename(lockPath, asidePath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
+      throw error
+    }
+    let live = true
+    try {
+      if (options.onStep) await options.onStep('stale-lock-moved-aside')
+      live = await leaseIsLiveAt(asidePath)
+    } finally {
+      if (live) await restoreLease(asidePath)
+      await rm(asidePath, { recursive: true, force: true }).catch(() => {})
+    }
+    return !live
+  }
+
+  async function restoreLease(asidePath: string) {
+    try {
+      if ((await lstat(asidePath)).isDirectory()) {
+        // Directories cannot be hard-linked. A rename back fails over a lock
+        // file or a non-empty lock directory, which is every lock a holder
+        // has finished creating.
+        await rename(asidePath, lockPath)
+      } else {
+        await link(asidePath, lockPath)
+      }
+    } catch {
+      // Someone created a lock while the path was empty; theirs stands.
     }
   }
 
@@ -263,26 +461,68 @@ export async function acquireRefreshFileLock(options: {
     return true
   }
 
-  // Marker loss after a write may mean our record replaced a successor's.
-  // Delete only a record still owned by us; a concurrent successor write can
-  // then yield zero winners, never two.
-  async function relinquishLockAfterMarkerLoss() {
-    for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
-      if (options.onStep) await options.onStep('relinquish-read')
-      let owner: { ownerId?: string } | undefined
-      try {
-        owner = await readOwner()
-      } catch {
-        return
-      }
-      if (owner?.ownerId !== ownerId) return
-      try {
-        await rm(lockPath, { recursive: true, force: true })
-        return
-      } catch {
-        await backoff()
-      }
+  // Losing the eviction marker around a renewal write means another process
+  // judged this holder stalled. Having stopped claiming the lease, expire our
+  // own record so contenders need not wait for it to run out. This goes
+  // through the renewal's handle: if a successor has replaced the record at
+  // the path, the handle holds our discarded file and the successor's record
+  // is never read, rewritten or removed.
+  async function relinquishThrough(handle: FileHandle) {
+    if (options.onStep) await options.onStep('relinquish-read')
+    await expireThrough(handle).catch(() => false)
+  }
+
+  // One renewal under the eviction marker. Every check and the write go
+  // through the one handle, so the write lands in the file whose owner id was
+  // checked, whatever the lock path holds by then. Returns false when renewal
+  // must stop.
+  async function renewThrough(handle: FileHandle): Promise<boolean> {
+    const { record: owner } = await readLeaseThrough(handle)
+    const currentNow = now()
+    if (released || loss) return false
+    if (owner.ownerId !== ownerId) {
+      recordLoss('taken-over', owner)
+      return false
     }
+    // An expired lease is no longer ours to extend; a contender may
+    // already be eligible to acquire it.
+    if (!(Number(owner.expiresAt) > currentNow)) {
+      recordLoss('expired', owner)
+      return false
+    }
+    if (options.onStep) await options.onStep('renewal-owner-confirmed')
+    if (released || loss) return false
+    if (!(await ownsEvictionMarker())) return true
+    if (options.onStep) await options.onStep('renewal-write-fenced')
+    if (released || loss) return false
+    if (!(await ownsEvictionMarker())) return true
+    // Read once more right before the write: a pause above may have
+    // outlived the lease, and a lapsed lease must not be revived.
+    const { record: latest, size } = await readLeaseThrough(handle)
+    if (latest.ownerId !== ownerId) {
+      recordLoss('taken-over', latest)
+      return false
+    }
+    if (!(Number(latest.expiresAt) > now())) {
+      recordLoss('expired', latest)
+      return false
+    }
+    if (options.onStep) await options.onStep('renewal-write-ready')
+    if (released || loss) return false
+    await writeLeaseThrough(handle, now() + options.ttlMs, size)
+    if (!(await ownsEvictionMarker())) {
+      recordLoss('marker-lost')
+      await relinquishThrough(handle)
+      return false
+    }
+    // Someone that takes no eviction marker (an older release, for one) may
+    // have put another file at the path while we wrote; our write then went
+    // to a file nobody reads. Notice now rather than at the next renewal.
+    if (!(await handleIsAtLockPath(handle))) {
+      recordLoss('taken-over', await readOwner().catch(() => undefined))
+      return false
+    }
+    return true
   }
 
   function scheduleRenewal() {
@@ -294,49 +534,11 @@ export async function acquireRefreshFileLock(options: {
         let shouldReschedule = !released
         try {
           const markerAcquired = await withEvictionMarker(async () => {
-            const owner = await readOwner()
-            const currentNow = now()
-            if (released || loss) {
-              shouldReschedule = false
-              return
-            }
-            if (owner?.ownerId !== ownerId) {
-              recordLoss('taken-over', owner)
-              shouldReschedule = false
-              return
-            }
-            // An expired lease is no longer ours to extend; a contender may
-            // already be eligible to acquire it.
-            if (!(Number(owner?.expiresAt) > currentNow)) {
-              recordLoss('expired', owner)
-              shouldReschedule = false
-              return
-            }
-            if (options.onStep) await options.onStep('renewal-owner-confirmed')
-            if (released || loss) {
-              shouldReschedule = false
-              return
-            }
-            if (!(await ownsEvictionMarker())) return
-            if (options.onStep) await options.onStep('renewal-write-fenced')
-            if (released || loss) {
-              shouldReschedule = false
-              return
-            }
-            if (!(await ownsEvictionMarker())) return
-            if (options.onStep) await options.onStep('renewal-write-ready')
-            if (released || loss) {
-              shouldReschedule = false
-              return
-            }
-            await writeOwner()
-            if (!(await ownsEvictionMarker())) {
-              // If marker ownership cannot be read, stop claiming the lease
-              // and remove only a record that still carries our owner id.
-              recordLoss('marker-lost')
-              shouldReschedule = false
-              await relinquishLockAfterMarkerLoss()
-              return
+            const handle = await open(lockPath, 'r+')
+            try {
+              if (!(await renewThrough(handle))) shouldReschedule = false
+            } finally {
+              await handle.close().catch(() => {})
             }
           })
           if (!markerAcquired && options.onStep) {
@@ -346,8 +548,8 @@ export async function acquireRefreshFileLock(options: {
           // Retry transient failures only while the lease can still be verified.
           try {
             const owner = await readOwner()
-            if (owner?.ownerId !== ownerId) recordLoss('taken-over', owner)
-            else if (!(Number(owner?.expiresAt) > now()))
+            if (owner.ownerId !== ownerId) recordLoss('taken-over', owner)
+            else if (!(Number(owner.expiresAt) > now()))
               recordLoss('expired', owner)
           } catch {
             recordLoss('renewal-failed')
@@ -401,16 +603,17 @@ export async function acquireRefreshFileLock(options: {
         // The onStep callback can pause while another contender renames
         // our marker, so verify ownership again after the callback.
         if (!(await ownsEvictionMarker())) return null
-        await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+        if (!(await reapExpiredLease())) return null
         // Fence check 3: re-verify ownership after removing the stale lock.
         if (!(await ownsEvictionMarker())) return null
         acquired = await tryAcquire()
         if (!acquired) return null
         // Fence check 4: re-verify ownership after acquiring the lock. If the
-        // marker was stolen between tryAcquire and this check, release the
-        // just-acquired lock and return null (fail-closed).
+        // marker was stolen between tryAcquire and this check, give up the
+        // just-acquired lease and return null (fail-closed). Expiring it in
+        // place rather than deleting the path cannot touch anyone else's.
         if (!(await ownsEvictionMarker())) {
-          await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+          await expireOwnRecordAtPath()
           acquired = false
           return null
         }
@@ -465,14 +668,20 @@ export async function acquireRefreshFileLock(options: {
         renewTimer = null
       }
       await renewalInFlight
+      // Give the lease up first, in place, through a handle on which our own
+      // owner id was just read. That needs no marker and cannot touch a
+      // successor's record, and from then on any contender may take the lock.
+      if (!(await expireOwnRecordAtPath())) return
+      // Then clear the expired record off the path so the next acquirer need
+      // not. Clearing goes through the same rename-aside-and-judge step a
+      // contender uses, so a release that stalls here and resumes after a
+      // successor took the lock puts the successor's record back.
       for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
         try {
           const markerAcquired = await withEvictionMarker(async () => {
-            const owner = await readOwner()
-            if (owner?.ownerId !== ownerId) return
             if (options.onStep) await options.onStep('release-owner-confirmed')
             if (!(await ownsEvictionMarker())) return
-            await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+            await reapExpiredLease()
           })
           if (markerAcquired) return
           await recoverStaleEvictionMarker()
@@ -481,8 +690,7 @@ export async function acquireRefreshFileLock(options: {
         }
         await backoff()
       }
-      // Do not delete by pathname without the marker: bounded retries leave the
-      // lease to expire rather than risking removal of a successor's lock.
+      // Without the marker the expired record stays; contenders clear it.
     },
   }
 }

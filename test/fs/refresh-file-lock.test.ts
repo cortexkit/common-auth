@@ -296,7 +296,11 @@ describe('acquireRefreshFileLock', () => {
         renewIntervalMs: 50,
         onStep: async (step) => {
           if (step === 'renewal-owner-confirmed') {
-            const owner = await readLockOwner(`${path}.error.lock`)
+            // Drop the integrity hash: it covers the fields edited below, and
+            // a stale hash would make the record unreadable instead.
+            const { check: _check, ...owner } = (await readLockOwner(
+              `${path}.error.lock`,
+            )) as { ownerId: string; expiresAt: number; check?: string }
             await writeFile(
               `${path}.error.lock`,
               JSON.stringify(
@@ -549,7 +553,7 @@ describe('acquireRefreshFileLock', () => {
     await successor?.release()
   })
 
-  it('relinquishes the lock when its marker is stolen after the final renewal check', async () => {
+  it('reports marker loss without touching a successor when its marker is stolen after the final renewal check', async () => {
     const path = join(dir, 'renewal-post-write-race.json')
     const name = 'renewal-post-write-race'
     const lockPath = `${path}.${name}.lock`
@@ -585,11 +589,13 @@ describe('acquireRefreshFileLock', () => {
       now: () => currentNow,
     })
     expect(successor).not.toBeNull()
+    const successorOwner = await readLockOwner(lockPath)
 
     releaseRenewal.resolve()
     await withTimeout(renewalFinished.promise, 1_000)
 
-    expect(existsSync(lockPath)).toBe(false)
+    expect(await readLockOwner(lockPath)).toEqual(successorOwner)
+    await successor!.assertOwned()
     expect((await withTimeout(first!.whenLost(), 1_000)).reason).toBe(
       'marker-lost',
     )
