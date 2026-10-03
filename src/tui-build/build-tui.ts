@@ -2,7 +2,16 @@ import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { basename, dirname, extname, join, relative, resolve } from 'node:path'
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isBareSpecifier, parseImports } from './walker.js'
 
@@ -152,6 +161,35 @@ export async function buildTui(
     selector: 'selector.js',
     externals: new Set(),
   }
+  // Every name below is computed from the entry's real directory: an entry
+  // reached through a symlink (macOS's /var -> /private/var temp directory,
+  // a linked checkout) must not make its own siblings look like outside files.
+  const entryDirectory = dirname(realpathSync(entry))
+  const portable = (path: string) => path.split(sep).join('/')
+  // A shared copy's name must be the same wherever the checkout lives, so it
+  // is derived from a key that holds no absolute path. A file inside an
+  // inlined package is keyed by that package's name and its path within the
+  // package; any other file by its path relative to the entry's directory.
+  // Both are one-to-one: one root per package name (the innermost root wins
+  // when roots nest, so a file always picks the same one), a fixed base for
+  // relative paths, and distinct prefixes for the two kinds. The guard in
+  // `visit` turns the remaining risk, two keys sharing a truncated hash, into
+  // an error instead of one copy silently overwriting another.
+  const namingRoots = [...roots]
+    .map(([name, root]) => ({
+      name,
+      root: existsSync(root) ? realpathSync(root) : root,
+    }))
+    .sort((a, b) => b.root.length - a.root.length)
+  const sharedKey = (source: string) => {
+    for (const { name, root } of namingRoots) {
+      const path = relative(root, source)
+      if (path && !path.startsWith(`..${sep}`) && !isAbsolute(path))
+        return `package:${name}/${portable(path)}`
+    }
+    return `path:${portable(relative(entryDirectory, source))}`
+  }
+  const sharedOwners = new Map<string, string>()
   const copied = new Map<string, string>()
   const relativeImport = (from: string, to: string) => {
     const path = relative(dirname(from), to).split('\\').join('/')
@@ -159,16 +197,27 @@ export async function buildTui(
   }
   const visit = async (source: string, shared: boolean): Promise<string> => {
     source = realpathSync(source)
-    if (relative(dirname(entry), source).startsWith('../')) shared = true
+    if (relative(entryDirectory, source).startsWith(`..${sep}`)) shared = true
     const previous = copied.get(source)
     if (previous) return previous
     const extension =
       variant === 'raw' && extname(source) === '.tsx' ? '.tsx' : '.js'
     const name = shared
-      ? `shared/${createHash('sha256').update(source).digest('hex').slice(0, 16)}-${basename(source).replace(/\.[^.]+$/, '')}${extension}`
-      : relative(dirname(entry), source).replace(/\.[^.]+$/, extension)
+      ? `shared/${createHash('sha256').update(sharedKey(source)).digest('hex').slice(0, 16)}-${basename(source).replace(/\.[^.]+$/, '')}${extension}`
+      : portable(relative(entryDirectory, source)).replace(
+          /\.[^.]+$/,
+          extension,
+        )
     if (name.startsWith('../'))
       throw new Error(`Entry dependency escapes source directory: ${source}`)
+    if (shared) {
+      const owner = sharedOwners.get(name)
+      if (owner !== undefined)
+        throw new Error(
+          `Shared module name ${name} is claimed by both ${owner} and ${source}`,
+        )
+      sharedOwners.set(name, source)
+    }
     copied.set(source, name)
     let code = await readFile(source, 'utf8')
     if (transform && /\.[jt]sx$/.test(source))

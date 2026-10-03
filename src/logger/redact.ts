@@ -8,6 +8,21 @@ const SECRET_KEY_EXACT =
 const TOKEN_VALUE =
   /\b(Bearer\s+[\w.-]+|sk-[\w-]+|eyJ[\w.-]+)\b|ckh_[A-Za-z0-9_-]{20,}/g
 const MASK = '***REDACTED***'
+// How many errors deep a cause chain is followed. A chain this long is
+// already unreadable in a log line, and an unbounded one (each cause a fresh
+// object, so the cycle check never trips) must not grow the line forever.
+const MAX_ERROR_DEPTH = 8
+
+// Error's own fields are non-enumerable, so a plain entry walk renders an
+// Error as `{}` and the name, message and stack a plugin logged are lost.
+// The tag check also recognises an Error from another realm (a worker or a
+// vm context), whose prototype is not this realm's Error.
+function isError(value: object): value is Error {
+  return (
+    value instanceof Error ||
+    Object.prototype.toString.call(value) === '[object Error]'
+  )
+}
 
 export function createRedactor(options: RedactionOptions = {}) {
   const patterns = [TOKEN_VALUE, ...(options.extraValuePatterns ?? [])].map(
@@ -28,7 +43,30 @@ export function createRedactor(options: RedactionOptions = {}) {
       !!options.extraSecretKeys?.(normalized)
     )
   }
-  function walk(value: unknown, keys: boolean, seen: WeakSet<object>): unknown {
+  // The fields every log reader wants first, then whatever else the error
+  // carries as its own enumerable properties (which is all an Error rendered
+  // as before). Every entry goes through the same key and string scrubbing as
+  // any other object, so a token in a message or stack is still masked.
+  function errorEntries(error: Error): [string, unknown][] {
+    const fields = error as Error & Record<string, unknown>
+    const entries: [string, unknown][] = [
+      ['name', error.name],
+      ['message', error.message],
+      ['stack', error.stack],
+    ]
+    for (const key of ['code', 'status', 'cause'])
+      if (fields[key] !== undefined) entries.push([key, fields[key]])
+    const listed = new Set(entries.map(([key]) => key))
+    for (const entry of Object.entries(error))
+      if (!listed.has(entry[0])) entries.push(entry)
+    return entries
+  }
+  function walk(
+    value: unknown,
+    keys: boolean,
+    seen: WeakSet<object>,
+    errorDepth = 0,
+  ): unknown {
     if (typeof value === 'string') {
       return patterns.reduce(
         (text, pattern) => text.replace(pattern, MASK),
@@ -40,13 +78,20 @@ export function createRedactor(options: RedactionOptions = {}) {
     seen.add(value)
     try {
       if (Array.isArray(value))
-        return value.map((item) => walk(item, keys, seen))
+        return value.map((item) => walk(item, keys, seen, errorDepth))
+      const error = isError(value)
+      if (error && errorDepth >= MAX_ERROR_DEPTH) return '[Truncated]'
+      const childDepth = error ? errorDepth + 1 : errorDepth
       // Define own properties so a diagnostic __proto__ key cannot change the output prototype.
       return Object.fromEntries(
-        Object.entries(value).map(([key, item]) => [
-          key,
-          keys && isSecretKey(key) ? MASK : walk(item, keys, seen),
-        ]),
+        (error ? errorEntries(value) : Object.entries(value)).map(
+          ([key, item]) => [
+            key,
+            keys && isSecretKey(key)
+              ? MASK
+              : walk(item, keys, seen, childDepth),
+          ],
+        ),
       )
     } finally {
       seen.delete(value)
