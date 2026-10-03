@@ -23,6 +23,8 @@ jobs:
         run: bun run typecheck
       - name: Claustrum 0.4.0 compatibility
         run: bun run check:claustrum-040
+      - name: OpenTUI 0.5.11 compatibility
+        run: bun run check:opentui-0511
       - name: Lint
         run: bun run lint
       - name: Test
