@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, rmSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
@@ -11,6 +11,7 @@ import {
   writeJsonAtomic,
 } from '../../src/fs/index.js'
 import * as v080 from '../fixtures/lock-0.8.0/reader.js'
+import { criticalSections, spyOnHandleWrites } from '../fixtures/lock-probes.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 // These tests pin one property: a holder whose lease has expired, whose
@@ -236,9 +237,9 @@ describe('a former lock owner never displaces a successor', () => {
   it(
     'a release stalled just before it touches the lock path leaves a successor lease in place',
     async () => {
-      // No callback sits between a release's last check and its first change to
-      // the lock path, so this holds back that change itself: the first rm or
-      // rename of the lock path after release starts waits until the successor
+      // A release's only change to the lock is its in-place write through the
+      // handle it read its own owner id on. This holds back that write itself:
+      // the first handle write after release starts waits until the successor
       // holds the lock, as it would if the releasing process stopped running
       // right after its last check.
       const path = join(dir, 'release-syscall.json')
@@ -246,26 +247,12 @@ describe('a former lock owner never displaces a successor', () => {
       const paused = deferred()
       const resume = deferred()
       let armed = false
-      const hold = async (touched: unknown) => {
-        if (!armed || String(touched) !== lockPath) return
+      const writeSpy = spyOnHandleWrites(async () => {
+        if (!armed) return
         armed = false
         paused.resolve()
         await resume.promise
-      }
-      const originalRm = fs.rm
-      const originalRename = fs.rename
-      const rmSpy = spyOn(fs, 'rm').mockImplementation(
-        async (...args: Parameters<typeof fs.rm>) => {
-          await hold(args[0])
-          return originalRm(...args)
-        },
-      )
-      const renameSpy = spyOn(fs, 'rename').mockImplementation(
-        async (...args: Parameters<typeof fs.rename>) => {
-          await hold(args[0])
-          return originalRename(...args)
-        },
-      )
+      })
       let release: Promise<void> | undefined
       let successor: RefreshFileLock | null = null
       try {
@@ -292,8 +279,7 @@ describe('a former lock owner never displaces a successor', () => {
       } finally {
         resume.resolve()
         await release
-        rmSpy.mockRestore()
-        renameSpy.mockRestore()
+        writeSpy.mockRestore()
         await successor?.release()
       }
     },
@@ -488,10 +474,16 @@ describe('a former lock owner never displaces a successor', () => {
     expect(contender).toBeNull()
     expect(newer).toBeDefined()
     expect(await snapshot(lockPath)).toEqual(newer!)
+    // The displaced record could not go back. It is still live, so it is kept
+    // under its private name rather than deleted.
     const leftovers = (await fs.readdir(dir)).filter((entry) =>
       entry.includes('.reap.lock.'),
     )
-    expect(leftovers).toEqual([])
+    expect(leftovers).toHaveLength(1)
+    expect(leftovers[0]).toEndWith('.reaping')
+    expect((await readLease(join(dir, leftovers[0]!))).ownerId).toBe(
+      'displaced-holder',
+    )
   })
 
   it('renewal re-reads its record before writing and stops on a lease that expired while it paused', async () => {
@@ -585,17 +577,20 @@ describe('a former lock owner never displaces a successor', () => {
     }
   })
 
-  it('a holder that loses its marker after writing expires its own record for contenders', async () => {
-    const path = join(dir, 'relinquish-expire.json')
-    const lockPath = `${path}.relinquish.lock`
+  it('a holder that loses its marker after its renewal write keeps its lease, so no contender enters while it works', async () => {
+    const path = join(dir, 'marker-lost-keeps.json')
+    const lockPath = `${path}.keeps.lock`
     const paused = deferred()
     const resume = deferred()
     const finished = deferred()
     let pausedOnce = false
-    const lock = (await acquireRefreshFileLock({
+    let markerLossReported = false
+    // Longer than the five-second marker lifetime, like the sidebar's lease:
+    // the marker can be taken while the lease still has seconds to run.
+    const holder = (await acquireRefreshFileLock({
       path,
-      name: 'relinquish',
-      ttlMs: 60_000,
+      name: 'keeps',
+      ttlMs: 10_000,
       renew: true,
       renewIntervalMs: 1,
       onStep: async (step) => {
@@ -604,76 +599,40 @@ describe('a former lock owner never displaces a successor', () => {
           paused.resolve()
           await resume.promise
         }
+        if (step === 'renewal-marker-lost') markerLossReported = true
         if (step === 'renewal-finished' && pausedOnce) finished.resolve()
       },
     }))!
+    const bodies = criticalSections()
+    const holderBody = bodies.enter('holder')
     let contender: RefreshFileLock | null = null
     try {
       await withTimeout(paused.promise, 1_000)
+      // The marker is taken away after the renewal's last check, as a
+      // contender that judged it stale (rightly or not) would.
       await fs.rm(`${lockPath}.evicting`, { recursive: true, force: true })
       resume.resolve()
       await withTimeout(finished.promise, 1_000)
-      expect((await lock.whenLost()).reason).toBe('marker-lost')
-      const record = await readLease(lockPath)
-      expect(record.ownerId).toBe(lock.ownerId)
-      expect(record.expiresAt).toBeLessThanOrEqual(Date.now())
       contender = await acquireRefreshFileLock({
         path,
-        name: 'relinquish',
-        ttlMs: 60_000,
+        name: 'keeps',
+        ttlMs: 10_000,
       })
-      expect(contender).not.toBeNull()
+      if (contender) bodies.enter('contender')
+      expect(bodies.overlaps).toEqual([])
+      expect(markerLossReported).toBe(true)
+      expect(holder.hasLost()).toBe(false)
+      await holder.assertOwned()
+      const record = await readLease(lockPath)
+      expect(record.ownerId).toBe(holder.ownerId)
+      expect(record.expiresAt).toBeGreaterThan(Date.now() + 5_000)
     } finally {
+      holderBody.exit()
       resume.resolve()
-      await lock.release()
+      await holder.release()
       await contender?.release()
     }
   })
-
-  it('relinquishing after marker loss leaves a foreign record in its own file alone', async () => {
-    const path = join(dir, 'relinquish-foreign.json')
-    const lockPath = `${path}.relinquish.lock`
-    const paused = deferred()
-    const resume = deferred()
-    const finished = deferred()
-    let pausedOnce = false
-    const foreign = {
-      ownerId: 'foreign-holder',
-      expiresAt: Date.now() + 60_000,
-    }
-    const lock = (await acquireRefreshFileLock({
-      path,
-      name: 'relinquish',
-      ttlMs: 60_000,
-      renew: true,
-      renewIntervalMs: 1,
-      onStep: async (step) => {
-        if (step === 'renewal-write-ready' && !pausedOnce) {
-          pausedOnce = true
-          paused.resolve()
-          await resume.promise
-        }
-        if (step === 'relinquish-read') {
-          // A writer that rewrites the file in place (rather than renaming a
-          // new one over it) puts its record into this holder's own file.
-          await fs.writeFile(lockPath, `${JSON.stringify(foreign)}\n`)
-        }
-        if (step === 'renewal-finished' && pausedOnce) finished.resolve()
-      },
-    }))!
-    try {
-      await withTimeout(paused.promise, 1_000)
-      await fs.rm(`${lockPath}.evicting`, { recursive: true, force: true })
-      resume.resolve()
-      await withTimeout(finished.promise, 1_000)
-      expect((await lock.whenLost()).reason).toBe('marker-lost')
-      expect(await readLease(lockPath)).toEqual(foreign)
-    } finally {
-      resume.resolve()
-      await lock.release()
-    }
-  })
-
   it('a release that cannot take the marker still expires its own record', async () => {
     const path = join(dir, 'release-no-marker.json')
     const lockPath = `${path}.release.lock`
@@ -818,8 +777,6 @@ describe('lease records interoperate with 0.8.0', () => {
     const firstPause = deferred()
     const resumeFirst = deferred()
     const renewed = deferred()
-    const releasePaused = deferred()
-    const resumeRelease = deferred()
     let ticks = 0
     const lock = (await acquireRefreshFileLock({
       path,
@@ -834,10 +791,6 @@ describe('lease records interoperate with 0.8.0', () => {
           await resumeFirst.promise
         }
         if (step === 'renewal-finished' && ticks === 1) renewed.resolve()
-        if (step === 'release-owner-confirmed') {
-          releasePaused.resolve()
-          await resumeRelease.promise
-        }
       },
     }))!
     const clock = () => currentNow
@@ -855,19 +808,12 @@ describe('lease records interoperate with 0.8.0', () => {
     expect(renewedOwner.ownerId).toBe(lock.ownerId)
     expect(renewedOwner.expiresAt).toBeGreaterThanOrEqual(16_000)
 
-    const release = lock.release()
-    try {
-      await withTimeout(releasePaused.promise, 1_000)
-      // Released but not yet removed: an expired record under our identity.
-      const expired = await v080.readOwner(lockPath)
-      expect(expired.ownerId).toBe(lock.ownerId)
-      expect(expired.expiresAt).toBeLessThanOrEqual(currentNow)
-      expect(await v080.lockIsLive(lockPath, 10_000, clock)).toBe(false)
-    } finally {
-      resumeRelease.resolve()
-      await release
-    }
-    expect(existsSync(lockPath)).toBe(false)
+    await lock.release()
+    // Released: an expired record under our identity stays at the path.
+    const expired = await v080.readOwner(lockPath)
+    expect(expired.ownerId).toBe(lock.ownerId)
+    expect(expired.expiresAt).toBeLessThanOrEqual(currentNow)
+    expect(await v080.lockIsLive(lockPath, 10_000, clock)).toBe(false)
   })
 
   it('this release reads records 0.8.0 writes', async () => {
