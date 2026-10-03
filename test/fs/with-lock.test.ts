@@ -84,10 +84,15 @@ test('acquisition writes private newline-terminated owner bytes', async () => {
   try {
     const bytes = await fs.readFile(lockPathFor(target, name), 'utf8')
     const owner = JSON.parse(bytes)
-    expect(Object.keys(owner)).toEqual(['ownerId', 'expiresAt'])
+    // ownerId and expiresAt are what every release reads; check is the
+    // integrity hash newer releases verify, and the space padding before the
+    // newline gives every record the same length so it can be rewritten in
+    // place.
+    expect(Object.keys(owner)).toEqual(['ownerId', 'expiresAt', 'check'])
     expect(typeof owner.ownerId).toBe('string')
     expect(owner.expiresAt).toBe(10100)
-    expect(bytes).toBe(`${JSON.stringify(owner)}\n`)
+    expect(typeof owner.check).toBe('string')
+    expect(bytes).toBe(`${JSON.stringify(owner).padEnd(127, ' ')}\n`)
     expect((await fs.stat(lockPathFor(target, name))).mode & 0o777).toBe(0o600)
   } finally {
     await lock?.release()
@@ -256,68 +261,46 @@ for (const invalidation of ['foreign', 'expired', 'unreadable']) {
   })
 }
 
-test('renewal stages private owner bytes and atomically renames while assertOwned remains valid', async () => {
+test('renewal rewrites its own record in place while assertOwned remains valid', async () => {
   const path = lockPathFor(target, name)
+  let renewals = 0
   const lock = await acquireRefreshFileLock({
     path: target,
     name,
     ttlMs: 10000,
     renew: true,
-    renewIntervalMs: 100,
+    renewIntervalMs: 1,
+    onStep: (step) => {
+      if (step === 'renewal-finished') renewals++
+    },
   })
   const before = JSON.parse(await fs.readFile(path, 'utf8'))
-  const originalWrite = fs.writeFile
+  const beforeStat = await fs.stat(path)
   const originalRename = fs.rename
-  let writes = 0
-  let renames = 0
-  let observedError: unknown
-  let finish!: () => void
-  const observed = new Promise<void>((resolve) => {
-    finish = resolve
-  })
-  const writeSpy = spyOn(fs, 'writeFile').mockImplementation(
-    async (...args: Parameters<typeof fs.writeFile>) => {
-      if (
-        String(args[0]).startsWith(`${path}.`) &&
-        String(args[0]).endsWith('.tmp')
-      ) {
-        writes++
-        try {
-          await lock!.assertOwned()
-        } catch (error) {
-          observedError = error
-        }
-        expect(args[2]).toMatchObject({ mode: 0o600 })
-      }
-      return originalWrite(...args)
-    },
-  )
+  let renamesOntoLock = 0
   const renameSpy = spyOn(fs, 'rename').mockImplementation(
     async (...args: Parameters<typeof fs.rename>) => {
-      if (String(args[1]) === path) {
-        renames++
-        expect(String(args[0])).not.toBe(path)
-        await originalRename(...args)
-        finish()
-        return
-      }
+      if (String(args[1]) === path) renamesOntoLock++
       return originalRename(...args)
     },
   )
   try {
-    await Promise.race([observed, sleep(1000)])
-    expect(writes).toBeGreaterThan(0)
-    expect(renames).toBeGreaterThan(0)
-    expect(observedError).toBeUndefined()
+    // Read the record continuously while renewal keeps rewriting it: every
+    // read must see a whole record of ours.
+    const until = Date.now() + 300
+    while (Date.now() < until) await lock!.assertOwned()
+    expect(renewals).toBeGreaterThan(0)
+    expect(renamesOntoLock).toBe(0)
     const bytes = await fs.readFile(path, 'utf8')
     const after = JSON.parse(bytes)
     expect(after.ownerId).toBe(before.ownerId)
     expect(after.expiresAt).toBeGreaterThan(before.expiresAt)
-    expect(bytes).toBe(`${JSON.stringify(after)}\n`)
-    expect((await fs.stat(path)).mode & 0o777).toBe(0o600)
+    expect(bytes).toBe(`${JSON.stringify(after).padEnd(127, ' ')}\n`)
+    const afterStat = await fs.stat(path)
+    expect(afterStat.ino).toBe(beforeStat.ino)
+    expect(afterStat.mode & 0o777).toBe(0o600)
     await lock!.assertOwned()
   } finally {
-    writeSpy.mockRestore()
     renameSpy.mockRestore()
     await lock?.release()
   }
