@@ -25,8 +25,17 @@ const sharedSources = [
   'dist/tui-prefs/watcher.js',
   'test/fixtures/inline-default/module.ts',
 ]
+// A shared copy is named after the package it came from and its path inside
+// that package, never the checkout's absolute path.
 const sharedName = (path: string) =>
-  `shared/${createHash('sha256').update(resolve(path)).digest('hex').slice(0, 16)}-${path
+  `shared/${createHash('sha256')
+    .update(
+      path.startsWith('test/fixtures/inline-default/')
+        ? `package:inline-default/${path.slice('test/fixtures/inline-default/'.length)}`
+        : `package:@cortexkit/common-auth/${path}`,
+    )
+    .digest('hex')
+    .slice(0, 16)}-${path
     .split('/')
     .at(-1)!
     .replace(/\.[^.]+$/, '')}.js`
