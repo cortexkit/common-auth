@@ -14,6 +14,7 @@ export interface RpcClient {
   pending: (
     lastReceivedId: number,
     sessionId?: string,
+    timeoutMs?: number,
   ) => Promise<RpcNotification[]>
   apply: (request: ApplyRequest, timeoutMs?: number) => Promise<ApplyResult>
 }
@@ -177,7 +178,7 @@ export function createRpcClient(
     reportedSelection = true
   }
   return {
-    async pending(lastReceivedId, sessionId) {
+    async pending(lastReceivedId, sessionId, timeoutMs) {
       const out = await call<{ messages: RpcNotification[] }>(
         dir,
         expectedPid,
@@ -185,6 +186,7 @@ export function createRpcClient(
         reportSelected,
         'pending-notifications',
         { lastReceivedId, sessionId },
+        timeoutMs,
       )
       return out?.messages ?? []
     },

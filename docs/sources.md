@@ -242,6 +242,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | rpc | Client preserves wire session | reference/openai-auth/packages/opencode/src/rpc/rpc-client.ts | RPC client preserves sessionId through the server apply callback |
 | rpc | Default client timeout is two seconds | reference/openai-auth/packages/opencode/src/rpc/rpc-client.ts | keeps the default call timeout at two seconds |
 | rpc | Per-call timeout overrides default | reference/openai-auth/packages/opencode/src/rpc/rpc-client.ts | apply honors a per-call timeout override |
+| rpc | Per-call timeout on pending, as on apply | antigravity-auth pendingNotifications(..., {timeoutMs}) facade | pending honors a per-call timeout override |
 | rpc | Socket inactivity 90 s and request receipt 2 s are independent | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | server wires 90 second inactivity and separate 2 second receipt defaults |
 | rpc | Ordered one-time wire delivery | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | push then drain returns the item once, ordered |
 | rpc | Wire session receives own and global notices | reference/openai-auth/packages/opencode/src/rpc/notifications.ts | session scoping: a session only drains its own + global |

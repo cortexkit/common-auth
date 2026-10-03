@@ -9,6 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import http, * as httpNamed from 'node:http'
+import net from 'node:net'
 import { join } from 'node:path'
 import {
   createCaptureSink,
@@ -25,6 +26,7 @@ import {
 import {
   discoverPortFile,
   isManagedRpcStateDir,
+  writePortFile,
 } from '../../src/rpc/port-file.js'
 import {
   createRpcClient,
@@ -633,6 +635,36 @@ describe('rpc-client', () => {
       text: 'completed',
       knobs: { stage: 'result' },
     })
+  })
+
+  test('pending honors a per-call timeout override', async () => {
+    dir = await makeTempDir('fixture-rpcclient-')
+    const notification: RpcNotification = {
+      id: 1,
+      type: 'open-dialog',
+      payload: { command: 'fixture', text: 'late', knobs: {} },
+    }
+    // A server that accepts the connection and answers only after 300 ms.
+    const slow = net.createServer((socket) => {
+      socket.once('data', () => {
+        setTimeout(() => {
+          const body = JSON.stringify({ messages: [notification] })
+          socket.end(
+            `HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n${body}`,
+          )
+        }, 300)
+      })
+    })
+    await new Promise<void>((resolve) => slow.listen(0, '127.0.0.1', resolve))
+    const port = (slow.address() as net.AddressInfo).port
+    stop = async () => {
+      await new Promise<void>((resolve) => slow.close(() => resolve()))
+    }
+    await writePortFile(dir, { pid: process.pid, port, token: 'fixture-token' })
+    const client = createRpcClient(dir, process.pid)
+
+    expect(await client.pending(0, undefined, 100)).toEqual([])
+    expect(await client.pending(0, undefined, 1_000)).toEqual([notification])
   })
 })
 
