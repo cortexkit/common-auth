@@ -12,6 +12,7 @@ import {
   acquireRefreshFileLock,
   isLostMarkerRaceError,
 } from '../../src/fs/refresh-file-lock.js'
+import { lockIsReleased } from '../fixtures/released-lock.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 let dir: string
@@ -206,12 +207,9 @@ for (const rejects of [false, true]) {
       })
       expect(ran).toBe(true)
       await sleep(1100)
-      expect(
-        await fs.access(lockPathFor(target, name)).then(
-          () => true,
-          () => false,
-        ),
-      ).toBe(false)
+      // Release leaves its record expired at the path; a renewal still
+      // running would have pushed the expiry into the future again.
+      expect(await lockIsReleased(lockPathFor(target, name))).toBe(true)
     },
   )
 }

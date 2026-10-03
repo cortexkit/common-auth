@@ -9,6 +9,7 @@ import {
   type RefreshFileLock,
 } from '../../src/fs/index.js'
 import { createSidebarFile } from '../../src/sidebar-file/index.js'
+import { lockIsReleased } from '../fixtures/released-lock.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 let dir: string
@@ -35,8 +36,16 @@ const sidebar = (lockName?: string) =>
     secureDir: false,
     lockName,
   })
-const lockFiles = async () =>
-  (await readdir(dir)).filter((name) => name.endsWith('.lock')).sort()
+// The lock files holding a live lease. A released lock leaves its file behind
+// with an expired record, which no writer holds.
+const lockFiles = async () => {
+  const held: string[] = []
+  for (const name of await readdir(dir)) {
+    if (name.endsWith('.lock') && !(await lockIsReleased(join(dir, name))))
+      held.push(name)
+  }
+  return held.sort()
+}
 
 test('a writer takes the lock named by lockName and only that one', async () => {
   let custom: string[] = []
