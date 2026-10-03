@@ -1,3 +1,4 @@
+import { Agent, request as httpRequest } from 'node:http'
 import type {
   ApplyRequest,
   ApplyResult,
@@ -32,6 +33,7 @@ async function call<T>(
   expectedPid: number | undefined,
   discoverOptions: DiscoverPortFileOptions,
   onSelected: ((entry: PortFileEntry | null) => void) | undefined,
+  agent: Agent,
   method: string,
   params: Record<string, unknown>,
   timeoutMs = DEFAULT_RPC_TIMEOUT_MS,
@@ -39,25 +41,77 @@ async function call<T>(
   const entry = await discoverPortFile(dir, expectedPid, discoverOptions)
   onSelected?.(entry)
   if (!entry) return null
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch(`http://127.0.0.1:${entry.port}/rpc/${method}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${entry.token}`,
-      },
-      body: JSON.stringify(params),
-      signal: controller.signal,
-    })
-    if (!res.ok) return null
-    return (await res.json()) as T
-  } catch {
-    return null
-  } finally {
-    clearTimeout(timer)
-  }
+
+  // node:http request bypasses HTTP_PROXY/http_proxy for loopback connections
+  // under Bun, and an explicit Agent bypasses NODE_USE_ENV_PROXY under Node 24.5+.
+  return new Promise<T | null>((resolve) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+    let settled = false
+    const done = (value: T | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+
+    try {
+      const body = JSON.stringify(params)
+      const req = httpRequest(
+        {
+          hostname: '127.0.0.1',
+          port: entry.port,
+          path: `/rpc/${method}`,
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'content-length': Buffer.byteLength(body),
+            authorization: `Bearer ${entry.token}`,
+          },
+          agent,
+          signal: controller.signal,
+        },
+        (res) => {
+          const statusCode = res.statusCode ?? 0
+          if (statusCode < 200 || statusCode >= 300) {
+            res.resume()
+            done(null)
+            return
+          }
+          let text = ''
+          res.setEncoding('utf8')
+          res.on('data', (chunk: string) => {
+            text += chunk
+          })
+          res.on('end', () => {
+            try {
+              done(JSON.parse(text) as T)
+            } catch {
+              done(null)
+            }
+          })
+          res.on('error', () => {
+            done(null)
+          })
+          res.on('close', () => {
+            if (!res.readableEnded) done(null)
+          })
+        },
+      )
+
+      req.on('error', () => {
+        done(null)
+      })
+      req.on('close', () => {
+        done(null)
+      })
+
+      req.end(body)
+    } catch {
+      done(null)
+    }
+  })
 }
 
 /**
@@ -79,6 +133,10 @@ export function createRpcClient(
   const discoverOptions: DiscoverPortFileOptions = {
     exactPid: options.exactPid,
   }
+  // An explicit Agent ensures requests go direct rather than through
+  // proxy settings (e.g. Node 24.5+ NODE_USE_ENV_PROXY on http.globalAgent).
+  // keepAlive is disabled so sockets are not pooled or leaked across calls.
+  const agent = new Agent({ keepAlive: false })
   let reportedSelection = false
   const reportSelected = (entry: PortFileEntry | null) => {
     if (reportedSelection) return
@@ -94,6 +152,7 @@ export function createRpcClient(
         expectedPid,
         discoverOptions,
         reportSelected,
+        agent,
         'pending-notifications',
         { lastReceivedId, sessionId },
       )
@@ -105,6 +164,7 @@ export function createRpcClient(
         expectedPid,
         discoverOptions,
         reportSelected,
+        agent,
         'apply',
         {
           ...request,
