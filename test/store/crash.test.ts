@@ -330,7 +330,6 @@ for (const step of [
       op: 'refresh',
       id: 'a',
       credential: oauth('r-new'),
-      renew: true,
       identity: 'acct-B',
       exitAt: step,
     })
@@ -381,7 +380,6 @@ it('ordinary and contradicted exchanges both lose an in-memory successor before 
       op: 'refresh',
       id,
       credential: oauth('r-lost'),
-      renew: true,
       identity,
       exitAt: 'before-state-write',
     })
@@ -411,7 +409,6 @@ it('a crashed identity-validated replacement resolves refresh quarantine without
     op: 'replace',
     id: 'a',
     credential: oauth('r-validated-A'),
-    renew: true,
     identity: 'acct-A',
     exitAt: 'after-state-write',
   })

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, rmSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { open, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -163,7 +164,49 @@ export interface ChildHandle {
   output(): string
 }
 
-/** Runs one store operation in a separate process (see child.ts). */
+interface ChildLease {
+  path: string
+  ownerId: string
+  expiresAt: number
+  acquiredAt: number
+}
+
+export function childLeases(output: string): ChildLease[] {
+  return output
+    .split('\n')
+    .filter((line) => line.startsWith('lease:'))
+    .map((line) => JSON.parse(line.slice('lease:'.length)) as ChildLease)
+}
+
+/**
+ * Called only after a crash child's close event: it cannot renew any more.
+ * Preserve the inode and owner, using the lock format's released expiry and
+ * integrity hash, so normal lock acquisition reaps a valid expired record.
+ * Ownership matching avoids expiring a survivor that has already taken over.
+ */
+async function expireChildLeases(output: string): Promise<void> {
+  for (const lease of childLeases(output)) {
+    const handle = await open(lease.path, 'r+')
+    try {
+      const text = await handle.readFile('utf8')
+      const record = JSON.parse(text)
+      if (record.ownerId !== lease.ownerId) continue
+      const expiresAt = 0
+      const check = createHash('sha256')
+        .update(JSON.stringify([record.ownerId, expiresAt]))
+        .digest('hex')
+        .slice(0, 16)
+      const json = JSON.stringify({ ownerId: record.ownerId, expiresAt, check })
+      if (Buffer.byteLength(text) !== 128 || json.length >= 128)
+        throw new Error('unexpected child lease record format')
+      await handle.write(Buffer.from(`${json.padEnd(127, ' ')}\n`), 0, 128, 0)
+    } finally {
+      await handle.close()
+    }
+  }
+}
+
+/** Runs one store operation; crashed leases are expired after confirmed exit. */
 export function runChild(task: Record<string, unknown>): ChildHandle {
   const child = spawn(process.execPath, [childScript, JSON.stringify(task)], {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -182,7 +225,15 @@ export function runChild(task: Record<string, unknown>): ChildHandle {
   child.stdout.on('data', onData)
   child.stderr.on('data', onData)
   return {
-    exited: new Promise((resolve) => child.on('exit', (code) => resolve(code))),
+    // close follows exit and drains the lease announcements from stdout.
+    exited: new Promise((resolve, reject) => {
+      child.on('error', reject)
+      child.on('close', (code) => {
+        const cleanup =
+          code === CRASH_EXIT_CODE ? expireChildLeases(out) : Promise.resolve()
+        cleanup.then(() => resolve(code), reject)
+      })
+    }),
     printed: (marker) =>
       new Promise<void>((resolve) => {
         if (out.includes(marker)) resolve()
