@@ -533,3 +533,112 @@ describe('replace and a live refresh', () => {
     expect(row?.credential).toMatchObject({ refresh: 'r-replacement' })
   })
 })
+
+describe('refresh identity continuity', () => {
+  it('a contradicted known identity persists the successor bound but disabled without propagating it', async () => {
+    const store = s.open({ requireCredentialStamps: true })
+    await store.add({ id: 'a', credential: oauth('r-old'), identity: 'acct-A' })
+    await store.add({ id: 'b', credential: oauth('r-b'), identity: 'acct-B' })
+    const hooks: string[] = []
+    const outcome = await store.refresh(
+      'a',
+      async () => result('r-new', { identity: 'acct-B' }),
+      {
+        onPersisted: () => {
+          hooks.push('persisted')
+        },
+      },
+    )
+    expect(outcome).toMatchObject({
+      status: 'identity-contradicted',
+      rowId: 'a',
+      expectedIdentity: 'acct-A',
+      returnedIdentity: 'acct-B',
+      credential: { refresh: 'r-new' },
+    })
+    expect(hooks).toEqual([])
+    const load = await s.open({ requireCredentialStamps: true }).read()
+    if (load.status !== 'ready') throw new Error('expected ready')
+    const row = load.rows.find((row) => row.id === 'a')
+    expect(row).toMatchObject({
+      identity: 'acct-A',
+      enabled: false,
+      candidate: false,
+      stamp: 'bound',
+      credential: { refresh: 'r-new' },
+      disabledReason:
+        'identity-contradicted: {"expectedIdentity":"acct-A","returnedIdentity":"acct-B"}',
+    })
+    expect(row?.torn).toBeUndefined()
+    expect(row?.unbound).toBeUndefined()
+    expect((await s.config()).accounts[0].accountId).toBe('acct-A')
+    expect(load.rows.find((row) => row.id === 'b')?.credential).toMatchObject({
+      refresh: 'r-b',
+    })
+    expect(
+      (await rejectionOf(store.refresh('a', async () => result('unused'))))
+        .kind,
+    ).toBe('row-disabled')
+    const beforeEnable = await s.bytes()
+    expect((await rejectionOf(store.enable('a'))).kind).toBe(
+      'identity-contradicted',
+    )
+    expect(await s.bytes()).toEqual(beforeEnable)
+    await store.disable('a', 'manual')
+    expect((await rejectionOf(store.enable('a'))).kind).toBe(
+      'identity-contradicted',
+    )
+    await store.replace('a', oauth('r-unvalidated'))
+    expect((await rejectionOf(store.enable('a'))).kind).toBe(
+      'identity-contradicted',
+    )
+    // Identity validation is the provider adapter's responsibility before replace.
+    await store.replace('a', oauth('r-validated-A'), { identity: 'acct-A' })
+    const resolved = (await rowsOf()).find((row) => row.id === 'a')
+    expect(resolved).toMatchObject({
+      identity: 'acct-A',
+      enabled: false,
+      candidate: false,
+      stamp: 'bound',
+      credential: { refresh: 'r-validated-A' },
+    })
+    expect(resolved?.disabledReason).toBeUndefined()
+    await store.enable('a')
+    expect((await rowsOf()).find((row) => row.id === 'a')?.candidate).toBe(true)
+  })
+
+  it('matching, learnt and absent refresh identities retain ordinary rotation and propagation', async () => {
+    for (const [id, known, returned, expected] of [
+      ['same', 'acct-A', 'acct-A', 'acct-A'],
+      ['learn', undefined, 'acct-B', 'acct-B'],
+      ['absent', 'acct-C', undefined, 'acct-C'],
+    ] as const) {
+      const store = s.open({ requireCredentialStamps: true })
+      await store.add({
+        id,
+        credential: oauth(`old-${id}`),
+        ...(known !== undefined ? { identity: known } : {}),
+      })
+      const hooks: string[] = []
+      expect(
+        await store.refresh(
+          id,
+          async () => result(`new-${id}`, { identity: returned }),
+          {
+            onPersisted: () => {
+              hooks.push(id)
+            },
+          },
+        ),
+      ).toMatchObject({ status: 'rotated', identity: expected })
+      expect(hooks).toEqual([id])
+      expect((await rowsOf()).find((row) => row.id === id)).toMatchObject({
+        identity: expected,
+        enabled: true,
+        candidate: true,
+        stamp: 'bound',
+        credential: { refresh: `new-${id}` },
+      })
+    }
+  })
+})

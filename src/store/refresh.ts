@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { PoolOperationError } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
-import { recordIdentityIn } from './identity.js'
+import {
+  IDENTITY_CONTRADICTED_REASON_PREFIX,
+  recordIdentityIn,
+} from './identity.js'
 import { type Progress, runOperation, withTransaction } from './mutate.js'
 import { acceptProviderState, mergedProviderState } from './provider-state.js'
 import type { PoolLockSpec } from './refresh-lock.js'
@@ -20,6 +24,7 @@ import {
   rowLockKey,
   type StoredCredential,
 } from './schema.js'
+import { applyTransition, type StampedTransition } from './torn.js'
 
 /** What the injected provider refresh function returns. */
 export interface ProviderRefreshResult {
@@ -49,7 +54,11 @@ export interface RefreshOptions {
   providerLock?: PoolLockSpec
   /** Taken after the provider-wide lock in this order, released in reverse. */
   extraLocks?: readonly PoolLockSpec[]
-  /** Awaited once the rotation is persisted and the store locks released. */
+  /**
+   * Awaited once an ordinary rotation is persisted and the store locks released.
+   * Never called for `identity-contradicted`: its credential must not propagate
+   * as the row's recorded account.
+   */
   onPersisted?: (
     rowId: string,
     credential: StoredCredential,
@@ -69,6 +78,18 @@ export type RefreshOutcome =
       rowId: string
       credential: StoredCredential
       identity?: string
+    }
+  /**
+   * The provider's successor credential is stored bound to expectedIdentity,
+   * not returnedIdentity. The row stays disabled until the adapter supplies
+   * an identity-validated replacement credential through replace.
+   */
+  | {
+      status: 'identity-contradicted'
+      rowId: string
+      expectedIdentity: string
+      returnedIdentity: string
+      credential: StoredCredential
     }
   | { status: 'refused'; rowId: string; reason: string }
 
@@ -269,6 +290,22 @@ export async function refreshRow(
             refresh: result.refresh,
             expires: result.expires,
           }
+          const contradiction =
+            current.identity !== undefined &&
+            result.identity !== undefined &&
+            current.identity !== result.identity
+              ? {
+                  expectedIdentity: current.identity,
+                  returnedIdentity: result.identity,
+                }
+              : undefined
+          const transition: StampedTransition | undefined = contradiction
+            ? {
+                mark: randomUUID(),
+                enabled: false,
+                reason: `${IDENTITY_CONTRADICTED_REASON_PREFIX}${JSON.stringify(contradiction)}`,
+              }
+            : undefined
           const learnt =
             current.identity === undefined && result.identity
               ? result.identity
@@ -278,6 +315,11 @@ export async function refreshRow(
           // forward rather than leaving an identity no stamp proves.
           const stored = await rotateIn(rt, tx, id, credential, {
             stamp: rotationStamp(prior, now),
+            // Write state first with the disable marker, then config below.
+            // Once the successor is durable, recovery projects the disable even
+            // if config has not landed. A crash before the first rename still
+            // loses an in-memory provider reply, as in any ordinary refresh.
+            transition,
             identity: learnt,
             ...(incoming !== undefined
               ? {
@@ -291,17 +333,29 @@ export async function refreshRow(
                 }
               : {}),
           })
+          if (transition !== undefined) {
+            applyTransition(tx, id, transition)
+            await tx.commitConfig()
+          }
           let identity = current.identity
           if (learnt !== undefined) {
             recordIdentityIn(tx, id, learnt)
             identity = learnt
             await tx.commitConfig()
           }
-          return { stored, identity, refused: undefined }
+          return { stored, identity, contradiction, refused: undefined }
         },
       )
       if (commit.refused !== undefined)
         return { status: 'refused', rowId: id, reason: commit.refused }
+
+      if (commit.contradiction !== undefined)
+        return {
+          status: 'identity-contradicted',
+          rowId: id,
+          ...commit.contradiction,
+          credential: commit.stored,
+        }
 
       if (options.onPersisted) {
         try {

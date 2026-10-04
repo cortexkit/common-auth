@@ -2,6 +2,7 @@ import {
   disableIdentityDuplicates,
   disableIn,
   enableIn,
+  IDENTITY_CONTRADICTED_REASON_PREFIX,
   type RowEditor,
   recordIdentityIn,
 } from './identity.js'
@@ -267,6 +268,15 @@ export function bindReplacement(
     needsFirstReading: true,
   }
   delete next.quota
+  // An explicit identity supplied with a replacement is the adapter's validated
+  // account binding. Clear its quarantine on completion, including crash recovery,
+  // but leave the row disabled until a separate enable.
+  if (
+    binding.identity !== undefined &&
+    typeof next.disabledReason === 'string' &&
+    next.disabledReason.startsWith(IDENTITY_CONTRADICTED_REASON_PREFIX)
+  )
+    delete next.disabledReason
   editor.setEntry(id, next)
   const raw = editor.rosterRow(id)
   if (!raw) return

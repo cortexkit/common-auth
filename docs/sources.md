@@ -1087,3 +1087,12 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | rpc | Truncated, reset and stalled responses fail within total deadline without socket leaks | new (neither copy) | raw RPC transport rejects truncated, reset and stalled bodies and closes sockets |
 | rpc | Length overruns, Transfer-Encoding, malformed JSON and HTTP errors fail closed | new (neither copy) | raw RPC transport rejects length overruns, transfer encoding, invalid JSON and non-2xx |
 | rpc | Header and body byte caps enforced without waiting for EOF | new (neither copy) | raw RPC transport bounds headers and response bodies before EOF |
+
+| store | Quarantine a contradicted refresh identity while preserving the successor | new (neither copy) | a contradicted known identity persists the successor bound but disabled without propagating it |
+| store | Preserve ordinary refresh identity controls | new (neither copy) | matching, learnt and absent refresh identities retain ordinary rotation and propagation |
+| store | Contradicted refresh crash before state write | new (neither copy) | a contradicted refresh crash at before-state-write never exposes rotated enabled credentials |
+| store | Contradicted refresh crash after state write | new (neither copy) | a contradicted refresh crash at after-state-write never exposes rotated enabled credentials |
+| store | Contradicted refresh crash before config write | new (neither copy) | a contradicted refresh crash at before-config-write never exposes rotated enabled credentials |
+| store | Contradicted refresh crash after config write | new (neither copy) | a contradicted refresh crash at after-config-write never exposes rotated enabled credentials |
+| store | Document the pre-existing exchange-before-persistence crash window | new (neither copy) | ordinary and contradicted exchanges both lose an in-memory successor before the first state rename |
+| store | Replacement recovery resolves quarantine without enabling | new (neither copy) | a crashed identity-validated replacement resolves refresh quarantine without enabling the row |

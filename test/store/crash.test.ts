@@ -315,3 +315,120 @@ describe('crash windows, with the observer surviving', () => {
     expect(load.rows.every((row) => row.candidate)).toBe(true)
   })
 })
+
+for (const step of [
+  'before-state-write',
+  'after-state-write',
+  'before-config-write',
+  'after-config-write',
+] as const) {
+  it(`a contradicted refresh crash at ${step} never exposes rotated enabled credentials`, async () => {
+    await s
+      .open()
+      .add({ id: 'a', credential: oauth('r-old'), identity: 'acct-A' })
+    const child = crashChild({
+      op: 'refresh',
+      id: 'a',
+      credential: oauth('r-new'),
+      renew: true,
+      identity: 'acct-B',
+      exitAt: step,
+    })
+    expect(await child.exited).toBe(CRASH_EXIT_CODE)
+    const store = s.open({ requireCredentialStamps: true })
+    let load = await store.read()
+    if (load.status !== 'ready') throw new Error('expected ready')
+    let row = load.rows.find((row) => row.id === 'a')
+    expect(row).toMatchObject({
+      identity: 'acct-A',
+      stamp: 'bound',
+      credential: {
+        refresh: step === 'before-state-write' ? 'r-old' : 'r-new',
+      },
+      enabled: step === 'before-state-write',
+      candidate: step === 'before-state-write',
+    })
+    if (step !== 'before-state-write') {
+      expect(row?.disabledReason).toBe(
+        'identity-contradicted: {"expectedIdentity":"acct-A","returnedIdentity":"acct-B"}',
+      )
+      // A store write completes any interrupted config transition before proceeding.
+      await store.add({ id: 'survivor', credential: oauth('r-survivor') })
+      load = await store.read()
+      if (load.status !== 'ready') throw new Error('expected ready')
+      row = load.rows.find((row) => row.id === 'a')
+      expect(row).toMatchObject({
+        enabled: false,
+        candidate: false,
+        stamp: 'bound',
+        identity: 'acct-A',
+        credential: { refresh: 'r-new' },
+      })
+      expect(row?.torn).toBeUndefined()
+      expect((await s.config()).accounts[0]).toMatchObject({
+        enabled: false,
+        accountId: 'acct-A',
+      })
+    }
+  })
+}
+
+it('ordinary and contradicted exchanges both lose an in-memory successor before the first state rename', async () => {
+  for (const identity of ['acct-A', 'acct-B']) {
+    const id = identity === 'acct-A' ? 'ordinary' : 'contradicted'
+    await s.open().add({ id, credential: oauth('r-old'), identity: 'acct-A' })
+    const child = crashChild({
+      op: 'refresh',
+      id,
+      credential: oauth('r-lost'),
+      renew: true,
+      identity,
+      exitAt: 'before-state-write',
+    })
+    expect(await child.exited).toBe(CRASH_EXIT_CODE)
+    expect(await rowOf(id)).toMatchObject({
+      identity: 'acct-A',
+      enabled: true,
+      candidate: true,
+      credential: { refresh: 'r-old' },
+    })
+    expect((await s.state()).accounts[id].refresh).toBe('r-old')
+    await s.open().remove(id)
+  }
+})
+
+it('a crashed identity-validated replacement resolves refresh quarantine without enabling the row', async () => {
+  await s
+    .open()
+    .add({ id: 'a', credential: oauth('r-old'), identity: 'acct-A' })
+  await s.open().refresh('a', async () => ({
+    access: 'x',
+    refresh: 'r-B',
+    expires: 4_000_000_000_000,
+    identity: 'acct-B',
+  }))
+  const child = crashChild({
+    op: 'replace',
+    id: 'a',
+    credential: oauth('r-validated-A'),
+    renew: true,
+    identity: 'acct-A',
+    exitAt: 'after-state-write',
+  })
+  expect(await child.exited).toBe(CRASH_EXIT_CODE)
+  const row = await rowOf('a')
+  expect(row).toMatchObject({
+    identity: 'acct-A',
+    enabled: false,
+    candidate: false,
+    stamp: 'bound',
+    credential: { refresh: 'r-validated-A' },
+  })
+  expect(row?.disabledReason).toBeUndefined()
+  await s.open({ requireCredentialStamps: true }).enable('a')
+  expect(await rowOf('a')).toMatchObject({
+    enabled: true,
+    candidate: true,
+    stamp: 'bound',
+  })
+})

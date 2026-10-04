@@ -11,6 +11,9 @@ export interface RowEditor {
   setEntry(id: string, entry: Record<string, unknown>): void
 }
 
+/** Prefix of a refresh quarantine reason, followed by JSON of the expected and returned identities. */
+export const IDENTITY_CONTRADICTED_REASON_PREFIX = 'identity-contradicted: '
+
 /** The reason recorded on a row disabled because an earlier row is the same account. */
 export const DUPLICATE_IDENTITY_REASON = 'duplicate-identity'
 
@@ -39,7 +42,14 @@ export function disableIn(tx: RowEditor, id: string, reason: string): void {
   if (!raw) return
   raw.enabled = false
   const entry = tx.entry(id) ?? { credentialEpoch: 1, needsFirstReading: true }
-  tx.setEntry(id, { ...entry, disabledReason: reason })
+  // A routine disable must not erase the evidence needed to refuse enable.
+  const quarantined =
+    typeof entry.disabledReason === 'string' &&
+    entry.disabledReason.startsWith(IDENTITY_CONTRADICTED_REASON_PREFIX)
+  tx.setEntry(id, {
+    ...entry,
+    disabledReason: quarantined ? entry.disabledReason : reason,
+  })
 }
 
 /**
