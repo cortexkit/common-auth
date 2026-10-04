@@ -1094,3 +1094,5 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | store | Contradicted refresh crash after state write | new (neither copy) | a contradicted refresh crash at after-state-write never exposes rotated enabled credentials |
 | store | Contradicted refresh crash before config write | new (neither copy) | a contradicted refresh crash at before-config-write never exposes rotated enabled credentials |
 | store | Contradicted refresh crash after config write | new (neither copy) | a contradicted refresh crash at after-config-write never exposes rotated enabled credentials |
+| store | Document the pre-existing exchange-before-persistence crash window | new (neither copy) | ordinary and contradicted exchanges both lose an in-memory successor before the first state rename |
+| store | Replacement recovery resolves quarantine without enabling | new (neither copy) | a crashed identity-validated replacement resolves refresh quarantine without enabling the row |

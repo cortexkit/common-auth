@@ -54,6 +54,7 @@ export type PoolFailureKind =
   | 'row-protected'
   | 'duplicate-identity'
   | 'identity-mismatch'
+  | 'identity-contradicted'
   | 'endpoint-mismatch'
   | 'row-key-changed'
   | 'invalid-order'

@@ -579,6 +579,30 @@ describe('refresh identity continuity', () => {
       (await rejectionOf(store.refresh('a', async () => result('unused'))))
         .kind,
     ).toBe('row-disabled')
+    const beforeEnable = await s.bytes()
+    expect((await rejectionOf(store.enable('a'))).kind).toBe(
+      'identity-contradicted',
+    )
+    expect(await s.bytes()).toEqual(beforeEnable)
+    await store.disable('a', 'manual')
+    expect((await rejectionOf(store.enable('a'))).kind).toBe(
+      'identity-contradicted',
+    )
+    await store.replace('a', oauth('r-unvalidated'))
+    expect((await rejectionOf(store.enable('a'))).kind).toBe(
+      'identity-contradicted',
+    )
+    // Identity validation is the provider adapter's responsibility before replace.
+    await store.replace('a', oauth('r-validated-A'), { identity: 'acct-A' })
+    const resolved = (await rowsOf()).find((row) => row.id === 'a')
+    expect(resolved).toMatchObject({
+      identity: 'acct-A',
+      enabled: false,
+      candidate: false,
+      stamp: 'bound',
+      credential: { refresh: 'r-validated-A' },
+    })
+    expect(resolved?.disabledReason).toBeUndefined()
     await store.enable('a')
     expect((await rowsOf()).find((row) => row.id === 'a')?.candidate).toBe(true)
   })

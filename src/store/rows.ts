@@ -7,6 +7,7 @@ import {
   disableIdentityDuplicates,
   disableIn,
   enableIn,
+  IDENTITY_CONTRADICTED_REASON_PREFIX,
   recordIdentityIn,
 } from './identity.js'
 import {
@@ -995,6 +996,16 @@ async function transitionRow(
                 true,
               )
           }
+          if (
+            flag.enabled &&
+            row.disabledReason?.startsWith(IDENTITY_CONTRADICTED_REASON_PREFIX)
+          )
+            throw refusal(
+              'enable',
+              id,
+              'identity-contradicted',
+              `row ${id} needs an identity-validated credential replacement before it can be enabled`,
+            )
           // An enable of a row that is already enabled has nothing to write
           // to the config; a disable always rewrites it, as it always has.
           const writesConfig =
@@ -1111,7 +1122,9 @@ export function disableRow(
 
 /**
  * Clears a row's `enabled: false` and its `disabledReason` in one config
- * write. An OAuth row whose recorded identity another enabled OAuth row holds
+ * write. An identity-contradicted row refuses with `identity-contradicted`
+ * until the caller validates a replacement's identity and supplies it to replace.
+ * An OAuth row whose recorded identity another enabled OAuth row holds
  * stays disabled and the call refuses (`duplicate-identity`): the same rule
  * that makes `add` store such a row disabled. Enabling a row that is already
  * enabled writes nothing. See `RowTransitionOptions` for the attributed

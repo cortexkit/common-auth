@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { PoolOperationError } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
-import { recordIdentityIn } from './identity.js'
+import {
+  IDENTITY_CONTRADICTED_REASON_PREFIX,
+  recordIdentityIn,
+} from './identity.js'
 import { type Progress, runOperation, withTransaction } from './mutate.js'
 import { acceptProviderState, mergedProviderState } from './provider-state.js'
 import type { PoolLockSpec } from './refresh-lock.js'
@@ -76,7 +79,11 @@ export type RefreshOutcome =
       credential: StoredCredential
       identity?: string
     }
-  /** The successor is stored bound to the unchanged identity, but disabled until operator enable. */
+  /**
+   * The provider's successor credential is stored bound to expectedIdentity,
+   * not returnedIdentity. The row stays disabled until the adapter supplies
+   * an identity-validated replacement credential through replace.
+   */
   | {
       status: 'identity-contradicted'
       rowId: string
@@ -296,7 +303,7 @@ export async function refreshRow(
             ? {
                 mark: randomUUID(),
                 enabled: false,
-                reason: `identity-contradicted: ${JSON.stringify(contradiction)}`,
+                reason: `${IDENTITY_CONTRADICTED_REASON_PREFIX}${JSON.stringify(contradiction)}`,
               }
             : undefined
           const learnt =
@@ -308,8 +315,10 @@ export async function refreshRow(
           // forward rather than leaving an identity no stamp proves.
           const stored = await rotateIn(rt, tx, id, credential, {
             stamp: rotationStamp(prior, now),
-            // The disable travels with the successor so crash recovery cannot
-            // expose a rotated credential as the old enabled account.
+            // Write state first with the disable marker, then config below.
+            // Once the successor is durable, recovery projects the disable even
+            // if config has not landed. A crash before the first rename still
+            // loses an in-memory provider reply, as in any ordinary refresh.
             transition,
             identity: learnt,
             ...(incoming !== undefined
