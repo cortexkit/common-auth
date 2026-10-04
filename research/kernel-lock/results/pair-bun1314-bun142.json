@@ -1,0 +1,180 @@
+{
+  "holder": {
+    "ready": true,
+    "pid": 34068,
+    "version": "v24.3.0",
+    "bun": "1.3.14",
+    "napi": "10"
+  },
+  "contender": {
+    "ready": true,
+    "pid": 34069,
+    "version": "v26.3.0",
+    "bun": "1.4.2",
+    "napi": "10"
+  },
+  "acquired": {
+    "acquired": true
+  },
+  "busy": {
+    "acquired": false
+  },
+  "paused": [
+    {
+      "ms": 0.0029999999997016857,
+      "acquired": false
+    },
+    {
+      "ms": 21.271999999999935,
+      "acquired": false
+    },
+    {
+      "ms": 42.57987500000036,
+      "acquired": false
+    },
+    {
+      "ms": 63.917999999999665,
+      "acquired": false
+    },
+    {
+      "ms": 84.2880839999998,
+      "acquired": false
+    },
+    {
+      "ms": 105.61154199999964,
+      "acquired": false
+    },
+    {
+      "ms": 126.33008400000017,
+      "acquired": false
+    },
+    {
+      "ms": 146.79100000000017,
+      "acquired": false
+    },
+    {
+      "ms": 167.63637500000004,
+      "acquired": false
+    },
+    {
+      "ms": 188.95187499999975,
+      "acquired": false
+    },
+    {
+      "ms": 210.26979200000005,
+      "acquired": false
+    },
+    {
+      "ms": 231.62516700000015,
+      "acquired": false
+    },
+    {
+      "ms": 252.94708400000036,
+      "acquired": false
+    },
+    {
+      "ms": 274.24712499999987,
+      "acquired": false
+    },
+    {
+      "ms": 295.72483399999965,
+      "acquired": false
+    },
+    {
+      "ms": 317.11974999999984,
+      "acquired": false
+    },
+    {
+      "ms": 337.9479170000004,
+      "acquired": false
+    },
+    {
+      "ms": 359.2720840000002,
+      "acquired": false
+    },
+    {
+      "ms": 380.6358339999997,
+      "acquired": false
+    },
+    {
+      "ms": 401.9682499999999,
+      "acquired": false
+    },
+    {
+      "ms": 422.5977919999996,
+      "acquired": false
+    },
+    {
+      "ms": 443.9630420000003,
+      "acquired": false
+    },
+    {
+      "ms": 465.2130420000003,
+      "acquired": false
+    },
+    {
+      "ms": 486.6170000000002,
+      "acquired": false
+    },
+    {
+      "ms": 507.2215839999999,
+      "acquired": false
+    },
+    {
+      "ms": 528.8985839999996,
+      "acquired": false
+    },
+    {
+      "ms": 550.2339590000001,
+      "acquired": false
+    },
+    {
+      "ms": 571.521334,
+      "acquired": false
+    },
+    {
+      "ms": 592.8458339999997,
+      "acquired": false
+    }
+  ],
+  "resumedBeforeRelease": {
+    "acquired": false
+  },
+  "abort": {
+    "aborts": 20,
+    "times": [
+      20.535458000000062,
+      20.496874999999932,
+      20.405332999999928,
+      20.405750000000012,
+      20.384374999999977,
+      20.204875000000015,
+      20.41883299999995,
+      20.386750000000006,
+      20.400874999999928,
+      20.49762499999997,
+      20.410375000000045,
+      20.10591599999998,
+      20.39487500000007,
+      20.364667000000054,
+      20.403333999999973,
+      20.380249999999933,
+      20.39079199999992,
+      20.35612500000002,
+      20.426541999999927,
+      20.395416999999952
+    ],
+    "before": 7,
+    "after": 7,
+    "busy": true,
+    "boundedWaitMs": 45.12787500000013
+  },
+  "afterRelease": {
+    "acquired": true
+  },
+  "afterKill": {
+    "acquired": true
+  },
+  "attempts": 2,
+  "killMs": 2.754041000000143
+}

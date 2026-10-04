@@ -1,0 +1,33 @@
+{
+  "runtime": "Bun 1.4.2",
+  "tsc": "7.0.2",
+  "biome": "2.5.14",
+  "tests": 1093,
+  "passed": 1082,
+  "skipped": 10,
+  "failed": [
+    {
+      "name": "loopback RPC client under Node with NODE_USE_ENV_PROXY bypasses HTTP_PROXY",
+      "failure": "Error: Node 24 is required for the proxy regression test\n      at test/rpc/client-proxy.test.ts:143:15\n",
+      "attributes": {
+        "type": "Error",
+        "message": "Node 24 is required for the proxy regression test"
+      }
+    }
+  ],
+  "build": "passed",
+  "typecheck": "passed after build; initially failed due to missing dist/self exports",
+  "lintFiles": 209,
+  "formatFiles": 209,
+  "rpcRerun": {
+    "command": "PATH=<Node24 bin>:$PATH bun test test/rpc/client-proxy.test.ts --reporter=junit --reporter-outfile=research/kernel-lock/results/rpc-rerun.xml",
+    "passed": 2,
+    "failed": 0,
+    "assertions": 10
+  },
+  "sourcesOriginalArtifact": {
+    "parsed": 1077,
+    "matched": 1076,
+    "result": "failed for Node24 environment test"
+  }
+}

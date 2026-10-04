@@ -1,0 +1,1 @@
+{"passed":false,"reason":"Counter worker statSync(sidecar) ran before the first open created the sidecar: ENOENT counter-node24. Harness corrected to create stable sidecar before launching counter workers.","completedBeforeFailure":["same-process all three runtimes","six directed runtime pair probes including stop, kill and abort"]}

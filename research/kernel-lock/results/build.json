@@ -1,0 +1,16 @@
+{
+  "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Library/Developer/CommandLineTools/usr/bin\n",
+  "command": "sh research/kernel-lock/build.sh /opt/homebrew/include/node",
+  "napiVersion": 8,
+  "addonSha256": "21f60e6d4168c909c255a4d02547e65dab002abebbd9d8e69e7130e499bcac46",
+  "jsSyntaxChecks": {
+    "runtime": "v26.7.0",
+    "files": [
+      "worker.mjs",
+      "run.mjs",
+      "bundle-probe.mjs"
+    ],
+    "passed": 3
+  },
+  "nativeCompileUnits": 3
+}

@@ -1,0 +1,58 @@
+{
+  "runtimes": [
+    {
+      "ready": true,
+      "pid": 34538,
+      "version": "v24.3.0",
+      "bun": "1.3.14",
+      "napi": "10"
+    },
+    {
+      "ready": true,
+      "pid": 34539,
+      "version": "v24.3.0",
+      "bun": "1.3.14",
+      "napi": "10"
+    },
+    {
+      "ready": true,
+      "pid": 34540,
+      "version": "v24.3.0",
+      "bun": "1.3.14",
+      "napi": "10"
+    },
+    {
+      "ready": true,
+      "pid": 34541,
+      "version": "v24.3.0",
+      "bun": "1.3.14",
+      "napi": "10"
+    }
+  ],
+  "roundsPerProcess": 150,
+  "expected": 600,
+  "actual": 600,
+  "elapsedMs": 1676.5897499999992,
+  "results": [
+    {
+      "rounds": 150,
+      "sidecarInodeBefore": 2239722409,
+      "sidecarInodeAfter": 2239722409
+    },
+    {
+      "rounds": 150,
+      "sidecarInodeBefore": 2239722409,
+      "sidecarInodeAfter": 2239722409
+    },
+    {
+      "rounds": 150,
+      "sidecarInodeBefore": 2239722409,
+      "sidecarInodeAfter": 2239722409
+    },
+    {
+      "rounds": 150,
+      "sidecarInodeBefore": 2239722409,
+      "sidecarInodeAfter": 2239722409
+    }
+  ]
+}

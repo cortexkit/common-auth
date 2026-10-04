@@ -1,0 +1,17 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: same-process-exclusion-node24
+    at check (file:///Users/ufukaltinok/.local/share/cortexkit/alfonso/worktrees/28a223f982ef886b/pool-1/research/kernel-lock/run.mjs:15:76)
+    at file:///Users/ufukaltinok/.local/share/cortexkit/alfonso/worktrees/28a223f982ef886b/pool-1/research/kernel-lock/run.mjs:36:5
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v26.7.0

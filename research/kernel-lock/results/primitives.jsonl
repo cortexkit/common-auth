@@ -1,0 +1,4 @@
+{"primitive":"flock","first_acquired":true,"second_open_acquired":false,"child_before_close_acquired":false,"child_after_close_acquired":false}
+{"primitive":"fcntl","first_acquired":true,"second_open_acquired":true,"child_before_close_acquired":false,"child_after_close_acquired":true}
+{"primitive":"lockf","first_acquired":true,"second_open_acquired":true,"child_before_close_acquired":false,"child_after_close_acquired":true}
+{"primitive":"OFD","first_acquired":true,"second_open_acquired":false,"child_before_close_acquired":false,"child_after_close_acquired":false}
