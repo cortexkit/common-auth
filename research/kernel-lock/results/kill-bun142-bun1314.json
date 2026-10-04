@@ -1,0 +1,38 @@
+{
+  "killAcquired": {
+    "acquired": true
+  },
+  "heartbeat": {
+    "heartbeat": true,
+    "held": true,
+    "unlockCalls": 1,
+    "observedMs": 8007.075333
+  },
+  "beforeKill": {
+    "acquired": false,
+    "observedMs": 8007.320208
+  },
+  "holderMessages": [
+    {
+      "ms": 8006.976333,
+      "acquired": true
+    },
+    {
+      "ms": 8007.052916,
+      "heartbeat": true,
+      "held": true,
+      "unlockCalls": 1
+    }
+  ],
+  "unlockCallsBeforeProbe": 1,
+  "sentMs": 8007.483666,
+  "exit": {
+    "code": null,
+    "signal": "SIGKILL",
+    "ms": 8008.84825
+  },
+  "acquiredMs": 8009.236458,
+  "afterKill": {
+    "acquired": true
+  }
+}

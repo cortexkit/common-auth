@@ -51,37 +51,48 @@ Runtime discovery: the repo's RPC regression test tries `mise where node@24`, th
 
 ## Probe results (final run)
 
-Every directed pair of distinct pinned runtimes was run, including both Bun versions against each other. An additional `triple-probe.mjs` run placed all three runtimes on the same sidecar: each took a turn as holder while both other runtimes attempted concurrently (both busy); after release, both raced and exactly one acquired. Three holder rotations and nine assertions passed; raw `results/triple-exclusion.json`. `results/pair-*.json` records ready messages, the initial busy result, each timestamped paused attempt, resume-before-release busy, abort attempts/fd counts, post-release success and post-kill success. SIGSTOP lasted at least 600 ms; the harness sampled repeatedly every approximately 20 ms. This measures sampled exclusion throughout the pause, not a continuous syscall trace.
+Every directed pair of distinct pinned runtimes was run, including both Bun versions against each other. An additional `triple-probe.mjs` run placed all three runtimes on the same sidecar: each took a turn as holder while both other runtimes attempted concurrently (both busy); after release, both raced and exactly one acquired. Three holder rotations and nine assertions passed; raw `results/triple-exclusion.json`. `results/pair-*.json` records ready messages, the initial busy result, each timestamped paused attempt, independent stopped-state observations, resume-before-release busy, abort attempts/fd counts, post-release success and the ordered kill evidence. The pause guard requires at least 10 samples spanning at least 500 ms and at least 600 ms between independent `ps -o stat= -p <pid>` observations of state T, before the first and after the last sample. This measures sampled exclusion bracketed by stopped-state observations, not a continuous process-state or syscall trace. The same `ps` observer works on Linux; no macOS-only worker/build change was needed.
 
-| Holder → contender | Busy samples while stopped | SIGKILL → acquire ms | Abort min–max ms (20 ms requested) | Numeric fd count before/after | 40 ms bounded wait observed ms |
-|---|---:|---:|---:|---:|---:|
-| Node 24.16 → Bun 1.3.14 | 27 | 3.523 | 20.14–25.60 | 7 / 7 | 43.08 |
-| Node 24.16 → Bun 1.4.2 | 29 | 3.351 | 20.09–20.76 | 7 / 7 | 44.57 |
-| Bun 1.3.14 → Node 24.16 | 29 | 2.662 | 19.13–25.46 | 18 / 18 | 41.49 |
-| Bun 1.3.14 → Bun 1.4.2 | 29 | 2.754 | 20.11–20.54 | 7 / 7 | 45.13 |
-| Bun 1.4.2 → Node 24.16 | 29 | 2.504 | 19.61–21.32 | 18 / 18 | 40.82 |
-| Bun 1.4.2 → Bun 1.3.14 | 28 | 3.959 | 20.14–24.42 | 7 / 7 | 41.03 |
+For each kill probe, a holder heartbeat reports `held: true` and an unchanged explicit-unlock count; the contender then sees busy before SIGKILL. The holder receives no further commands and sends no release message during this phase. The harness observes the exit event with `signal: SIGKILL` and null exit code before it permits the contender to try acquiring. `kill.heartbeat.observedMs`, `kill.beforeKill.observedMs`, `kill.sentMs`, `kill.exit.ms`, and `kill.acquiredMs` record this ordering on the orchestrator's monotonic clock (not wall-clock timestamps). `results/pause-*.json` and `results/kill-*.json` also retain the evidence independently of the completed pair files.
 
-All initial contenders busy; all attempts after SIGCONT **before** release busy; all post-release acquisitions succeeded. All post-kill acquisitions succeeded, with approximately 2 ms retry resolution plus IPC overhead (latency is not a kernel-only measurement). Abort had 20/20 AbortErrors per pair, 120 total, no observed numeric-fd growth using `/usr/sbin/lsof` after warmup. Bounded wait ended with busy, not a fallback. This does not prove listener/heap cleanup over unlimited repetitions.
+| Holder → contender | Busy samples while stopped | Stopped observation / sample span ms | State before / after | SIGKILL → acquire ms | Abort min–max ms (20 ms requested) | Numeric fd count before/after | 40 ms bounded wait observed ms |
+|---|---:|---:|---|---:|---:|---:|---:|
+| Node 24.16 → Bun 1.3.14 | 29 | 623.12 / 599.14 | T / T | 2.961 | 20.09–21.64 | 7 / 7 | 41.42 |
+| Node 24.16 → Bun 1.4.2 | 29 | 623.34 / 598.90 | T / T | 2.170 | 20.09–20.58 | 7 / 7 | 44.97 |
+| Bun 1.3.14 → Node 24.16 | 29 | 623.50 / 599.89 | T / T | 2.072 | 19.79–21.36 | 18 / 18 | 40.79 |
+| Bun 1.3.14 → Bun 1.4.2 | 29 | 621.43 / 597.70 | T / T | 2.412 | 20.23–20.67 | 7 / 7 | 45.65 |
+| Bun 1.4.2 → Node 24.16 | 29 | 623.81 / 599.98 | T / T | 1.279 | 19.67–21.12 | 18 / 18 | 40.37 |
+| Bun 1.4.2 → Bun 1.3.14 | 29 | 620.58 / 596.91 | T / T | 1.753 | 20.08–20.68 | 7 / 7 | 40.76 |
+
+All initial contenders busy; all attempts after SIGCONT **before** release busy; all post-release acquisitions succeeded. All post-kill acquisitions succeeded, after observed SIGKILL death, with exit-event and IPC overhead included (latency is not a kernel-only measurement). Abort had 20/20 AbortErrors per pair, 120 total, no observed numeric-fd growth using `/usr/sbin/lsof` after warmup. Bounded wait ended with busy, not a fallback. This does not prove listener/heap cleanup over unlimited repetitions.
 
 Each counter update reads one integer, increments it once, and atomically replaces the data file; the expected total is processes multiplied by rounds per process.
 
 | Protocol counter group | Processes × rounds | Expected / actual | Elapsed ms |
 |---|---:|---:|---:|
-| Node 24.16 only | 4 × 150 | 600 / 600 | 2881.90 |
-| Bun 1.3.14 only | 4 × 150 | 600 / 600 | 1676.59 |
-| Bun 1.4.2 only | 4 × 150 | 600 / 600 | 1625.17 |
-| **All three mixed on one path** | 6 × 150 (2 each) | **900 / 900** | 4014.14 |
+| Node 24.16 only | 4 × 150 | 600 / 600 | 925.72 |
+| Bun 1.3.14 only | 4 × 150 | 600 / 600 | 940.40 |
+| Bun 1.4.2 only | 4 × 150 | 600 / 600 | 943.17 |
+| **All three mixed on one path** | 6 × 150 (2 each) | **900 / 900** | 1338.66 |
 
 Total 2700 full-protocol updates, with a deliberate 1 ms pause after reading to increase overlap. Read, increment, write unique temp and rename all happen while held. Sidecar inode before/after matched for every worker. Separate `same-*.json` runs in each runtime verified second independent handle busy, busy after unrelated same-file fd close, and busy even after data rename. No durability/fsync or transaction-crash recovery assertion is made.
 
-Final lifecycle/counter harness: **50 assertions passed**, six pair runs and four counter runs; separate triple-runtime exclusion probe: **9 assertions passed**. Raw final files are at `results/`; `results/intermediate-run/` retains the complete preceding successful run recovered from staged observations, also summarized in `intermediate-run-summary.json`. `initial-run-failure.json` explains an earlier harness ENOENT and its correction (precreate sidecar before measuring its inode). Limitation: the initial failed run's individual pair files were overwritten before archival; only its failure summary remains. Final and intermediate successful observations and mutation observations are retained; use the complete final run for claims.
+Final strengthened macOS lifecycle/counter harness: **92 assertions passed**, six pair runs and four counter runs; separate triple-runtime exclusion probe: **9 assertions passed**. Raw final files are at `results/`; `results/intermediate-run/` retains the complete preceding successful run recovered from staged observations, also summarized in `intermediate-run-summary.json`. `initial-run-failure.json` explains an earlier harness ENOENT and its correction (precreate sidecar before measuring its inode). Limitation: the initial failed run's individual pair files were overwritten before archival; only its failure summary remains. Final and intermediate successful observations and mutation observations are retained; use the complete final run for claims.
 
 ### Non-vacuity control
 
-Disabled the addon's kernel acquire with `NON-VACUITY BREAK`, rebuilt the same binary and ran the harness with separate mutation output. **`same-process-exclusion-node24` failed**, with both independent handles acquired and a third attempt also acquired after an unrelated descriptor for the same file was closed. No other test failed; later assertions were not reached because the harness stops on its first failure. The staged source was restored; diff went from `addon.c | 2 +-; 1 insertion, 1 deletion` to empty. Rebuilt real addon; final 50 assertions passed. `results/mutation-output.txt` and `results/mutation/same-node24.json` retain the negative evidence. This single control shows the harness reaches the native acquire; it is not a separate mutation proof for every lifecycle behavior.
+Disabled the addon's kernel acquire with `NON-VACUITY BREAK`, rebuilt the same binary and ran the harness with separate mutation output. **`same-process-exclusion-node24` failed**, with both independent handles acquired and a third attempt also acquired after an unrelated descriptor for the same file was closed. No other test failed; later assertions were not reached because the harness stops on its first failure. The staged source was restored; diff went from `addon.c | 2 +-; 1 insertion, 1 deletion` to empty. Rebuilt real addon; the original 50-assertion harness passed. `results/mutation-output.txt` and `results/mutation/same-node24.json` retain the negative evidence. This single control shows the harness reaches the native acquire; it is not a separate mutation proof for every lifecycle behavior.
+
+An independent harness review by AGAUTH (the authentication-review agent) found that the original pause assertion passed on an empty sample array and that explicitly releasing before SIGKILL still passed the original kill probe (both mutants passed all 50 assertions). The strengthened guards above reject both controls, reproduced here on macOS with the pinned workers:
+
+- Empty pause loop (`while (false && ...)`): **`pause-minimum-samples-node24-bun1314` failed**. No other assertion failed; later assertions were not reached. Evidence: `results/mutation/empty-pause/` (output, observations, applied/restored diff stats).
+- Holder explicitly releases after reacquiring and before its final heartbeat/SIGKILL: **`kill-prekill-busy-node24-bun1314` failed**. The retained heartbeat shows held false and an increased unlock count; the contender acquired before any kill. No other assertion failed; later assertions were not reached. Evidence: `results/mutation/release-before-kill/`.
+
+Each control was marked `NON-VACUITY BREAK`, applied over the staged live harness, and restored from that index before the final run. The empty-pause diff was 2 insertions / 1 deletion; the release-before-kill diff was 2 insertions. Both restored diff stats are empty. The restored full harness passed 92 assertions, triple probe 9, and bundle probe 6 with version-checked Node v24.16.0, Bun 1.3.14, and Bun 1.4.2. These are targeted proofs for the two previously vacuous claims, not mutation proofs for every assertion.
 
 ## Linux x64 rerun (ext4)
+
+The retained Linux results below predate the strengthened pause/kill guards; they do not validate those new guards. A separate Linux rerun is required.
 
 The same sources, unchanged apart from portable build flags and a `/proc/self/fd` descriptor count, were rerun on Ubuntu 24.04 (Linux 6.8.0, x86_64, glibc 2.39, gcc 13.3, ext4) with Node 24.16.0, Bun 1.3.14 and Bun 1.4.2 (official linux-x64 builds). Raw results: `results-linux-x64/` (`environment.txt` records the host).
 
@@ -139,7 +150,7 @@ Old plugins do not inspect a new kernel sidecar. They can remain live and stall 
 
 ## Gates, limits, and questions for 0.9.0
 
-* Clang 21, `-Wall -Wextra -Werror`: addon and two C probes compiled. Final native lifecycle/counter harness 50 assertions, triple-runtime exclusion 9 assertions, bundle experiment 6 checks. The failing output from disabling native acquisition is preserved.
+* Clang 21, `-Wall -Wextra -Werror`: addon and two C probes compiled. Final native lifecycle/counter harness 92 assertions, triple-runtime exclusion 9 assertions, bundle experiment 6 checks. The failing output from disabling native acquisition is preserved.
 * TypeScript 7.0.2: `bun run build` passed (12 range dependencies checked); `bun run typecheck` passed **after build**. Initial typecheck failed because self-package dist exports did not exist yet, unrelated to research files.
 * Biome 2.5.14: lint and format checks passed, 209 files each. Research scripts are not included in that repository coverage; C compilation and direct JS execution are their gates.
 * Bun 1.4.2 full repo tests: 1082 pass, 10 skip, one environment failure out of 1093 (Node 24 required but PATH had Node 26). With pinned Node24 prepended to PATH, affected `test/rpc/client-proxy.test.ts` rerun: 2 pass, 0 fail. Original JUnit and rerun are retained. Sources check on the original artifact: 1077 cells parsed / 1076 matched, failed for that same missing passing test. No docs/source rows were changed; spike scripts are outside `test/`.

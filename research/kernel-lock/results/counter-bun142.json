@@ -2,28 +2,28 @@
   "runtimes": [
     {
       "ready": true,
-      "pid": 34580,
+      "pid": 74367,
       "version": "v26.3.0",
       "bun": "1.4.2",
       "napi": "10"
     },
     {
       "ready": true,
-      "pid": 34581,
+      "pid": 74368,
       "version": "v26.3.0",
       "bun": "1.4.2",
       "napi": "10"
     },
     {
       "ready": true,
-      "pid": 34582,
+      "pid": 74369,
       "version": "v26.3.0",
       "bun": "1.4.2",
       "napi": "10"
     },
     {
       "ready": true,
-      "pid": 34583,
+      "pid": 74370,
       "version": "v26.3.0",
       "bun": "1.4.2",
       "napi": "10"
@@ -32,27 +32,27 @@
   "roundsPerProcess": 150,
   "expected": 600,
   "actual": 600,
-  "elapsedMs": 1625.1721659999985,
+  "elapsedMs": 943.1650420000005,
   "results": [
     {
       "rounds": 150,
-      "sidecarInodeBefore": 2239724395,
-      "sidecarInodeAfter": 2239724395
+      "sidecarInodeBefore": 2244135463,
+      "sidecarInodeAfter": 2244135463
     },
     {
       "rounds": 150,
-      "sidecarInodeBefore": 2239724395,
-      "sidecarInodeAfter": 2239724395
+      "sidecarInodeBefore": 2244135463,
+      "sidecarInodeAfter": 2244135463
     },
     {
       "rounds": 150,
-      "sidecarInodeBefore": 2239724395,
-      "sidecarInodeAfter": 2239724395
+      "sidecarInodeBefore": 2244135463,
+      "sidecarInodeAfter": 2244135463
     },
     {
       "rounds": 150,
-      "sidecarInodeBefore": 2239724395,
-      "sidecarInodeAfter": 2239724395
+      "sidecarInodeBefore": 2244135463,
+      "sidecarInodeAfter": 2244135463
     }
   ]
 }

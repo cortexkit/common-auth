@@ -1,0 +1,33 @@
+{
+  "killAcquired": {
+    "acquired": true
+  },
+  "heartbeat": {
+    "heartbeat": true,
+    "held": false,
+    "unlockCalls": 2,
+    "observedMs": 1640.975375
+  },
+  "beforeKill": {
+    "acquired": true,
+    "observedMs": 1641.671667
+  },
+  "holderMessages": [
+    {
+      "ms": 1640.495417,
+      "acquired": true
+    },
+    {
+      "ms": 1640.665959,
+      "released": true,
+      "unlockCalls": 2
+    },
+    {
+      "ms": 1640.953167,
+      "heartbeat": true,
+      "held": false,
+      "unlockCalls": 2
+    }
+  ],
+  "unlockCallsBeforeProbe": 1
+}
