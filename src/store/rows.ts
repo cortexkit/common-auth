@@ -305,6 +305,8 @@ export async function rotateIn(
     binding?: CredentialBinding
     identity?: string
     providerState?: ProviderStateWrite
+    /** Config transition persisted with the successor credential for crash recovery. */
+    transition?: StampedTransition
   } = {},
 ): Promise<StoredCredential> {
   const credential = onRowEndpoint(tx, id, given)
@@ -345,17 +347,22 @@ export async function rotateIn(
   tx.setStateAccount(id, {
     ...kept,
     ...stateFieldsFor(credential, stamp),
-    [CREDENTIAL_STAMP_KEY]: stampFor(
-      stored,
-      credentialEpoch,
-      extra.binding ?? bindingInTx(tx, id, stored, extra.identity),
-      {
-        replace: extra.binding !== undefined,
-        ...(providerStateBinding !== undefined
-          ? { providerState: providerStateBinding }
-          : {}),
-      },
-    ),
+    [CREDENTIAL_STAMP_KEY]: {
+      ...(extra.transition !== undefined
+        ? { [TRANSITION_STAMP_KEY]: extra.transition }
+        : {}),
+      ...stampFor(
+        stored,
+        credentialEpoch,
+        extra.binding ?? bindingInTx(tx, id, stored, extra.identity),
+        {
+          replace: extra.binding !== undefined,
+          ...(providerStateBinding !== undefined
+            ? { providerState: providerStateBinding }
+            : {}),
+        },
+      ),
+    },
   })
   await tx.commitState(stored)
   return stored

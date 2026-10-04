@@ -315,3 +315,59 @@ describe('crash windows, with the observer surviving', () => {
     expect(load.rows.every((row) => row.candidate)).toBe(true)
   })
 })
+
+for (const step of [
+  'before-state-write',
+  'after-state-write',
+  'before-config-write',
+  'after-config-write',
+] as const) {
+  it(`a contradicted refresh crash at ${step} never exposes rotated enabled credentials`, async () => {
+    await s
+      .open()
+      .add({ id: 'a', credential: oauth('r-old'), identity: 'acct-A' })
+    const child = crashChild({
+      op: 'refresh',
+      id: 'a',
+      credential: oauth('r-new'),
+      identity: 'acct-B',
+      exitAt: step,
+    })
+    expect(await child.exited).toBe(CRASH_EXIT_CODE)
+    const store = s.open({ requireCredentialStamps: true })
+    let load = await store.read()
+    if (load.status !== 'ready') throw new Error('expected ready')
+    let row = load.rows.find((row) => row.id === 'a')
+    expect(row).toMatchObject({
+      identity: 'acct-A',
+      stamp: 'bound',
+      credential: {
+        refresh: step === 'before-state-write' ? 'r-old' : 'r-new',
+      },
+      enabled: step === 'before-state-write',
+      candidate: step === 'before-state-write',
+    })
+    if (step !== 'before-state-write') {
+      expect(row?.disabledReason).toBe(
+        'identity-contradicted: {"expectedIdentity":"acct-A","returnedIdentity":"acct-B"}',
+      )
+      // A store write completes any interrupted config transition before proceeding.
+      await store.add({ id: 'survivor', credential: oauth('r-survivor') })
+      load = await store.read()
+      if (load.status !== 'ready') throw new Error('expected ready')
+      row = load.rows.find((row) => row.id === 'a')
+      expect(row).toMatchObject({
+        enabled: false,
+        candidate: false,
+        stamp: 'bound',
+        identity: 'acct-A',
+        credential: { refresh: 'r-new' },
+      })
+      expect(row?.torn).toBeUndefined()
+      expect((await s.config()).accounts[0]).toMatchObject({
+        enabled: false,
+        accountId: 'acct-A',
+      })
+    }
+  })
+}
