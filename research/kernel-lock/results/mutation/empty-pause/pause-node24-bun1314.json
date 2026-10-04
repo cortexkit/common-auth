@@ -1,0 +1,22 @@
+{
+  "pause": {
+    "stoppedBefore": {
+      "pid": 72692,
+      "stat": "T",
+      "stopped": true,
+      "ms": 311.969667
+    },
+    "stoppedAfter": {
+      "pid": 72692,
+      "stat": "T",
+      "stopped": true,
+      "ms": 314.66175
+    },
+    "durationMs": 2.6920829999999683,
+    "sampleSpanMs": 0,
+    "minimumSamples": 10,
+    "minimumDurationMs": 600,
+    "minimumSampleSpanMs": 500
+  },
+  "paused": []
+}

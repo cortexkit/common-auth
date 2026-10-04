@@ -1,7 +1,7 @@
 {
   "ready": {
     "ready": true,
-    "pid": 74198,
+    "pid": 72690,
     "version": "v24.3.0",
     "bun": "1.3.14",
     "napi": "10"
@@ -13,7 +13,7 @@
   },
   "rename": {
     "contenderAcquired": false,
-    "inodeBefore": 2244125292,
-    "inodeAfter": 2244125292
+    "inodeBefore": 2244097843,
+    "inodeAfter": 2244097843
   }
 }

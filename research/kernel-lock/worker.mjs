@@ -6,6 +6,7 @@ import { performance } from 'node:perf_hooks';
 const addon = createRequire(import.meta.url)('./lock.node');
 const path = process.argv[2];
 let held;
+let unlockCalls = 0;
 const delay = (ms, signal) => new Promise((resolve, reject) => {
   const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(signal.reason); };
   const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
@@ -29,7 +30,8 @@ function fds() {
 }
 async function command(c) {
   if (c.op === 'try') { const h = addon.tryLock(path); if (h) held = h; return { acquired: !!h }; }
-  if (c.op === 'release') { addon.unlock(held); held = undefined; return { released: true }; }
+  if (c.op === 'release') { addon.unlock(held); unlockCalls++; held = undefined; return { released: true, unlockCalls }; }
+  if (c.op === 'heartbeat') return { heartbeat: true, held: !!held, unlockCalls };
   if (c.op === 'same') {
     const a = addon.tryLock(path), b = addon.tryLock(path);
     const fd = openSync(path, 'r+'); closeSync(fd);
