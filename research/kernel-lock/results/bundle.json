@@ -1,0 +1,44 @@
+[
+  {
+    "builder": "1.3.14",
+    "runtime": "v24.16.0",
+    "build": "Bundled 1 module in 34ms\n\n  plugin.mjs  325 bytes  (entry point)\n\n",
+    "output": "loaded-and-excluded\n",
+    "passed": true
+  },
+  {
+    "builder": "1.3.14",
+    "runtime": "1.3.14",
+    "build": "Bundled 1 module in 34ms\n\n  plugin.mjs  325 bytes  (entry point)\n\n",
+    "output": "loaded-and-excluded\n",
+    "passed": true
+  },
+  {
+    "builder": "1.3.14",
+    "runtime": "1.4.2",
+    "build": "Bundled 1 module in 34ms\n\n  plugin.mjs  325 bytes  (entry point)\n\n",
+    "output": "loaded-and-excluded\n",
+    "passed": true
+  },
+  {
+    "builder": "1.4.2",
+    "runtime": "v24.16.0",
+    "build": "Bundled 1 module in 7ms\n\n  plugin.mjs  325 bytes  (entry point)\n\n",
+    "output": "loaded-and-excluded\n",
+    "passed": true
+  },
+  {
+    "builder": "1.4.2",
+    "runtime": "1.3.14",
+    "build": "Bundled 1 module in 7ms\n\n  plugin.mjs  325 bytes  (entry point)\n\n",
+    "output": "loaded-and-excluded\n",
+    "passed": true
+  },
+  {
+    "builder": "1.4.2",
+    "runtime": "1.4.2",
+    "build": "Bundled 1 module in 7ms\n\n  plugin.mjs  325 bytes  (entry point)\n\n",
+    "output": "loaded-and-excluded\n",
+    "passed": true
+  }
+]

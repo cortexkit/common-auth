@@ -1,0 +1,19 @@
+{
+  "ready": {
+    "ready": true,
+    "pid": 30388,
+    "version": "v24.16.0",
+    "bun": null,
+    "napi": "10"
+  },
+  "same": {
+    "first": true,
+    "second": true,
+    "afterUnrelatedClose": true
+  },
+  "rename": {
+    "contenderAcquired": true,
+    "inodeBefore": 2239642979,
+    "inodeAfter": 2239642979
+  }
+}
