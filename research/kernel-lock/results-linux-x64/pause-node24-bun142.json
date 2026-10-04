@@ -1,24 +1,4 @@
 {
-  "holder": {
-    "ready": true,
-    "pid": 40816,
-    "version": "v24.16.0",
-    "bun": null,
-    "napi": "10"
-  },
-  "contender": {
-    "ready": true,
-    "pid": 40825,
-    "version": "v26.3.0",
-    "bun": "1.4.2",
-    "napi": "10"
-  },
-  "acquired": {
-    "acquired": true
-  },
-  "busy": {
-    "acquired": false
-  },
   "pause": {
     "stoppedBefore": {
       "pid": 40816,
@@ -189,83 +169,5 @@
       "observedMs": 1915.093457,
       "acquired": false
     }
-  ],
-  "kill": {
-    "killAcquired": {
-      "acquired": true
-    },
-    "heartbeat": {
-      "heartbeat": true,
-      "held": true,
-      "unlockCalls": 1,
-      "observedMs": 2390.351106
-    },
-    "beforeKill": {
-      "acquired": false,
-      "observedMs": 2390.470432
-    },
-    "holderMessages": [
-      {
-        "ms": 2390.254093,
-        "acquired": true
-      },
-      {
-        "ms": 2390.343986,
-        "heartbeat": true,
-        "held": true,
-        "unlockCalls": 1
-      }
-    ],
-    "unlockCallsBeforeProbe": 1,
-    "sentMs": 2390.626097,
-    "exit": {
-      "code": null,
-      "signal": "SIGKILL",
-      "ms": 2393.239109
-    },
-    "acquiredMs": 2393.510735,
-    "afterKill": {
-      "acquired": true
-    }
-  },
-  "resumedBeforeRelease": {
-    "acquired": false
-  },
-  "abort": {
-    "aborts": 20,
-    "times": [
-      20.427726000000007,
-      20.141149999999925,
-      20.12251399999991,
-      20.11990000000003,
-      20.105451000000016,
-      20.119411000000014,
-      20.101045,
-      20.09290299999998,
-      20.1017260000001,
-      20.095486999999935,
-      20.10489999999993,
-      20.09853099999998,
-      20.101765,
-      20.093894999999975,
-      20.098621000000094,
-      20.106852000000003,
-      20.11567500000001,
-      20.109125000000063,
-      20.081127000000038,
-      20.08116700000005
-    ],
-    "before": 8,
-    "after": 8,
-    "busy": true,
-    "boundedWaitMs": 40.73680799999988
-  },
-  "afterRelease": {
-    "acquired": true
-  },
-  "afterKill": {
-    "acquired": true
-  },
-  "attempts": 1,
-  "killMs": 2.8838670000000093
+  ]
 }

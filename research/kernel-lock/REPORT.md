@@ -92,13 +92,11 @@ Each control was marked `NON-VACUITY BREAK`, applied over the staged live harnes
 
 ## Linux x64 rerun (ext4)
 
-The retained Linux results below predate the strengthened pause/kill guards; they do not validate those new guards. A separate Linux rerun is required.
-
 The same sources, unchanged apart from portable build flags and a `/proc/self/fd` descriptor count, were rerun on Ubuntu 24.04 (Linux 6.8.0, x86_64, glibc 2.39, gcc 13.3, ext4) with Node 24.16.0, Bun 1.3.14 and Bun 1.4.2 (official linux-x64 builds). Raw results: `results-linux-x64/` (`environment.txt` records the host).
 
 - Primitive table: identical to macOS. flock and F_OFD_SETLK refuse a second independent open in one process and stay held after an unrelated descriptor is closed; classic fcntl and lockf fail both.
 - Fork: identical (an inherited descriptor keeps the lock; its `LOCK_UN` releases it).
-- Lifecycle harness: 50/50 assertions. All six directed runtime pairs: every sample busy while the holder was stopped (29-30 per pair); SIGKILL → acquire 2.4-5.4 ms; 20/20 aborts per pair at ~20 ms.
+- Lifecycle harness, rerun with the strengthened pause and kill guards: 92/92 assertions. All six directed runtime pairs: the holder observed in state `T` before the first and after the last sample, ~610 ms stopped, 29-30 samples per pair all busy; the kill probe recorded the contender busy and the holder reporting held (no unlock since its reacquire) immediately before SIGKILL, the holder's exit as signal SIGKILL, then the contender's acquire 2.6-4.7 ms after the kill was sent; 20/20 aborts per pair at ~20 ms.
 - Counters: Node 600/600, Bun 1.3.14 600/600, Bun 1.4.2 600/600, all three mixed 900/900.
 - Triple-runtime probe 9/9; bundled-dist loader experiment 6/6.
 

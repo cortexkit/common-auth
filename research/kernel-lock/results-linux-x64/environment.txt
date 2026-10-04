@@ -1,4 +1,4 @@
 Linux 6.8.0-142-generic x86_64
-/dev/sda1      ext4 314660132 7698400 294145020   3% /
+/dev/sda1      ext4 314660132 7698520 294144900   3% /
 gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
 ldd (Ubuntu GLIBC 2.39-0ubuntu8.9) 2.39
