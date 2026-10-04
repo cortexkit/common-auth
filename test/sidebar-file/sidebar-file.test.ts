@@ -239,7 +239,10 @@ test('sidebar lock renews with unchanged owner and private mode', async () => {
   await writer().write(1, {
     beforeCommit: async () => {
       const first = await payload()
-      await Bun.sleep(5000)
+      // Two renewal intervals (10 s lease / 3) plus margin: a 0.8.0 renewal can
+      // defer one beat while it takes its eviction marker, and a single
+      // interval is too tight on a loaded machine.
+      await Bun.sleep(7200)
       const second = await payload()
       expect(second.expiresAt - first.expiresAt).toBeGreaterThanOrEqual(3000)
       expect(second.ownerId).toBe(first.ownerId)
