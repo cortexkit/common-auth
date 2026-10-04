@@ -1,4 +1,14 @@
-import type { RpcNotification, RpcServerOptions } from '../../src/rpc/index.js'
+// Compile-time checks, run by `bun run typecheck`. They pin that the
+// synchronous `drain` option keeps its exact type, so a consumer that derives
+// types from it compiles unchanged, and that the async entry point refuses a
+// call with both notification sources or with neither.
+
+import {
+  type RpcNotification,
+  type RpcServerAsyncOptions,
+  type RpcServerOptions,
+  startRpcServer,
+} from '../../src/rpc/index.js'
 
 type DrainResult = ReturnType<RpcServerOptions['drain']>
 type DrainParameters = Parameters<RpcServerOptions['drain']>
@@ -16,16 +26,12 @@ const direct: RpcNotification[] = options.drain(...args)
 const length: ReturnType<RpcServerOptions['drain']>['length'] = direct.length
 void length
 
-import {
-  type RpcServerAsyncOptions,
-  startRpcServer,
-} from '../../src/rpc/index.js'
-
 declare const asyncOptions: RpcServerAsyncOptions
 void startRpcServer(asyncOptions)
 void startRpcServer(options)
-// Both callbacks would make the notification source ambiguous.
-// @ts-expect-error Drain callbacks are mutually exclusive.
+// Each directive below fails the typecheck if the call it marks stops being
+// an error, so these assert the refusals rather than silence a mistake.
+// @ts-expect-error Both callbacks would make the notification source ambiguous.
 void startRpcServer({ ...options, drainAsync: async () => messages })
 // @ts-expect-error A notification source is required.
 void startRpcServer({
