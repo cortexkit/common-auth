@@ -2,6 +2,8 @@
 // operation described by its JSON argument, prints `step:<name>` at each
 // named write step, and exits with CRASH_EXIT_CODE when it reaches `exitAt`,
 // so the observing test process survives the crash.
+import { readFileSync } from 'node:fs'
+import { setTimeout as delay } from 'node:timers/promises'
 import {
   openPoolStore,
   type PoolCredential,
@@ -36,17 +38,19 @@ type Task = {
   credentialEpoch?: number
   count?: number
   exitAt?: WriteStep
-  /** Lease length of every lock the child takes; 1 s unless given. */
+  /** Only lapse probes override the production lease length. */
   ttlMs?: number
-  /**
-   * Renew the child's leases while it runs (off unless given). A crashed
-   * child stops renewing, so its leases still lapse one lease length later;
-   * a live child on a loaded machine no longer loses them mid-operation.
-   */
+  /** Only deliberate lapse probes disable production renewal. */
   renew?: boolean
+  /** Blocks renewal after acquisition to measure event-loop starvation. */
+  stallAfterAcquireMs?: number
+  /** Allows renewal timers to run before the crash point. */
+  pauseBeforeStateMs?: number
 }
 
 const task = JSON.parse(process.argv[2] ?? '{}') as Task
+let stalled = false
+const heldPaths = new Set<string>()
 const store = openPoolStore({
   provider: 'openai',
   configPath: task.configPath,
@@ -55,10 +59,41 @@ const store = openPoolStore({
   ...(task.providerState !== undefined
     ? { providerState: objectStateCodec }
     : {}),
-  // A crashed child leaves its leases behind; short unrenewed leases let the
-  // surviving process take the locks over within a test's time budget.
-  lockOptions: { ttlMs: task.ttlMs ?? 1_000, renew: task.renew ?? false },
-  onStep: (step) => {
+  // Crash operations use the same renewing leases as production. The parent
+  // expires abandoned records only after this process has exited.
+  lockOptions: {
+    ...(task.ttlMs !== undefined ? { ttlMs: task.ttlMs } : {}),
+    ...(task.renew !== undefined ? { renew: task.renew } : {}),
+  },
+  onLockEvent: (event) => {
+    if (event.type !== 'acquired') return
+    const path = `${event.path}.${event.name}.lock`
+    heldPaths.add(path)
+    const record = JSON.parse(readFileSync(path, 'utf8'))
+    console.log(
+      `lease:${JSON.stringify({ path, ...record, acquiredAt: Date.now() })}`,
+    )
+    if (task.stallAfterAcquireMs && !stalled) {
+      stalled = true
+      Atomics.wait(
+        new Int32Array(new SharedArrayBuffer(4)),
+        0,
+        0,
+        task.stallAfterAcquireMs,
+      )
+      console.log(
+        `stalled:${JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), now: Date.now() })}`,
+      )
+    }
+  },
+  onStep: async (step) => {
+    if (step === 'before-state-write' && task.pauseBeforeStateMs) {
+      await delay(task.pauseBeforeStateMs)
+      for (const path of heldPaths)
+        console.log(
+          `renewed:${JSON.stringify({ path, ...JSON.parse(readFileSync(path, 'utf8')) })}`,
+        )
+    }
     console.log(`step:${step}`)
     if (step === task.exitAt) process.exit(CRASH_EXIT_CODE)
   },

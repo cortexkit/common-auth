@@ -282,7 +282,6 @@ async function crashAt(c: Case, step: WriteStep): Promise<void> {
     statePath: s.statePath,
     id: ID,
     exitAt: step,
-    renew: true,
     ...c.task,
   })
   const code = await child.exited
