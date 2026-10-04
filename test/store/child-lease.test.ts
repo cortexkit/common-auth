@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'bun:test'
-import { createHash } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { POOL_LOCK_DEFAULTS } from '../../src/store/refresh-lock.js'
 import {
   CRASH_EXIT_CODE,
@@ -45,7 +44,7 @@ it('a deliberately short renewing child lease lapses during an event-loop stall 
   expect(await s.bytes()).toEqual({ config: null, state: null })
 })
 
-it('a crash child uses production leases and renewal, and only the exited child has its records expired in place', async () => {
+it('a crash child uses production leases and renewal, and only the exited child has its records expired', async () => {
   const child = runChild({
     ...s.paths,
     op: 'add',
@@ -53,12 +52,12 @@ it('a crash child uses production leases and renewal, and only the exited child 
     credential: oauth('r-a'),
     exitAt: 'after-state-write',
     stallAfterAcquireMs: 1_200,
-    pauseBeforeStateMs: POOL_LOCK_DEFAULTS.ttlMs / 3 + 500,
+    // Renewal can defer one beat while taking its eviction marker.
+    pauseBeforeStateMs: (2 * POOL_LOCK_DEFAULTS.ttlMs) / 3 + 500,
   })
   await child.printed('lease:')
   const first = childLeases(child.output())[0]
   if (!first) throw new Error('child did not announce its lease')
-  const inode = (await stat(first.path)).ino
   const live = JSON.parse(await readFile(first.path, 'utf8'))
   expect(live.expiresAt).toBeGreaterThan(Date.now())
   expect(await child.exited).toBe(CRASH_EXIT_CODE)
@@ -81,19 +80,17 @@ it('a crash child uses production leases and renewal, and only the exited child 
     ).toBeGreaterThan(lease.expiresAt)
     const text = await readFile(lease.path, 'utf8')
     const expired = JSON.parse(text)
-    expect(Buffer.byteLength(text)).toBe(128)
+    expect(text).toBe(
+      `${JSON.stringify({ ownerId: lease.ownerId, expiresAt: 0 })}\n`,
+    )
     expect(expired).toEqual({
       ownerId: lease.ownerId,
       expiresAt: 0,
-      check: createHash('sha256')
-        .update(JSON.stringify([lease.ownerId, 0]))
-        .digest('hex')
-        .slice(0, 16),
     })
   }
-  expect((await stat(first.path)).ino).toBe(inode)
   // Normal acquisition, not fixture deletion, reaps the abandoned records.
   expect(
     (await s.open().add({ id: 'b', credential: oauth('r-b') })).outcome,
   ).toBe('added')
-}, 15_000)
+  // ~8.4s awaiting renewal + up to 5s reclaiming a crashed eviction marker leaves load headroom in 30s.
+}, 30_000)

@@ -12,7 +12,6 @@ import {
   readTuiPreferences,
   readTuiPreferencesFile,
 } from '../../src/tui-prefs/index.js'
-import { lockIsReleased } from '../fixtures/released-lock.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 let dir: string
@@ -127,13 +126,7 @@ test('rapid sequential updates land the final value', async () => {
 })
 test('no temp files are left behind', async () => {
   await writer().queueTuiPreferenceUpdate(['collapsed'], true)
-  // Release leaves the lock file in place holding the writer's expired
-  // record; anything else beside the preferences file is a leftover.
-  const lockPath = lockPathFor(file, 'preferences')
-  expect(
-    (await readdir(dir)).filter((name) => join(dir, name) !== lockPath),
-  ).toEqual(['tui-preferences.jsonc'])
-  expect(await lockIsReleased(lockPath)).toBe(true)
+  expect(await readdir(dir)).toEqual(['tui-preferences.jsonc'])
 })
 test('independent writers preserve both plugin updates under the shared lock', async () => {
   await Promise.all([

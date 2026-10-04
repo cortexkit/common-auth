@@ -37,18 +37,6 @@ export interface LockOptions {
   renew?: boolean
 }
 
-/**
- * Runs `fn` while holding the lock named `options.name` on `target`, waiting
- * up to `options.timeoutMs` for it, and releases the lock when `fn` settles.
- *
- * withLock does not check ownership for you. The lock is a lease: if this
- * process stalls past `ttlMs` (a starved event loop, a slow disk) another
- * process may take the lock while `fn` is still running. A caller that commits
- * a write inside `fn` must call `lock.assertOwned()` immediately before the
- * commit (for example as `writeJsonAtomic`'s `beforeRename`) and abandon the
- * write when it throws. Nothing is checked after `fn` returns, because by then
- * the work is already done.
- */
 export async function withLock<T>(
   target: string,
   options: LockOptions,
