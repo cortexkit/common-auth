@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { readFileSync, writeFileSync, renameSync, openSync, closeSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, openSync, closeSync, statSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { performance } from 'node:perf_hooks';
@@ -23,6 +23,8 @@ async function acquire({ signal, timeout = 5000 } = {}) {
   }
 }
 function fds() {
+  // Linux exposes the process's descriptors directly; macOS needs lsof.
+  if (existsSync('/proc/self/fd')) return readdirSync('/proc/self/fd').length;
   return execFileSync('/usr/sbin/lsof', ['-a', '-p', String(process.pid), '-Ff'], { encoding: 'utf8' }).split('\n').filter(x => /^f\d/.test(x)).length;
 }
 async function command(c) {

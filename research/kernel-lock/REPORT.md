@@ -81,6 +81,18 @@ Final lifecycle/counter harness: **50 assertions passed**, six pair runs and fou
 
 Disabled the addon's kernel acquire with `NON-VACUITY BREAK`, rebuilt the same binary and ran the harness with separate mutation output. **`same-process-exclusion-node24` failed**, with both independent handles acquired and a third attempt also acquired after an unrelated descriptor for the same file was closed. No other test failed; later assertions were not reached because the harness stops on its first failure. The staged source was restored; diff went from `addon.c | 2 +-; 1 insertion, 1 deletion` to empty. Rebuilt real addon; final 50 assertions passed. `results/mutation-output.txt` and `results/mutation/same-node24.json` retain the negative evidence. This single control shows the harness reaches the native acquire; it is not a separate mutation proof for every lifecycle behavior.
 
+## Linux x64 rerun (ext4)
+
+The same sources, unchanged apart from portable build flags and a `/proc/self/fd` descriptor count, were rerun on Ubuntu 24.04 (Linux 6.8.0, x86_64, glibc 2.39, gcc 13.3, ext4) with Node 24.16.0, Bun 1.3.14 and Bun 1.4.2 (official linux-x64 builds). Raw results: `results-linux-x64/` (`environment.txt` records the host).
+
+- Primitive table: identical to macOS. flock and F_OFD_SETLK refuse a second independent open in one process and stay held after an unrelated descriptor is closed; classic fcntl and lockf fail both.
+- Fork: identical (an inherited descriptor keeps the lock; its `LOCK_UN` releases it).
+- Lifecycle harness: 50/50 assertions. All six directed runtime pairs: every sample busy while the holder was stopped (29-30 per pair); SIGKILL → acquire 2.4-5.4 ms; 20/20 aborts per pair at ~20 ms.
+- Counters: Node 600/600, Bun 1.3.14 600/600, Bun 1.4.2 600/600, all three mixed 900/900.
+- Triple-runtime probe 9/9; bundled-dist loader experiment 6/6.
+
+Still unmeasured: linux arm64, musl, Windows, network filesystems, a real OpenCode install, published platform packages.
+
 ## Packaging recommendation (unmeasured release design, measured loader experiment)
 
 **Recommend a separate `@cortexkit/file-lock` runtime dependency**, external to all plugin bundles, whose JS loader selects exactly one per-platform optional dependency with exactly the same version as the adapter package. common-auth's bundled JS imports that package; **each consuming plugin must list it as a direct runtime dependency**, not rely on common-auth's now-eliminated package dependency graph. Configure both Bun/esbuild bundling to leave the package external. The adapter package owns `createRequire(import.meta.url)`/its CJS loader, platform mapping and error reporting. Runtime binary resolution is anchored to the installed adapter package, not a bundled common-auth source path or cwd.

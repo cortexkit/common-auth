@@ -1,0 +1,1 @@
+All three pinned runtimes on one sidecar: 3 holder rotations, 9 assertions passed

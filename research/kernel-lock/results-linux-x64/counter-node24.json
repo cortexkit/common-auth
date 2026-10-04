@@ -1,0 +1,58 @@
+{
+  "runtimes": [
+    {
+      "ready": true,
+      "pid": 39875,
+      "version": "v24.16.0",
+      "bun": null,
+      "napi": "10"
+    },
+    {
+      "ready": true,
+      "pid": 39876,
+      "version": "v24.16.0",
+      "bun": null,
+      "napi": "10"
+    },
+    {
+      "ready": true,
+      "pid": 39877,
+      "version": "v24.16.0",
+      "bun": null,
+      "napi": "10"
+    },
+    {
+      "ready": true,
+      "pid": 39878,
+      "version": "v24.16.0",
+      "bun": null,
+      "napi": "10"
+    }
+  ],
+  "roundsPerProcess": 150,
+  "expected": 600,
+  "actual": 600,
+  "elapsedMs": 725.087356,
+  "results": [
+    {
+      "rounds": 150,
+      "sidecarInodeBefore": 525060,
+      "sidecarInodeAfter": 525060
+    },
+    {
+      "rounds": 150,
+      "sidecarInodeBefore": 525060,
+      "sidecarInodeAfter": 525060
+    },
+    {
+      "rounds": 150,
+      "sidecarInodeBefore": 525060,
+      "sidecarInodeAfter": 525060
+    },
+    {
+      "rounds": 150,
+      "sidecarInodeBefore": 525060,
+      "sidecarInodeAfter": 525060
+    }
+  ]
+}
