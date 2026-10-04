@@ -115,6 +115,8 @@ Evidence from real package implementations:
 
 **Measured synthetic deployment experiment:** both Bun 1.3.14 and 1.4.2 built an ESM plugin entry with `--external=@cortexkit/file-lock`. A package-local CJS wrapper required the compiled `.node`; dist lived beside `node_modules`. All three pinned runtimes loaded each bundle and independently demonstrated exclusion: **6/6** checks in `results/bundle.json`. This validates ordinary installed-package resolution from bundled dist under these Bun versions, not a published platform package, optionalDependency pruning, an actual OpenCode install, esbuild bundling, npm provenance, or single-executable Bun embedding. Those need integration tests before 0.9.0.
 
+**Measured binary sizes (release-style build, `-O2`, stripped).** darwin arm64 51 120 bytes raw (16 KiB page alignment) / 2 337 gzipped; darwin x64 13 704 raw; linux x64 glibc 14 528 raw / 2 886 gzipped. A tarball holding those three plus a manifest packs to 6 762 bytes. Seven prebuilds therefore pack to roughly 15-25 KB (Windows unmeasured). At that size the per-platform optional-package machinery buys nothing: a single package carrying all seven prebuilds avoids optional-dependency pruning, version skew between platform packages and eight publishers' trusted-publishing bootstrap, at a cost of a few kilobytes per install. This supersedes the recommendation above (suggested by AGAUTH's review).
+
 Alternatives/costs:
 
 1. All prebuilds inside the separate adapter via prebuildify/node-gyp-build: avoids optional-dependency omission and version skew, but every install downloads every platform and loader remains external.
