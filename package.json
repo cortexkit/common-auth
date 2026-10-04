@@ -1,6 +1,6 @@
 {
   "name": "@cortexkit/common-auth",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Shared code for the CortexKit auth plugins: account pool, quota and routing, commands and auth menu, OpenCode 2 hooks, Claustrum custody, and plumbing (loopback RPC, file locks, logger, sidebar state, TUI preferences and build).",
   "license": "MIT",
   "repository": {

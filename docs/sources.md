@@ -1062,3 +1062,14 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | store | Contradicted refresh crash after config write | new (neither copy) | a contradicted refresh crash at after-config-write never exposes rotated enabled credentials |
 | store | Document the pre-existing exchange-before-persistence crash window | new (neither copy) | ordinary and contradicted exchanges both lose an in-memory successor before the first state rename |
 | store | Replacement recovery resolves quarantine without enabling | new (neither copy) | a crashed identity-validated replacement resolves refresh quarantine without enabling the row |
+
+| rpc | Default pending cursor/session validation without draining | new (neither copy) | pending rejects malformed default cursors and sessions without draining |
+| rpc | Compatible cursor and session defaults | new (neither copy) | pending defaults preserve absent cursor and empty string session |
+| rpc | Plugin pending parser sees raw values and controls 4xx responses | new (neither copy) | pending custom parser sees raw params and controls refusal status |
+| rpc | Returns the notification array after the async drain promise fulfills | new (neither copy) | pending async drain returns resolved messages |
+| rpc | Async drain rejection is sanitized and logged | new (neither copy) | pending async rejection is sanitized and logged at warn |
+| rpc | Mutually exclusive drain options | new (neither copy) | RPC server requires exactly one synchronous or asynchronous drain |
+| rpc | Raw non-object JSON reaches custom pending parser before session policy | new (neither copy) | pending custom parser receives non-object bodies before session checks |
+| rpc | Prompt shutdown of partial requests on Bun 1.3.14 | new (neither copy) | RPC stop closes held partial requests under Bun 1.3.14 |
+| rpc | Prompt shutdown of partial requests on Bun 1.4.2 | new (neither copy) | RPC stop closes held partial requests under Bun 1.4.2 |
+| rpc | Prompt shutdown of partial requests on Node 24.16.0 | new (neither copy) | RPC stop closes held partial requests under Node 24.16.0 |
