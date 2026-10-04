@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="bun test" tests="2" assertions="10" failures="0" skipped="0" time="1.425238">
-  <testsuite name="test/rpc/client-proxy.test.ts" file="test/rpc/client-proxy.test.ts" tests="2" assertions="10" failures="0" skipped="0" time="1.386875" hostname="Ismets-MacBook-Pro.local">
-    <testcase name="loopback RPC client bypasses HTTP_PROXY, http_proxy and HTTPS_PROXY" classname="" time="0.283979" file="test/rpc/client-proxy.test.ts" line="136" assertions="5" />
-    <testcase name="loopback RPC client under Node with NODE_USE_ENV_PROXY bypasses HTTP_PROXY" classname="" time="1.093549" file="test/rpc/client-proxy.test.ts" line="140" assertions="5" />
-  </testsuite>
-</testsuites>
