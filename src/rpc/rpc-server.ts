@@ -5,6 +5,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http'
+import type { Socket } from 'node:net'
 import { join } from 'node:path'
 import type { RpcLogChannel } from './index.js'
 import {
@@ -28,6 +29,12 @@ export interface RpcServerOptions {
   secureDir?: boolean
   sweepRoot?: string
   drain: (lastReceivedId: number, sessionId?: string) => RpcNotification[]
+  drainAsync?: never
+  /** Replace default cursor parsing with plugin policy over the raw JSON value. */
+  parsePending?: (params: unknown) => {
+    lastReceivedId: number
+    sessionId?: string
+  }
   apply: (request: ApplyRequest) => Promise<ApplyResult>
   /**
    * Refuse a `pending-notifications` drain whose `sessionId` is absent, not a
@@ -51,11 +58,22 @@ export interface RpcServerOptions {
   applyDeadlineMs?: number
 }
 
+/** Async-only options keep the existing synchronous drain type unchanged. */
+export interface RpcServerAsyncOptions
+  extends Omit<RpcServerOptions, 'drain' | 'drainAsync'> {
+  drain?: never
+  drainAsync: (
+    lastReceivedId: number,
+    sessionId?: string,
+  ) => Promise<RpcNotification[]>
+}
+
 /**
- * Thrown by an `apply` or `drain` handler to refuse a request with a 4xx
+ * Thrown by an `apply`, `drain`, or `parsePending` handler to refuse a request with a 4xx
  * status. Its message is sent on the wire as `{error: message}`, so it must
- * be written for the client and never quote a credential. Any other error a
- * handler throws answers 500 with a fixed code.
+ * be written for the client and never quote a credential. Any other error an
+ * apply/drain handler throws answers 500 with a fixed code; other parser
+ * errors answer 400 invalid params. Async drain failures always answer 500.
  */
 export class RpcRequestError extends Error {
   readonly status: number
@@ -130,9 +148,20 @@ function tokenOk(header: string | undefined, token: string): boolean {
   return got.length === want.length && timingSafeEqual(got, want)
 }
 
-export async function startRpcServer(
+export function startRpcServer(
+  options: RpcServerAsyncOptions,
+): Promise<RpcServerHandle>
+export function startRpcServer(
   options: RpcServerOptions,
+): Promise<RpcServerHandle>
+export async function startRpcServer(
+  options: RpcServerOptions | RpcServerAsyncOptions,
 ): Promise<RpcServerHandle> {
+  if (
+    (typeof options.drain === 'function') ===
+    (typeof options.drainAsync === 'function')
+  )
+    throw new TypeError('exactly one of drain or drainAsync must be provided')
   const log = options.log ?? { warn() {}, debug() {} }
   const token = randomBytes(32).toString('hex')
   // The receipt timeout limits request delivery, not handler execution.
@@ -140,11 +169,16 @@ export async function startRpcServer(
   const handlerTimeoutMs = options.timeoutMs ?? 90_000
   const receiptTimeoutMs = options.receiptTimeoutMs ?? 2_000
   let warnedMissingNotificationSession = false
+  const connections = new Set<Socket>()
   const server = createServer((req, res) => {
     req.setTimeout(handlerTimeoutMs, () => {
       req.socket.destroy()
     })
     void dispatch(req, res)
+  })
+  server.on('connection', (socket) => {
+    connections.add(socket)
+    socket.once('close', () => connections.delete(socket))
   })
   server.requestTimeout = receiptTimeoutMs
   server.headersTimeout = receiptTimeoutMs
@@ -181,27 +215,64 @@ export async function startRpcServer(
         // body is not worth keeping the socket for.
         return json(413, { error: 'body too large' }, { connection: 'close' })
       }
-      let params: Record<string, unknown>
+      let params: unknown
       try {
-        params = JSON.parse(body || '{}') as Record<string, unknown>
+        params = JSON.parse(body || '{}')
       } catch {
         return json(400, { error: 'invalid json' })
       }
       if (method === 'pending-notifications') {
-        if (options.requireSession === true && !isSessionId(params.sessionId))
+        let pending: { lastReceivedId: number; sessionId?: string }
+        try {
+          if (options.parsePending) {
+            pending = options.parsePending(params)
+          } else {
+            if (!params || typeof params !== 'object' || Array.isArray(params))
+              throw new Error('invalid params')
+            const raw = params as Record<string, unknown>
+            if (options.requireSession === true && !isSessionId(raw.sessionId))
+              return json(400, { error: 'session required' })
+            if (
+              ('lastReceivedId' in raw &&
+                (typeof raw.lastReceivedId !== 'number' ||
+                  !Number.isSafeInteger(raw.lastReceivedId) ||
+                  raw.lastReceivedId < 0)) ||
+              ('sessionId' in raw && typeof raw.sessionId !== 'string')
+            )
+              throw new Error('invalid params')
+            pending = {
+              lastReceivedId: Number(raw.lastReceivedId ?? 0),
+              sessionId:
+                typeof raw.sessionId === 'string' ? raw.sessionId : undefined,
+            }
+          }
+        } catch (error) {
+          if (error instanceof RpcRequestError) throw error
+          return json(400, { error: 'invalid params' })
+        }
+        const { lastReceivedId, sessionId } = pending
+        if (options.requireSession === true && !isSessionId(sessionId))
           return json(400, { error: 'session required' })
-        const sessionId =
-          typeof params.sessionId === 'string' ? params.sessionId : undefined
         if (sessionId === undefined && !warnedMissingNotificationSession) {
           warnedMissingNotificationSession = true
           log.warn('rpc notification drain missing session id', {
             pid: process.pid,
           })
         }
-        const messages = options.drain(
-          Number(params.lastReceivedId ?? 0),
-          sessionId,
-        )
+        let messages: RpcNotification[]
+        if (options.drainAsync) {
+          try {
+            messages = await options.drainAsync(lastReceivedId, sessionId)
+          } catch (error) {
+            log.warn('rpc notification drain failed', {
+              pid: process.pid,
+              error: error instanceof Error ? error.message : String(error),
+            })
+            return json(500, { error: 'drain failed' })
+          }
+        } else {
+          messages = options.drain?.(lastReceivedId, sessionId)
+        }
         return json(200, { messages })
       }
       if (method === 'apply') {
@@ -283,7 +354,13 @@ export async function startRpcServer(
     port,
     token,
     async stop() {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        // Stop accepting connections before ending requests that may never finish.
+        server.closeAllConnections?.()
+        // Bun exposes closeAllConnections but leaves partial requests open.
+        for (const socket of connections) socket.destroy()
+      })
       const portFile = join(options.dir, `port-${process.pid}.json`)
       const current = await readFile(portFile, 'utf8')
         .then((raw) => JSON.parse(raw) as { port?: unknown; token?: unknown })
