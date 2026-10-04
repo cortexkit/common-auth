@@ -10,7 +10,6 @@ import {
   createSidebarFile,
   type SidebarWriteResult,
 } from '../../src/sidebar-file/index.js'
-import { lockIsReleased } from '../fixtures/released-lock.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 let dir: string
@@ -72,13 +71,7 @@ test('writes state atomically and cleans up temp files', async () => {
   expect(bytes).toBe('{"nested":{"answer":42}}')
   expect(JSON.parse(bytes)).toEqual(value)
   expect((await fs.stat(target)).mode & 0o777).toBe(0o600)
-  // The lock file stays behind holding the writer's expired record; any temp
-  // file would show up here.
-  const lockPath = lockPathFor(target, 'sidebar-write')
-  expect(
-    (await fs.readdir(dir)).filter((name) => join(dir, name) !== lockPath),
-  ).toEqual(['state.json'])
-  expect(await lockIsReleased(lockPath)).toBe(true)
+  expect(await fs.readdir(dir)).toEqual(['state.json'])
 })
 
 test('5 concurrent writes with different lastUpdated values — last-chained state wins', async () => {
@@ -399,13 +392,9 @@ describe('lock lost during the rename', () => {
     ])
     expect(repairs).toEqual([[successor, stale]])
     expect(await onDisk()).toEqual({ route: 'writer-route', quota: 80 })
-    const lockPath = lockPathFor(target, 'sidebar-write')
     expect(
-      (await fs.readdir(dir)).filter(
-        (name) => name !== 'state.json' && join(dir, name) !== lockPath,
-      ),
+      (await fs.readdir(dir)).filter((name) => name !== 'state.json'),
     ).toEqual([])
-    expect(await lockIsReleased(lockPath)).toBe(true)
   })
 
   test('without a repair a write that lost its lock at the rename is reported and left', async () => {

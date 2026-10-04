@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { existsSync, rmSync } from 'node:fs'
 import { open, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -180,26 +179,22 @@ export function childLeases(output: string): ChildLease[] {
 
 /**
  * Called only after a crash child's close event: it cannot renew any more.
- * Preserve the inode and owner, using the lock format's released expiry and
- * integrity hash, so normal lock acquisition reaps a valid expired record.
+ * Write the same newline-terminated owner/expiry JSON as lease renewal, with
+ * an expired timestamp, so normal acquisition reaps the abandoned record.
  * Ownership matching avoids expiring a survivor that has already taken over.
  */
 async function expireChildLeases(output: string): Promise<void> {
   for (const lease of childLeases(output)) {
     const handle = await open(lease.path, 'r+')
     try {
-      const text = await handle.readFile('utf8')
-      const record = JSON.parse(text)
+      const record = JSON.parse(await handle.readFile('utf8'))
       if (record.ownerId !== lease.ownerId) continue
-      const expiresAt = 0
-      const check = createHash('sha256')
-        .update(JSON.stringify([record.ownerId, expiresAt]))
-        .digest('hex')
-        .slice(0, 16)
-      const json = JSON.stringify({ ownerId: record.ownerId, expiresAt, check })
-      if (Buffer.byteLength(text) !== 128 || json.length >= 128)
-        throw new Error('unexpected child lease record format')
-      await handle.write(Buffer.from(`${json.padEnd(127, ' ')}\n`), 0, 128, 0)
+      const bytes = Buffer.from(
+        `${JSON.stringify({ ownerId: record.ownerId, expiresAt: 0 })}\n`,
+      )
+      // Keep the opened inode: a replacement at the path must not be expired.
+      await handle.write(bytes, 0, bytes.length, 0)
+      await handle.truncate(bytes.length)
     } finally {
       await handle.close()
     }

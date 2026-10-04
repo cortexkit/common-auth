@@ -92,11 +92,7 @@ describe('pulls never block the caller', () => {
     await store.add({ id: 'b', credential: oauth('r-b'), identity: 'acct' })
     await store.add({ id: 'dup', credential: oauth('r-dup'), identity: 'acct' })
     await store.pullsSettled()
-    // Pulls are fired without waiting and race each other for the store
-    // locks, so the two add pulls can reach the hook in either order.
-    expect(
-      requests.map((request) => [request.id, request.reason]).sort(),
-    ).toEqual([
+    expect(requests.map((request) => [request.id, request.reason])).toEqual([
       ['a', 'add'],
       ['b', 'add'],
     ])
@@ -105,9 +101,11 @@ describe('pulls never block the caller', () => {
     store.requestReading('b')
     store.requestReading('k')
     await store.pullsSettled()
-    expect(
-      requests.slice(2).map((request) => [request.id, request.reason]),
-    ).toEqual([['a', 'replace']])
+    expect(requests.map((request) => [request.id, request.reason])).toEqual([
+      ['a', 'add'],
+      ['b', 'add'],
+      ['a', 'replace'],
+    ])
     expect(requests[2]?.credentialEpoch).toBe(2)
   })
 

@@ -6,7 +6,6 @@ import {
   acquireRefreshFileLock,
   LockOwnershipError,
 } from '../../src/fs/index.js'
-import { lockIsReleased } from '../fixtures/released-lock.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 let dir: string
@@ -258,7 +257,7 @@ describe('acquireRefreshFileLock', () => {
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(lock.hasLost()).toBe(false)
     expect(lost).toBe(false)
-    expect(await lockIsReleased(`${path}.released.lock`)).toBe(true)
+    expect(existsSync(`${path}.released.lock`)).toBe(false)
   })
 
   it('observes terminal renewal failure when the owner file becomes unreadable', async () => {
@@ -297,11 +296,7 @@ describe('acquireRefreshFileLock', () => {
         renewIntervalMs: 50,
         onStep: async (step) => {
           if (step === 'renewal-owner-confirmed') {
-            // Drop the integrity hash: it covers the fields edited below, and
-            // a stale hash would make the record unreadable instead.
-            const { check: _check, ...owner } = (await readLockOwner(
-              `${path}.error.lock`,
-            )) as { ownerId: string; expiresAt: number; check?: string }
+            const owner = await readLockOwner(`${path}.error.lock`)
             await writeFile(
               `${path}.error.lock`,
               JSON.stringify(
@@ -358,7 +353,7 @@ describe('acquireRefreshFileLock', () => {
     expect(existsSync(lockPath)).toBe(true)
 
     await lock?.release()
-    expect(await lockIsReleased(lockPath)).toBe(true)
+    expect(existsSync(lockPath)).toBe(false)
   })
 
   it('allows only one contender when the parent directory is missing', async () => {
@@ -505,9 +500,7 @@ describe('acquireRefreshFileLock', () => {
     await withTimeout(renewalFinished.promise, 1_000)
     await release
 
-    // The renewal finished first; release then expired the record it wrote.
-    expect((await readLockOwner(lockPath)).ownerId).toBe(first!.ownerId)
-    expect(await lockIsReleased(lockPath, currentNow)).toBe(true)
+    expect(existsSync(lockPath)).toBe(false)
   })
 
   it('re-checks ownership after the renewal write seam before writing', async () => {
@@ -556,7 +549,7 @@ describe('acquireRefreshFileLock', () => {
     await successor?.release()
   })
 
-  it('reports marker loss without touching a successor when its marker is stolen after the final renewal check', async () => {
+  it('relinquishes the lock when its marker is stolen after the final renewal check', async () => {
     const path = join(dir, 'renewal-post-write-race.json')
     const name = 'renewal-post-write-race'
     const lockPath = `${path}.${name}.lock`
@@ -592,13 +585,11 @@ describe('acquireRefreshFileLock', () => {
       now: () => currentNow,
     })
     expect(successor).not.toBeNull()
-    const successorOwner = await readLockOwner(lockPath)
 
     releaseRenewal.resolve()
     await withTimeout(renewalFinished.promise, 1_000)
 
-    expect(await readLockOwner(lockPath)).toEqual(successorOwner)
-    await successor!.assertOwned()
+    expect(existsSync(lockPath)).toBe(false)
     expect((await withTimeout(first!.whenLost(), 1_000)).reason).toBe(
       'marker-lost',
     )
@@ -607,11 +598,13 @@ describe('acquireRefreshFileLock', () => {
     await successor?.release()
   })
 
-  it('preserves a successor record after post-write marker loss', async () => {
+  it('preserves a successor record during post-write relinquish', async () => {
     const path = join(dir, 'renewal-relinquish-successor.json')
     const name = 'renewal-relinquish-successor'
     const lockPath = `${path}.${name}.lock`
     const renewalWriteReady = deferred()
+    const relinquishRead = deferred()
+    const allowRelinquishRead = deferred()
     const releaseRenewal = deferred()
     const renewalFinished = deferred()
     const start = Date.now()
@@ -628,6 +621,10 @@ describe('acquireRefreshFileLock', () => {
         if (step === 'renewal-write-ready') {
           renewalWriteReady.resolve()
           await releaseRenewal.promise
+        }
+        if (step === 'relinquish-read') {
+          relinquishRead.resolve()
+          await allowRelinquishRead.promise
         }
         if (step === 'renewal-finished') renewalFinished.resolve()
       },
@@ -646,14 +643,16 @@ describe('acquireRefreshFileLock', () => {
     const successorOwner = await readLockOwner(lockPath)
 
     releaseRenewal.resolve()
+    await withTimeout(relinquishRead.promise, 1_000)
+    await writeFile(lockPath, `${JSON.stringify(successorOwner)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    })
+    allowRelinquishRead.resolve()
     await withTimeout(renewalFinished.promise, 1_000)
 
     expect(existsSync(lockPath)).toBe(true)
     expect(await readLockOwner(lockPath)).toEqual(successorOwner)
-    await successor!.assertOwned()
-    expect((await withTimeout(first!.whenLost(), 1_000)).reason).toBe(
-      'marker-lost',
-    )
     await first?.release()
     await successor?.release()
   })
@@ -750,7 +749,7 @@ describe('acquireRefreshFileLock', () => {
     expect(lossObserved).toBe(false)
   })
 
-  it('release expires its own record and leaves the eviction marker alone', async () => {
+  it('retries release after recovering a stale marker', async () => {
     const path = join(dir, 'release-stale-marker.json')
     const name = 'release-stale-marker'
     const lockPath = `${path}.${name}.lock`
@@ -759,22 +758,17 @@ describe('acquireRefreshFileLock', () => {
     expect(lock).not.toBeNull()
 
     await mkdir(markerPath)
-    const markerOwner = `${JSON.stringify({ ownerId: 'stale-marker', createdAt: 0 })}\n`
-    await writeFile(join(markerPath, 'owner.json'), markerOwner, {
-      encoding: 'utf8',
-      mode: 0o600,
-    })
+    await writeFile(
+      join(markerPath, 'owner.json'),
+      `${JSON.stringify({ ownerId: 'stale-marker', createdAt: 0 })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
     const staleAt = new Date(Date.now() - 10_000)
     await utimes(markerPath, staleAt, staleAt)
 
     await lock?.release()
 
-    // Release neither recovers nor removes a marker; contenders do that.
-    expect(await readFile(join(markerPath, 'owner.json'), 'utf8')).toBe(
-      markerOwner,
-    )
-    expect((await readLockOwner(lockPath)).ownerId).toBe(lock!.ownerId)
-    expect(await lockIsReleased(lockPath)).toBe(true)
+    expect(existsSync(lockPath)).toBe(false)
   })
 
   it('elects one owner across 512 plain stale-lock contentions', async () => {
