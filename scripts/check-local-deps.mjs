@@ -45,7 +45,8 @@ function checkSpec(file, field, name, spec, base) {
   }
 }
 
-for (const file of await packageFiles(root)) {
+const manifests = await packageFiles(root)
+for (const file of manifests) {
   const manifest = JSON.parse(await readFile(file, 'utf8'))
   for (const field of dependencyFields) {
     const values = manifest[field]
@@ -59,7 +60,10 @@ for (const file of await packageFiles(root)) {
 const lockPath = path.join(root, 'bun.lock')
 try {
   const lock = parse(await readFile(lockPath, 'utf8'))
-  // Package resolutions omit the original spec; workspace dependencies retain it.
+  // Each `workspaces` entry copies a package.json's dependency specs, relative
+  // to that package's directory (the entry's key, "" for the root). The
+  // `packages` section repeats the same resolutions without their protocol,
+  // so the workspace entries are the ones to check.
   for (const [workspace, manifest] of Object.entries(lock.workspaces ?? {})) {
     const base = path.resolve(root, workspace)
     for (const field of dependencyFields) {
@@ -74,11 +78,17 @@ try {
   if (error.code !== 'ENOENT') throw error
 }
 
+// A scan that read nothing would pass vacuously (a wrong root, a renamed
+// layout), so an empty census is a failure of the check itself.
+if (manifests.length === 0) {
+  console.error(`no package.json found under ${root}; nothing was checked`)
+  process.exit(2)
+}
 if (offenders.length) {
   for (const item of offenders) {
     console.error(`${item.file}: ${item.field} ${item.name}=${item.spec} resolves to ${item.resolved}`)
   }
   process.exitCode = 1
 } else {
-  console.log('local dependencies ok')
+  console.log(`local dependencies ok (${manifests.length} package.json checked)`)
 }

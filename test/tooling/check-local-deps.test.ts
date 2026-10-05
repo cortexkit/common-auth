@@ -23,6 +23,17 @@ async function run(directory: string) {
   })
 }
 
+test('local dependency checker fails as unchecked when it finds no package.json', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'local-deps-empty-'))
+  try {
+    const result = await run(directory)
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr.toString()).toContain('nothing was checked')
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 30_000)
+
 test('local dependency checker rejects an outside file dependency', async () => {
   const directory = await fixture()
   try {

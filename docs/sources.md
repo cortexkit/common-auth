@@ -15,6 +15,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | tooling | Source checker rejects empty tables and unmatched cells | new (neither copy) | source checker rejects empty tables and unmatched cells |
 | tooling | Source checker matches exactly two cells from the real four-test JUnit fixture | new (neither copy) | source checker matches exactly two cells from the real four-test JUnit fixture |
 | tooling | Installed range checker enumerates root and workspace globs and rejects drift | reference/openai-auth/scripts/check-installed-ranges.mjs | installed range checker enumerates root and workspace globs and rejects drift |
+| tooling | Local dependency checker fails as unchecked on an empty scan | new (neither copy) | local dependency checker fails as unchecked when it finds no package.json |
 | tooling | Local dependency checker rejects outside file dependencies | new (neither copy) | local dependency checker rejects an outside file dependency |
 | tooling | Local dependency checker allows in-repo file and workspace dependencies | new (neither copy) | local dependency checker allows in-repo file and workspace dependencies |
 | tooling | Local dependency checker rejects outside bun.lock dependencies using workspace-relative specs; package resolutions are skipped because they omit the original spec | new (neither copy) | local dependency checker rejects an outside bun.lock dependency |
