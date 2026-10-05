@@ -1,10 +1,12 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
+import { spawnSync } from 'node:child_process'
 import {
   chmod,
   mkdir,
   mkdtemp,
   realpath,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -132,7 +134,12 @@ posixTest(
 )
 posixTest('accepts a sticky world-writable ancestor', async () => {
   const f = await fixture()
-  await chmod(f.parent, 0o1777)
+  // Bun 1.3.14's fs.chmod drops bits above 0o777 (the directory stays 0777),
+  // so set the sticky bit with chmod(1). Its stat reports the bit correctly,
+  // which is what the check reads, so production paths like /tmp are unaffected.
+  const set = spawnSync('chmod', ['1777', f.parent])
+  expect(set.status).toBe(0)
+  expect((await stat(f.parent)).mode & 0o7777).toBe(0o1777)
   await refuseWritableAncestor(f.parent, f.options)
 })
 posixTest(
