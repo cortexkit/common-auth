@@ -1,7 +1,9 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
+import { EventEmitter } from 'node:events'
 import { type watch, writeFileSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import * as timers from 'node:timers'
 import { setTimeout as sleep } from 'node:timers/promises'
 import {
   createTuiPreferenceWriter,
@@ -69,12 +71,80 @@ test('polls when directory watcher construction fails', async () => {
 })
 test('debounces bursts into few callbacks', async () => {
   await writeFile(file, '{}')
-  start()
-  await sleep(50)
-  for (let i = 0; i < 5; i++) await update(['pollMs'], 1000 + i)
-  await sleep(400)
-  expect(fired).toBeGreaterThanOrEqual(1)
-  expect(fired).toBeLessThan(5)
+  type Pending = { delay: number; run: () => void; unref: () => void }
+  const pending = new Set<Pending>()
+  const changed = Promise.withResolvers<void>()
+  const polled = Promise.withResolvers<void>()
+  const realSetTimeout = timers.setTimeout
+  const realClearTimeout = timers.clearTimeout
+  let intercepted = 0
+  let cancelled = 0
+  let polls = 0
+  const setSpy = spyOn(timers, 'setTimeout').mockImplementation(((
+    ...args: Parameters<typeof realSetTimeout>
+  ) => {
+    if (args[1] !== 100 && args[1] !== 150) return realSetTimeout(...args)
+    intercepted++
+    const timer: Pending = {
+      delay: args[1],
+      run: () => {
+        pending.delete(timer)
+        args[0]()
+      },
+      unref: () => {},
+    }
+    pending.add(timer)
+    if (timer.delay === 100 && ++polls === 2) polled.resolve()
+    return timer as unknown as ReturnType<typeof timers.setTimeout>
+  }) as typeof realSetTimeout)
+  const clearSpy = spyOn(timers, 'clearTimeout').mockImplementation((timer) => {
+    if (pending.delete(timer as unknown as Pending)) cancelled++
+    else realClearTimeout(timer as Parameters<typeof realClearTimeout>[0])
+  })
+  let event!: (event: string, filename: string) => void
+  const watcher = Object.assign(new EventEmitter(), { close: () => {} })
+  let dispose: (() => void) | undefined
+  try {
+    dispose = watchTuiPreferences(
+      file,
+      () => {
+        fired++
+        changed.resolve()
+      },
+      {
+        watchDirectory: ((...args: unknown[]) => {
+          event = args.at(-1) as typeof event
+          return watcher
+        }) as unknown as typeof watch,
+      },
+    )
+    // Deliver the burst without advancing either timer. Awaited disk writes
+    // can span poll windows on a busy host and are not a debounce burst.
+    for (let i = 0; i < 5; i++) {
+      writeFileSync(file, JSON.stringify({ pollMs: 1000 + i }))
+      event('change', 'tui-preferences.jsonc')
+    }
+    expect(intercepted).toBe(6)
+    expect(cancelled).toBe(4)
+    const debounces = [...pending].filter((timer) => timer.delay === 150)
+    expect(debounces).toHaveLength(1)
+    expect(fired).toBe(0)
+    debounces[0]?.run()
+    await changed.promise
+    expect(fired).toBe(1)
+    // The independent poll observes the same final content, not five
+    // intermediate states. Rescheduling proves the asynchronous read finished.
+    const poll = [...pending].find((timer) => timer.delay === 100)
+    expect(poll).toBeDefined()
+    poll?.run()
+    await polled.promise
+    expect(intercepted).toBe(7)
+    expect(fired).toBe(1)
+  } finally {
+    dispose?.()
+    clearSpy.mockRestore()
+    setSpy.mockRestore()
+  }
 })
 test('missing directory returns a no-op disposer', () => {
   file = join(dir, 'nope', 'missing.jsonc')
