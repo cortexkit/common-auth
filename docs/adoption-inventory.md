@@ -118,6 +118,10 @@ Adapters supply the target path, lease timing, and opt-in renewal (`renew` still
 
 Type exports: `AtomicWriteOptions`, `LockOptions`, `LockOwnershipDetails`, `RefreshFileLock`, `LockLoss`. Frozen sidebar defaults: name sidebar-write, ttlMs 10000, timeoutMs 15000, renew true; preferences: name preferences, ttlMs 10000, timeoutMs 2000, renew true. Writers only permit timeoutMs override. Contention details identify target/name/timeoutMs; ownership details identify target/name plus optional expected/observed ownership.
 
+### ./claustrum
+
+`mutateVaultRoster` callbacks receive `{ assertOwned }` for ownership fencing immediately before a caller-managed rename; existing one-argument callbacks remain compatible. If the assertion rejects, the caller must not rename.
+
 ### ./logger
 
 Runtime exports: `initLogger({ file, level?, captureSink?, extraSecretKeys?, extraValuePatterns? })`, `createLogger(channel)`, `setLogLevel(levelOrUndefined)`, `flushLogs()`, `flushForTest()`, `resetLoggerForTest()`, `createCaptureSink()`, `createRedactor(options?)`, `redact(value)`, `redactStrings(value)`. File and level accept host providers; the host installs exit flushing. Capture returns records/sink/clear. A logger exposes error/warn/info/debug/trace methods taking message and optional data.

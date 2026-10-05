@@ -476,21 +476,30 @@ const WRITE_LOCK = {
 }
 const DISCOVERY_LEASE = { name: 'claustrum-roster', ttlMs: 30_000 }
 
+/** The ownership assertion available to a roster mutation callback. */
+export interface VaultRosterLockContext {
+  assertOwned: () => Promise<void>
+}
+
 /**
  * Read, change and write the roster under its write lock. `change` returns
- * undefined to leave the file as it is.
+ * undefined to leave the file as it is. Call `assertOwned()` immediately
+ * before any rename performed inside `change`; if it throws, do not rename.
  */
 export async function mutateVaultRoster<T>(
   path: string,
   change: (
     current: VaultRosterFile | undefined,
+    context: VaultRosterLockContext,
   ) =>
     | Promise<{ next?: VaultRosterFile; result: T }>
     | { next?: VaultRosterFile; result: T },
 ): Promise<T> {
   return withLock(path, WRITE_LOCK, async (lock) => {
     const current = await readVaultRoster(path)
-    const { next, result } = await change(current)
+    const { next, result } = await change(current, {
+      assertOwned: () => lock.assertOwned(),
+    })
     if (next) {
       await lock.assertOwned()
       await writeJsonAtomic(path, next)
