@@ -667,7 +667,8 @@ describe('acquireRefreshFileLock', () => {
     const start = Date.now()
     let currentNow = start
     let sawRenewalWrite = false
-
+    let planted = false
+    let before: Awaited<ReturnType<typeof readLockOwner>>
     const lock = await acquireRefreshFileLock({
       name,
       path,
@@ -675,30 +676,39 @@ describe('acquireRefreshFileLock', () => {
       now: () => currentNow,
       renew: true,
       renewIntervalMs: 10,
-      onStep: (step) => {
-        if (step === 'renewal-marker-unavailable') markerUnavailable.resolve()
+      onStep: async (step) => {
+        if (step === 'renewal-marker-unavailable') {
+          markerUnavailable.resolve()
+          currentNow = start + 100
+          await rm(markerPath, { recursive: true, force: true })
+        }
         if (step === 'renewal-write-fenced') sawRenewalWrite = true
-        if (step === 'renewal-finished' && sawRenewalWrite) renewed.resolve()
+        if (step !== 'renewal-finished') return
+        if (!planted) {
+          // Renewal has released its marker and cannot schedule its next
+          // attempt until this observer returns. Plant contention in that gap.
+          before = await readLockOwner(lockPath)
+          await mkdir(markerPath)
+          planted = true
+          sawRenewalWrite = false
+        } else if (sawRenewalWrite) renewed.resolve()
       },
     })
     expect(lock).not.toBeNull()
-    const before = await readLockOwner(lockPath)
-    await mkdir(markerPath)
-
-    await withTimeout(markerUnavailable.promise, 1_000)
-    currentNow = start + 100
-    await rm(markerPath, { recursive: true, force: true })
-    expect(await resolvesWithin(renewed.promise, 500)).toBe(true)
-
-    const after = await readLockOwner(lockPath)
-    expect(after.ownerId).toBe(before.ownerId)
-    expect(after.expiresAt).toBeGreaterThan(before.expiresAt)
-    expect(lock!.hasLost()).toBe(false)
     let lossObserved = false
     void lock!.whenLost().then(() => {
       lossObserved = true
     })
-    await lock?.release()
+    try {
+      await markerUnavailable.promise
+      await renewed.promise
+      const after = await readLockOwner(lockPath)
+      expect(after.ownerId).toBe(before!.ownerId)
+      expect(after.expiresAt).toBeGreaterThan(before!.expiresAt)
+      expect(lock!.hasLost()).toBe(false)
+    } finally {
+      await lock?.release()
+    }
     expect(lossObserved).toBe(false)
   })
 

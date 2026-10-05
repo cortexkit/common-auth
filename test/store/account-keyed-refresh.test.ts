@@ -6,6 +6,7 @@ import type {
   PoolRow,
   ProviderRefreshResult,
 } from '../../src/store/index.js'
+import { drainBodies } from './drain-bodies.js'
 import {
   deferred,
   oauth,
@@ -26,14 +27,23 @@ let s: Scenario
 // Releases every parked refresh, so a failed assertion cannot leave a lock
 // renewing into the next test's run.
 let unpark: Array<() => void> = []
+let bodies = new Set<Promise<unknown>>()
+function tracked(body: () => Promise<void>) {
+  const pending = body()
+  bodies.add(pending)
+  void pending.catch(() => {})
+  return pending
+}
 beforeEach(async () => {
   s = await scenario()
 })
 afterEach(async () => {
-  for (const release of unpark) release()
+  const current = s
+  const releases = unpark
+  const pending = bodies
   unpark = []
-  await new Promise((resolve) => setTimeout(resolve, 50))
-  s.cleanup()
+  bodies = new Set()
+  await drainBodies(releases, pending, () => current.cleanup())
 })
 
 const A = 'acct-A'
@@ -112,8 +122,8 @@ async function rosterView() {
   }))
 }
 
-async function refreshTokenOf(id: string): Promise<string> {
-  return (await s.state()).accounts[id].refresh
+async function refreshTokenOf(id: string, current = s): Promise<string> {
+  return (await current.state()).accounts[id].refresh
 }
 
 /** Enabled OAuth rows holding the identity: the dedupe leaves exactly one. */
@@ -425,12 +435,14 @@ describe('a row of known identity refreshing under an account-keyed provider loc
 describe('rows of different accounts under account-keyed provider locks', () => {
   async function overlapping(
     lockFor: (key: string) => PoolLockSpec | undefined,
+    requireOverlap = false,
   ) {
-    await s.open().add({ id: 'x', credential: oauth('r-x'), identity: A })
-    await s.open().add({ id: 'z', credential: oauth('r-z'), identity: B })
-    const entered = { x: deferred(), z: deferred() }
+    const current = s
     const release = deferred()
     unpark.push(() => release.resolve())
+    await current.open().add({ id: 'x', credential: oauth('r-x'), identity: A })
+    await current.open().add({ id: 'z', credential: oauth('r-z'), identity: B })
+    const entered = { x: deferred(), z: deferred() }
     const seen: string[] = []
     const provider =
       (id: 'x' | 'z') => async (credential: { refresh: string }) => {
@@ -443,26 +455,33 @@ describe('rows of different accounts under account-keyed provider locks', () => 
       const lock = lockFor(key)
       return lock ? { providerLock: lock } : {}
     }
-    const refreshX = s.open().refresh('x', provider('x'), options(A))
-    const refreshZ = s.open().refresh('z', provider('z'), options(B))
+    const refreshX = current.open().refresh('x', provider('x'), options(A))
+    const refreshZ = current.open().refresh('z', provider('z'), options(B))
     const both = Promise.all([entered.x.promise, entered.z.promise])
-    const overlapped = await settlesWithin(both, 1_000)
+    const overlapped = requireOverlap
+      ? await both.then(() => true)
+      : await settlesWithin(both, 1_000)
     release.resolve()
     const outcomes = await Promise.all([refreshX, refreshZ])
     return { overlapped, outcomes, seen }
   }
 
-  it('refreshes of two accounts under their own provider locks are in their provider calls at the same time', async () => {
-    const { overlapped, outcomes, seen } = await overlapping(accountLock)
-    expect(overlapped).toBe(true)
-    expect(outcomes).toMatchObject([
-      { status: 'rotated', rowId: 'x' },
-      { status: 'rotated', rowId: 'z' },
-    ])
-    expect([...seen].sort()).toEqual(['r-x', 'r-z'])
-    expect(await refreshTokenOf('x')).toBe('r-x2')
-    expect(await refreshTokenOf('z')).toBe('r-z2')
-  })
+  it('refreshes of two accounts under their own provider locks are in their provider calls at the same time', () =>
+    tracked(async () => {
+      const current = s
+      const { overlapped, outcomes, seen } = await overlapping(
+        accountLock,
+        true,
+      )
+      expect(overlapped).toBe(true)
+      expect(outcomes).toMatchObject([
+        { status: 'rotated', rowId: 'x' },
+        { status: 'rotated', rowId: 'z' },
+      ])
+      expect([...seen].sort()).toEqual(['r-x', 'r-z'])
+      expect(await refreshTokenOf('x', current)).toBe('r-x2')
+      expect(await refreshTokenOf('z', current)).toBe('r-z2')
+    }))
 
   it('refreshes of two accounts under the default provider lock never overlap', async () => {
     const { overlapped, seen } = await overlapping(() => undefined)

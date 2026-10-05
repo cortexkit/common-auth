@@ -46,11 +46,27 @@ type Task = {
   stallAfterAcquireMs?: number
   /** Allows renewal timers to run before the crash point. */
   pauseBeforeStateMs?: number
+  /** Holds the crash point until every acquired lease completes renewal. */
+  waitForRenewal?: boolean
+  /** Parks the crash point until the parent has read a live lease. */
+  waitForParentRead?: boolean
 }
 
 const task = JSON.parse(process.argv[2] ?? '{}') as Task
+const parentRead = task.waitForParentRead
+  ? new Promise<void>((resolve) => {
+      process.stdin.once('data', () => resolve())
+    })
+  : Promise.resolve()
 let stalled = false
 const heldPaths = new Set<string>()
+const initialExpiry = new Map<string, number>()
+const renewedPaths = new Set<string>()
+let acquisitionComplete = false
+let renewalObserved = () => {}
+const allRenewed = new Promise<void>((resolve) => {
+  renewalObserved = resolve
+})
 const store = openPoolStore({
   provider: 'openai',
   configPath: task.configPath,
@@ -70,6 +86,7 @@ const store = openPoolStore({
     const path = `${event.path}.${event.name}.lock`
     heldPaths.add(path)
     const record = JSON.parse(readFileSync(path, 'utf8'))
+    initialExpiry.set(path, record.expiresAt)
     console.log(
       `lease:${JSON.stringify({ path, ...record, acquiredAt: Date.now() })}`,
     )
@@ -86,7 +103,36 @@ const store = openPoolStore({
       )
     }
   },
+  onLockStep: async (lock, step) => {
+    if (!task.waitForRenewal || step !== 'renewal-finished') return
+    const path = `${lock.path}.${lock.name}.lock`
+    const record = JSON.parse(readFileSync(path, 'utf8'))
+    if (record.expiresAt <= (initialExpiry.get(path) ?? Infinity)) return
+    if (!renewedPaths.has(path)) {
+      console.log(`renewed:${JSON.stringify({ path, ...record })}`)
+      renewedPaths.add(path)
+    }
+    if (
+      acquisitionComplete &&
+      [...heldPaths].every((held) => renewedPaths.has(held))
+    )
+      renewalObserved()
+  },
   onStep: async (step) => {
+    if (step === 'before-state-write' && task.waitForRenewal) {
+      await parentRead
+      acquisitionComplete = true
+      if ([...heldPaths].every((held) => renewedPaths.has(held)))
+        renewalObserved()
+      // Production renewal timers are unreferenced. Keep the child alive while
+      // the write is parked, without using elapsed time as proof of renewal.
+      const keepAlive = setInterval(() => {}, 1_000)
+      try {
+        await allRenewed
+      } finally {
+        clearInterval(keepAlive)
+      }
+    }
     if (step === 'before-state-write' && task.pauseBeforeStateMs) {
       await delay(task.pauseBeforeStateMs)
       for (const path of heldPaths)
