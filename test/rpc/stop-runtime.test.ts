@@ -53,6 +53,55 @@ try {
   console.info(`RPC stop ${JSON.stringify(result)}`)
 }
 
+// A process whose server was stopped while an `apply` was still pending must be
+// free to exit: the apply deadline timer only bounds the reply, and once the
+// server is gone nothing waits for it. The deadline here is 3 s, far longer
+// than the bound, so a timer that keeps the process alive fails the check.
+async function checkExitAfterStop(
+  binary: string,
+  directory: 'src' | 'dist',
+  version: string,
+) {
+  const modulePath = fileURLToPath(
+    new URL(`../../${directory}/rpc/rpc-server.js`, import.meta.url),
+  )
+  const script = `
+import { connect } from 'node:net';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { startRpcServer } from ${JSON.stringify(modulePath)};
+const dir = await mkdtemp(join(tmpdir(), 'rpc-exit-'));
+let entered;
+const enteredApply = new Promise((resolve) => { entered = resolve; });
+const server = await startRpcServer({ dir, isManagedDir: () => false, drain: () => [], applyDeadlineMs: 3000, apply: () => { entered(); return new Promise(() => {}); } });
+const socket = connect({ host: '127.0.0.1', port: server.port });
+socket.on('error', () => {});
+await new Promise((resolve) => socket.once('connect', resolve));
+socket.write('POST /rpc/apply HTTP/1.1\\r\\nHost: localhost\\r\\nAuthorization: Bearer ' + server.token + '\\r\\nContent-Type: application/json\\r\\nContent-Length: 2\\r\\n\\r\\n{}');
+await enteredApply;
+socket.destroy();
+await server.stop();
+await rm(dir, { recursive: true, force: true });
+const stoppedAt = Date.now();
+process.on('exit', () => { process.stdout.write(JSON.stringify({ version: process.versions.bun ?? process.version, exitAfterStopMs: Date.now() - stoppedAt })); });
+`
+  const child = Bun.spawn([binary, '-e', script], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [out, err, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  expect(code, `${out}\n${err}`).toBe(0)
+  const result = JSON.parse(out)
+  expect(result.version.replace(/^v/, '')).toBe(version)
+  expect(result.exitAfterStopMs).toBeLessThan(1000)
+  console.info(`RPC exit after stop ${JSON.stringify(result)}`)
+}
+
 // Node 24 from mise when present (local machines), else `node` on PATH (CI
 // installs Node 24 with setup-node). Either way it must report a v24.
 function findNode24(): { binary: string; version: string } {
@@ -88,3 +137,12 @@ test('RPC stop closes held partial requests under Node 24', async () => {
   const node = findNode24()
   await checkStop(node.binary, 'dist', node.version)
 })
+
+test('a pending apply does not keep the process alive after stop under the running Bun', async () => {
+  await checkExitAfterStop(process.execPath, 'src', Bun.version)
+}, 15_000)
+
+test('a pending apply does not keep the process alive after stop under Node 24', async () => {
+  const node = findNode24()
+  await checkExitAfterStop(node.binary, 'dist', node.version)
+}, 15_000)

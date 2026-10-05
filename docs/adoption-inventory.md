@@ -57,6 +57,8 @@ All ten subpaths are ESM, with `dist/<subpath>/index.js` and adjacent `index.d.t
 
 ### ./rpc
 
+(0.9.4) The `applyDeadlineMs` timer no longer keeps the process alive on its own: once `stop()` has closed the connections, an `apply` handler that never settles does not hold the process open until its deadline. The deadline still answers a live request as before; the handler itself is still not cancelled.
+
 (0.9.3) `./rpc/client` exports only the client side (`createRpcClient`, `discoverPortFile`, `DEFAULT_RPC_TIMEOUT_MS` and their types) and loads only the client and port-file modules, so a sidebar process can talk to its server without loading the server, its notification queue or the server registry. The same functions stay exported from `./rpc`.
 
 (0.9.2) RPC discovery files containing server tokens are published by renaming unpredictable, exclusively created staging files with descriptor-enforced 0600 permissions; an existing staging name rejects the write without publishing or removing that existing file.
@@ -94,7 +96,7 @@ What the shared server and client promise, which a plugin can rely on instead of
 - Discovery with `exactPid` never falls back to another process; malformed or mismatched entries are rejected.
 - Loopback calls go straight to the socket and never through proxy environment variables. The client deadline covers connect, request and reply after discovery, as an ordinary timer (event-loop delay can make it fire late).
 - `timeoutMs` (default 90 000) is the per-request socket inactivity timer and `receiptTimeoutMs` (default 2 000) bounds receipt of the request; a plugin whose `apply` runs longer sets `timeoutMs` at least that long.
-- `stop()` closes active and half-sent connections on Bun 1.3.14, Bun 1.4.2 and Node 24.16; it does not cancel callbacks already running.
+- `stop()` closes active and half-sent connections (verified on Bun 1.3.14, Bun 1.4.2 and Node 24.16, the runtimes CI and local runs exercise); it does not cancel callbacks already running, but from 0.9.4 a still-pending `apply` no longer keeps the process alive through its deadline timer.
 
 Documented differences that are not reasons for another engine or option: the body cap is 1,000,000 bytes (not 1 MiB); error text capitalisation and the order of authorization versus parsing for unknown paths; the JSON charset spelling in the content type; malformed port files are left in place rather than removed. An empty body parses as `{}` and must be rejected by the plugin's `parsePending` if its policy requires fields.
 

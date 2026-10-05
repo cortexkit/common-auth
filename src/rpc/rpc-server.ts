@@ -131,6 +131,10 @@ async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
       () => reject(new ApplyDeadlineError('apply deadline exceeded')),
       ms,
     )
+    // The deadline only bounds a reply. While a request is open its socket
+    // keeps the process alive anyway; after stop() closes it, a handler that
+    // never settles must not hold the process open until the deadline.
+    timer.unref?.()
   })
   // A handler that fails after its deadline has nobody left to answer.
   work.catch(() => {})
