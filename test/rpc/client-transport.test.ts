@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -6,35 +6,52 @@ import { join } from 'node:path'
 import { writePortFile } from '../../src/rpc/port-file.js'
 import { createRpcClient } from '../../src/rpc/rpc-client.js'
 
-async function exchange(send: (socket: Socket) => void, maxElapsedMs = 1000) {
+async function exchange(send: (socket: Socket) => void, holdDeadline = false) {
   const dir = await mkdtemp(join(tmpdir(), 'rpc-wire-'))
   const sockets = new Set<Socket>()
+  const closed = Promise.withResolvers<void>()
   const server = createServer((socket) => {
     sockets.add(socket)
     socket.on('error', () => {})
-    socket.on('close', () => sockets.delete(socket))
+    socket.on('close', () => {
+      sockets.delete(socket)
+      closed.resolve()
+    })
     socket.once('data', () => send(socket))
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('no port')
+  const realSetTimeout = globalThis.setTimeout
+  let deadlines = 0
+  const deadlineSpy = holdDeadline
+    ? spyOn(globalThis, 'setTimeout').mockImplementation(((
+        ...args: Parameters<typeof realSetTimeout>
+      ) => {
+        if (args[1] !== 150) return realSetTimeout(...args)
+        deadlines++
+        // Hold only the RPC deadline: rejection must come from received data,
+        // not from a timeout while the peer deliberately withholds EOF.
+        return realSetTimeout(() => {}, 0)
+      }) as typeof realSetTimeout)
+    : undefined
   try {
     await writePortFile(dir, {
       port: address.port,
       pid: process.pid,
       token: 'fixture',
     })
-    const start = Date.now()
     const result = await createRpcClient(dir, process.pid).apply(
       { command: 'probe', arguments: '☃' },
       150,
     )
-    expect(Date.now() - start).toBeLessThan(maxElapsedMs)
-    // Observe the peer's close event rather than just the client return value.
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    if (holdDeadline) expect(deadlines).toBe(1)
+    // The server never ends bounded responses; observe client-initiated close.
+    await closed.promise
     expect(sockets.size).toBe(0)
     return result
   } finally {
+    deadlineSpy?.mockRestore()
     for (const socket of sockets) socket.destroy()
     await new Promise<void>((resolve) => server.close(() => resolve()))
     await rm(dir, { recursive: true, force: true })
@@ -91,7 +108,7 @@ test('raw RPC transport bounds headers and response bodies before EOF', async ()
     `HTTP/1.0 200 OK\r\nX-Large: ${'x'.repeat(16 * 1024)}`,
     `HTTP/1.0 200 OK\r\n\r\n${'x'.repeat(8 * 1024 * 1024 + 1)}`,
   ]) {
-    expect(await exchange((socket) => socket.write(response), 100)).toEqual(
+    expect(await exchange((socket) => socket.write(response), true)).toEqual(
       fallback,
     )
   }
