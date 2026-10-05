@@ -286,9 +286,18 @@ describe('a row of known identity refreshing under an account-keyed provider loc
       'X acquired acct-acct-A',
     ])
     // The add takes the row lock of the identity it is given, so it starts
-    // only once the refresh has released it.
+    // only once the refresh has released it. A `released` event fires after
+    // the unlock completes, so the waiting add can log `acquired` before the
+    // refresh logs `released row-acct-A`. The refresh releases in reverse
+    // order (account lock, then row lock), so its `released acct-acct-A`
+    // is logged while it still holds the row lock: an add that got the row
+    // lock any earlier would log `acquired` before it.
+    expect(locks.log).toContain('X released row-acct-A')
     expect(locks.log.indexOf('Y acquired row-acct-A')).toBeGreaterThan(
-      locks.log.indexOf('X released row-acct-A'),
+      locks.log.indexOf('X released acct-acct-A'),
+    )
+    expect(locks.log.indexOf('X released acct-acct-A')).toBeGreaterThan(
+      locks.log.indexOf('X acquired acct-acct-A'),
     )
     expect(await refreshTokenOf('x')).toBe('r-x2')
     expect(await enabledHolders(A)).toEqual(['x'])
