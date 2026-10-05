@@ -85,7 +85,7 @@
     "dist/"
   ],
   "scripts": {
-    "build": "bun scripts/check-installed-ranges.mjs && tsc -p tsconfig.build.json",
+    "build": "bun scripts/check-local-deps.mjs && bun scripts/check-installed-ranges.mjs && tsc -p tsconfig.build.json",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "types": "bun run typecheck",
