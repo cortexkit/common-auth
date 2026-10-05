@@ -269,8 +269,23 @@ describe('a row of known identity refreshing under an account-keyed provider loc
     const locks = lockLog()
     const park = parkAt('x')
     const provider = countingProvider(result('r-x2'))
+    // The engine's `release-owner-confirmed` step runs while the refresh still
+    // owns the lock, just before it removes the lock file. Whether the add
+    // already holds the row lock at that instant is the exclusion question;
+    // the `released` event cannot answer it, because it fires only after the
+    // unlock has completed, by when a waiter may already have acquired.
+    let addHeldRowWhileRefreshOwnedIt: boolean | undefined
     const refreshX = s
-      .open({ hold: park.hold, onLockEvent: locks.as('X') })
+      .open({
+        hold: park.hold,
+        onLockEvent: locks.as('X'),
+        onLockStep: (lock, step) => {
+          if (lock.name === 'row-acct-A' && step === 'release-owner-confirmed')
+            addHeldRowWhileRefreshOwnedIt = locks.log.includes(
+              'Y acquired row-acct-A',
+            )
+        },
+      })
       .refresh('x', provider.fn, { providerLock: accountLock(A) })
     await park.parked.promise
     const addY = s
@@ -285,20 +300,11 @@ describe('a row of known identity refreshing under an account-keyed provider loc
       'X acquired row-acct-A',
       'X acquired acct-acct-A',
     ])
-    // The add takes the row lock of the identity it is given, so it starts
-    // only once the refresh has released it. A `released` event fires after
-    // the unlock completes, so the waiting add can log `acquired` before the
-    // refresh logs `released row-acct-A`. The refresh releases in reverse
-    // order (account lock, then row lock), so its `released acct-acct-A`
-    // is logged while it still holds the row lock: an add that got the row
-    // lock any earlier would log `acquired` before it.
+    // The add takes the row lock of the identity it is given, so it holds it
+    // only after the refresh has given it up.
+    expect(addHeldRowWhileRefreshOwnedIt).toBe(false)
+    expect(locks.log).toContain('Y acquired row-acct-A')
     expect(locks.log).toContain('X released row-acct-A')
-    expect(locks.log.indexOf('Y acquired row-acct-A')).toBeGreaterThan(
-      locks.log.indexOf('X released acct-acct-A'),
-    )
-    expect(locks.log.indexOf('X released acct-acct-A')).toBeGreaterThan(
-      locks.log.indexOf('X acquired acct-acct-A'),
-    )
     expect(await refreshTokenOf('x')).toBe('r-x2')
     expect(await enabledHolders(A)).toEqual(['x'])
     expect(
