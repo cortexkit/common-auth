@@ -2,6 +2,9 @@ name: CI
 on:
   push:
   pull_request:
+  # The release workflow calls this on the tagged commit and publishes only if
+  # every job here passes.
+  workflow_call:
 permissions:
   contents: read
 jobs:
