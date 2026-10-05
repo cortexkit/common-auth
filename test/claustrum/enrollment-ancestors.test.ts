@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import {
   chmod,
   mkdir,
@@ -249,20 +250,36 @@ posixTest(
 // them. So this end-to-end case can only run where this user's real group is
 // private (Linux with user private groups, such as the Ubuntu test VM); on
 // macOS (`staff`) or a CI runner in a shared group it is declared skipped.
-const hostGroupIsPrivate = await (async () => {
-  if (process.geteuid === undefined) return false
-  const probe = await realpath(
-    await mkdtemp(join(tmpdir(), 'enrollment-host-group-')),
-  )
+// Applicability is read from the real account records here, independently of
+// the guard under test: deriving it by calling the guard would turn a guard
+// regression on an applicable host into a silent skip instead of a failure.
+const hostGroupIsPrivate = (() => {
+  const euid = process.geteuid?.()
+  const egid = process.getegid?.()
+  if (euid === undefined || egid === undefined) return false
+  let passwd: string
+  let group: string
   try {
-    await chmod(probe, 0o775)
-    await refuseWritableAncestor(probe)
-    return true
+    passwd = readFileSync('/etc/passwd', 'utf8')
+    group = readFileSync('/etc/group', 'utf8')
   } catch {
     return false
-  } finally {
-    await rm(probe, { recursive: true, force: true })
   }
+  const records = (text: string) =>
+    text
+      .split('\n')
+      .filter((line) => line.trim() !== '' && !line.startsWith('#'))
+      .map((line) => line.split(':'))
+  const users = records(passwd)
+  const owners = users.filter((user) => Number(user[2]) === euid)
+  const groups = records(group).filter((entry) => Number(entry[2]) === egid)
+  if (owners.length !== 1 || groups.length !== 1) return false
+  const name = owners[0]?.[0]
+  const members = (groups[0]?.[3] ?? '').split(',').filter(Boolean)
+  return (
+    members.every((member) => member === name) &&
+    !users.some((user) => Number(user[2]) !== euid && Number(user[3]) === egid)
+  )
 })()
 
 test.skipIf(!hostGroupIsPrivate)(
