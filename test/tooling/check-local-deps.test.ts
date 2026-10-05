@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,16 +13,14 @@ async function fixture() {
     join(directory, 'package.json'),
     JSON.stringify({ name: 'fixture' }),
   )
-  await mkdir(join(directory, 'scripts'))
-  await cp(checker, join(directory, 'scripts/check-local-deps.mjs'))
   return directory
 }
 
 async function run(directory: string) {
-  return Bun.spawnSync(
-    [process.execPath, join(directory, 'scripts/check-local-deps.mjs')],
-    { cwd: directory },
-  )
+  return Bun.spawnSync([process.execPath, '--no-install', checker, directory], {
+    cwd: root,
+    timeout: 30_000,
+  })
 }
 
 test('local dependency checker rejects an outside file dependency', async () => {
@@ -44,7 +42,7 @@ test('local dependency checker rejects an outside file dependency', async () => 
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
-})
+}, 30_000)
 
 test('local dependency checker allows in-repo file and workspace dependencies', async () => {
   const directory = await fixture()
@@ -73,7 +71,7 @@ test('local dependency checker allows in-repo file and workspace dependencies', 
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
-})
+}, 30_000)
 
 test('local dependency checker rejects an outside bun.lock dependency', async () => {
   const directory = await fixture()
@@ -93,4 +91,4 @@ test('local dependency checker rejects an outside bun.lock dependency', async ()
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
-})
+}, 30_000)

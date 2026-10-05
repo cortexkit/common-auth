@@ -4,7 +4,9 @@ import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'jsonc-parser'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const root = path.resolve(
+  process.argv[2] ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
+)
 const dependencyFields = [
   'dependencies',
   'devDependencies',
