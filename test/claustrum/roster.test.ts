@@ -17,6 +17,7 @@ import {
   type VaultRosterFile,
   vaultRoutingRows,
 } from '../../src/claustrum/index.ts'
+import { LockOwnershipError, lockPathFor } from '../../src/fs/index.js'
 import { mergeQuotaObservation } from '../../src/quota/index.ts'
 import { cleanupDirs, deferred, tempDir } from './helpers.ts'
 
@@ -149,32 +150,62 @@ test('serializes competing roster mutations until the first callback returns', a
   expect(secondEntered).toBe(true)
 })
 
+async function stealRosterWriteLock(path: string): Promise<void> {
+  const lockPath = lockPathFor(path, 'claustrum-roster-write')
+  const current = JSON.parse(await readFile(lockPath, 'utf8'))
+  await writeFile(
+    lockPath,
+    JSON.stringify({
+      ownerId: 'foreign',
+      expiresAt: Date.now() + 30_000,
+    }),
+  )
+  expect(current.ownerId).toBeString()
+}
+
 test('lost roster ownership rejects and skips a caller rename and roster write', async () => {
   const { path } = await fixture()
-  const roster = await refreshVaultRoster({ path, custody: inventory([work]) })
+  await refreshVaultRoster({ path, custody: inventory([work]) })
   const before = await readFile(path, 'utf8')
   const staged = `${path}.runtime-stage`
   const published = `${path}.runtime`
   await writeFile(staged, 'runtime data')
-  await expect(
-    mutateVaultRoster(path, async (_current, { assertOwned }) => {
-      await rm(`${path}.claustrum-roster.lock`, { recursive: true })
-      await writeFile(
-        `${path}.claustrum-roster.lock`,
-        JSON.stringify({
-          ownerId: 'foreign',
-          expiresAt: Date.now() + 30_000,
-        }),
-      )
+  let assertionRan = false
+  let caught: unknown
+  try {
+    await mutateVaultRoster(path, async (_current, { assertOwned }) => {
+      await stealRosterWriteLock(path)
+      assertionRan = true
       await assertOwned()
       await rename(staged, published)
       return { result: undefined }
-    }),
-  ).rejects.toThrow('lock')
+    })
+  } catch (error) {
+    caught = error
+  }
+  expect(assertionRan).toBe(true)
+  expect(caught).toBeInstanceOf(LockOwnershipError)
   expect(await readFile(path, 'utf8')).toBe(before)
   expect(await readFile(staged, 'utf8')).toBe('runtime data')
   await expect(readFile(published, 'utf8')).rejects.toThrow()
-  expect(roster).toBeDefined()
+})
+
+test('the roster pre-write ownership check rejects a lost lease without writing', async () => {
+  const { path } = await fixture()
+  await refreshVaultRoster({ path, custody: inventory([work]) })
+  const before = await readFile(path, 'utf8')
+  let caught: unknown
+  try {
+    await mutateVaultRoster(path, async (current) => {
+      if (!current) throw new Error('expected a roster')
+      await stealRosterWriteLock(path)
+      return { next: { ...current, view: 'must-not-write' }, result: undefined }
+    })
+  } catch (error) {
+    caught = error
+  }
+  expect(caught).toBeInstanceOf(LockOwnershipError)
+  expect(await readFile(path, 'utf8')).toBe(before)
 })
 
 test('one-argument roster mutation callbacks remain supported', async () => {

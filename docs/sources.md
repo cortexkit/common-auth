@@ -80,6 +80,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | claustrum | Caller can publish a runtime-only sibling file after asserting ownership without changing the roster | new (neither copy) | publishes a runtime-only sibling file after asserting roster lock ownership |
 | claustrum | A competing roster mutation enters only after the current callback returns | new (neither copy) | serializes competing roster mutations until the first callback returns |
 | claustrum | Lost ownership rejects before caller rename and leaves roster unchanged | new (neither copy) | lost roster ownership rejects and skips a caller rename and roster write |
+| claustrum | The library's own roster write rechecks ownership before persisting next | new (neither copy) | the roster pre-write ownership check rejects a lost lease without writing |
 | claustrum | Existing one-argument roster callbacks remain supported | new (neither copy) | one-argument roster mutation callbacks remain supported |
 | sidebar-file | Tolerant reads hand parsed JSON to the supplied normalizer | reference/openai-auth/packages/opencode/src/sidebar-state.ts | tolerant reads hand parsed JSON to the supplied normalizer |
 | sidebar-file | Writes state atomically and cleans up temp files | reference/openai-auth/packages/opencode/src/sidebar-state.ts | writes state atomically and cleans up temp files |
