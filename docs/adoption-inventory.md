@@ -391,6 +391,10 @@ Differences from each plugin's current behaviour:
 - antigravity-auth: the same sections replace its seven OpenCode commands; `/gemini-dump` is not kept. Its Pi package registers no command today; adopting gives it the one command.
 ### ./claustrum
 
+(0.9.5) Setup writes accept group-writable ancestors without a sticky bit only when owned by the process's effective user and group and local `/etc/passwd` and `/etc/group` records show that the user exists, the group exists, no other named group member belongs to it and no other user has it as their primary group (files read lazily once per check, unreadable or malformed records refuse); world-writable ancestors still require the sticky bit, while request reads reject symlinks and require regular files owned by the effective user with owner-only permissions, without ancestor or account-file I/O.
+
+Pending Connect secrets can be persisted below these private-group directories, but approved tokens still cannot: the default `@cortexkit/claustrum-client` token writer rejects all group-writable ancestors and must adopt the same private-group exception before Connect can complete.
+
 The `/claustrum` subpath lets a plugin enroll with a credential vault and use the vault's scoped credentials for account discovery and authorization. It was adapted from anthropic-auth's enrollment, scoped-client, roster and runtime modules and their tests; openai-auth's handle-based custody was not carried over. It needs the optional peer `@cortexkit/claustrum-client` (>= 0.4.0); CI runs the full Claustrum test suite and typechecks the source against exactly 0.4.0. Importing `/claustrum` without that peer fails, while every other subpath is unaffected. The plugin supplies the vault connection file, token and roster paths, clock and logger; the library reads no environment variables or host paths.
 
 **What the plugin supplies.**

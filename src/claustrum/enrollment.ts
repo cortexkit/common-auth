@@ -4,6 +4,7 @@ import {
   chmod,
   mkdir,
   open,
+  readFile,
   realpath,
   rename,
   stat,
@@ -338,7 +339,7 @@ function validateReadableSecretFile(metadata: {
       'Claustrum enrollment file must be owner-only',
     )
   }
-  const expectedUid = process.getuid?.()
+  const expectedUid = process.geteuid?.()
   if (expectedUid !== undefined && metadata.uid !== expectedUid) {
     throw new ClaustrumConsumerError(
       'unsafe-file',
@@ -387,17 +388,83 @@ async function readBoundedJson(path: string): Promise<unknown | undefined> {
   }
 }
 
+/** Account-file paths are injectable for isolated setup tests; no environment overrides. */
+export interface EnrollmentAncestorOptions {
+  passwdPath?: string
+  groupPath?: string
+}
+
+function accountRecords(text: string, fields: number): string[][] | undefined {
+  const records: string[][] = []
+  for (const line of text.split('\n')) {
+    if (line.trim() === '' || line.startsWith('#')) continue
+    const parts = line.split(':')
+    if (
+      parts.length !== fields ||
+      !/^[^\s:,]+$/.test(parts[0] ?? '') ||
+      !/^\d+$/.test(parts[2] ?? '') ||
+      !Number.isSafeInteger(Number(parts[2])) ||
+      (fields === 7 &&
+        (!/^\d+$/.test(parts[3] ?? '') ||
+          !Number.isSafeInteger(Number(parts[3])))) ||
+      (fields === 4 &&
+        parts[3] !== '' &&
+        !/^[^\s:,]+(?:,[^\s:,]+)*$/.test(parts[3] ?? ''))
+    )
+      return undefined
+    records.push(parts)
+  }
+  return records
+}
+
+async function isPrivateGroup(
+  uid: number,
+  gid: number,
+  options: EnrollmentAncestorOptions,
+): Promise<boolean> {
+  try {
+    const [passwdText, groupText] = await Promise.all([
+      readFile(options.passwdPath ?? '/etc/passwd', 'utf8'),
+      readFile(options.groupPath ?? '/etc/group', 'utf8'),
+    ])
+    const users = accountRecords(passwdText, 7)
+    const groups = accountRecords(groupText, 4)
+    if (!users || !groups) return false
+    const owners = users.filter((user) => Number(user[2]) === uid)
+    const matchingGroups = groups.filter((group) => Number(group[2]) === gid)
+    if (owners.length !== 1 || matchingGroups.length !== 1) return false
+    const name = owners[0]?.[0]
+    const members = matchingGroups[0]?.[3] ?? ''
+    return (
+      (members === '' ||
+        members.split(',').every((member) => member === name)) &&
+      !users.some((user) => Number(user[2]) !== uid && Number(user[3]) === gid)
+    )
+  } catch {
+    // Missing local records (including NSS-only accounts) cannot prove exclusivity.
+    return false
+  }
+}
+
 /**
- * Refuse a path below any group- or world-writable directory without the
- * sticky bit: another user could swap the file out from under us there.
+ * Protect setup writes from directory replacement. Group write access is safe
+ * only when local account records prove that the effective user's group is private.
  */
-async function refuseWritableAncestor(parent: string): Promise<void> {
+export async function refuseWritableAncestor(
+  parent: string,
+  options: EnrollmentAncestorOptions = {},
+): Promise<void> {
+  const uid = process.geteuid?.()
+  if (uid === undefined) return
+  const gid = process.getegid?.()
   let component: string
   try {
     component = await realpath(parent)
   } catch {
     return
   }
+  // Load lazily, once per traversal: account changes take effect on the next write.
+  let privateGroup: boolean | undefined
   for (;;) {
     const metadata = await stat(component).catch(() => undefined)
     if (
@@ -405,10 +472,21 @@ async function refuseWritableAncestor(parent: string): Promise<void> {
       (metadata.mode & 0o022) !== 0 &&
       (metadata.mode & 0o1000) === 0
     ) {
-      throw new ClaustrumConsumerError(
-        'unsafe-file',
-        'Claustrum enrollment path has an unsafe writable ancestor',
-      )
+      if (privateGroup === undefined) {
+        privateGroup =
+          gid !== undefined && (await isPrivateGroup(uid, gid, options))
+      }
+      if (
+        (metadata.mode & 0o002) !== 0 ||
+        metadata.uid !== uid ||
+        metadata.gid !== gid ||
+        !privateGroup
+      ) {
+        throw new ClaustrumConsumerError(
+          'unsafe-file',
+          `Claustrum enrollment path has a writable ancestor: ${component}. Another user could replace it. Run: chmod g-w,o-w ${component}`,
+        )
+      }
     }
     const next = dirname(component)
     if (next === component) return
@@ -424,7 +502,7 @@ async function refuseWritableAncestor(parent: string): Promise<void> {
 async function ensurePrivateDirectory(directory: string): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const metadata = await stat(directory)
-  const uid = process.getuid?.()
+  const uid = process.geteuid?.()
   if (uid !== undefined && metadata.uid !== uid) {
     throw new ClaustrumConsumerError(
       'unsafe-file',
@@ -437,10 +515,11 @@ async function ensurePrivateDirectory(directory: string): Promise<void> {
 async function writeStateAtomic(
   path: string,
   state: EnrollmentState,
+  ancestorOptions: EnrollmentAncestorOptions = {},
 ): Promise<void> {
   const parent = dirname(path)
   await ensurePrivateDirectory(parent)
-  await refuseWritableAncestor(parent)
+  await refuseWritableAncestor(parent, ancestorOptions)
   const bytes = `${JSON.stringify(state)}\n`
   if (Buffer.byteLength(bytes) > ENROLLMENT_FILE_MAX_BYTES) {
     throw new ClaustrumConsumerError(
@@ -509,7 +588,10 @@ export async function readClaustrumEnrollmentStatus(
 export async function readClaustrumEnrollmentToken(
   tokenPath: string,
 ): Promise<EnrollmentTokenFile> {
-  await refuseWritableAncestor(tokenPath)
+  // Reads rely on O_NOFOLLOW and regular, owner-only, effective-uid-owned files:
+  // another user cannot plant a file owned by us. Ancestor checks protect writes
+  // from placing our secret in a swapped directory, not reads; keep their
+  // realpath/stat and account-file I/O off the authorization path.
   const value = await readBoundedJson(tokenPath)
   if (value === undefined)
     throw new ClaustrumConsumerError(
@@ -565,6 +647,7 @@ export class ClaustrumEnrollmentManager {
   readonly #now: () => number
   readonly #mintSecret: () => string
   readonly #writeTokenFile: typeof writeEnrollmentTokenFile
+  readonly #ancestorOptions: EnrollmentAncestorOptions
 
   constructor(options: {
     client: ClaustrumEnrollmentClient
@@ -573,7 +656,9 @@ export class ClaustrumEnrollmentManager {
     now?: () => number
     mintSecret?: () => string
     writeTokenFile?: typeof writeEnrollmentTokenFile
+    ancestorOptions?: EnrollmentAncestorOptions
   }) {
+    this.#ancestorOptions = options.ancestorOptions ?? {}
     this.#client = options.client
     this.#paths = options.paths
     this.#proposedName = options.proposedName
@@ -603,7 +688,11 @@ export class ClaustrumEnrollmentManager {
       errorCode: code,
       updatedAt: this.#now(),
     }
-    await writeStateAtomic(this.#paths.statePath, blocked)
+    await writeStateAtomic(
+      this.#paths.statePath,
+      blocked,
+      this.#ancestorOptions,
+    )
     return statusFromState(blocked)
   }
 
@@ -634,7 +723,11 @@ export class ClaustrumEnrollmentManager {
             tokenGeneration: token.token_generation,
             updatedAt: this.#now(),
           }
-          await writeStateAtomic(this.#paths.statePath, approved)
+          await writeStateAtomic(
+            this.#paths.statePath,
+            approved,
+            this.#ancestorOptions,
+          )
           state = approved
         }
         return {
@@ -655,7 +748,11 @@ export class ClaustrumEnrollmentManager {
           errorCode: 'missing_token',
           updatedAt: this.#now(),
         }
-        await writeStateAtomic(this.#paths.statePath, blocked)
+        await writeStateAtomic(
+          this.#paths.statePath,
+          blocked,
+          this.#ancestorOptions,
+        )
         return statusFromState(blocked)
       }
       if (state && state.phase !== 'pending') return statusFromState(state)
@@ -677,7 +774,11 @@ export class ClaustrumEnrollmentManager {
         // The secret is on disk before the proposal leaves the process: the
         // vault answers a repeated proposal with the same secret with the same
         // request id, so a crash between propose and saving the id costs nothing.
-        await writeStateAtomic(this.#paths.statePath, state)
+        await writeStateAtomic(
+          this.#paths.statePath,
+          state,
+          this.#ancestorOptions,
+        )
       }
 
       if (!state.requestId) {
@@ -694,7 +795,11 @@ export class ClaustrumEnrollmentManager {
             requestId: proposed.requestId,
             updatedAt: this.#now(),
           }
-          await writeStateAtomic(this.#paths.statePath, state)
+          await writeStateAtomic(
+            this.#paths.statePath,
+            state,
+            this.#ancestorOptions,
+          )
         } catch (error) {
           const refusal = classifyEnrollmentError(error)
           if (!refusal) throw error
@@ -724,11 +829,20 @@ export class ClaustrumEnrollmentManager {
             proposedName: state.proposedName,
             updatedAt: this.#now(),
           }
-          await writeStateAtomic(this.#paths.statePath, denied)
+          await writeStateAtomic(
+            this.#paths.statePath,
+            denied,
+            this.#ancestorOptions,
+          )
           return statusFromState(denied)
         }
         // The vault returns the token exactly once: it reaches disk before the
         // pending metadata (and its secret) is replaced.
+        await ensurePrivateDirectory(dirname(this.#paths.tokenPath))
+        await refuseWritableAncestor(
+          dirname(this.#paths.tokenPath),
+          this.#ancestorOptions,
+        )
         await this.#writeTokenFile(this.#paths.tokenPath, {
           token: outcome.token,
           token_generation: outcome.tokenGeneration,
@@ -741,7 +855,11 @@ export class ClaustrumEnrollmentManager {
           tokenGeneration: outcome.tokenGeneration,
           updatedAt: this.#now(),
         }
-        await writeStateAtomic(this.#paths.statePath, approved)
+        await writeStateAtomic(
+          this.#paths.statePath,
+          approved,
+          this.#ancestorOptions,
+        )
         return statusFromState(approved)
       } catch (error) {
         const refusal = classifyEnrollmentError(error)
