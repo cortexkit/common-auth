@@ -95,6 +95,7 @@ export {
   type VaultPrimaryBinding,
   type VaultPrimaryUnavailableReason,
   type VaultRosterFile,
+  type VaultRosterLockContext,
   type VaultRosterRow,
   vaultRoutingRows,
 } from './roster.js'

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   acceptAccount,
@@ -7,6 +7,7 @@ import {
   declineAccount,
   declineVaultRoute,
   isDeclined,
+  mutateVaultRoster,
   projectVaultRoster,
   readVaultRoster,
   recordVaultQuota,
@@ -109,6 +110,80 @@ function routeOf(
   if (!row) throw new Error(`missing route for ${credentialId}`)
   return row
 }
+
+test('publishes a runtime-only sibling file after asserting roster lock ownership', async () => {
+  const { path } = await fixture()
+  await refreshVaultRoster({ path, custody: inventory([work]) })
+  const original = await readFile(path, 'utf8')
+  const staged = `${path}.runtime-stage`
+  const published = `${path}.runtime`
+  await writeFile(staged, 'runtime data')
+  await mutateVaultRoster(path, async (_current, { assertOwned }) => {
+    await assertOwned()
+    await rename(staged, published)
+    return { result: 'published' }
+  })
+  expect(await readFile(published, 'utf8')).toBe('runtime data')
+  expect(await readFile(path, 'utf8')).toBe(original)
+})
+
+test('serializes competing roster mutations until the first callback returns', async () => {
+  const { path } = await fixture()
+  const entered = deferred<void>()
+  const release = deferred<void>()
+  const first = mutateVaultRoster(path, async () => {
+    entered.resolve()
+    await release.promise
+    return { result: undefined }
+  })
+  await entered.promise
+  let secondEntered = false
+  const second = mutateVaultRoster(path, () => {
+    secondEntered = true
+    return { result: undefined }
+  })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(secondEntered).toBe(false)
+  release.resolve()
+  await Promise.all([first, second])
+  expect(secondEntered).toBe(true)
+})
+
+test('lost roster ownership rejects and skips a caller rename and roster write', async () => {
+  const { path } = await fixture()
+  const roster = await refreshVaultRoster({ path, custody: inventory([work]) })
+  const before = await readFile(path, 'utf8')
+  const staged = `${path}.runtime-stage`
+  const published = `${path}.runtime`
+  await writeFile(staged, 'runtime data')
+  await expect(
+    mutateVaultRoster(path, async (_current, { assertOwned }) => {
+      await rm(`${path}.claustrum-roster.lock`, { recursive: true })
+      await writeFile(
+        `${path}.claustrum-roster.lock`,
+        JSON.stringify({
+          ownerId: 'foreign',
+          expiresAt: Date.now() + 30_000,
+        }),
+      )
+      await assertOwned()
+      await rename(staged, published)
+      return { result: undefined }
+    }),
+  ).rejects.toThrow('lock')
+  expect(await readFile(path, 'utf8')).toBe(before)
+  expect(await readFile(staged, 'utf8')).toBe('runtime data')
+  await expect(readFile(published, 'utf8')).rejects.toThrow()
+  expect(roster).toBeDefined()
+})
+
+test('one-argument roster mutation callbacks remain supported', async () => {
+  const { path } = await fixture()
+  const result = await mutateVaultRoster(path, (current) => ({
+    result: current === undefined ? 'empty roster' : 'existing roster',
+  }))
+  expect(result).toBe('empty roster')
+})
 
 test('discovery projects vault credentials as secret-free routing rows', async () => {
   const { path } = await fixture()
