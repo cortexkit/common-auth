@@ -10,7 +10,7 @@ The supplied ANTAUTH stderr was read: it records `EEXIST` at the contention fixt
 
 The dedicated Linux host was `tester@2.28.133.11` (`openai-auth-test`, eight online CPUs). Each probe ran with **16 busy-loop child processes**, sequentially, using Bun **1.3.14**. No sustained busy load ran on the operator's Mac. The checkout was copied using tar over SSH, excluding node_modules; frozen installation installed 754 packages without lockfile changes.
 
-Reproduce on a dedicated host only:
+Reproduce on a dedicated host only (`scripts/load-probe.mjs`):
 
 ```sh
 TEST_BUN="$HOME/rt/bun-1.3.14/bun" \
