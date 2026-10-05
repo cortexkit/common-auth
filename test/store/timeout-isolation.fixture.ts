@@ -13,6 +13,7 @@ let finalToken = ''
 const entered = deferred()
 const released = deferred()
 const readAllowed = deferred()
+const finalReadAllowed = deferred()
 
 beforeAll(async () => {
   lifetime = new TestLifetime()
@@ -41,16 +42,19 @@ afterEach(async () => {
   const pending = lifetime
   await pending.drain(() => current.cleanup())
 })
-it(
-  'intentional parked refresh timeout',
-  () =>
-    lifetime.tracked(async () => {
-      await refresh
-      finalToken = (await s.state()).accounts.a.refresh
-      terminal = true
-    }),
-  20,
-)
+it('intentional parked refresh timeout', () => {
+  const current = s
+  return lifetime.tracked(async () => {
+    await refresh
+    // Waiting for store calls alone finishes before this next event-loop turn.
+    // Teardown must also wait for the test body before deleting its state file.
+    setImmediate(() => finalReadAllowed.resolve())
+    await finalReadAllowed.promise
+    finalToken = (await current.state()).accounts.a.refresh
+    terminal = true
+    console.log(`timed-out body final read: ${finalToken}`)
+  })
+}, 20)
 it('successor sees only its own scenario after the timed-out body is terminal', () =>
   lifetime.tracked(async () => {
     expect(terminal).toBe(true)
