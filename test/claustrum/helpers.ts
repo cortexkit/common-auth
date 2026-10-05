@@ -48,6 +48,7 @@ export function inventoryRow(
     credentialType: 'oauth',
     refreshAdapter: family.refreshAdapter,
     serves: ['test-vendor'],
+    providerIds: [],
     operations: ['read'],
     state: 'active',
     recordVersion: 1,

@@ -244,35 +244,60 @@ posixTest(
   },
 )
 
-// Enable when claustrum-client's writeEnrollmentTokenFile accepts group-writable
-// ancestors owned by the caller's private group. It currently refuses those
-// ancestors, so this test cannot save the approved Connect token after the
-// pending enrollment state has been written.
-test.todo('persists an approved Connect token below a private group-writable ancestor', async () => {
-  const f = await fixture()
-  const paths = getClaustrumEnrollmentPaths(
-    join(f.parent, 'private', 'enrollment.json'),
+// The approved token is written by claustrum-client's own writer, which reads
+// the real /etc/passwd and /etc/group and offers no public way to substitute
+// them. So this end-to-end case can only run where this user's real group is
+// private (Linux with user private groups, such as the Ubuntu test VM); on
+// macOS (`staff`) or a CI runner in a shared group it is declared skipped.
+const hostGroupIsPrivate = await (async () => {
+  if (process.geteuid === undefined) return false
+  const probe = await realpath(
+    await mkdtemp(join(tmpdir(), 'enrollment-host-group-')),
   )
-  const manager = new ClaustrumEnrollmentManager({
-    paths,
-    ancestorOptions: f.options,
-    proposedName: 'test-auth-opencode',
-    mintSecret: () => '01'.repeat(32),
-    client: {
-      enrollPropose: async () => ({ requestId: 'request-1' }),
-      enrollPoll: async () => ({
-        status: 'approved',
-        name: 'test-auth-opencode',
-        token: '02'.repeat(32),
-        tokenGeneration: 1,
-      }),
-    },
-  })
-  expect((await manager.reconcile()).state).toBe('approved')
-  expect((await readClaustrumEnrollmentToken(paths.tokenPath)).token).toBe(
-    '02'.repeat(32),
-  )
-})
+  try {
+    await chmod(probe, 0o775)
+    await refuseWritableAncestor(probe)
+    return true
+  } catch {
+    return false
+  } finally {
+    await rm(probe, { recursive: true, force: true })
+  }
+})()
+
+test.skipIf(!hostGroupIsPrivate)(
+  'persists an approved Connect token below a private group-writable ancestor (needs a real private group)',
+  async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), 'enrollment-ancestors-')),
+    )
+    dirs.push(root)
+    const parent = join(root, 'group-writable')
+    await mkdir(parent)
+    await chmod(parent, 0o775)
+    const paths = getClaustrumEnrollmentPaths(
+      join(parent, 'private', 'enrollment.json'),
+    )
+    const manager = new ClaustrumEnrollmentManager({
+      paths,
+      proposedName: 'test-auth-opencode',
+      mintSecret: () => '01'.repeat(32),
+      client: {
+        enrollPropose: async () => ({ requestId: 'request-1' }),
+        enrollPoll: async () => ({
+          status: 'approved',
+          name: 'test-auth-opencode',
+          token: '02'.repeat(32),
+          tokenGeneration: 1,
+        }),
+      },
+    })
+    expect((await manager.reconcile()).state).toBe('approved')
+    expect((await readClaustrumEnrollmentToken(paths.tokenPath)).token).toBe(
+      '02'.repeat(32),
+    )
+  },
+)
 
 posixTest(
   'persists a pending Connect secret below a private group-writable ancestor',

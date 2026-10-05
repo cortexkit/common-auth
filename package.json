@@ -94,7 +94,7 @@
     "lint": "biome check .",
     "prepublishOnly": "bun run build",
     "check:ranges": "bun scripts/check-installed-ranges.mjs",
-    "check:claustrum-040": "bun scripts/check-claustrum-040.mjs",
+    "check:claustrum-floor": "bun scripts/check-claustrum-floor.mjs",
     "check:opentui-0511": "bun scripts/check-opentui-0511.mjs"
   },
   "dependencies": {
@@ -104,7 +104,7 @@
     "@opentui/core": ">=0.5.11",
     "@opentui/solid": ">=0.5.11",
     "solid-js": "1.9.12",
-    "@cortexkit/claustrum-client": ">=0.4.0",
+    "@cortexkit/claustrum-client": ">=0.6.2",
     "@opencode/plugin": ">=2.0.21"
   },
   "peerDependenciesMeta": {
@@ -126,7 +126,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
-    "@cortexkit/claustrum-client": "0.5.0",
+    "@cortexkit/claustrum-client": "0.6.2",
     "@opencode/plugin": "2.0.21",
     "@opentui/core": ">=0.5.12",
     "@opentui/solid": ">=0.5.12",

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const scratch = await mkdtemp(join(tmpdir(), 'common-auth-claustrum-040-'))
+const scratch = await mkdtemp(join(tmpdir(), 'common-auth-claustrum-floor-'))
 const run = (command, args, cwd) => {
   const result = spawnSync(command, args, { cwd, stdio: 'inherit' })
   if (result.error) throw result.error
@@ -19,7 +19,7 @@ try {
   })
   const pkgPath = join(scratch, 'package.json')
   const pkg = JSON.parse(await readFile(pkgPath, 'utf8'))
-  pkg.devDependencies['@cortexkit/claustrum-client'] = '0.4.0'
+  pkg.devDependencies['@cortexkit/claustrum-client'] = '0.6.2'
   await (await import('node:fs/promises')).writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
   run('bun', ['install', '--no-save', '--ignore-scripts'], scratch)
   run('bun', ['-e', `
@@ -38,7 +38,7 @@ try {
       } catch {}
       directory = directory.slice(0, directory.lastIndexOf('/'))
     }
-    if (version !== '0.4.0') throw new Error('Expected claustrum-client 0.4.0, loaded ' + (version ?? 'unknown package version'))
+    if (version !== '0.6.2') throw new Error('Expected claustrum-client 0.6.2, loaded ' + (version ?? 'unknown package version'))
     console.log('Loaded @cortexkit/claustrum-client ' + version)
   `], scratch)
   run('bun', ['test', 'test/claustrum/'], scratch)
