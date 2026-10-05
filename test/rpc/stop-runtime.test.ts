@@ -53,21 +53,38 @@ try {
   console.info(`RPC stop ${JSON.stringify(result)}`)
 }
 
-function miseBinary(tool: string, executable: string) {
-  const result = Bun.spawnSync(['mise', 'where', tool])
-  if (result.exitCode !== 0)
-    throw new Error(`${tool} is required: ${result.stderr}`)
-  return `${result.stdout.toString().trim()}/bin/${executable}`
+// Node 24 from mise when present (local machines), else `node` on PATH (CI
+// installs Node 24 with setup-node). Either way it must report a v24.
+function findNode24(): { binary: string; version: string } {
+  for (const candidate of [
+    () => {
+      const res = Bun.spawnSync(['mise', 'where', 'node@24'])
+      return res.exitCode === 0
+        ? `${res.stdout.toString().trim()}/bin/node`
+        : null
+    },
+    () => 'node',
+  ]) {
+    let binary: string | null = null
+    try {
+      binary = candidate()
+    } catch {}
+    if (!binary) continue
+    const res = Bun.spawnSync([binary, '--version'])
+    const version = res.stdout.toString().trim().replace(/^v/, '')
+    if (res.exitCode === 0 && version.startsWith('24.'))
+      return { binary, version }
+  }
+  throw new Error('Node 24 is required for the RPC stop test')
 }
 
-test('RPC stop closes held partial requests under Bun 1.3.14', async () => {
-  await checkStop(miseBinary('bun@1.3.14', 'bun'), 'src', '1.3.14')
+// The Bun test runner itself is the Bun under test: 1.3.14 in CI (the pinned
+// floor) and 1.4.2 locally, so between them both pinned Bun versions run it.
+test('RPC stop closes held partial requests under the running Bun', async () => {
+  await checkStop(process.execPath, 'src', Bun.version)
 })
 
-test('RPC stop closes held partial requests under Bun 1.4.2', async () => {
-  await checkStop(process.execPath, 'src', '1.4.2')
-})
-
-test('RPC stop closes held partial requests under Node 24.16.0', async () => {
-  await checkStop(miseBinary('node@24.16.0', 'node'), 'dist', '24.16.0')
+test('RPC stop closes held partial requests under Node 24', async () => {
+  const node = findNode24()
+  await checkStop(node.binary, 'dist', node.version)
 })

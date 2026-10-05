@@ -1070,6 +1070,5 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | rpc | Async drain rejection is sanitized and logged | new (neither copy) | pending async rejection is sanitized and logged at warn |
 | rpc | Mutually exclusive drain options | new (neither copy) | RPC server requires exactly one synchronous or asynchronous drain |
 | rpc | Raw non-object JSON reaches custom pending parser before session policy | new (neither copy) | pending custom parser receives non-object bodies before session checks |
-| rpc | Prompt shutdown of partial requests on Bun 1.3.14 | new (neither copy) | RPC stop closes held partial requests under Bun 1.3.14 |
-| rpc | Prompt shutdown of partial requests on Bun 1.4.2 | new (neither copy) | RPC stop closes held partial requests under Bun 1.4.2 |
-| rpc | Prompt shutdown of partial requests on Node 24.16.0 | new (neither copy) | RPC stop closes held partial requests under Node 24.16.0 |
+| rpc | Prompt shutdown of partial requests on the running Bun (1.3.14 in CI, 1.4.2 locally) | new (neither copy) | RPC stop closes held partial requests under the running Bun |
+| rpc | Prompt shutdown of partial requests on Node 24 | new (neither copy) | RPC stop closes held partial requests under Node 24 |
