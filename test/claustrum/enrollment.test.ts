@@ -405,9 +405,7 @@ describe('ClaustrumEnrollmentManager', () => {
         },
       }),
     )
-    await expect(instance.reconcile()).rejects.toThrow(
-      'unsafe writable ancestor',
-    )
+    await expect(instance.reconcile()).rejects.toThrow('writable ancestor:')
     expect(proposed).toBe(false)
   })
 

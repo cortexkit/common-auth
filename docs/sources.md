@@ -1092,3 +1092,20 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | rpc | Descriptor chmod overrides restrictive umask | new (neither copy) | port staging protects restrictive umask under Node 24 |
 | rpc | Client-only subpath loads no server modules | new (neither copy) | ./rpc/client loads only the client and port-file modules |
 | rpc | Client-only subpath is the same functions as ./rpc | new (neither copy) | ./rpc/client exports the same client functions as ./rpc |
+| claustrum | accepts a group-writable ancestor owned by the effective user and private group | new (neither copy) | accepts a group-writable ancestor owned by the effective user and private group |
+| claustrum | refuses a group-writable ancestor with another explicit group member | new (neither copy) | refuses a group-writable ancestor with another explicit group member |
+| claustrum | refuses a group-writable ancestor with another primary-gid user | new (neither copy) | refuses a group-writable ancestor with another primary-gid user |
+| claustrum | refuses a group-writable ancestor when its gid is absent | new (neither copy) | refuses a group-writable ancestor when its gid is absent |
+| claustrum | refuses a group-writable ancestor when account files are unreadable | new (neither copy) | refuses a group-writable ancestor when account files are unreadable |
+| claustrum | refuses a group-writable ancestor owned by another uid | new (neither copy) | refuses a group-writable ancestor owned by another uid |
+| claustrum | refuses a group-writable ancestor with another gid | new (neither copy) | refuses a group-writable ancestor with another gid |
+| claustrum | refuses a world-writable ancestor even with a private group | new (neither copy) | refuses a world-writable ancestor even with a private group |
+| claustrum | accepts a sticky world-writable ancestor | new (neither copy) | accepts a sticky world-writable ancestor |
+| claustrum | refuses a group-writable ancestor when its uid is absent | new (neither copy) | refuses a group-writable ancestor when its uid is absent |
+| claustrum | refuses malformed account records rather than assuming a private group | new (neither copy) | refuses malformed account records rather than assuming a private group |
+| claustrum | authorizes with an owner-only token below a non-private writable ancestor | new (neither copy) | authorizes with an owner-only token below a non-private writable ancestor |
+| claustrum | refuses a foreign-owned token even below a writable ancestor | new (neither copy) | refuses a foreign-owned token even below a writable ancestor |
+| claustrum | refuses a group-readable token even below a writable ancestor | new (neither copy) | refuses a group-readable token even below a writable ancestor |
+| claustrum | persists a pending Connect secret below a private group-writable ancestor | new (neither copy) | persists a pending Connect secret below a private group-writable ancestor |
+
+Pending provenance (excluded from the passing-test table): `persists an approved Connect token below a private group-writable ancestor` is a new library test marked TODO until the upstream Claustrum client token writer accepts private-group ancestors; its active run currently fails in `writeEnrollmentTokenFile`.
