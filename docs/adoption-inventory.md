@@ -82,6 +82,20 @@ Runtime exports:
 
 Type exports: `RpcLogChannel`, `ApplyRequest`, `ApplyResult`, `OpenDialogPayload`, `RpcNotification`, `NotificationScope`, `PortFileEntry`, `DiscoverPortFileOptions`, `RpcClient`, `RpcClientOptions`, `RpcServerHandle`, `RpcServerOptions`, `RpcServerAdoption`. Logging is optional channel-bound `{ warn, debug }`; directory hardening and sweep are host-selected, never inferred from environment.
 
+#### ./rpc guarantees (agreed with antigravity-auth for its private OpenCode 1 bridge, after 0.9.2)
+
+What the shared server and client promise, which a plugin can rely on instead of keeping its own HTTP engine:
+- The server binds only to 127.0.0.1 on an ephemeral port, with a fresh 32-byte bearer token per server, never written to logs or terminal streams.
+- Authorization is checked before a known call is parsed; unauthorized and malformed calls are refused and never reach `apply` or a drain. Unexpected handler errors answer with a fixed code, without their message.
+- Plugin policy stays in the narrow callbacks: `apply` validates its own commands; `parsePending` sees the raw parsed body and may require the cursor or keep its own session rules; `drainAsync` results are awaited and a rejection is sanitized. Late `apply` results past `applyDeadlineMs` are discarded; that does not cancel the callback.
+- Port files are published atomically as regular 0600 files in a 0700 directory (POSIX), from unpredictable exclusively created stages; an existing stage is never followed, reused or removed. `stop()` removes the port file only when it still holds this server's port and token.
+- Discovery with `exactPid` never falls back to another process; malformed or mismatched entries are rejected.
+- Loopback calls go straight to the socket and never through proxy environment variables. The client deadline covers connect, request and reply after discovery, as an ordinary timer (event-loop delay can make it fire late).
+- `timeoutMs` (default 90 000) is the per-request socket inactivity timer and `receiptTimeoutMs` (default 2 000) bounds receipt of the request; a plugin whose `apply` runs longer sets `timeoutMs` at least that long.
+- `stop()` closes active and half-sent connections on Bun 1.3.14, Bun 1.4.2 and Node 24.16; it does not cancel callbacks already running.
+
+Documented differences that are not reasons for another engine or option: the body cap is 1,000,000 bytes (not 1 MiB); error text capitalisation and the order of authorization versus parsing for unknown paths; the JSON charset spelling in the content type; malformed port files are left in place rather than removed. An empty body parses as `{}` and must be rejected by the plugin's `parsePending` if its policy requires fields.
+
 ### Peer version floors
 
 A floor (`@opentui/core` and `@opentui/solid` `>=0.5.11`, `@cortexkit/claustrum-client` `>=0.4.0`) claims what CI runs with exactly that version installed: common-auth builds, typechecks under its own configuration (`skipLibCheck: true`, `types: ["bun"]`), and the suites for that peer (sidebar build and TUI; vault) pass. It does not claim that a consumer checking every dependency's declarations (`skipLibCheck: false`) passes: with OpenTUI 0.5.11 and bun-types 1.4.2, declarations inside those packages fail under both @types/node 24.10.1 and 26.6.3 without common-auth present. common-auth's own declarations reference neither Bun nor Node types.
