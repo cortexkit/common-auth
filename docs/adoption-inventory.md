@@ -57,6 +57,8 @@ All ten subpaths are ESM, with `dist/<subpath>/index.js` and adjacent `index.d.t
 
 ### ./rpc
 
+(0.9.3) `./rpc/client` exports only the client side (`createRpcClient`, `discoverPortFile`, `DEFAULT_RPC_TIMEOUT_MS` and their types) and loads only the client and port-file modules, so a sidebar process can talk to its server without loading the server, its notification queue or the server registry. The same functions stay exported from `./rpc`.
+
 (0.9.2) RPC discovery files containing server tokens are published by renaming unpredictable, exclusively created staging files with descriptor-enforced 0600 permissions; an existing staging name rejects the write without publishing or removing that existing file.
 
 Default pending parsing (0.9.1) rejects present cursors that are not non-negative safe integers and present sessions that are not strings with 400 `invalid params`, while preserving absent cursors as 0, empty-string sessions, and the existing `requireSession` check; plugins can instead supply `parsePending` over the raw parsed JSON value, including non-object bodies and throw `RpcRequestError` for their own 4xx wire response (other parser errors return 400 `invalid params`).

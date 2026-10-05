@@ -1088,3 +1088,5 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | fs | Descriptor chmod overrides restrictive umask | new (neither copy) | atomic writer restores private mode despite restrictive umask |
 | rpc | Descriptor chmod overrides restrictive umask | new (neither copy) | port staging protects restrictive umask under Bun |
 | rpc | Descriptor chmod overrides restrictive umask | new (neither copy) | port staging protects restrictive umask under Node 24 |
+| rpc | Client-only subpath loads no server modules | new (neither copy) | ./rpc/client loads only the client and port-file modules |
+| rpc | Client-only subpath is the same functions as ./rpc | new (neither copy) | ./rpc/client exports the same client functions as ./rpc |
