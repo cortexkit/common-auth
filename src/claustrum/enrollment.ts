@@ -453,17 +453,20 @@ async function writeStateAtomic(
     `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
   )
   let descriptor: Awaited<ReturnType<typeof open>> | undefined
+  let created = false
   try {
     descriptor = await open(temporary, 'wx', 0o600)
+    created = true
     await descriptor.writeFile(bytes, 'utf8')
+    await descriptor.chmod(0o600)
     await descriptor.sync()
     await descriptor.close()
     descriptor = undefined
-    await chmod(temporary, 0o600)
     await rename(temporary, path)
+    created = false
   } finally {
     await descriptor?.close().catch(() => {})
-    await unlink(temporary).catch(() => {})
+    if (created) await unlink(temporary).catch(() => {})
   }
 }
 

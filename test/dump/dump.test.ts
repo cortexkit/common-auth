@@ -985,3 +985,27 @@ describe('dump directory byte cap', () => {
     expect(await readdir(dumpDir)).not.toContain(dumpArtifactName(1))
   })
 })
+
+for (const kind of ['file', 'symlink'] as const) {
+  test(`response dump refuses an existing stage ${kind}`, async () => {
+    const d = dumper({ stageName: () => 'seeded' })
+    const handle = await d.dump({
+      session: 'security',
+      channel: 'http',
+      bodyText: '{}',
+    })
+    expect(handle).toBeDefined()
+    const stage = `${handle!.responseFile}.seeded.partial`
+    const victim = join(root, 'victim')
+    await writeFile(victim, 'untouched')
+    if (kind === 'symlink') await symlink(victim, stage)
+    else await writeFile(stage, 'stale')
+    expect(await d.dumpResponse(handle, { status: 200 })).toBeUndefined()
+    expect(await readFile(victim, 'utf8')).toBe('untouched')
+    expect((await lstat(stage)).isSymbolicLink()).toBe(kind === 'symlink')
+    if (kind === 'file') expect(await readFile(stage, 'utf8')).toBe('stale')
+    await expect(lstat(handle!.responseFile)).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+  })
+}

@@ -57,6 +57,8 @@ All ten subpaths are ESM, with `dist/<subpath>/index.js` and adjacent `index.d.t
 
 ### ./rpc
 
+(0.9.2) RPC discovery files containing server tokens are published by renaming unpredictable, exclusively created staging files with descriptor-enforced 0600 permissions; an existing staging name rejects the write without publishing or removing that existing file.
+
 Default pending parsing (0.9.1) rejects present cursors that are not non-negative safe integers and present sessions that are not strings with 400 `invalid params`, while preserving absent cursors as 0, empty-string sessions, and the existing `requireSession` check; plugins can instead supply `parsePending` over the raw parsed JSON value, including non-object bodies and throw `RpcRequestError` for their own 4xx wire response (other parser errors return 400 `invalid params`).
 Exactly one of synchronous `drain` or `drainAsync` is required (0.9.1), with `RpcServerAsyncOptions` describing the async alternative without changing `RpcServerOptions['drain']`; async failures log at warn and return 500 `drain failed` without exposing the exception message.
 Server `stop()` (0.9.1) closes the listener then calls `closeAllConnections` when available and destroys tracked sockets (Bun 1.3.14 and 1.4.2 expose the method but leave partial requests open, while Node 24.16 closes them), so unfinished requests cannot delay shutdown, removing the port file only if its port and token still identify this server so a successor's registration is not deleted.
@@ -85,6 +87,8 @@ Type exports: `RpcLogChannel`, `ApplyRequest`, `ApplyResult`, `OpenDialogPayload
 A floor (`@opentui/core` and `@opentui/solid` `>=0.5.11`, `@cortexkit/claustrum-client` `>=0.4.0`) claims what CI runs with exactly that version installed: common-auth builds, typechecks under its own configuration (`skipLibCheck: true`, `types: ["bun"]`), and the suites for that peer (sidebar build and TUI; vault) pass. It does not claim that a consumer checking every dependency's declarations (`skipLibCheck: false`) passes: with OpenTUI 0.5.11 and bun-types 1.4.2, declarations inside those packages fail under both @types/node 24.10.1 and 26.6.3 without common-auth present. common-auth's own declarations reference neither Bun nor Node types.
 
 ### ./fs
+
+(0.9.2) Atomic JSON writes and refresh-lock lease updates write complete contents into exclusively created staging files, enforcing 0600 through the open descriptor before rename so readers never observe partial bytes.
 
 0.9.0 keeps the 0.8.0 lease lock. A lease holder that stalls past its lease can still overwrite or remove a successor's lock record (measured); the replacement is an OS kernel lock planned for 0.10.0.
 

@@ -57,13 +57,17 @@ for (const phase of ['write', 'rename'] as const) {
   test(`atomic writer cleans staging after ${phase} failure`, async () => {
     await fs.writeFile(target, 'old')
     const failure = new Error('injected failure')
-    const originalWrite = fs.writeFile
+    const originalOpen = fs.open
     const spy =
       phase === 'write'
-        ? spyOn(fs, 'writeFile').mockImplementation(
-            async (...args: Parameters<typeof fs.writeFile>) => {
-              await originalWrite(args[0], 'partial')
-              throw failure
+        ? spyOn(fs, 'open').mockImplementation(
+            async (...args: Parameters<typeof fs.open>) => {
+              const handle = await originalOpen(...args)
+              handle.writeFile = async () => {
+                await fs.writeFile(handle, 'partial')
+                throw failure
+              }
+              return handle
             },
           )
         : spyOn(fs, 'rename').mockRejectedValue(failure)
@@ -114,4 +118,36 @@ test('a lease expiring after the pre-rename fence can overwrite a successor', as
   } finally {
     await first?.release()
   }
+})
+
+for (const kind of ['file', 'symlink'] as const) {
+  test(`atomic writer refuses an existing stage ${kind}`, async () => {
+    const stage = `${target}.seeded.tmp`
+    const victim = join(dir, 'victim')
+    await fs.writeFile(victim, 'untouched')
+    if (kind === 'symlink') await fs.symlink(victim, stage)
+    else await fs.writeFile(stage, 'stale', { mode: 0o644 })
+    const options = { stageName: () => 'seeded' }
+    await expect(
+      writeJsonAtomic(
+        target,
+        { secret: 'token' },
+        options as Parameters<typeof writeJsonAtomic>[2],
+      ),
+    ).rejects.toMatchObject({ code: 'EEXIST' })
+    expect(await fs.readFile(victim, 'utf8')).toBe('untouched')
+    expect((await fs.lstat(stage)).isSymbolicLink()).toBe(kind === 'symlink')
+    if (kind === 'file') expect(await fs.readFile(stage, 'utf8')).toBe('stale')
+    await expect(fs.lstat(target)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+}
+
+test('atomic writer restores private mode despite restrictive umask', async () => {
+  const previous = process.umask(0o777)
+  try {
+    await writeJsonAtomic(target, { secret: 'token' })
+  } finally {
+    process.umask(previous)
+  }
+  expect((await fs.stat(target)).mode & 0o777).toBe(0o600)
 })
