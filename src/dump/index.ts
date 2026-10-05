@@ -3,6 +3,7 @@ import {
   chmod,
   lstat,
   mkdir,
+  open,
   readdir,
   readFile,
   rename,
@@ -74,6 +75,8 @@ export interface DumpOptions {
    * files that were written stay.
    */
   cleanupFailedDumps?: boolean
+  /** Test seam for forcing response staging-name collisions. */
+  stageName?: () => string
 }
 
 export interface DumpInput {
@@ -326,20 +329,26 @@ export async function sweepDumpDirectory(
  * reader never sees half a file and a symlink planted at a predictable
  * staging name is never followed.
  */
-async function replaceFile(path: string, text: string): Promise<void> {
+async function replaceFile(
+  path: string,
+  text: string,
+  stageName?: () => string,
+): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
-    const staging = `${path}.${randomBytes(12).toString('hex')}.partial`
+    const staging = `${path}.${stageName ? stageName() : randomBytes(12).toString('hex')}.partial`
     let created = false
+    let handle: Awaited<ReturnType<typeof open>> | undefined
     try {
-      await writeFile(staging, text, {
-        encoding: 'utf8',
-        mode: 0o600,
-        flag: 'wx',
-      })
+      handle = await open(staging, 'wx', 0o600)
       created = true
+      await handle.writeFile(text, 'utf8')
+      await handle.chmod(0o600)
+      await handle.close()
+      handle = undefined
       await rename(staging, path)
       return
     } catch (error) {
+      await handle?.close().catch(() => {})
       if (created) await unlink(staging).catch(() => {})
       const code = (error as NodeJS.ErrnoException).code
       if (code === 'EEXIST' && attempt === 0) continue
@@ -748,6 +757,7 @@ export function createDumper(options: DumpOptions): Dumper {
       await replaceFile(
         result.responseFile,
         `${JSON.stringify(artifact, null, 2)}\n`,
+        options.stageName,
       )
       return result.responseFile
     } catch (error) {

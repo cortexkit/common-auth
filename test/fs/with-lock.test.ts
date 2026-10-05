@@ -266,7 +266,7 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
     renewIntervalMs: 100,
   })
   const before = JSON.parse(await fs.readFile(path, 'utf8'))
-  const originalWrite = fs.writeFile
+  const originalOpen = fs.open
   const originalRename = fs.rename
   let writes = 0
   let renames = 0
@@ -275,8 +275,8 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
   const observed = new Promise<void>((resolve) => {
     finish = resolve
   })
-  const writeSpy = spyOn(fs, 'writeFile').mockImplementation(
-    async (...args: Parameters<typeof fs.writeFile>) => {
+  const writeSpy = spyOn(fs, 'open').mockImplementation(
+    async (...args: Parameters<typeof fs.open>) => {
       if (
         String(args[0]).startsWith(`${path}.`) &&
         String(args[0]).endsWith('.tmp')
@@ -287,9 +287,10 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
         } catch (error) {
           observedError = error
         }
-        expect(args[2]).toMatchObject({ mode: 0o600 })
+        expect(args[1]).toBe('wx')
+        expect(args[2]).toBe(0o600)
       }
-      return originalWrite(...args)
+      return originalOpen(...args)
     },
   )
   const renameSpy = spyOn(fs, 'rename').mockImplementation(
@@ -297,6 +298,7 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
       if (String(args[1]) === path) {
         renames++
         expect(String(args[0])).not.toBe(path)
+        expect((await fs.stat(args[0])).mode & 0o777).toBe(0o600)
         await originalRename(...args)
         finish()
         return

@@ -1,14 +1,14 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Dirent } from 'node:fs'
 import {
   chmod,
   mkdir,
+  open,
   readdir,
   readFile,
   rename,
   rmdir,
   unlink,
-  writeFile,
 } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { RpcLogChannel } from './index.js'
@@ -117,10 +117,12 @@ export async function writePortFile(
   options: {
     secureDir?: boolean
     beforeWrite?: () => void | Promise<void>
+    /** Test seam for forcing staging-name collisions; defaults to randomUUID. */
+    stageName?: () => string
   } = {},
 ): Promise<string> {
   // The directory can be removed by another project's sweep between our
-  // mkdir and the first writeFile/rename, so the whole create-then-rename
+  // mkdir and the first open/rename, so the whole create-then-rename
   // unit is retried once on ENOENT. The retry recreates the directory; a
   // persistent ENOENT (e.g. permission, read-only parent) will surface on
   // the second attempt — failing fast beats an unbounded loop.
@@ -133,17 +135,22 @@ export async function writePortFile(
     await options.beforeWrite?.()
     const full: PortFileEntry = { ...entry, startedAt: Date.now() }
     const target = join(dir, `port-${entry.pid}.json`)
-    const tmp = `${target}.${process.pid}.tmp`
+    const tmp = `${target}.${(options.stageName ?? randomUUID)()}.tmp`
+    let handle: Awaited<ReturnType<typeof open>> | undefined
+    let created = false
     try {
-      await writeFile(tmp, JSON.stringify(full), {
-        encoding: 'utf8',
-        mode: 0o600,
-      })
+      handle = await open(tmp, 'wx', 0o600)
+      created = true
+      await handle.writeFile(JSON.stringify(full), 'utf8')
+      await handle.chmod(0o600)
+      await handle.close()
+      handle = undefined
       await rename(tmp, target)
-    } catch (error) {
-      // The staged file carries the server token; never leave it behind.
-      await unlink(tmp).catch(() => {})
-      throw error
+      created = false
+    } finally {
+      await handle?.close().catch(() => {})
+      // Remove token-bearing staging bytes only if this call created them.
+      if (created) await unlink(tmp).catch(() => {})
     }
     return target
   }

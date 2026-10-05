@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { LockOwnershipError, lockPathFor } from './with-lock.js'
 
@@ -120,15 +128,23 @@ export async function acquireRefreshFileLock(options: {
   async function writeOwner() {
     // Readers must see a complete lease, even while renewal is writing.
     const tempPath = `${lockPath}.${randomUUID()}.tmp`
+    let handle: Awaited<ReturnType<typeof open>> | undefined
+    let created = false
     try {
-      await writeFile(
-        tempPath,
+      handle = await open(tempPath, 'wx', 0o600)
+      created = true
+      await handle.writeFile(
         `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`,
-        { encoding: 'utf8', mode: 0o600, flag: 'wx' },
+        'utf8',
       )
+      await handle.chmod(0o600)
+      await handle.close()
+      handle = undefined
       await rename(tempPath, lockPath)
+      created = false
     } finally {
-      await rm(tempPath, { force: true }).catch(() => {})
+      await handle?.close().catch(() => {})
+      if (created) await rm(tempPath, { force: true }).catch(() => {})
     }
   }
 

@@ -1072,3 +1072,19 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | rpc | Raw non-object JSON reaches custom pending parser before session policy | new (neither copy) | pending custom parser receives non-object bodies before session checks |
 | rpc | Prompt shutdown of partial requests on the running Bun (1.3.14 in CI, 1.4.2 locally) | new (neither copy) | RPC stop closes held partial requests under the running Bun |
 | rpc | Prompt shutdown of partial requests on Node 24 | new (neither copy) | RPC stop closes held partial requests under Node 24 |
+
+| rpc | Exclusive private staging regression | new (neither copy) | port staging protects old file under Bun |
+| rpc | Exclusive private staging regression | new (neither copy) | port staging protects old symlink under Bun |
+| rpc | Exclusive private staging regression | new (neither copy) | port staging protects collision file under Bun |
+| rpc | Exclusive private staging regression | new (neither copy) | port staging protects collision symlink under Bun |
+| rpc | Exclusive private staging regression | new (neither copy) | port staging protects old file under Node 24 |
+| rpc | Exclusive private staging regression | new (neither copy) | port staging protects old symlink under Node 24 |
+| rpc | Exclusive private staging regression | new (neither copy) | port staging protects collision file under Node 24 |
+| rpc | Exclusive private staging regression | new (neither copy) | port staging protects collision symlink under Node 24 |
+| fs | Existing stage fails closed | new (neither copy) | atomic writer refuses an existing stage file |
+| dump | Existing stage fails closed | new (neither copy) | response dump refuses an existing stage file |
+| fs | Existing stage fails closed | new (neither copy) | atomic writer refuses an existing stage symlink |
+| dump | Existing stage fails closed | new (neither copy) | response dump refuses an existing stage symlink |
+| fs | Descriptor chmod overrides restrictive umask | new (neither copy) | atomic writer restores private mode despite restrictive umask |
+| rpc | Descriptor chmod overrides restrictive umask | new (neither copy) | port staging protects restrictive umask under Bun |
+| rpc | Descriptor chmod overrides restrictive umask | new (neither copy) | port staging protects restrictive umask under Node 24 |
