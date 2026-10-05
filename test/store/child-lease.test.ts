@@ -52,14 +52,19 @@ it('a crash child uses production leases and renewal, and only the exited child 
     credential: oauth('r-a'),
     exitAt: 'after-state-write',
     stallAfterAcquireMs: 1_200,
-    // Renewal can defer one beat while taking its eviction marker.
-    pauseBeforeStateMs: (2 * POOL_LOCK_DEFAULTS.ttlMs) / 3 + 500,
+    waitForRenewal: true,
+    waitForParentRead: true,
   })
   await child.printed('lease:')
   const first = childLeases(child.output())[0]
   if (!first) throw new Error('child did not announce its lease')
-  const live = JSON.parse(await readFile(first.path, 'utf8'))
-  expect(live.expiresAt).toBeGreaterThan(Date.now())
+  try {
+    const live = JSON.parse(await readFile(first.path, 'utf8'))
+    expect(live.ownerId).toBe(first.ownerId)
+    expect(live.expiresAt).toBeGreaterThanOrEqual(first.expiresAt)
+  } finally {
+    child.continue()
+  }
   expect(await child.exited).toBe(CRASH_EXIT_CODE)
   expect(child.output()).toContain('step:after-state-write\n')
   expect(child.output()).not.toContain('failed:')
@@ -92,5 +97,6 @@ it('a crash child uses production leases and renewal, and only the exited child 
   expect(
     (await s.open().add({ id: 'b', credential: oauth('r-b') })).outcome,
   ).toBe('added')
-  // ~8.4s awaiting renewal + up to 5s reclaiming a crashed eviction marker leaves load headroom in 30s.
+  // Bun's test timeout catches missing renewal; the crash process proceeds
+  // only after its lock-step observers confirm every acquired lease renewed.
 }, 30_000)

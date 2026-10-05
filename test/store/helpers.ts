@@ -161,6 +161,8 @@ export interface ChildHandle {
   /** Resolves when the child prints the given marker line. */
   printed(marker: string): Promise<void>
   output(): string
+  /** Releases a child parked for the parent's live-lease read. */
+  continue(): void
 }
 
 interface ChildLease {
@@ -204,7 +206,7 @@ async function expireChildLeases(output: string): Promise<void> {
 /** Runs one store operation; crashed leases are expired after confirmed exit. */
 export function runChild(task: Record<string, unknown>): ChildHandle {
   const child = spawn(process.execPath, [childScript, JSON.stringify(task)], {
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
   })
   let out = ''
   const waiters: Array<{ marker: string; resolve: () => void }> = []
@@ -235,6 +237,7 @@ export function runChild(task: Record<string, unknown>): ChildHandle {
         else waiters.push({ marker, resolve })
       }),
     output: () => out,
+    continue: () => child.stdin.end('continue\n'),
   }
 }
 
