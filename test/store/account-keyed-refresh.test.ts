@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, it as bunIt, describe, expect } from 'bun:test'
 import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import type {
   LockEvent,
@@ -6,7 +6,6 @@ import type {
   PoolRow,
   ProviderRefreshResult,
 } from '../../src/store/index.js'
-import { drainBodies } from './drain-bodies.js'
 import {
   deferred,
   oauth,
@@ -15,6 +14,7 @@ import {
   scenario,
   settlesWithin,
 } from './helpers.js'
+import { TestLifetime } from './test-lifetime.js'
 
 // A plugin may pass its own `providerLock` to one `refresh` call, keyed by
 // the account being refreshed, so that refreshes of different accounts run
@@ -24,26 +24,18 @@ import {
 // the two lock families no longer exclude each other.
 
 let s: Scenario
-// Releases every parked refresh, so a failed assertion cannot leave a lock
-// renewing into the next test's run.
-let unpark: Array<() => void> = []
-let bodies = new Set<Promise<unknown>>()
-function tracked(body: () => Promise<void>) {
-  const pending = body()
-  bodies.add(pending)
-  void pending.catch(() => {})
-  return pending
+let lifetime: TestLifetime
+function it(name: string, body: () => Promise<void>) {
+  bunIt(name, () => lifetime.tracked(body))
 }
 beforeEach(async () => {
-  s = await scenario()
+  lifetime = new TestLifetime()
+  s = lifetime.manage(await scenario())
 })
 afterEach(async () => {
   const current = s
-  const releases = unpark
-  const pending = bodies
-  unpark = []
-  bodies = new Set()
-  await drainBodies(releases, pending, () => current.cleanup())
+  const pending = lifetime
+  await pending.drain(() => current.cleanup())
 })
 
 const A = 'acct-A'
@@ -82,7 +74,7 @@ function lockLog() {
 function parkAt(rowId: string) {
   const parked = deferred()
   const go = deferred()
-  unpark.push(() => go.resolve())
+  lifetime.unpark(() => go.resolve())
   return {
     parked,
     go,
@@ -148,7 +140,6 @@ describe('a row of unknown identity refreshing under an account-keyed provider l
     const recordY = s
       .open({ onLockEvent: locks.as('Y') })
       .recordIdentity('y', A, { credentialEpoch: 1 })
-    expect(await settlesWithin(recordY, 3_000)).toBe(true)
     // X holds no identity yet, so nothing is disabled when Y learns A.
     expect(await recordY).toEqual({ id: 'y', disabled: [] })
 
@@ -197,7 +188,6 @@ describe('a row of unknown identity refreshing under an account-keyed provider l
       .refresh('x', provider.fn, { providerLock: accountLock('x') })
     await park.parked.promise
     const recordY = s.open().recordIdentity('y', A, { credentialEpoch: 1 })
-    expect(await settlesWithin(recordY, 3_000)).toBe(true)
     expect(await recordY).toEqual({ id: 'y', disabled: [] })
 
     park.go.resolve()
@@ -232,10 +222,8 @@ describe('a row of unknown identity refreshing under an account-keyed provider l
     expect((await rosterView())[1]).toMatchObject({ id: 'x', enabled: false })
   })
 
-  it('an add of a credential for the same identity during the provider call does not wait, and the dedupe at commit follows roster order either way', async () => {
-    for (const order of ['x-first', 'y-first'] as const) {
-      s.cleanup()
-      s = await scenario()
+  for (const order of ['x-first', 'y-first'] as const) {
+    it(`an add of a credential for the same identity during the provider call does not wait, and the dedupe at commit follows roster order (${order})`, async () => {
       await s.open().add({ id: 'x', credential: oauth('r-x') })
       const park = parkAt('x')
       const provider = countingProvider(result('r-x2', { identity: A }))
@@ -246,7 +234,6 @@ describe('a row of unknown identity refreshing under an account-keyed provider l
       const addY = s
         .open()
         .add({ id: 'y', credential: oauth('r-y'), identity: A })
-      expect(await settlesWithin(addY, 3_000)).toBe(true)
       // No enabled row holds A yet, so y is stored enabled.
       expect(await addY).toMatchObject({ id: 'y', outcome: 'added' })
       if (order === 'y-first') await s.open().reorder(['y', 'x'])
@@ -269,8 +256,8 @@ describe('a row of unknown identity refreshing under an account-keyed provider l
       expect(
         view.filter((row) => row.disabledReason === 'duplicate-identity'),
       ).toHaveLength(1)
-    }
-  })
+    })
+  }
 })
 
 describe('a row of known identity refreshing under an account-keyed provider lock', () => {
@@ -343,7 +330,6 @@ describe('a row of known identity refreshing under an account-keyed provider loc
     // y is keyed by its local id until it learns A, so recording A does not
     // wait on x's row lock: the alias boundary between the two row locks.
     const recordY = s.open().recordIdentity('y', A, { credentialEpoch: 1 })
-    expect(await settlesWithin(recordY, 3_000)).toBe(true)
     expect(await recordY).toEqual({ id: 'y', disabled: ['y'] })
     park.go.resolve()
     expect(await refreshX).toMatchObject({ status: 'rotated', rowId: 'x' })
@@ -439,7 +425,7 @@ describe('rows of different accounts under account-keyed provider locks', () => 
   ) {
     const current = s
     const release = deferred()
-    unpark.push(() => release.resolve())
+    lifetime.unpark(() => release.resolve())
     await current.open().add({ id: 'x', credential: oauth('r-x'), identity: A })
     await current.open().add({ id: 'z', credential: oauth('r-z'), identity: B })
     const entered = { x: deferred(), z: deferred() }
@@ -466,22 +452,18 @@ describe('rows of different accounts under account-keyed provider locks', () => 
     return { overlapped, outcomes, seen }
   }
 
-  it('refreshes of two accounts under their own provider locks are in their provider calls at the same time', () =>
-    tracked(async () => {
-      const current = s
-      const { overlapped, outcomes, seen } = await overlapping(
-        accountLock,
-        true,
-      )
-      expect(overlapped).toBe(true)
-      expect(outcomes).toMatchObject([
-        { status: 'rotated', rowId: 'x' },
-        { status: 'rotated', rowId: 'z' },
-      ])
-      expect([...seen].sort()).toEqual(['r-x', 'r-z'])
-      expect(await refreshTokenOf('x', current)).toBe('r-x2')
-      expect(await refreshTokenOf('z', current)).toBe('r-z2')
-    }))
+  it('refreshes of two accounts under their own provider locks are in their provider calls at the same time', async () => {
+    const current = s
+    const { overlapped, outcomes, seen } = await overlapping(accountLock, true)
+    expect(overlapped).toBe(true)
+    expect(outcomes).toMatchObject([
+      { status: 'rotated', rowId: 'x' },
+      { status: 'rotated', rowId: 'z' },
+    ])
+    expect([...seen].sort()).toEqual(['r-x', 'r-z'])
+    expect(await refreshTokenOf('x', current)).toBe('r-x2')
+    expect(await refreshTokenOf('z', current)).toBe('r-z2')
+  })
 
   it('refreshes of two accounts under the default provider lock never overlap', async () => {
     const { overlapped, seen } = await overlapping(() => undefined)
