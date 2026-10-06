@@ -1,5 +1,6 @@
 import { spyOn } from 'bun:test'
 import { IncomingMessage, Server, ServerResponse } from 'node:http'
+import type { Socket } from 'node:net'
 
 /** Observe the early refusal without changing the server's request listeners. */
 export function requestPhaseClock() {
@@ -21,6 +22,9 @@ export function requestPhaseClock() {
       ...detail,
     })
   }
+  const sockets = new Map<Socket, number>()
+  let refusedSocket: Socket | undefined
+  let serverPort: number | undefined
   const emit = Server.prototype.emit
   restores.push(
     spyOn(Server.prototype, 'emit').mockImplementation(function (
@@ -34,35 +38,60 @@ export function requestPhaseClock() {
         req instanceof IncomingMessage &&
         res instanceof ServerResponse &&
         Number(req.headers['content-length']) > 1_000_000
-      if (oversized) {
-        mark('server-request', { declared: req.headers['content-length'] })
+      if (oversized) serverPort = req.socket.localPort
+      const observed =
+        event === 'request' &&
+        req instanceof IncomingMessage &&
+        res instanceof ServerResponse &&
+        serverPort !== undefined &&
+        req.socket.localPort === serverPort
+      if (observed) {
+        const socket = req.socket
+        if (oversized) refusedSocket = socket
+        const request = oversized ? 'oversized' : 'follow-up'
+        const fresh = !sockets.has(socket)
+        if (fresh) sockets.set(socket, sockets.size + 1)
+        const detail = {
+          request,
+          socketId: sockets.get(socket),
+          remotePort: socket.remotePort,
+          reused413Connection: oversized ? null : socket === refusedSocket,
+        }
+        const record = (phase: string, extra: Record<string, unknown> = {}) =>
+          mark(phase, { ...detail, ...extra })
+        record('server-request', { declared: req.headers['content-length'] })
         const head = res.writeHead
         restores.push(
           spyOn(res, 'writeHead').mockImplementation((...values) => {
-            mark('server-write-headers', { status: values[0] })
+            record('server-write-headers', { status: values[0] })
             return Reflect.apply(head, res, values)
           }),
         )
-        res.once('finish', () => mark('server-response-finish'))
-        const socket = req.socket
-        const end = socket.end
-        restores.push(
-          spyOn(socket, 'end').mockImplementation((...values) => {
-            mark('socket-local-end', { side: 'server' })
-            return Reflect.apply(end, socket, values)
-          }),
-        )
-        const destroy = socket.destroy
-        restores.push(
-          spyOn(socket, 'destroy').mockImplementation((...values) => {
-            mark('socket-local-destroy', { side: 'server' })
-            return Reflect.apply(destroy, socket, values)
-          }),
-        )
-        socket.once('end', () => mark('socket-peer-end', { side: 'client' }))
-        socket.once('close', (hadError) => mark('socket-close', { hadError }))
-        req.once('end', () => mark('body-discard-end'))
-        req.once('aborted', () => mark('body-aborted'))
+        res.once('finish', () => record('server-response-finish'))
+        if (fresh) {
+          const end = socket.end
+          restores.push(
+            spyOn(socket, 'end').mockImplementation((...values) => {
+              record('socket-local-end', { side: 'server' })
+              return Reflect.apply(end, socket, values)
+            }),
+          )
+          const destroy = socket.destroy
+          restores.push(
+            spyOn(socket, 'destroy').mockImplementation((...values) => {
+              record('socket-local-destroy', { side: 'server' })
+              return Reflect.apply(destroy, socket, values)
+            }),
+          )
+          socket.once('end', () =>
+            record('socket-peer-end', { side: 'client' }),
+          )
+          socket.once('close', (hadError) =>
+            record('socket-close', { hadError }),
+          )
+        }
+        req.once('end', () => record('body-end'))
+        req.once('aborted', () => record('body-aborted'))
       }
       const result = Reflect.apply(emit, this, [event, ...args]) as boolean
       if (oversized) {

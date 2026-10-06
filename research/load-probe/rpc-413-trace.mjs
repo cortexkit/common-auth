@@ -8,6 +8,9 @@ const origin = performance.now()
 const requests = new WeakMap()
 const servers = new WeakMap()
 let next = 0
+const sockets = new WeakMap()
+const refusedSockets = new WeakMap()
+let nextSocket = 0
 function phase(id, name, extra = {}) {
   console.log(JSON.stringify({ probe: 'rpc-413', id, phase: name, ms: +(performance.now() - origin).toFixed(3), ...extra }))
 }
@@ -16,13 +19,16 @@ Server.prototype.emit = function (event, ...args) {
   if (event === 'request') {
     const [req, res] = args
     if (Number(req.headers['content-length']) > 1_000_000 || (process.env.RPC_413_TRACE_ALL === '1' && req.method === 'POST')) {
+      const oversized = Number(req.headers['content-length']) > 1_000_000
+      if (oversized) refusedSockets.set(this, req.socket)
+      if (!sockets.has(req.socket)) sockets.set(req.socket, ++nextSocket)
       const record = { id: ++next, bytes: 0 }
       const records = servers.get(this) ?? []
       records.push(record)
       servers.set(this, records)
       requests.set(req, record)
       requests.set(res, record)
-      phase(record.id, 'server-request', { declared: req.headers['content-length'] })
+      phase(record.id, 'server-request', { declared: req.headers['content-length'], serverPort: req.socket.localPort, remotePort: req.socket.remotePort, socketId: sockets.get(req.socket), reused413Connection: oversized ? null : (refusedSockets.has(this) ? refusedSockets.get(this) === req.socket : null) })
       for (const name of ['end', 'destroy']) {
         const original = req.socket[name]
         req.socket[name] = function (...values) {
@@ -79,9 +85,9 @@ const originalFetch = globalThis.fetch
 let clients = 0
 const promiseIds = new WeakMap()
 globalThis.fetch = function (url, options) {
-  if (typeof options?.body !== 'string' || options.body.length <= 1_000_000) return originalFetch(url, options)
+  if (typeof options?.body !== 'string' || (options.body.length <= 1_000_000 && process.env.RPC_413_TRACE_ALL !== '1')) return originalFetch(url, options)
   const id = `client-${++clients}`
-  phase(id, 'fetch-start', { bytes: Buffer.byteLength(options.body) })
+  phase(id, 'fetch-start', { url: String(url), bytes: Buffer.byteLength(options.body) })
   options.signal?.addEventListener('abort', () => phase(id, 'signal-abort', { reason: String(options.signal.reason) }), { once: true })
   const pending = originalFetch(url, options)
   promiseIds.set(pending, `${id}:fetch`)
