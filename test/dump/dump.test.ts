@@ -21,6 +21,7 @@ import {
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observedState } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+import { responseClocks } from './response-clocks.js'
 
 const hooks = lifetimeHooks()
 const { afterEach, test } = hooks
@@ -534,39 +535,64 @@ describe('response artifacts', () => {
   })
 
   test('response artifacts sanitize message fields and preserve diagnostics presence', async () => {
-    const d = dumper()
-    const handle = await d.dump({
-      session: 'ses-a',
-      channel: 'http',
-      bodyText: '{}',
-    })
-    expect(handle).toBeDefined()
-    const written = await d.dumpResponse(handle, {
-      status: 200,
-      requestId: 'msg_provider',
-      usage: { input_tokens: 1 },
-      fields: {
+    const clocks = responseClocks(hooks.lifetime.signal, performance.now())
+    let failed = false
+    try {
+      const d = dumper()
+      const handle = await clocks.measure('d.dump', dumpDir, () =>
+        d.dump({
+          session: 'ses-a',
+          channel: 'http',
+          bodyText: '{}',
+        }),
+      )
+      expect(handle).toBeDefined()
+      const written = await clocks.measure('d.dumpResponse', dumpDir, () =>
+        d.dumpResponse(handle, {
+          status: 200,
+          requestId: 'msg_provider',
+          usage: { input_tokens: 1 },
+          fields: {
+            model: 'any-model',
+            diagnostics: null,
+            trace: 'Bearer response-secret',
+          },
+        }),
+      )
+      // One response staging rename proves the writer's imported rename reaches the spy.
+      expect(
+        clocks.phases.filter((phase) => phase.operation === 'promises.rename'),
+      ).toHaveLength(1)
+      expect(
+        clocks.phases.filter((phase) => phase.operation === 'promises.open'),
+      ).toHaveLength(1)
+      expect(written).toBe(handle!.responseFile)
+      expect(handle!.responseFile).toBe(
+        handle!.files.body.replace(/\.body\.json$/, '.response.json'),
+      )
+      const artifact = JSON.parse(await readFile(handle!.responseFile, 'utf8'))
+      expect(artifact).toEqual({
+        status: 200,
+        requestId: 'msg_provider',
+        usage: { input_tokens: 1 },
         model: 'any-model',
         diagnostics: null,
-        trace: 'Bearer response-secret',
-      },
-    })
-    expect(written).toBe(handle!.responseFile)
-    expect(handle!.responseFile).toBe(
-      handle!.files.body.replace(/\.body\.json$/, '.response.json'),
-    )
-    const artifact = JSON.parse(await readFile(handle!.responseFile, 'utf8'))
-    expect(artifact).toEqual({
-      status: 200,
-      requestId: 'msg_provider',
-      usage: { input_tokens: 1 },
-      model: 'any-model',
-      diagnostics: null,
-      trace: MASK,
-      complete: true,
-    })
-    expect(JSON.stringify(artifact)).not.toContain('response-secret')
-    expect((await stat(handle!.responseFile)).mode & 0o777).toBe(0o600)
+        trace: MASK,
+        complete: true,
+      })
+      expect(JSON.stringify(artifact)).not.toContain('response-secret')
+      expect((await stat(handle!.responseFile)).mode & 0o777).toBe(0o600)
+    } catch (error) {
+      failed = true
+      throw error
+    } finally {
+      try {
+        await Bun.sleep(0)
+        clocks.finish(failed)
+      } finally {
+        clocks.restore()
+      }
+    }
   })
 
   test('response artifacts preserve opening usage while recording terminal usage and reason', async () => {
