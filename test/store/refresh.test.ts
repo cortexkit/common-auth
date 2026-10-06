@@ -62,6 +62,21 @@ async function rowsOf() {
   return load.rows
 }
 
+function recordOwnership(held: Set<string>, name: string, event: LockEvent) {
+  if (event.type === 'acquired') held.add(name)
+  else if (event.type === 'released') held.delete(name)
+}
+
+it('contended lock events preserve acquired lock evidence until release', () => {
+  const held = new Set<string>()
+  const lock = { name: 'row-a', path: s.statePath }
+  recordOwnership(held, lock.name, { type: 'acquired', ...lock })
+  recordOwnership(held, lock.name, { type: 'contended', ...lock })
+  expect([...held]).toEqual(['row-a'])
+  recordOwnership(held, lock.name, { type: 'released', ...lock })
+  expect([...held]).toEqual([])
+})
+
 describe('lock order, ownership, hooks and refusal', () => {
   it('a refresh takes row, provider-wide and extra locks in order, never holds the store locks across the provider call, and releases in reverse after the hook', async () => {
     await s
@@ -73,8 +88,7 @@ describe('lock order, ownership, hooks and refusal', () => {
       onLockEvent: (event: LockEvent) => {
         const name = `${event.name}@${event.path === s.configPath ? 'config' : 'state'}`
         log.push(`${event.type} ${name}`)
-        if (event.type === 'acquired') held.add(name)
-        else held.delete(name)
+        recordOwnership(held, name, event)
       },
     })
     let heldDuringProvider: string[] = []

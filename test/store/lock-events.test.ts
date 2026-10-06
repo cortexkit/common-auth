@@ -1,5 +1,6 @@
 import { beforeEach, expect } from 'bun:test'
 import { writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import {
   acquirePoolLock,
@@ -103,3 +104,76 @@ it('lock event observer promises are not awaited', async () => {
   await holder?.release()
   await (await observed(hooks.lifetime, contender)).release()
 })
+
+function node24(): string {
+  for (const candidate of [
+    () => {
+      const result = Bun.spawnSync(['mise', 'where', 'node@24'])
+      return result.exitCode === 0
+        ? `${result.stdout.toString().trim()}/bin/node`
+        : null
+    },
+    () => 'node',
+  ]) {
+    try {
+      const binary = candidate()
+      if (binary) {
+        const version = Bun.spawnSync([binary, '--version'])
+        if (
+          version.exitCode === 0 &&
+          version.stdout.toString().startsWith('v24.')
+        )
+          return binary
+      }
+    } catch {}
+  }
+  throw new Error(
+    'Node 24 is required for strict lock observer rejection tests',
+  )
+}
+
+for (const runtime of ['Bun', 'Node 24 strict'] as const) {
+  for (const seam of ['store', 'fs'] as const) {
+    const kinds =
+      seam === 'store' ? ['contended', 'acquired', 'released'] : ['contended']
+    for (const kind of kinds) {
+      it(`built ${seam} lock absorbs rejected ${kind} observer promises under ${runtime}`, async () => {
+        const binary = runtime === 'Bun' ? process.execPath : node24()
+        const child = Bun.spawn(
+          [
+            binary,
+            ...(runtime === 'Bun' ? [] : ['--unhandled-rejections=strict']),
+            fileURLToPath(
+              new URL('./lock-event-rejection.fixture.mjs', import.meta.url),
+            ),
+            seam,
+            kind,
+            s.statePath,
+          ],
+          { stdout: 'pipe', stderr: 'pipe' },
+        )
+        hooks.lifetime.unpark(() => {
+          if (child.exitCode === null) child.kill()
+        })
+        const [code, stdout, stderr] = await observed(
+          hooks.lifetime,
+          hooks.lifetime.operation(
+            Promise.all([
+              child.exited,
+              new Response(child.stdout).text(),
+              new Response(child.stderr).text(),
+            ]),
+          ),
+        )
+        expect(code, stderr).toBe(0)
+        expect(stderr).toBe('')
+        expect(JSON.parse(stdout)).toMatchObject({
+          seam,
+          rejectedKind: kind,
+          acquiredAndReleased: true,
+          reacquired: true,
+        })
+      })
+    }
+  }
+}

@@ -1148,3 +1148,12 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | store | Live-owner refusals are observable, but stale takeover and success are not contention | new (neither copy) | contended events distinguish live owners from stale takeovers and successful attempts |
 | store | Throwing event observers do not affect lock ownership | new (neither copy) | throwing lock event observers cannot affect contention acquisition or release |
 | store | Event observers are delivered without awaiting returned promises | new (neither copy) | lock event observer promises are not awaited |
+| store | Built store absorbs contended observer rejection under Bun | new (neither copy) | built store lock absorbs rejected contended observer promises under Bun |
+| store | Built store absorbs acquired observer rejection under Bun | new (neither copy) | built store lock absorbs rejected acquired observer promises under Bun |
+| store | Built store absorbs released observer rejection under Bun | new (neither copy) | built store lock absorbs rejected released observer promises under Bun |
+| fs | Built file lock absorbs contention observer rejection under Bun | new (neither copy) | built fs lock absorbs rejected contended observer promises under Bun |
+| store | Built store absorbs contended observer rejection under strict Node 24 | new (neither copy) | built store lock absorbs rejected contended observer promises under Node 24 strict |
+| store | Built store absorbs acquired observer rejection under strict Node 24 | new (neither copy) | built store lock absorbs rejected acquired observer promises under Node 24 strict |
+| store | Built store absorbs released observer rejection under strict Node 24 | new (neither copy) | built store lock absorbs rejected released observer promises under Node 24 strict |
+| fs | Built file lock absorbs contention observer rejection under strict Node 24 | new (neither copy) | built fs lock absorbs rejected contended observer promises under Node 24 strict |
+| store | Contention does not erase the ownership recorder's held-lock evidence | new (neither copy) | contended lock events preserve acquired lock evidence until release |
