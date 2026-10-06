@@ -3,7 +3,7 @@ import { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
 
 /** Observe the early refusal without changing the server's request listeners. */
-export function requestPhaseClock() {
+export function requestPhaseClock(port?: number) {
   const started = performance.now()
   const events: Array<Record<string, unknown>> = []
   const restores: Array<{ mockRestore(): void }> = []
@@ -24,7 +24,11 @@ export function requestPhaseClock() {
   }
   const sockets = new Map<Socket, number>()
   let refusedSocket: Socket | undefined
-  let serverPort: number | undefined
+  let serverPort: number | undefined = port
+  let resolveClosed: () => void = () => {}
+  const closed = new Promise<void>((resolve) => {
+    resolveClosed = resolve
+  })
   const emit = Server.prototype.emit
   restores.push(
     spyOn(Server.prototype, 'emit').mockImplementation(function (
@@ -37,7 +41,10 @@ export function requestPhaseClock() {
         event === 'request' &&
         req instanceof IncomingMessage &&
         res instanceof ServerResponse &&
-        Number(req.headers['content-length']) > 1_000_000
+        (Number(req.headers['content-length']) > 1_000_000 ||
+          (port !== undefined &&
+            req.socket.localPort === port &&
+            req.headers['transfer-encoding'] === 'chunked'))
       if (oversized) serverPort = req.socket.localPort
       const observed =
         event === 'request' &&
@@ -86,9 +93,10 @@ export function requestPhaseClock() {
           socket.once('end', () =>
             record('socket-peer-end', { side: 'client' }),
           )
-          socket.once('close', (hadError) =>
-            record('socket-close', { hadError }),
-          )
+          socket.once('close', (hadError) => {
+            record('socket-close', { hadError })
+            if (socket === refusedSocket) resolveClosed()
+          })
         }
         req.once('end', () => record('body-end'))
         req.once('aborted', () => record('body-aborted'))
@@ -108,6 +116,11 @@ export function requestPhaseClock() {
   )
   return {
     mark,
+    events,
+    closed,
+    get refusedSocket() {
+      return refusedSocket
+    },
     succeeded() {
       failed = false
     },

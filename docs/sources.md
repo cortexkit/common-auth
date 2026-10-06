@@ -247,8 +247,10 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | rpc | A failed port-file write removes its temp file | antigravity-auth research/common-auth-plumbing-vectors (d55bca8e2e04) port-file.failed-write-removes-temp | a failed port-file write removes its temp file |
 | rpc | A failed port-file write at start closes the listener and leaves no temp file | antigravity-auth research/common-auth-plumbing-vectors (d55bca8e2e04) server.failed-port-write-start-removes-temp | a server whose port-file write fails closes its listener and leaves no temp file |
 | rpc | A body that is not JSON answers 400 | antigravity-auth research/common-auth-plumbing-vectors (d55bca8e2e04) server.malformed-json-400 | a request body that is not JSON answers 400 |
-| rpc | A body over the cap answers 413 and the server stays usable | antigravity-auth research/common-auth-plumbing-vectors (d55bca8e2e04) server.oversized-body-413 | a request body over the 1 MiB cap answers 413 |
-| rpc | A chunked body that grows past the cap answers 413 | new (neither copy) | a chunked request body that grows past the cap answers 413 |
+| rpc | A declared body over the cap answers 413, the server closes the refused socket, and a same-client follow-up succeeds | antigravity-auth research/common-auth-plumbing-vectors (d55bca8e2e04) server.oversized-body-413 | a request body over the 1 MiB cap answers 413 |
+| rpc | A chunked body that grows past the cap answers complete 413 JSON | new (neither copy) | a chunked request body that grows past the cap answers 413 |
+| rpc | Streamed overflow preserves the socket until the held final upload chunk is sent | new (neither copy) | streamed overflow keeps the socket open until the client finishes sending |
+| rpc | A paused declared-length uploader receives complete 413 JSON | new (neither copy) | a slow declared oversized upload receives complete 413 JSON |
 | rpc | RpcRequestError thrown by apply answers its 4xx status and message | antigravity-auth research/common-auth-plumbing-vectors (d55bca8e2e04) server.invalid-apply-payload-400 | an apply handler throwing RpcRequestError answers its status and message |
 | rpc | Any other error, even one carrying a status field, still answers 500 | new (neither copy) | a handler error that only carries a status field still answers 500 |
 | rpc | RpcRequestError accepts only a 4xx status | new (neither copy) | RpcRequestError accepts only a 4xx status |

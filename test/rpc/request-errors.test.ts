@@ -1,6 +1,7 @@
 import { expect } from 'bun:test'
 import { rm } from 'node:fs/promises'
 import { request } from 'node:http'
+import { connect } from 'node:net'
 import { join } from 'node:path'
 import {
   RpcRequestError,
@@ -108,10 +109,25 @@ test('a request body over the 1 MiB cap answers 413', async () => {
   )
   expect(out.status).toBe(413)
   expect(out.body).toEqual({ error: 'body too large' })
-  // The server stays usable after refusing an oversized body.
+  // A close header alone did not stop Bun 1.3.14 reusing this connection.
+  expect(clock.events.some((event) => event.phase === 'socket-local-end')).toBe(
+    true,
+  )
+  // Use the same fetch client without forcing a fresh connection.
   expect(
     (await post(server, '/rpc/apply', '{}', clock, 'follow-up')).status,
   ).toBe(200)
+  expect(
+    clock.events.find(
+      (event) =>
+        event.request === 'follow-up' && event.phase === 'server-request',
+    )?.reused413Connection,
+  ).toBe(false)
+  await clock.closed
+  expect(clock.events.some((event) => event.phase === 'socket-close')).toBe(
+    true,
+  )
+  expect(clock.refusedSocket?.destroyed).toBe(true)
   if (!hooks.lifetime.signal.aborted) clock.succeeded()
 })
 
@@ -131,8 +147,18 @@ test('a chunked request body that grows past the cap answers 413', async () => {
         },
       },
       (res) => {
-        res.resume()
-        res.on('end', () => resolve(res.statusCode))
+        let body = ''
+        res.on('data', (chunk) => {
+          body += chunk.toString()
+        })
+        res.on('end', () => {
+          try {
+            expect(JSON.parse(body)).toEqual({ error: 'body too large' })
+            resolve(res.statusCode)
+          } catch (error) {
+            reject(error)
+          }
+        })
       },
     )
     req.on('error', reject)
@@ -141,6 +167,65 @@ test('a chunked request body that grows past the cap answers 413', async () => {
     req.end()
   })
   expect(status).toBe(413)
+})
+
+test('streamed overflow keeps the socket open until the client finishes sending', async () => {
+  const server = await start()
+  clock = requestPhaseClock(server.port)
+  const phases = clock
+  // A raw half-open client can hold back the final chunk even after reading
+  // the response; Bun's node:http client cancels its writer on response end.
+  const socket = connect({
+    host: '127.0.0.1',
+    port: server.port,
+    allowHalfOpen: true,
+  })
+  hooks.lifetime.signal.addEventListener('abort', () => socket.destroy(), {
+    once: true,
+  })
+  try {
+    const response = new Promise<string>((resolve, reject) => {
+      let wire = ''
+      socket.on('error', reject)
+      socket.on('data', (chunk) => {
+        wire += chunk.toString()
+        const split = wire.indexOf('\r\n\r\n')
+        if (split === -1) return
+        const length = Number(
+          /content-length: (\d+)/i.exec(wire.slice(0, split))?.[1],
+        )
+        if (
+          wire.endsWith('\r\n0\r\n\r\n') ||
+          (Number.isFinite(length) && wire.length >= split + 4 + length)
+        )
+          resolve(wire)
+      })
+    })
+    socket.write(
+      `POST /rpc/apply HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer ${server.token}\r\nTransfer-Encoding: chunked\r\n\r\n`,
+    )
+    const chunk = 'x'.repeat(256 * 1024)
+    for (let i = 0; i < 4; i += 1) socket.write(`40000\r\n${chunk}\r\n`)
+    const wire = await response
+    expect(wire.startsWith('HTTP/1.1 413')).toBe(true)
+    const payload = wire.slice(wire.indexOf('\r\n\r\n') + 4)
+    const body = /transfer-encoding: chunked/i.test(wire)
+      ? payload.split('\r\n')[1]
+      : payload
+    expect(JSON.parse(body ?? '')).toEqual({ error: 'body too large' })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(phases.refusedSocket).toBeDefined()
+    expect(phases.refusedSocket?.destroyed).toBe(false)
+    expect(
+      phases.events.some((event) => event.phase === 'socket-local-destroy'),
+    ).toBe(false)
+    await new Promise<void>((resolve) =>
+      socket.end(`40000\r\n${chunk}\r\n0\r\n\r\n`, resolve),
+    )
+    phases.succeeded()
+  } finally {
+    socket.destroy()
+  }
 })
 
 test('an apply handler throwing RpcRequestError answers its status and message', async () => {
@@ -221,4 +306,61 @@ test('a handler that finishes before applyDeadlineMs answers normally', async ()
   })
   const out = await post(server, '/rpc/apply', '{}')
   expect(out).toMatchObject({ status: 200, body: { text: 'in time' } })
+})
+
+test('a slow declared oversized upload receives complete 413 JSON', async () => {
+  const server = await start()
+  let finishUpload: () => void = () => {}
+  const uploadFinished = new Promise<void>((resolve) => {
+    finishUpload = resolve
+  })
+  const response = new Promise<{ status: number | undefined; body: string }>(
+    (resolve, reject) => {
+      const req = request(
+        {
+          hostname: '127.0.0.1',
+          port: server.port,
+          path: '/rpc/apply',
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${server.token}`,
+            'content-length': String(5 * 256 * 1024),
+          },
+        },
+        (res) => {
+          let body = ''
+          res.on('data', (chunk) => {
+            body += chunk.toString()
+          })
+          res.on('error', reject)
+          res.on('end', () => resolve({ status: res.statusCode, body }))
+        },
+      )
+      req.on('error', reject)
+      req.write('x'.repeat(256 * 1024))
+      let writes = 1
+      const timer = setInterval(() => {
+        writes++
+        // Bun 1.4.2 cancels node:http's writer on an early response. The response
+        // must still arrive intact; post-response write callbacks are diagnostic.
+        req.write('x'.repeat(256 * 1024), () => {})
+        if (writes === 5) {
+          clearInterval(timer)
+          req.end()
+          hooks.lifetime.signal.removeEventListener('abort', abort)
+          finishUpload()
+        }
+      }, 30)
+      const abort = () => {
+        clearInterval(timer)
+        req.destroy()
+      }
+      hooks.lifetime.signal.addEventListener('abort', abort, { once: true })
+    },
+  )
+  const out = await response
+  expect(out.status).toBe(413)
+  expect(JSON.parse(out.body)).toEqual({ error: 'body too large' })
+  expect((await post(server, '/rpc/apply', '{}')).status).toBe(200)
+  await uploadFinished
 })
