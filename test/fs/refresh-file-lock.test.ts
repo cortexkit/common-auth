@@ -178,13 +178,24 @@ describe('acquireRefreshFileLock', () => {
       )
       expect(code, stderr).toBe(0)
       expect(stderr).toBe('')
-      expect(JSON.parse(stdout)).toMatchObject({
+      const result = JSON.parse(stdout)
+      expect(result).toMatchObject({
         afterSchedule: { pending: 1, cleared: 0, ticks: 0 },
         beforeLoss: { pending: 1, cleared: 0, ticks: 0 },
         afterCancel: { pending: 0, cleared: 1, ticks: 0 },
         ownershipError: 'LockOwnershipError',
         loss: { reason: 'taken-over', observedOwnerId: 'successor' },
       })
+      expect(
+        result.onStepValues.filter((step: string) =>
+          [
+            'scheduled',
+            'cancelled',
+            'renewal-scheduled',
+            'renewal-cancelled',
+          ].includes(step),
+        ),
+      ).toEqual([])
     }
   })
 

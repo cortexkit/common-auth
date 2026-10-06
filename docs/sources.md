@@ -25,7 +25,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | fs | Reads expired legacy owner.json despite a fresh directory mtime | reference/openai-auth/packages/core/src/refresh-file-lock.ts | reads expired legacy owner.json despite a fresh directory mtime |
 | fs | Observable persisted identity, renewal takeover, sticky loss and stopped renewal | new (neither copy) | observes takeover on the next renewal and stops renewing |
 | fs | Assertion takeover details and successor-safe repeated release | new (neither copy) | assertOwned observes takeover with ownership details without renewal |
-| fs | Assertion loss cancels scheduled renewal; fresh child captures real timer arms/clears and lifecycle notifications, including observer failure isolation | new (neither copy) | assertion loss cancels a pending renewal timer |
+| fs | Assertion loss cancels scheduled renewal; fresh child captures real timer arms/clears and lifecycle notifications, including observer failure isolation and unchanged step-barrier values | new (neither copy) | assertion loss cancels a pending renewal timer |
 | fs | Assertion loss fences paused renewal writes | new (neither copy) | assertion loss fences an already in-flight renewal |
 | fs | Unreadable ownership is observable on assertion | new (neither copy) | assertOwned observes unreadable ownership |
 | fs | Owner release is not lease loss | new (neither copy) | owner release is idempotent and leaves the loss promise pending |

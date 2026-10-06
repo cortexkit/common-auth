@@ -38,6 +38,7 @@ const cancel = new Promise<void>((resolve) => {
   cancelled = resolve
 })
 let ticks = 0
+const onStepValues: string[] = []
 const path = process.argv[2]
 if (!path) throw new Error('Expected the parent test scratch path')
 const lock = await acquireRefreshFileLock({
@@ -47,15 +48,16 @@ const lock = await acquireRefreshFileLock({
   renew: true,
   renewIntervalMs: 60_000,
   onStep(step) {
-    if (step === 'renewal-scheduled') scheduled()
-    if (step === 'renewal-cancelled') cancelled()
+    onStepValues.push(step)
     if (step === 'renewal-finished') ticks++
-    if (step === 'renewal-scheduled' || step === 'renewal-cancelled') {
-      if (process.argv[3] === 'throw') throw new Error('observer throw')
-      if (process.argv[3] === 'reject')
-        return Promise.reject(new Error('observer rejection'))
-      if (process.argv[3] === 'pending') return new Promise<void>(() => {})
-    }
+  },
+  onRenewalTimer(event) {
+    if (event === 'scheduled') scheduled()
+    if (event === 'cancelled') cancelled()
+    if (process.argv[3] === 'throw') throw new Error('observer throw')
+    if (process.argv[3] === 'reject')
+      return Promise.reject(new Error('observer rejection'))
+    if (process.argv[3] === 'pending') return new Promise<void>(() => {})
   },
 })
 if (!lock) throw new Error('Expected a fresh lock')
@@ -81,6 +83,7 @@ try {
       beforeLoss,
       afterCancel,
       ownershipError,
+      onStepValues,
       loss: await lock.whenLost(),
     }),
   )

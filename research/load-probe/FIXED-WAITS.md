@@ -67,7 +67,7 @@ Locations below refer to base `d1717a73dbcee649568147f1af77bbbcb45ac27b`, so rem
 | test/fs/refresh-file-lock.test.ts:772 | Positive, 500 ms race | Await renewed callback instead of `resolvesWithin(...).toBe(true)`. |
 | test/fs/refresh-file-lock.test.ts:110 | Negative, 50 ms | Retained: allows an in-flight tick to finish before no-more-ticks window; needs renewal cancellation/join seam. |
 | test/fs/refresh-file-lock.test.ts:112 | Negative, 60 ms | Retained: needs explicit cancelled-renewal timer/attempt event. |
-| test/fs/refresh-file-lock.test.ts:193 | Negative, 120 ms | Resolved: await `renewal-scheduled` and `renewal-cancelled` in a fresh child with real timer-call capture; assert pending before assertion loss and cleared afterward, with zero renewal completions. See RENEWAL-CANCEL.md. |
+| test/fs/refresh-file-lock.test.ts:193 | Negative, 120 ms | Resolved: await `onRenewalTimer('scheduled')` and `onRenewalTimer('cancelled')` in a fresh child; capture real timer arms/clears to prove the renewal timer is pending immediately before `assertOwned()` detects takeover and cleared afterward, with zero `renewal-finished` callbacks. See RENEWAL-CANCEL.md. |
 | test/fs/refresh-file-lock.test.ts:274 | Negative, 30 ms | Retained: needs explicit loss-subscription/no-renewal event after owner release. |
 | test/fs/refresh-file-lock.test.ts:518 | Negative, 50 ms race | Retained: needs release attempt/join refusal while renewal is in-flight. |
 | test/fs/refresh-file-lock.test.ts:63 | Negative helper timer | Retained solely for in-flight release non-completion. |
