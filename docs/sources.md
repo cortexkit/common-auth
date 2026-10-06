@@ -1125,3 +1125,9 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | tests | Consumers and token files remain alive after child Bun times out the copied peer-replacement test, through its final assertions | new (neither copy) | consumer real runner timeout keeps resources alive through the original body and final assertions |
 | tests | Enrollment files remain alive after child Bun times out the copied protocol-terminal refusal test, through its final assertions | new (neither copy) | enrollment real runner timeout keeps resources alive through the original body and final assertions |
 | tests | The store scenario remains alive after child Bun times out the copied legacy-read-during-writes test, through its final assertions | new (neither copy) | schema real runner timeout keeps resources alive through the original body and final assertions |
+
+| test lifetime | Runner timeout joins cancelled fetch without a second error | new (neither copy) | runner timeout cancels fetch in its own drain without a between-tests rejection |
+| test lifetime | Runner timeout joins cancelled JSON consumption without a second error | new (neither copy) | runner timeout cancels json in its own drain without a between-tests rejection |
+| test lifetime | Cancellation precedes body joins and resource cleanup | new (neither copy) | lifetime aborts requests before joining bodies and before cleanup |
+| test lifetime | Unrelated failures remain visible after teardown starts | new (neither copy) | lifetime preserves an unrelated body rejection during teardown |
+| test lifetime | Timer aborts are not teardown cancellation | new (neither copy) | lifetime preserves a timer abort rather than treating it as teardown cancellation |

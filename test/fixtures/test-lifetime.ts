@@ -7,6 +7,12 @@ export class TestLifetime {
   private readonly releases: Array<() => void> = []
   private readonly finalizers: Array<() => Promise<unknown>> = []
   private closing = false
+  private readonly cancellation = new AbortController()
+
+  /** Cancel test-owned requests before teardown waits for their bodies. */
+  get signal(): AbortSignal {
+    return this.cancellation.signal
+  }
 
   private observe<T>(
     pending: Promise<T>,
@@ -20,7 +26,17 @@ export class TestLifetime {
   }
 
   tracked(body: () => unknown): Promise<unknown> {
-    return this.observe(Promise.resolve().then(body), this.bodies)
+    const pending = Promise.resolve()
+      .then(body)
+      .catch((error: unknown) => {
+        // After a test deadline, Bun reports a late body rejection as an
+        // "Unhandled error between tests" even when it is observed. A teardown
+        // abort is expected cancellation, not a second failure of that body.
+        // Preserve timer aborts, assertions, and every unrelated rejection.
+        if (this.closing && error === this.signal.reason) return
+        throw error
+      })
+    return this.observe(pending, this.bodies)
   }
 
   operation<T>(pending: Promise<T>): Promise<T> {
@@ -65,6 +81,7 @@ export class TestLifetime {
     // A test body still setting up can register another parked operation after
     // teardown starts. unpark() must release such operations immediately.
     this.closing = true
+    this.cancellation.abort()
     await drainBodies(
       this.releases,
       this.bodies,

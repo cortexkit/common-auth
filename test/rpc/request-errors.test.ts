@@ -10,17 +10,25 @@ import {
 } from '../../src/rpc/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch'
+import { requestPhaseClock } from './request-phase-clock.js'
 
 const hooks = lifetimeHooks()
 const { afterEach, test } = hooks
 
 let dir: string | undefined
 let handle: RpcServerHandle | undefined
+let clock: ReturnType<typeof requestPhaseClock> | undefined
 afterEach(async () => {
-  await handle?.stop()
-  handle = undefined
-  if (dir) await rm(dir, { recursive: true, force: true })
-  dir = undefined
+  try {
+    clock?.mark('teardown-stop')
+    await handle?.stop()
+    handle = undefined
+    if (dir) await rm(dir, { recursive: true, force: true })
+    dir = undefined
+  } finally {
+    clock?.finish()
+    clock = undefined
+  }
 })
 
 async function start(overrides: Partial<RpcServerOptions> = {}) {
@@ -35,21 +43,47 @@ async function start(overrides: Partial<RpcServerOptions> = {}) {
   return handle
 }
 
-async function post(server: RpcServerHandle, path: string, body: string) {
+async function post(
+  server: RpcServerHandle,
+  path: string,
+  body: string,
+  phases?: ReturnType<typeof requestPhaseClock>,
+) {
   const started = performance.now()
-  const response = await fetch(`http://127.0.0.1:${server.port}${path}`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${server.token}`,
-      'content-type': 'application/json',
-    },
-    body,
-    signal: AbortSignal.timeout(5_000),
-  })
-  return {
-    status: response.status,
-    body: (await response.json()) as unknown,
-    ms: performance.now() - started,
+  phases?.mark('fetch-start')
+  let phase = 'fetch'
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}${path}`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${server.token}`,
+        'content-type': 'application/json',
+      },
+      body,
+      signal: AbortSignal.any([
+        AbortSignal.timeout(5_000),
+        hooks.lifetime.signal,
+      ]),
+    })
+    phases?.mark('fetch-settled', { outcome: 'resolved' })
+    phases?.mark('client-headers', {
+      status: response.status,
+      connection: response.headers.get('connection'),
+    })
+    phase = 'json'
+    const decoded: unknown = await response.json()
+    phases?.mark('json-settled', { outcome: 'resolved' })
+    return {
+      status: response.status,
+      body: decoded,
+      ms: performance.now() - started,
+    }
+  } catch (error) {
+    phases?.mark(`${phase}-settled`, {
+      outcome: 'rejected',
+      error: String(error),
+    })
+    throw error
   }
 }
 
@@ -61,16 +95,19 @@ test('a request body that is not JSON answers 400', async () => {
 })
 
 test('a request body over the 1 MiB cap answers 413', async () => {
+  clock = requestPhaseClock()
   const server = await start()
   const out = await post(
     server,
     '/rpc/apply',
     JSON.stringify({ value: 'x'.repeat(1024 * 1024) }),
+    clock,
   )
   expect(out.status).toBe(413)
   expect(out.body).toEqual({ error: 'body too large' })
   // The server stays usable after refusing an oversized body.
   expect((await post(server, '/rpc/apply', '{}')).status).toBe(200)
+  if (!hooks.lifetime.signal.aborted) clock.succeeded()
 })
 
 test('a chunked request body that grows past the cap answers 413', async () => {
