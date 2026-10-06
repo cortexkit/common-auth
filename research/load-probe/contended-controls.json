@@ -1,0 +1,350 @@
+[
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "an extra lock held by a legacy holder makes the refresh wait and a rotation by that holder is the credential refreshed",
+    "captured_output": "(fail) lock order, ownership, hooks and refusal > an extra lock held by a legacy holder makes the refresh wait and a rotation by that holder is the credential refreshed [5190.20ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "two rows with different known identities never overlap their provider calls",
+    "captured_output": "(fail) row lock and provider-wide lock schedules > two rows with different known identities never overlap their provider calls [5088.82ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "adding an unknown-identity row waits for a running refresh while an api-key add does not",
+    "captured_output": "(fail) row lock and provider-wide lock schedules > adding an unknown-identity row waits for a running refresh while an api-key add does not [5106.61ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "a replace started in another process waits for a paused refresh, which persists first",
+    "captured_output": "(fail) replace and a live refresh > a replace started in another process waits for a paused refresh, which persists first [5066.42ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "a legacy save lock holder at the config path makes a library write wait and then succeed",
+    "captured_output": "(fail) store concurrency and the store-lock list > a legacy save lock holder at the config path makes a library write wait and then succeed [5031.41ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "a legacy config writer waits for the library store locks and neither write is lost",
+    "captured_output": "(fail) store concurrency and the store-lock list > a legacy config writer waits for the library store locks and neither write is lost [5413.61ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "a legacy state writer waits for the library store locks and neither write is lost",
+    "captured_output": "(fail) store concurrency and the store-lock list > a legacy state writer waits for the library store locks and neither write is lost [5163.66ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "an attributed disable and a concurrent merge of the provider state both land",
+    "captured_output": "(fail) an attributed disable and a concurrent merge of the provider state both land [5101.39ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "reorder takes extra locks before the store locks, waits on a held extra lock and completes once it is released",
+    "captured_output": "(fail) reorder > reorder takes extra locks before the store locks, waits on a held extra lock and completes once it is released [5121.43ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row",
+    "captured_output": "(fail) remove > a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row [5056.69ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "an add for the same identity waits on the refreshing row lock and is stored disabled after the rotation commits",
+    "captured_output": "(fail) a row of known identity refreshing under an account-keyed provider lock > an add for the same identity waits on the refreshing row lock and is stored disabled after the rotation commits [5103.77ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "an earlier row learning the identity disables the in-flight row, whose rotation still commits, and its own refresh re-keys and waits on the in-flight row lock",
+    "captured_output": "(fail) a row of known identity refreshing under an account-keyed provider lock > an earlier row learning the identity disables the in-flight row, whose rotation still commits, and its own refresh re-keys and waits on the in-flight row lock [5028.59ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "refreshes of two accounts under the default provider lock never overlap",
+    "captured_output": "(fail) rows of different accounts under account-keyed provider locks > refreshes of two accounts under the default provider lock never overlap [5015.79ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "a credential swapped in while a strict rotate waits on the row lock is refused at the locked re-read",
+    "captured_output": "(fail) strict mode and writers that land while an operation waits > a credential swapped in while a strict rotate waits on the row lock is refused at the locked re-read [5012.82ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "a pull issued during a live replace captures the credential and its epoch in one locked read",
+    "captured_output": "(fail) attribution > a pull issued during a live replace captures the credential and its epoch in one locked read [5080.99ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "contended events distinguish live owners from stale takeovers and successful attempts",
+    "captured_output": "(fail) contended events distinguish live owners from stale takeovers and successful attempts [5013.89ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "throwing lock event observers cannot affect contention acquisition or release",
+    "captured_output": "(fail) throwing lock event observers cannot affect contention acquisition or release [5000.81ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "bypass live-owner exclusion",
+    "expected_red": "lock event observer promises are not awaited",
+    "captured_output": "(fail) lock event observer promises are not awaited [5001.30ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "an extra lock held by a legacy holder makes the refresh wait and a rotation by that holder is the credential refreshed",
+    "captured_output": "(fail) lock order, ownership, hooks and refusal > an extra lock held by a legacy holder makes the refresh wait and a rotation by that holder is the credential refreshed [5104.99ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "two rows with different known identities never overlap their provider calls",
+    "captured_output": "(fail) row lock and provider-wide lock schedules > two rows with different known identities never overlap their provider calls [5079.22ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "adding an unknown-identity row waits for a running refresh while an api-key add does not",
+    "captured_output": "(fail) row lock and provider-wide lock schedules > adding an unknown-identity row waits for a running refresh while an api-key add does not [5115.89ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "a replace started in another process waits for a paused refresh, which persists first",
+    "captured_output": "(fail) replace and a live refresh > a replace started in another process waits for a paused refresh, which persists first [5025.22ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "a legacy save lock holder at the config path makes a library write wait and then succeed",
+    "captured_output": "(fail) store concurrency and the store-lock list > a legacy save lock holder at the config path makes a library write wait and then succeed [5060.05ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "a legacy config writer waits for the library store locks and neither write is lost",
+    "captured_output": "(fail) store concurrency and the store-lock list > a legacy config writer waits for the library store locks and neither write is lost [5012.46ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "a legacy state writer waits for the library store locks and neither write is lost",
+    "captured_output": "(fail) store concurrency and the store-lock list > a legacy state writer waits for the library store locks and neither write is lost [5012.82ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "an attributed disable and a concurrent merge of the provider state both land",
+    "captured_output": "(fail) an attributed disable and a concurrent merge of the provider state both land [5087.45ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "reorder takes extra locks before the store locks, waits on a held extra lock and completes once it is released",
+    "captured_output": "(fail) reorder > reorder takes extra locks before the store locks, waits on a held extra lock and completes once it is released [5362.11ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row",
+    "captured_output": "(fail) remove > a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row [5084.31ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "an add for the same identity waits on the refreshing row lock and is stored disabled after the rotation commits",
+    "captured_output": "(fail) a row of known identity refreshing under an account-keyed provider lock > an add for the same identity waits on the refreshing row lock and is stored disabled after the rotation commits [5098.74ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "an earlier row learning the identity disables the in-flight row, whose rotation still commits, and its own refresh re-keys and waits on the in-flight row lock",
+    "captured_output": "(fail) a row of known identity refreshing under an account-keyed provider lock > an earlier row learning the identity disables the in-flight row, whose rotation still commits, and its own refresh re-keys and waits on the in-flight row lock [5207.77ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "refreshes of two accounts under the default provider lock never overlap",
+    "captured_output": "(fail) rows of different accounts under account-keyed provider locks > refreshes of two accounts under the default provider lock never overlap [5119.43ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "a credential swapped in while a strict rotate waits on the row lock is refused at the locked re-read",
+    "captured_output": "(fail) strict mode and writers that land while an operation waits > a credential swapped in while a strict rotate waits on the row lock is refused at the locked re-read [5175.60ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "a pull issued during a live replace captures the credential and its epoch in one locked read",
+    "captured_output": "(fail) attribution > a pull issued during a live replace captures the credential and its epoch in one locked read [5126.47ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "contended events distinguish live owners from stale takeovers and successful attempts",
+    "captured_output": "(fail) contended events distinguish live owners from stale takeovers and successful attempts [5003.54ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "throwing lock event observers cannot affect contention acquisition or release",
+    "captured_output": "(fail) throwing lock event observers cannot affect contention acquisition or release [5002.64ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "remove contended emission",
+    "expected_red": "lock event observer promises are not awaited",
+    "captured_output": "(fail) lock event observer promises are not awaited [5001.76ms]\nobserved() cancellation: Expected observation was not received before test cancellation",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "cancelled_observation": true
+  },
+  {
+    "control": "emit contention on successful attempts",
+    "expected_red": "contended events distinguish live owners from stale takeovers and successful attempts",
+    "captured_output": "(fail) contended events distinguish live owners from stale takeovers and successful attempts [102.78ms]",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 1 +\n 1 file changed, 1 insertion(+); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1
+  },
+  {
+    "control": "propagate synchronous event observer failures",
+    "expected_red": "throwing lock event observers cannot affect contention acquisition or release",
+    "captured_output": "(fail) throwing lock event observers cannot affect contention acquisition or release [93.74ms]",
+    "applied_evidence": "src/store/refresh-lock.ts: during src/store/refresh-lock.ts | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1
+  },
+  {
+    "control": "await lock event observer promises",
+    "expected_red": "lock event observer promises are not awaited",
+    "captured_output": "(fail) lock event observer promises are not awaited [5000.68ms]",
+    "applied_evidence": "src/store/refresh-lock.ts: during src/store/refresh-lock.ts | 8 ++++----\n 1 file changed, 4 insertions(+), 4 deletions(-); after restore empty",
+    "outcome": "reddened",
+    "exit_code": 1
+  }
+]

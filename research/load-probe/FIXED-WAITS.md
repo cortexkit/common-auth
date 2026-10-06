@@ -6,8 +6,8 @@ Locations below refer to base `d1717a73dbcee649568147f1af77bbbcb45ac27b`, so rem
 
 | Base file:line | Class | Action / required seam |
 | --- | --- | --- |
-| test/store/attribution.test.ts:164 | Negative contention opportunity, 200 ms | Retained: before releasing replace, needs a lock-attempt event showing the pull tried to read while replace held the lock and was blocked. The pull callback runs only after it acquires the lock, too late to prove that contention occurred. |
-| test/store/refresh.test.ts:529 | Negative, 400 ms | Retained: child `started` precedes acquisition; needs a child lock-attempt/refusal marker before checking the old row. |
+| test/store/attribution.test.ts:164 | Negative contention opportunity, 200 ms | Resolved: use `observed` to await the pull operation's config `save` lock refusal while it tries to capture the credential and epoch. Assert no request and no settlement, then release the parked replace operation. See CONTENDED.md. |
+| test/store/refresh.test.ts:529 | Negative, 400 ms | Resolved: child prints `contended:row-r@<statePath>` from its store observer; await it with cancellation and assert child exit is still pending and the row unchanged. |
 | test/store/pull.test.ts:52 | Positive, 1 s race | Await load itself via `observed`; pending pulls remain parked until teardown. |
 | test/store/pull.test.ts:57 | Positive, 4 s polling deadline | Await the third pull callback's deferred via `observed`. |
 | test/store/pull.test.ts:218 | Positive state polling, 10 ms cadence | Already cancellation-aware at base; retained, no elapsed-time decision. |
@@ -16,21 +16,21 @@ Locations below refer to base `d1717a73dbcee649568147f1af77bbbcb45ac27b`, so rem
 | test/store/hooks.test.ts:214 | Positive, 5 s race | Await the continuation result via `observed`, then assert its credential. |
 | test/store/renewal.test.ts:52 | Positive, 2 s polling deadline | Observe renewal counts without a deadline via cancellation-aware `observedState`. Covers both provider/row locks and store locks. |
 | test/store/refresh.test.ts:263 | Deliberate, 5 ms | Retained: asynchronous refusal predicate must be awaited at each refusal site. |
-| test/store/refresh.test.ts:197 | Negative, 300 ms | Retained: needs extra-lock attempt/refusal event. |
-| test/store/refresh.test.ts:365 | Negative, 300 ms | Retained: needs provider-wide lock attempt/refusal event. |
-| test/store/refresh.test.ts:453 | Negative, 300 ms | Retained: needs add's provider-wide lock attempt/refusal event. |
-| test/store/rows.test.ts:401 | Negative, 300 ms | Retained: needs legacy config-lock attempt/refusal event. |
-| test/store/rows.test.ts:446 | Negative, 300 ms | Retained: needs legacy writer config-lock attempt/refusal event. |
-| test/store/rows.test.ts:478 | Negative, 300 ms | Retained: needs legacy writer state-lock attempt/refusal event. |
-| test/store/row-transition.test.ts:359 | Negative, 300 ms | Retained: needs competing row-operation attempt/refusal event. |
-| test/store/reorder.test.ts:177 | Negative, 300 ms | Retained: needs reorder extra-lock attempt/refusal event; the positive independent write already awaits completion at base. |
-| test/store/remove-enable.test.ts:250 | Negative, 300 ms | Retained: needs removal row-lock attempt/refusal event. |
-| test/store/account-keyed-refresh.test.ts:291 | Negative, 300 ms | Retained: needs add account-provider-lock attempt/refusal event. |
-| test/store/account-keyed-refresh.test.ts:378 | Negative, 300 ms | Retained: needs account-provider-lock attempt/refusal event. |
-| test/store/account-keyed-refresh.test.ts:385 | Negative, 300 ms | Retained: needs second lock-attempt/refusal event after the competing add. |
-| test/store/account-keyed-refresh.test.ts:449 | Negative, 1 s | Retained only for default-provider-lock non-overlap; needs second provider-call contender attempt/refusal event. Account-keyed positive overlap already awaits both entries at base. |
-| test/store/credential-stamps.test.ts:586 | Negative, 300 ms | Retained: needs rotation row-lock attempt/refusal event. |
-| test/store/helpers.ts:130 | Negative helper timer | Retained: remaining callers assert non-completion only. |
+| test/store/refresh.test.ts:197 | Negative, 300 ms | Resolved: await `contended` for `legacy-refresh`; assert refresh pending and no provider call before the legacy holder releases. |
+| test/store/refresh.test.ts:365 | Negative, 300 ms | Resolved: await `contended` for `provider-openai`; assert refresh pending and no second provider call before releasing the first. |
+| test/store/refresh.test.ts:453 | Negative, 300 ms | Resolved: await add's `provider-openai` refusal; assert add pending and no new roster row, then release refresh. |
+| test/store/rows.test.ts:401 | Negative, 300 ms | Resolved: await library `save` refusal at config path; assert add pending and neither file written, then release legacy holder. |
+| test/store/rows.test.ts:446 | Negative, 300 ms | Resolved: test-only vendored writer observer forwards primitive live-owner refusal at config `save`; assert legacy writer pending and its row absent before releasing library write. |
+| test/store/rows.test.ts:478 | Negative, 300 ms | Resolved: test-only vendored writer observer forwards primitive live-owner refusal at state `save`; assert legacy writer pending and `lastUsed` unchanged before releasing library write. |
+| test/store/row-transition.test.ts:359 | Negative, 300 ms | Resolved: await competing writer's `row-acct-a` refusal in both operation orders; assert pending and files unchanged before releasing the holder. |
+| test/store/reorder.test.ts:177 | Negative, 300 ms | Resolved: await `extra-1` refusal; assert reorder pending, then await the independent write and assert no reorder lock acquisition or order change before release. |
+| test/store/remove-enable.test.ts:250 | Negative, 300 ms | Resolved: await removal's `row-acct-a` refusal; assert pending and roster intact before releasing refresh. |
+| test/store/account-keyed-refresh.test.ts:291 | Negative, 300 ms | Resolved: await add's `row-acct-A` refusal; assert pending and no added row before releasing refresh. |
+| test/store/account-keyed-refresh.test.ts:378 | Negative, 300 ms | Resolved: await refresh's initial `row-y` refusal; assert pending and no provider call before releasing identity-write gate. |
+| test/store/account-keyed-refresh.test.ts:385 | Negative, 300 ms | Resolved: await re-keyed refresh's `row-acct-A` refusal; assert pending and no provider call before releasing the in-flight row. |
+| test/store/account-keyed-refresh.test.ts:449 | Negative, 1 s | Resolved: park first provider call, await second refresh's `provider-openai` refusal and assert pending/no overlap, then release. Account-keyed positive overlap still awaits both entries. |
+| test/store/credential-stamps.test.ts:586 | Negative, 300 ms | Resolved: await rotation's `row-acct-a` refusal before swapping credentials, then release and assert locked re-read refuses the swap. |
+| test/store/helpers.ts:130 | Negative helper timer | Resolved: `settlesWithin` removed after all callers were converted; `blocked` awaits cancellation-aware refusal and checks settlement without an elapsed window. |
 | test/store/child.ts:129 | Deliberate keepalive interval | Retained: holds child alive while a crash seam is parked, not an assertion. |
 | test/store/child.ts:137 | Deliberate parameterized delay | Retained: caller-selected pause before state write models a stalled writer. |
 | test/store/timeout-isolation.fixture.ts:28 | Deliberate, 100 ms | Retained: keeps real work beyond teardown's former fixed sleep to test ownership. |
@@ -101,7 +101,7 @@ Locations below refer to base `d1717a73dbcee649568147f1af77bbbcb45ac27b`, so rem
 | test/commands/command-session-isolation.test.ts:122 | Deliberate, 0 ms | Retained: yield before releasing two invocation gates in opposite order. |
 | test/commands/command-session-isolation.test.ts:23 | Deliberate yield helper | Retained for the concurrent-invocation scenario only. |
 | test/claustrum/enrollment.test.ts:459 | Positive lock-holder entry, 10 ms | Await first proposal entry deferred before second reconcile; gate still released on teardown. |
-| test/claustrum/roster.test.ts:150 | Negative, 30 ms | Retained: needs contender roster-lock attempt/refusal event. |
+| test/claustrum/roster.test.ts:150 | Negative, 30 ms | Retained: separate Claustrum roster acquisition does not deliver the store's `onLockEvent`; needs its own refusal hook. Changing src/claustrum is outside the store seam and the allowed source paths, so its 30 ms window remains. |
 | test/opencode2/integration.test.ts:127 | Deliberate, 5 ms | Retained: slow pool writer demonstrates callback awaiting. |
 | test/opencode2/integration.test.ts:130 | Positive registration yield, 0 ms | Await returned registration promise via `observed`. |
 | test/opencode2/integration.test.ts:145 | Positive registration yield, 0 ms | Await returned registration promise via `observed`. |
