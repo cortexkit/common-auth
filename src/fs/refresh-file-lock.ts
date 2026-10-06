@@ -64,7 +64,9 @@ export async function acquireRefreshFileLock(options: {
     step:
       | 'stale-marker-stat'
       | 'stale-marker-claimed'
+      | 'stale-lock-observed'
       | 'stale-lock-confirmed'
+      | 'stale-lock-removed'
       | 'eviction-marker-acquired'
       | 'renewal-owner-confirmed'
       | 'renewal-marker-unavailable'
@@ -436,6 +438,7 @@ export async function acquireRefreshFileLock(options: {
       acquired = await tryAcquire()
       if (acquired) break
       if (await lockIsLive()) return contended()
+      if (options.onStep) await options.onStep('stale-lock-observed')
 
       try {
         if (!(await tryAcquireEvictionMarker())) {
@@ -463,6 +466,7 @@ export async function acquireRefreshFileLock(options: {
         await rm(lockPath, { recursive: true, force: true }).catch(() => {})
         // Fence check 3: re-verify ownership after removing the stale lock.
         if (!(await ownsEvictionMarker())) return null
+        if (options.onStep) await options.onStep('stale-lock-removed')
         acquired = await tryAcquire()
         if (!acquired) return null
         // Fence check 4: re-verify ownership after acquiring the lock. If the
