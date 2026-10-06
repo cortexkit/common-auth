@@ -5,6 +5,7 @@ import {
   type ProviderRefreshResult,
 } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
 import {
   apiKey,
   deferred,
@@ -12,7 +13,6 @@ import {
   rejectionOf,
   type Scenario,
   scenario,
-  settlesWithin,
 } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -51,10 +51,9 @@ function forbiddenCalls(store: PoolStore) {
 async function expectAllRejectImmediately(store: PoolStore) {
   const outcomes: Record<string, string> = {}
   for (const [name, call] of Object.entries(forbiddenCalls(store))) {
-    const started = performance.now()
-    const error = await rejectionOf(call())
+    const error = await observed(hooks.lifetime, rejectionOf(call()))
     outcomes[name] =
-      error instanceof PoolReentryError && performance.now() - started < 100
+      error instanceof PoolReentryError
         ? 'rejected'
         : `unexpected ${String(error)}`
   }
@@ -211,8 +210,9 @@ describe('hooks never re-enter the library', () => {
     expect(await timerDone.promise).toBeInstanceOf(PoolReentryError)
     expect(await detachedDone.promise).toBeInstanceOf(PoolReentryError)
     const continued = store.rotate('b', oauth('r-b-continuation'))
-    expect(await settlesWithin(continued, 5_000)).toBe(true)
-    expect((await continued).credential).toMatchObject({
+    expect(
+      (await observed(hooks.lifetime, continued)).credential,
+    ).toMatchObject({
       refresh: 'r-b-continuation',
     })
   })

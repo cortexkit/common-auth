@@ -7,6 +7,7 @@ import {
   LockOwnershipError,
 } from '../../src/fs/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 const hooks = lifetimeHooks()
@@ -41,23 +42,6 @@ function deferred() {
     resolve = next
   })
   return { promise, resolve }
-}
-
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`timed out after ${ms}ms`)),
-          ms,
-        )
-      }),
-    ])
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
 }
 
 async function resolvesWithin(promise: Promise<void>, ms: number) {
@@ -95,11 +79,11 @@ describe('acquireRefreshFileLock', () => {
     }))!
     try {
       expect(lock.ownerId).toBe((await readLockOwner(lockPath)).ownerId)
-      await withTimeout(tick.promise, 1_000)
+      await observed(hooks.lifetime, tick.promise)
       expect(lock.hasLost()).toBe(false)
       const successor = { ownerId: 'successor', expiresAt: Date.now() + 10_000 }
       await writeFile(lockPath, JSON.stringify(successor))
-      const loss = await withTimeout(lock.whenLost(), 1_000)
+      const loss = await observed(hooks.lifetime, lock.whenLost())
       expect(loss).toMatchObject({
         reason: 'taken-over',
         expectedOwnerId: lock.ownerId,
@@ -157,7 +141,7 @@ describe('acquireRefreshFileLock', () => {
         observedExpiresAt: successor.expiresAt,
       })
     }
-    expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe(
+    expect((await observed(hooks.lifetime, lock.whenLost())).reason).toBe(
       'taken-over',
     )
     expect(lock.hasLost()).toBe(true)
@@ -222,7 +206,7 @@ describe('acquireRefreshFileLock', () => {
         },
       }))!
       try {
-        await withTimeout(paused.promise, 1_000)
+        await observed(hooks.lifetime, paused.promise)
         const successor = {
           ownerId: 'successor',
           expiresAt: Date.now() + 10_000,
@@ -232,7 +216,7 @@ describe('acquireRefreshFileLock', () => {
           LockOwnershipError,
         )
         resume.resolve()
-        await withTimeout(finished.promise, 1_000)
+        await observed(hooks.lifetime, finished.promise)
         expect(await readLockOwner(`${path}.inflight.lock`)).toEqual(successor)
       } finally {
         resume.resolve()
@@ -250,7 +234,7 @@ describe('acquireRefreshFileLock', () => {
     }))!
     await writeFile(`${path}.unreadable.lock`, 'invalid json')
     await expect(lock.assertOwned()).rejects.toBeInstanceOf(LockOwnershipError)
-    expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe(
+    expect((await observed(hooks.lifetime, lock.whenLost())).reason).toBe(
       'unreadable',
     )
     expect(lock.hasLost()).toBe(true)
@@ -289,7 +273,7 @@ describe('acquireRefreshFileLock', () => {
     }))!
     try {
       await writeFile(lockPath, 'invalid json')
-      expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe(
+      expect((await observed(hooks.lifetime, lock.whenLost())).reason).toBe(
         'renewal-failed',
       )
       expect(lock.hasLost()).toBe(true)
@@ -328,9 +312,11 @@ describe('acquireRefreshFileLock', () => {
         },
       }))!
       try {
-        await withTimeout(finished.promise, 1_000)
+        await observed(hooks.lifetime, finished.promise)
         expect(lock.hasLost()).toBe(true)
-        expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe(reason)
+        expect((await observed(hooks.lifetime, lock.whenLost())).reason).toBe(
+          reason,
+        )
       } finally {
         await lock.release()
       }
@@ -350,7 +336,9 @@ describe('acquireRefreshFileLock', () => {
     }))!
     try {
       now = 111
-      expect((await withTimeout(lock.whenLost(), 1_000)).reason).toBe('expired')
+      expect((await observed(hooks.lifetime, lock.whenLost())).reason).toBe(
+        'expired',
+      )
       expect(lock.hasLost()).toBe(true)
     } finally {
       await lock.release()
@@ -423,7 +411,7 @@ describe('acquireRefreshFileLock', () => {
     })
     expect(first).not.toBeNull()
 
-    await withTimeout(renewalConfirmed.promise, 1_000)
+    await observed(hooks.lifetime, renewalConfirmed.promise)
     currentNow = start + 10_000
     const successor = await acquireRefreshFileLock({
       name,
@@ -435,7 +423,7 @@ describe('acquireRefreshFileLock', () => {
     const successorOwner = await readLockOwner(lockPath)
 
     releaseRenewal.resolve()
-    await withTimeout(renewalFinished.promise, 1_000)
+    await observed(hooks.lifetime, renewalFinished.promise)
 
     expect(await readLockOwner(lockPath)).toEqual(successorOwner)
     await first?.release()
@@ -467,7 +455,7 @@ describe('acquireRefreshFileLock', () => {
     expect(first).not.toBeNull()
 
     const firstRelease = first!.release()
-    await withTimeout(releaseConfirmed.promise, 1_000)
+    await observed(hooks.lifetime, releaseConfirmed.promise)
     currentNow = start + 10_000
     const successor = await acquireRefreshFileLock({
       name,
@@ -513,11 +501,11 @@ describe('acquireRefreshFileLock', () => {
     })
     expect(first).not.toBeNull()
 
-    await withTimeout(renewalWriteFenced.promise, 1_000)
+    await observed(hooks.lifetime, renewalWriteFenced.promise)
     const release = first!.release()
     expect(await resolvesWithin(release, 50)).toBe(false)
     releaseRenewal.resolve()
-    await withTimeout(renewalFinished.promise, 1_000)
+    await observed(hooks.lifetime, renewalFinished.promise)
     await release
 
     expect(existsSync(lockPath)).toBe(false)
@@ -551,7 +539,7 @@ describe('acquireRefreshFileLock', () => {
     })
     expect(first).not.toBeNull()
 
-    await withTimeout(renewalWriteFenced.promise, 1_000)
+    await observed(hooks.lifetime, renewalWriteFenced.promise)
     currentNow = start + 10_000
     const successor = await acquireRefreshFileLock({
       name,
@@ -563,7 +551,7 @@ describe('acquireRefreshFileLock', () => {
     const successorOwner = await readLockOwner(lockPath)
 
     releaseRenewal.resolve()
-    await withTimeout(renewalFinished.promise, 1_000)
+    await observed(hooks.lifetime, renewalFinished.promise)
 
     expect(await readLockOwner(lockPath)).toEqual(successorOwner)
     await first?.release()
@@ -598,7 +586,7 @@ describe('acquireRefreshFileLock', () => {
     })
     expect(first).not.toBeNull()
 
-    await withTimeout(renewalWriteReady.promise, 1_000)
+    await observed(hooks.lifetime, renewalWriteReady.promise)
     currentNow = start + 10_000
     const successor = await acquireRefreshFileLock({
       name,
@@ -609,10 +597,10 @@ describe('acquireRefreshFileLock', () => {
     expect(successor).not.toBeNull()
 
     releaseRenewal.resolve()
-    await withTimeout(renewalFinished.promise, 1_000)
+    await observed(hooks.lifetime, renewalFinished.promise)
 
     expect(existsSync(lockPath)).toBe(false)
-    expect((await withTimeout(first!.whenLost(), 1_000)).reason).toBe(
+    expect((await observed(hooks.lifetime, first!.whenLost())).reason).toBe(
       'marker-lost',
     )
     expect(first!.hasLost()).toBe(true)
@@ -655,7 +643,7 @@ describe('acquireRefreshFileLock', () => {
     })
     expect(first).not.toBeNull()
 
-    await withTimeout(renewalWriteReady.promise, 1_000)
+    await observed(hooks.lifetime, renewalWriteReady.promise)
     currentNow = start + 10_000
     const successor = await acquireRefreshFileLock({
       name,
@@ -667,13 +655,13 @@ describe('acquireRefreshFileLock', () => {
     const successorOwner = await readLockOwner(lockPath)
 
     releaseRenewal.resolve()
-    await withTimeout(relinquishRead.promise, 1_000)
+    await observed(hooks.lifetime, relinquishRead.promise)
     await writeFile(lockPath, `${JSON.stringify(successorOwner)}\n`, {
       encoding: 'utf8',
       mode: 0o600,
     })
     allowRelinquishRead.resolve()
-    await withTimeout(renewalFinished.promise, 1_000)
+    await observed(hooks.lifetime, renewalFinished.promise)
 
     expect(existsSync(lockPath)).toBe(true)
     expect(await readLockOwner(lockPath)).toEqual(successorOwner)
@@ -767,9 +755,9 @@ describe('acquireRefreshFileLock', () => {
     expect(lock).not.toBeNull()
     const before = await readLockOwner(lockPath)
 
-    await withTimeout(injectedFailure.promise, 1_000)
+    await observed(hooks.lifetime, injectedFailure.promise)
     currentNow = start + 100
-    expect(await resolvesWithin(renewed.promise, 500)).toBe(true)
+    await observed(hooks.lifetime, renewed.promise)
 
     const after = await readLockOwner(lockPath)
     expect(after.ownerId).toBe(before.ownerId)

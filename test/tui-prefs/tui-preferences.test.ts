@@ -1,7 +1,6 @@
 import { beforeEach, expect } from 'bun:test'
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { setTimeout as sleep } from 'node:timers/promises'
 import {
   LockContentionError,
   LockOwnershipError,
@@ -13,6 +12,7 @@ import {
   readTuiPreferencesFile,
 } from '../../src/tui-prefs/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observedState } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 const hooks = lifetimeHooks()
@@ -219,7 +219,10 @@ test('preferences renews its lease while a staged write is held', async () => {
     beforeCommit: async () => {
       const lockPath = lockPathFor(file, 'preferences')
       const before = JSON.parse(await readFile(lockPath, 'utf8'))
-      await sleep(5000)
+      await observedState(hooks.lifetime, async () => {
+        const owner = JSON.parse(await readFile(lockPath, 'utf8'))
+        return owner.expiresAt - before.expiresAt >= 3000
+      })
       const after = JSON.parse(await readFile(lockPath, 'utf8'))
       expect(after.ownerId).toBe(before.ownerId)
       expect(after.expiresAt - before.expiresAt).toBeGreaterThanOrEqual(3000)

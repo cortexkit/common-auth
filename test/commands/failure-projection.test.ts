@@ -4,6 +4,7 @@ import {
   type CommandMenuOptions,
 } from '../../src/commands/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
 import { apply, type MenuScenario, menuScenario, notes } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -156,6 +157,12 @@ describe('command failure projection', () => {
 
   it('a late login failure is reported by its projected message, not its exception text', async () => {
     const n = notes()
+    const notified = Promise.withResolvers<void>()
+    const notify = n.invocation.notify
+    n.invocation.notify = (...args) => {
+      notify(...args)
+      notified.resolve()
+    }
     let fail!: (error: unknown) => void
     const menu = m.menu({
       accounts: {
@@ -172,9 +179,7 @@ describe('command failure projection', () => {
     })
     await apply(menu, n.invocation, { sectionId: 'accounts', actionId: 'add' })
     fail(new Error(`token exchange failed with key ${ARBITRARY_KEY}`))
-    const deadline = Date.now() + 2_000
-    while (n.sent.length === 0 && Date.now() < deadline)
-      await new Promise((resolve) => setTimeout(resolve, 0))
+    await observed(hooks.lifetime, notified.promise)
     expect(n.sent).toEqual([
       {
         message: 'Adding the account failed: That action failed.',

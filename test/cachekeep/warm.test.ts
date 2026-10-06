@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock } from 'bun:test'
 import type { CacheKeepProfile } from '../../src/cachekeep/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
 import {
   body,
   DUE_MS,
@@ -88,16 +89,26 @@ describe('CacheKeepManager tick/prewarm', () => {
   })
 
   test('track self-arms an unstarted manager and the timer fires a due target', async () => {
-    const { mgr, send } = makeManager(clock, {
-      ttlMs: 100,
-      leadMs: 90,
-      tickIntervalMs: 5,
-    })
+    const sent = Promise.withResolvers<void>()
+    const { mgr, send } = makeManager(
+      clock,
+      {
+        ttlMs: 100,
+        leadMs: 90,
+        tickIntervalMs: 5,
+      },
+      {
+        send: async () => {
+          sent.resolve()
+          return new Response('{}')
+        },
+      },
+    )
     try {
       mgr.track({ sessionKey: 'sess-self-arm', bodyText: body('test') })
       expect(mgr.status().running).toBe(true)
       clock.advance(20)
-      await delay(30)
+      await observed(hooks.lifetime, sent.promise)
       expect(send).toHaveBeenCalledTimes(1)
     } finally {
       mgr.stop()

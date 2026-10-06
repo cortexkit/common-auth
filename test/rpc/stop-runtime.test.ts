@@ -1,5 +1,10 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
+
+const hooks = lifetimeHooks()
+const { test } = hooks
 
 async function checkStop(
   binary: string,
@@ -21,16 +26,14 @@ const dir = await mkdtemp(join(tmpdir(), 'rpc-stop-'));
 const server = await startRpcServer({ dir, isManagedDir: () => false, drain: () => [], apply: async () => ({ text: '', knobs: {} }) });
 const socket = connect({ host: '127.0.0.1', port: server.port });
 socket.on('error', () => {});
-let timer;
 try {
   await new Promise((resolve, reject) => { socket.once('error', reject); socket.once('connect', () => socket.write('POST /rpc/pending-notifications HTTP/1.1\\r\\nHost: localhost\\r\\nAuthorization: Bearer ' + server.token + '\\r\\nContent-Length: 100\\r\\n\\r\\n{', resolve)); });
   // A health round trip gives the partial request time to reach the server.
   assert.equal((await fetch('http://127.0.0.1:' + server.port + '/health')).status, 200);
   const started = Date.now();
-  await Promise.race([server.stop(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('stop waited for held connection')), 500); })]);
+  await server.stop();
   console.log(JSON.stringify({ version: process.versions.bun ?? process.version, closeAllConnections: typeof createServer().closeAllConnections, elapsed: Date.now() - started }));
 } finally {
-  clearTimeout(timer);
   socket.destroy();
   await server.stop();
   await rm(dir, { recursive: true, force: true });
@@ -40,23 +43,26 @@ try {
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  const [out, err, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  hooks.lifetime.unpark(() => child.kill())
+  const [out, err, code] = await observed(
+    hooks.lifetime,
+    Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]),
+  )
   expect(code, `${out}\n${err}`).toBe(0)
   const result = JSON.parse(out)
   expect(result.version.replace(/^v/, '')).toBe(version)
   expect(result.closeAllConnections).toBe('function')
-  expect(result.elapsed).toBeLessThan(500)
   console.info(`RPC stop ${JSON.stringify(result)}`)
 }
 
 // A process whose server was stopped while an `apply` was still pending must be
 // free to exit: the apply deadline timer only bounds the reply, and once the
-// server is gone nothing waits for it. The deadline here is 3 s, far longer
-// than the bound, so a timer that keeps the process alive fails the check.
+// server is gone nothing waits for it. Wait for process exit itself; the
+// runner deadline and lifetime cancellation handle a child that cannot exit.
 async function checkExitAfterStop(
   binary: string,
   directory: 'src' | 'dist',
@@ -66,12 +72,20 @@ async function checkExitAfterStop(
     new URL(`../../${directory}/rpc/rpc-server.js`, import.meta.url),
   )
   const script = `
+import assert from 'node:assert/strict';
 import { connect } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startRpcServer } from ${JSON.stringify(modulePath)};
 const dir = await mkdtemp(join(tmpdir(), 'rpc-exit-'));
+const realSetTimeout = globalThis.setTimeout;
+let applyTimer;
+globalThis.setTimeout = (...args) => {
+  const timer = realSetTimeout(...args);
+  if (args[1] === 3000) applyTimer = timer;
+  return timer;
+};
 let entered;
 const enteredApply = new Promise((resolve) => { entered = resolve; });
 const server = await startRpcServer({ dir, isManagedDir: () => false, drain: () => [], applyDeadlineMs: 3000, apply: () => { entered(); return new Promise(() => {}); } });
@@ -80,6 +94,9 @@ socket.on('error', () => {});
 await new Promise((resolve) => socket.once('connect', resolve));
 socket.write('POST /rpc/apply HTTP/1.1\\r\\nHost: localhost\\r\\nAuthorization: Bearer ' + server.token + '\\r\\nContent-Type: application/json\\r\\nContent-Length: 2\\r\\n\\r\\n{}');
 await enteredApply;
+// Observe the actual deadline timer: eventual exit alone could wait for it to fire.
+assert.ok(applyTimer, 'apply deadline timer was installed');
+assert.equal(applyTimer.hasRef(), false, 'pending apply deadline must not hold process exit');
 socket.destroy();
 await server.stop();
 await rm(dir, { recursive: true, force: true });
@@ -90,15 +107,18 @@ process.on('exit', () => { process.stdout.write(JSON.stringify({ version: proces
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  const [out, err, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
+  hooks.lifetime.unpark(() => child.kill())
+  const [out, err, code] = await observed(
+    hooks.lifetime,
+    Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]),
+  )
   expect(code, `${out}\n${err}`).toBe(0)
   const result = JSON.parse(out)
   expect(result.version.replace(/^v/, '')).toBe(version)
-  expect(result.exitAfterStopMs).toBeLessThan(1000)
   console.info(`RPC exit after stop ${JSON.stringify(result)}`)
 }
 

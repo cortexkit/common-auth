@@ -19,6 +19,7 @@ import {
   setLogLevel,
 } from '../../src/logger/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observedState } from '../fixtures/observed.js'
 
 import { makeTempDir } from '../fixtures/scratch.js'
 
@@ -76,7 +77,6 @@ describe('logger safety', () => {
     circ.self = circ
     expect(() => log.debug('circ-msg', circ)).not.toThrow()
     await flushForTest()
-    await new Promise((r) => setTimeout(r, 10))
     const txt = readFileSync(logFile, 'utf8')
     expect(txt).toContain('circ-msg')
     expect(txt).not.toContain('sk-LEAKME')
@@ -95,7 +95,6 @@ describe('logger safety', () => {
     const diamond = { a: shared, b: shared }
     expect(() => log.debug('diamond-msg', diamond)).not.toThrow()
     await flushForTest()
-    await new Promise((r) => setTimeout(r, 10))
     const txt = readFileSync(logFile, 'utf8')
     expect(txt).toContain('diamond-msg')
     expect(txt).toContain('"x":1')
@@ -111,7 +110,6 @@ describe('logger safety', () => {
     const bad = { big: BigInt(1) }
     expect(() => log.debug('bigint-msg', bad)).not.toThrow()
     await flushForTest()
-    await new Promise((r) => setTimeout(r, 10))
     const txt = readFileSync(logFile, 'utf8')
     expect(txt).toContain('bigint-msg')
     expect(txt).toContain('[unserializable]')
@@ -385,7 +383,9 @@ it('buffers until fifty lines or the 500 ms flush deadline', async () => {
   ).toHaveLength(50)
   log.info('timer-line')
   expect(readFileSync(logFile, 'utf8')).not.toContain('timer-line')
-  await new Promise((resolve) => setTimeout(resolve, 600))
+  await observedState(hooks.lifetime, () =>
+    readFileSync(logFile, 'utf8').includes('timer-line'),
+  )
   expect(readFileSync(logFile, 'utf8')).toContain('timer-line')
 })
 

@@ -10,6 +10,7 @@ import {
   watchTuiPreferences,
 } from '../../src/tui-prefs/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observedState } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 const hooks = lifetimeHooks()
@@ -52,16 +53,15 @@ function update(
 test('fires after the file changes', async () => {
   await writeFile(file, '{}')
   start()
-  await sleep(50)
   await update()
-  await sleep(400)
+  await observedState(hooks.lifetime, () => fired >= 1)
   expect(fired).toBeGreaterThanOrEqual(1)
 })
 test('observes a change made immediately after the watcher returns', async () => {
   await writeFile(file, '{}')
   start()
   writeFileSync(file, '{"plugin-a":{"collapsed":true}}')
-  await sleep(400)
+  await observedState(hooks.lifetime, () => fired >= 1)
   expect(fired).toBeGreaterThanOrEqual(1)
 })
 test('polls when directory watcher construction fails', async () => {
@@ -70,7 +70,7 @@ test('polls when directory watcher construction fails', async () => {
     throw Object.assign(new Error('bad file descriptor'), { code: 'EBADF' })
   }) as unknown as typeof watch)
   await update()
-  await sleep(400)
+  await observedState(hooks.lifetime, () => fired >= 1)
   expect(fired).toBeGreaterThanOrEqual(1)
 })
 test('debounces bursts into few callbacks', async () => {
@@ -173,7 +173,7 @@ test('ignores sibling files that share the preferences name as a prefix', async 
   await sleep(300)
   expect(fired).toBe(0)
   await update()
-  await sleep(400)
+  await observedState(hooks.lifetime, () => fired >= 1)
   expect(fired).toBeGreaterThanOrEqual(1)
 })
 test('does not fire when the file is rewritten with identical content', async () => {

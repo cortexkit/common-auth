@@ -45,8 +45,8 @@ it('a sink-only logger instance prints nothing and creates no file', async () =>
   dir = await makeTempDir('fixture-sink-only-')
   const entry = new URL('../../src/logger/index.ts', import.meta.url).href
   // A child process with an empty working directory shows both that nothing
-  // reached stdout or stderr and that no file appeared, even after the
-  // flush timer would have fired.
+  // reached stdout or stderr and that no file appeared. Sink delivery is
+  // synchronous; explicitly flushing also exercises the exit-handler path.
   const child = spawnSync(
     process.execPath,
     [
@@ -58,7 +58,7 @@ it('a sink-only logger instance prints nothing and creates no file', async () =>
     process.on('exit', () => instance.flushLogs());
     instance.createLogger('sink-only').info('hello');
     instance.createLogger('sink-only').warn('second');
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    instance.flushLogs();
     if (records.length !== 2) process.exit(3);
   `,
     ],

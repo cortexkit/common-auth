@@ -89,18 +89,22 @@ function isolatedEnv(root: string, extra: Record<string, string>) {
 }
 
 async function waitForServer(url: string, child: Bun.Subprocess) {
-  const deadline = Date.now() + 60_000
-  while (Date.now() < deadline) {
+  while (!hooks.lifetime.signal.aborted) {
     if (child.exitCode !== null)
       throw new Error(`host exited early with ${child.exitCode}`)
     try {
-      await fetch(url, { signal: AbortSignal.timeout(1000) })
+      await fetch(url, {
+        signal: AbortSignal.any([
+          hooks.lifetime.signal,
+          AbortSignal.timeout(1000),
+        ]),
+      })
       return
     } catch {
       await Bun.sleep(250)
     }
   }
-  throw new Error(`host at ${url} did not start`)
+  throw new Error(`host at ${url} did not start before test cancellation`)
 }
 
 async function collect(

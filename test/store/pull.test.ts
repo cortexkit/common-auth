@@ -6,14 +6,8 @@ import {
 } from '../../src/store/index.js'
 import { mutateAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
-import {
-  apiKey,
-  deferred,
-  oauth,
-  type Scenario,
-  scenario,
-  settlesWithin,
-} from './helpers.js'
+import { observed } from '../fixtures/observed.js'
+import { apiKey, deferred, oauth, type Scenario, scenario } from './helpers.js'
 
 const hooks = lifetimeHooks()
 const { afterEach, it } = hooks
@@ -37,11 +31,13 @@ describe('pulls never block the caller', () => {
       ['b', 'r-b'],
     ])
     const requested: string[] = []
+    const allRequested = deferred()
     const stop = deferred()
     hooks.lifetime.unpark(() => stop.resolve())
     const store = s.open({
       pull: async (request) => {
         requested.push(request.id)
+        if (requested.length === 3) allRequested.resolve()
         // These pulls stay pending for every assertion. Only teardown rejects
         // them, without returning an observation that could write after cleanup.
         await stop.promise
@@ -49,12 +45,9 @@ describe('pulls never block the caller', () => {
       },
     })
     const load = store.load()
-    expect(await settlesWithin(load, 1_000)).toBe(true)
-    expect((await load).status).toBe('ready')
+    expect((await observed(hooks.lifetime, load)).status).toBe('ready')
     store.requestReading('a')
-    const deadline = Date.now() + 4_000
-    while (requested.length < 3 && Date.now() < deadline)
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    await observed(hooks.lifetime, allRequested.promise)
     expect(requested.sort()).toEqual(['a', 'a', 'b'])
   })
 

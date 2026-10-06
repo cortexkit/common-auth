@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import type { PoolStore } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observedState } from '../fixtures/observed.js'
 import { deferred, oauth, type Scenario, scenario } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -40,18 +41,12 @@ function open(renew: boolean): PoolStore {
 
 async function renewedTwice(names: string[]) {
   const start = names.map((name) => renewals.get(name) ?? 0)
-  const deadline = Date.now() + 2_000
-  while (Date.now() < deadline) {
-    if (
-      names.every(
-        (name, index) =>
-          (renewals.get(name) ?? 0) >= (start[index] as number) + 2,
-      )
-    )
-      return
-    await new Promise((resolve) => setTimeout(resolve, 5))
-  }
-  throw new Error(`no renewal observed for ${names.join(', ')}`)
+  await observedState(hooks.lifetime, () =>
+    names.every(
+      (name, index) =>
+        (renewals.get(name) ?? 0) >= (start[index] as number) + 2,
+    ),
+  )
 }
 
 /**
