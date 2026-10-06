@@ -10,25 +10,48 @@ const servers = new WeakMap()
 let next = 0
 const sockets = new WeakMap()
 const refusedSockets = new WeakMap()
+const acceptedSockets = new WeakMap()
 let nextSocket = 0
 function phase(id, name, extra = {}) {
   console.log(JSON.stringify({ probe: 'rpc-413', id, phase: name, ms: +(performance.now() - origin).toFixed(3), ...extra }))
 }
 const serverEmit = Server.prototype.emit
 Server.prototype.emit = function (event, ...args) {
+  if (event === 'connection') {
+    const [socket] = args
+    if (!sockets.has(socket)) sockets.set(socket, ++nextSocket)
+    const socketId = sockets.get(socket)
+    const identity = { socketId, serverPort: socket.localPort, remotePort: socket.remotePort }
+    const accepted = acceptedSockets.get(this) ?? []
+    accepted.push({ socket, identity })
+    acceptedSockets.set(this, accepted)
+    let bytes = 0
+    let tail = ''
+    phase(`socket-${socketId}`, 'server-connection', { ...identity, bytesRead: socket.bytesRead })
+    // Observe raw arrivals without resuming, consuming, or replacing the HTTP parser.
+    socket.on('data', (chunk) => {
+      const text = chunk.toString('latin1')
+      const combined = tail + text
+      const applyHeaders = [...combined.matchAll(/POST \/rpc\/apply HTTP\/1\.[01]/g)].map((match) => bytes - tail.length + match.index)
+      bytes += chunk.length
+      tail = combined.slice(-32)
+      phase(`socket-${socketId}`, 'server-raw-data', { ...identity, chunkBytes: chunk.length, bytes, applyHeaderOffsets: applyHeaders, prefix: text.slice(0, 80) })
+    })
+    socket.once('close', (hadError) => phase(`socket-${socketId}`, 'server-raw-close', { ...identity, bytes, hadError, bytesRead: socket.bytesRead }))
+  }
   if (event === 'request') {
     const [req, res] = args
     if (Number(req.headers['content-length']) > 1_000_000 || (process.env.RPC_413_TRACE_ALL === '1' && req.method === 'POST')) {
       const oversized = Number(req.headers['content-length']) > 1_000_000
       if (oversized) refusedSockets.set(this, req.socket)
       if (!sockets.has(req.socket)) sockets.set(req.socket, ++nextSocket)
-      const record = { id: ++next, bytes: 0 }
+      const record = { id: ++next, bytes: 0, socket: req.socket }
       const records = servers.get(this) ?? []
       records.push(record)
       servers.set(this, records)
       requests.set(req, record)
       requests.set(res, record)
-      phase(record.id, 'server-request', { declared: req.headers['content-length'], serverPort: req.socket.localPort, remotePort: req.socket.remotePort, socketId: sockets.get(req.socket), reused413Connection: oversized ? null : (refusedSockets.has(this) ? refusedSockets.get(this) === req.socket : null) })
+      phase(record.id, 'server-request', { declared: req.headers['content-length'], serverPort: req.socket.localPort, remotePort: req.socket.remotePort, socketId: sockets.get(req.socket), bytesRead: req.socket.bytesRead, reused413Connection: oversized ? null : (refusedSockets.has(this) ? refusedSockets.get(this) === req.socket : null) })
       for (const name of ['end', 'destroy']) {
         const original = req.socket[name]
         req.socket[name] = function (...values) {
@@ -55,6 +78,7 @@ Server.prototype.emit = function (event, ...args) {
 }
 const serverClose = Server.prototype.close
 Server.prototype.close = function (...args) {
+  for (const { socket, identity } of acceptedSockets.get(this) ?? []) phase(`socket-${identity.socketId}`, 'server-stop-bytes-read', { ...identity, bytesRead: socket.bytesRead })
   for (const record of servers.get(this) ?? []) phase(record.id, 'server-stop-close-call', { bytes: record.bytes })
   return serverClose.apply(this, args)
 }
@@ -77,7 +101,7 @@ ServerResponse.prototype.end = function (...args) {
   const record = requests.get(this)
   if (record) {
     phase(record.id, 'server-response-end-call', { bytes: record.bytes })
-    this.once('finish', () => phase(record.id, 'server-response-finish', { bytes: record.bytes }))
+    this.once('finish', () => phase(record.id, 'server-response-finish', { bytes: record.bytes, socketId: sockets.get(record.socket), bytesRead: record.socket.bytesRead }))
   }
   return responseEnd.apply(this, args)
 }
