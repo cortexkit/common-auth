@@ -205,8 +205,19 @@ describe('roster rows without a per-row entry', () => {
       expect(entry).toEqual({ credentialEpoch: 1, needsFirstReading: true })
       expect(request).toMatchObject({ id: 'y', credentialEpoch: 1 })
       release.resolve()
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      const after = await s.open().read()
+      // Wait until the reading is recorded rather than a fixed pause, which a
+      // loaded host can outlast. If it is never recorded, the runner's test
+      // timeout fails this test by name; teardown's cancellation ends the loop
+      // so the body does not hold cleanup.
+      let after = await s.open().read()
+      while (
+        !hooks.lifetime.signal.aborted &&
+        after.status === 'ready' &&
+        after.rows.find((row) => row.id === 'y')?.needsFirstReading !== false
+      ) {
+        await Bun.sleep(10)
+        after = await s.open().read()
+      }
       if (after.status !== 'ready') throw new Error('expected ready')
       expect(after.rows.find((row) => row.id === 'y')).toMatchObject({
         credentialEpoch: 1,

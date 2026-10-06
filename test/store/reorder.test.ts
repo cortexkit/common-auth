@@ -176,8 +176,11 @@ describe('reorder', () => {
     })
     expect(await settlesWithin(reorder, 300)).toBe(false)
     // While reorder waits on the extra lock, a store write still gets the
-    // store locks: reorder has not taken them yet.
-    expect(await settlesWithin(s.open().enable('b'), 2_000)).toBe(true)
+    // store locks: reorder has not taken them yet. Await the write itself
+    // rather than a fixed window, which a loaded host can outlast; if reorder
+    // held the store locks, this write would block and the runner's own test
+    // timeout would fail this test by name.
+    await s.open().enable('b')
     expect(await storeOrder()).toEqual(['a', 'b', 'k'])
     expect(log).toEqual([])
     release.resolve()

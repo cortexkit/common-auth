@@ -91,3 +91,28 @@ test('late body completion is recorded by owner while its timeout remains failed
   )
   expect(result.output).not.toContain('Unhandled error between tests')
 })
+
+test('an abort listener added after teardown cancelled never settles its body', async () => {
+  const result = await child({
+    HOOK_OVERRUN_PREABORT: '1',
+    HOOK_OVERRUN_PREABORT_LISTENER: '1',
+  })
+  expect(result.code).toBe(1)
+  expect(result.output).toContain(
+    'Still waiting for previous test body: intentional body resumes after cancellation',
+  )
+  expect(result.output).not.toContain('successor setup was allowed')
+})
+
+test('a cancellation wait reached after teardown cancelled still settles', async () => {
+  const result = await child({ HOOK_OVERRUN_PREABORT: '1' })
+  expect(result.code).toBe(1)
+  expect(result.output).toContain(
+    '(fail) intentional body resumes after cancellation',
+  )
+  expect(result.output).toContain(
+    'Late test body completion: intentional body resumes after cancellation',
+  )
+  expect(result.output).toContain('successor setup was allowed')
+  expect(result.output).not.toContain('Still waiting for previous test body')
+})

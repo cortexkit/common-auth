@@ -39,6 +39,20 @@ export class TestLifetime {
     return this.cancellation.signal
   }
 
+  /**
+   * Resolve once teardown cancels this lifetime, including when it already has.
+   * A body that resumes after its runner deadline can reach its wait after
+   * teardown aborted; an abort listener added then would never fire, and the
+   * body would hold teardown until the hook times out.
+   */
+  untilCancelled(): Promise<void> {
+    const signal = this.signal
+    if (signal.aborted) return Promise.resolve()
+    return new Promise((resolve) =>
+      signal.addEventListener('abort', () => resolve(), { once: true }),
+    )
+  }
+
   private observe<T>(
     pending: Promise<T>,
     into: Set<Promise<unknown>>,

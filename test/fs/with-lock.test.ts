@@ -320,14 +320,9 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
     // Wait for the renewal itself, not a fixed window: on a loaded host the
     // first 100 ms renewal can take longer than any chosen window. If renewal
     // never runs, the runner's own test timeout fails this test by name, and
-    // teardown's abort releases this wait so the body can finish and cleanup
-    // is not held until the hook times out.
-    const stopped = new Promise<void>((resolve) =>
-      lifetime.signal.addEventListener('abort', () => resolve(), {
-        once: true,
-      }),
-    )
-    await Promise.race([observed, stopped])
+    // teardown's cancellation releases this wait so the body can finish and
+    // cleanup is not held until the hook times out.
+    await Promise.race([observed, lifetime.untilCancelled()])
     expect(writes).toBeGreaterThan(0)
     expect(renames).toBeGreaterThan(0)
     expect(observedError).toBeUndefined()

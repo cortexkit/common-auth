@@ -34,7 +34,9 @@ export function lifetimeHooks(hookTimeout = 5_000) {
       clearTimeout(timer)
     }
   }, hookTimeout)
-  afterAll(() => lifetime.drain(() => {}))
+  // Same budget as the other lifetime hooks: by default Bun's own 5 s, and a
+  // short child fixture's whole run stays bounded by the timeout it chose.
+  afterAll(() => lifetime.drain(() => {}), hookTimeout)
 
   function registrar<T extends typeof test>(register: T, owner?: unknown): T {
     return new Proxy(register, {
