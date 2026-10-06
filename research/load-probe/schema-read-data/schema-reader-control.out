@@ -1,0 +1,23 @@
+bun test v1.4.2 (744846f84)
+
+test/store/schema.test.ts:
+325 |     // Every config write went through a temp file renamed into place: each
+326 |     // of the 20 adds saw exactly one config temp file before its rename.
+327 |     expect(configTemps).toEqual(Array(20).fill(1))
+328 |     const legacy = await loadAccounts(s.paths)
+329 |     expect(legacy?.accounts.length).toBe(21)
+330 |     for (const text of observed) expect(() => JSON.parse(text)).not.toThrow()
+                                                                          ^
+error: expect(received).not.toThrow()
+
+Error name: "SyntaxError"
+Error message: "JSON Parse error: Expected '}'"
+
+      at <anonymous> (/Users/ufukaltinok/.local/share/cortexkit/alfonso/worktrees/28a223f982ef886b/550f3b60f368069850c56f2ceeff05c6ab6410b643fa8d15573afc4dd99505bd/bg_de84c4f2d3298895/test/store/schema.test.ts:330:69)
+(fail) store shapes > the unlocked legacy config read never observes a partial file during library writes [106.38ms]
+
+ 0 pass
+ 12 filtered out
+ 1 fail
+ 7 expect() calls
+Ran 1 test across 1 file. [129.00ms]

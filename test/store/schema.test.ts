@@ -286,43 +286,48 @@ describe('store shapes', () => {
     // just before its rename. fs.watch is not used: on macOS it reports
     // neither every event nor every file name, so it cannot prove this.
     const configTemps: number[] = []
+    const observed: string[] = []
+    let observing = false
+    const read = async () => {
+      observed.push(await readFile(s.configPath, 'utf8'))
+    }
     const store = s.open({
+      // Replace the default config/state save-lock list with an empty list.
+      // One sequential writer needs no store locks here: the reader is
+      // deliberately unlocked, so locks cannot change what it observes.
+      // Row/provider locks and production serialization/rename are unchanged.
+      storeLocks: [],
       onStep: async (step) => {
-        if (step !== 'before-config-write') return
-        const names = await readdir(s.dir)
-        configTemps.push(
-          names.filter((name) => /^openai-auth\.json\..+\.tmp$/.test(name))
-            .length,
-        )
+        if (step === 'before-config-write') {
+          const names = await readdir(s.dir)
+          configTemps.push(
+            names.filter((name) => /^openai-auth\.json\..+\.tmp$/.test(name))
+              .length,
+          )
+        }
+        // Bound reads to write progress, not elapsed time: a slow writer must
+        // not create more reader I/O and slow itself further.
+        if (observing) await read()
       },
     })
     await store.add({ id: 'seed', credential: oauth('r-seed') })
     configTemps.length = 0
-    const observed: string[] = []
-    let stop = false
-    const reader = (async () => {
-      while (!stop) {
-        try {
-          observed.push(await readFile(s.configPath, 'utf8'))
-        } catch {}
-        await new Promise((resolve) => setImmediate(resolve))
-      }
-    })()
-    try {
-      for (let index = 0; index < 20; index++)
-        await store.add({ id: `r${index}`, credential: oauth(`r-${index}`) })
-    } finally {
-      // A failed write must not leave the observation loop running forever.
-      stop = true
-      await reader
+    observing = true
+    for (let index = 0; index < 20; index++) {
+      // Also read between write steps, concurrently with lock acquisition.
+      await Promise.all([
+        store.add({ id: `r${index}`, credential: oauth(`r-${index}`) }),
+        read(),
+      ])
     }
-    expect(observed.length).toBeGreaterThan(0)
-    for (const text of observed) expect(() => JSON.parse(text)).not.toThrow()
+    // Four write-step reads and one concurrent read for every add.
+    expect(observed.length).toBe(100)
     // Every config write went through a temp file renamed into place: each
     // of the 20 adds saw exactly one config temp file before its rename.
     expect(configTemps).toEqual(Array(20).fill(1))
     const legacy = await loadAccounts(s.paths)
     expect(legacy?.accounts.length).toBe(21)
+    for (const text of observed) expect(() => JSON.parse(text)).not.toThrow()
   })
 
   it('ids are kept verbatim and ids the legacy reader would rename are refused', async () => {
