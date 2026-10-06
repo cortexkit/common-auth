@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect } from 'bun:test'
 import {
   DECLINE_TRANSITION,
   type PoolLoad,
@@ -7,6 +7,7 @@ import {
   type ProviderStateCodec,
   type WriteStep,
 } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   deferred,
   oauth,
@@ -17,9 +18,12 @@ import {
   settlesWithin,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -234,7 +238,7 @@ test('an attributed disable stopped at any write point shows the row either befo
   }
   for (const [step, view] of Object.entries(expected)) {
     s.cleanup()
-    s = await scenario()
+    s = hooks.lifetime.manage(await scenario())
     await addA(open())
     const before = await s.bytes()
     const store = open({
@@ -286,7 +290,7 @@ test('a disable stopped between its writes is shown only while its stamp binds t
     }
   for (const [name, edit] of Object.entries(edits)) {
     s.cleanup()
-    s = await scenario()
+    s = hooks.lifetime.manage(await scenario())
     await addA(open())
     await rejectionOf(
       ineligible(
@@ -317,9 +321,10 @@ test('a disable stopped between its writes is shown only while its stamp binds t
 test('an attributed disable and a concurrent merge of the provider state both land', async () => {
   for (const first of ['rotate', 'disable'] as const) {
     s.cleanup()
-    s = await scenario()
+    s = hooks.lifetime.manage(await scenario())
     await addA(open())
     const gate = deferred()
+    hooks.lifetime.unpark(() => gate.resolve())
     const entered = deferred()
     // Another writer brings a project for the same credential, merged with
     // the stored value by the codec.
@@ -398,7 +403,7 @@ test('a strict store disables an unbound row on an attribution alone and refuses
   // access token another writer swapped in: a lenient store may bind the
   // value to it, the strict one refuses the row as it refuses it everywhere.
   s.cleanup()
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
   await addA(open())
   const swapped = await s.state()
   swapped.accounts.a.access = 'access-foreign'
@@ -474,7 +479,7 @@ test('an attributed enable applies its provider state with the flag, also when s
     'before-config-write',
   ] as const) {
     s.cleanup()
-    s = await scenario()
+    s = hooks.lifetime.manage(await scenario())
     const setup = open()
     await addA(setup)
     await ineligible(setup)

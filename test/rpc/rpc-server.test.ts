@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { describe, expect, spyOn } from 'bun:test'
 import {
   chmod,
   mkdir,
@@ -33,7 +33,11 @@ import {
   DEFAULT_RPC_TIMEOUT_MS,
 } from '../../src/rpc/rpc-client.js'
 import { startRpcServer as start } from '../../src/rpc/rpc-server.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 const scope = {
   rpcRoot: '/fixture',

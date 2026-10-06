@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type {
   PoolRow,
   PoolStore,
@@ -9,6 +9,7 @@ import {
   loadAccounts,
   saveAccounts,
 } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   CRASH_EXIT_CODE,
@@ -18,9 +19,12 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -363,7 +367,7 @@ describe('a replace torn between its writes', () => {
   it('a quota reading after a crash inside replace is recorded only against a whole row', async () => {
     for (const step of STEPS) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await replaceCase.setup(s.open())
       await crashAt(replaceCase, step)
       for (const attribution of [
@@ -394,7 +398,7 @@ describe('a replace torn between its writes', () => {
   it('a refresh after a crash inside replace calls the provider with the credential and identity of one account', async () => {
     for (const step of STEPS) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await replaceCase.setup(s.open())
       await crashAt(replaceCase, step)
       const calls: string[] = []

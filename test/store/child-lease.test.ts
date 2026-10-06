@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, expect, it } from 'bun:test'
+import { beforeEach, expect } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { POOL_LOCK_DEFAULTS } from '../../src/store/refresh-lock.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   CRASH_EXIT_CODE,
   childLeases,
@@ -10,9 +11,12 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 

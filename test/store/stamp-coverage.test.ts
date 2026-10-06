@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type {
   OpenPoolStoreOptions,
   PoolRow,
   PoolStore,
 } from '../../src/store/index.js'
 import { credentialDigest } from '../../src/store/schema.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   CRASH_EXIT_CODE,
@@ -16,9 +17,12 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -216,7 +220,7 @@ describe('stamps cover the token sent and the account and endpoint it goes to', 
     ]
     for (const [title, craft] of cases) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await craft()
       expect({ title, ...(await admission()) }).toEqual({
         title,
@@ -391,7 +395,7 @@ describe('stamps written by 0.4.3 or earlier', () => {
   it('a stamp a rotate or refresh wrote is never completed as torn, even when the config epoch falls behind it', async () => {
     for (const write of ['rotate', 'refresh'] as const) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       const store = s.open()
       await store.add({ id: 'a', credential: oauth('r-a'), identity: 'acct-a' })
       await store.replace('a', oauth('r-b'), { identity: 'acct-b' })
@@ -497,7 +501,7 @@ describe('an identity learnt after the credential was stamped', () => {
     ] as const
     for (const step of STEPS) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await strict().add({ id: 'a', credential: oauth('r-a') })
       const child = crashChild({
         op: 'recordIdentity',

@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -19,7 +19,11 @@ import {
 } from '../../src/claustrum/index.ts'
 import { LockOwnershipError, lockPathFor } from '../../src/fs/index.js'
 import { mergeQuotaObservation } from '../../src/quota/index.ts'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { cleanupDirs, deferred, tempDir } from './helpers.ts'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 afterEach(cleanupDirs)
 

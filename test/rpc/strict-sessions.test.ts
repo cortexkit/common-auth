@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { describe, expect } from 'bun:test'
 import { rm } from 'node:fs/promises'
 import {
   drainNotifications,
@@ -9,7 +9,11 @@ import {
   resetNotificationsForTest,
   startRpcServer,
 } from '../../src/rpc/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 const strict = {
   rpcRoot: '/fixture-strict',

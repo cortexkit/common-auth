@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import {
   type LockEvent,
   POOL_KEY,
@@ -6,6 +6,7 @@ import {
   type PoolSettings,
 } from '../../src/store/index.js'
 import { loadAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   oauth,
@@ -14,9 +15,12 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -134,7 +138,7 @@ describe('updateSettings', () => {
     expect(await s.bytes()).toEqual(legacy)
 
     s.cleanup()
-    s = await scenario()
+    s = hooks.lifetime.manage(await scenario())
     await populate()
     const before = await s.bytes()
     const ready = s.open()

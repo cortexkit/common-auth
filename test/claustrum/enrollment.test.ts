@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { describe, expect } from 'bun:test'
 import { createHash } from 'node:crypto'
 import {
   chmod,
@@ -26,6 +26,10 @@ import {
   readClaustrumEnrollmentStatus,
   readClaustrumEnrollmentToken,
 } from '../../src/claustrum/index.ts'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 const CLAUSTRUM_OPENCODE_ENROLLMENT_NAME = enrollmentName(
   'test-auth',
@@ -59,14 +63,16 @@ function manager(
     ConstructorParameters<typeof ClaustrumEnrollmentManager>[0]
   > = {},
 ) {
-  return new ClaustrumEnrollmentManager({
-    client: enrollmentClient,
-    paths,
-    proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
-    mintSecret: () => secret,
-    now: () => 1_000,
-    ...extra,
-  })
+  return hooks.lifetime.manage(
+    new ClaustrumEnrollmentManager({
+      client: enrollmentClient,
+      paths,
+      proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      mintSecret: () => secret,
+      now: () => 1_000,
+      ...extra,
+    }),
+  )
 }
 
 async function seedPendingRequest(
@@ -436,6 +442,7 @@ describe('ClaustrumEnrollmentManager', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
+    hooks.lifetime.unpark(() => release())
     let proposals = 0
     const first = manager(
       paths,

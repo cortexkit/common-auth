@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import {
   chmodSync,
@@ -18,8 +18,12 @@ import {
   resetLoggerForTest,
   setLogLevel,
 } from '../../src/logger/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
 
 let dir: string
 let logFile: string

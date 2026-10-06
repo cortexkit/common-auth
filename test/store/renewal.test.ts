@@ -1,14 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import type { PoolStore } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { deferred, oauth, type Scenario, scenario } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
 
 let s: Scenario
 let clock: number
 let renewals: Map<string, number>
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
   clock = Date.now()
   renewals = new Map()
 })
@@ -81,6 +85,7 @@ describe('lock renewal', () => {
       ]
       const entered = deferred()
       const release = deferred()
+      hooks.lifetime.unpark(() => release.resolve())
       const refresh = open(renew)
         .refresh('a', async () => {
           entered.resolve()
@@ -113,6 +118,7 @@ describe('lock renewal', () => {
       ]
       const reached = deferred()
       const release = deferred()
+      hooks.lifetime.unpark(() => release.resolve())
       const store = s.open({
         now: () => clock,
         lockOptions: { ttlMs: 1_000, renewIntervalMs: 10, renew },

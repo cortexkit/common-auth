@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import {
   type AccountMenuOptions,
   accountMenuActions,
@@ -8,8 +8,12 @@ import {
 import type { LoginAccount, MenuLogin } from '../../src/auth-menu/login.js'
 import { quotaCodec } from '../../src/quota/index.js'
 import { POOL_KEY } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { oauth, type Scenario, scenario } from '../store/helpers.js'
 import { choose, fakeTerminal, KEY, NO, YES } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let s: Scenario
 beforeEach(async () => {

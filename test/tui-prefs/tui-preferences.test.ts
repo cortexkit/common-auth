@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect } from 'bun:test'
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -12,7 +12,11 @@ import {
   readTuiPreferences,
   readTuiPreferencesFile,
 } from '../../src/tui-prefs/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let dir: string
 let file: string

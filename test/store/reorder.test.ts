@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { withLock } from '../../src/fs/with-lock.js'
 import {
   type LockEvent,
@@ -6,6 +6,7 @@ import {
   type WriteStep,
 } from '../../src/store/index.js'
 import { loadAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   CRASH_EXIT_CODE,
@@ -19,9 +20,12 @@ import {
   settlesWithin,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -154,6 +158,7 @@ describe('reorder', () => {
     }
     const held = deferred()
     const release = deferred()
+    hooks.lifetime.unpark(() => release.resolve())
     const holder = withLock(
       s.statePath,
       { name: 'extra-1', ttlMs: 10_000, timeoutMs: 5_000 },

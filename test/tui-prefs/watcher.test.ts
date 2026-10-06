@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
+import { beforeEach, expect, spyOn } from 'bun:test'
 import { EventEmitter } from 'node:events'
 import { type watch, writeFileSync } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
@@ -9,7 +9,11 @@ import {
   createTuiPreferenceWriter,
   watchTuiPreferences,
 } from '../../src/tui-prefs/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let dir: string
 let file: string

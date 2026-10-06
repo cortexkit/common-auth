@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type { OpenDialogPayload } from '../../src/rpc/notifications.js'
 import {
   drainNotifications,
@@ -6,6 +6,10 @@ import {
   pushNotification,
   resetNotificationsForTest,
 } from '../../src/rpc/notifications.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+
+const hooks = lifetimeHooks()
+const { test } = hooks
 
 const scope = {
   rpcRoot: '/fixture',

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect } from 'bun:test'
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -9,7 +9,11 @@ import {
   type RefreshFileLock,
 } from '../../src/fs/index.js'
 import { createSidebarFile } from '../../src/sidebar-file/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let dir: string
 let target: string

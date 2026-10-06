@@ -1121,3 +1121,7 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | claustrum | persists a pending Connect secret below a private group-writable ancestor | new (neither copy) | persists a pending Connect secret below a private group-writable ancestor |
 
 Pending provenance (excluded from the passing-test table): `persists an approved Connect token below a private group-writable ancestor` is a new library test marked TODO until the upstream Claustrum client token writer accepts private-group ancestors; its active run currently fails in `writeEnrollmentTokenFile`.
+
+| tests | Consumers and token files remain alive after child Bun times out the copied peer-replacement test, through its final assertions | new (neither copy) | consumer real runner timeout keeps resources alive through the original body and final assertions |
+| tests | Enrollment files remain alive after child Bun times out the copied protocol-terminal refusal test, through its final assertions | new (neither copy) | enrollment real runner timeout keeps resources alive through the original body and final assertions |
+| tests | The store scenario remains alive after child Bun times out the copied legacy-read-during-writes test, through its final assertions | new (neither copy) | schema real runner timeout keeps resources alive through the original body and final assertions |

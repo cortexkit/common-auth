@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   body,
   DUE_MS,
@@ -8,6 +9,9 @@ import {
   sessions,
   TTL_MS,
 } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { test } = hooks
 
 let clock: ReturnType<typeof fakeNow>
 beforeEach(() => {

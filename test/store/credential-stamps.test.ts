@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type {
   OpenPoolStoreOptions,
   PoolRow,
@@ -9,6 +9,7 @@ import {
   acquirePoolLock,
   POOL_LOCK_DEFAULTS,
 } from '../../src/store/refresh-lock.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   oauth,
@@ -19,9 +20,12 @@ import {
   settlesWithin,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -208,7 +212,7 @@ const UNBOUND = CRAFTS.filter(
 /** A fresh pool holding row `a` as the craft leaves it. */
 async function crafted(craft: Craft): Promise<void> {
   s.cleanup()
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
   await seed()
   await craft.edit()
 }
@@ -662,7 +666,7 @@ describe('strict mode and an interrupted replace', () => {
   it('a strict replace interrupted at each write is whole or torn, never unbound, and a pull completes it forward', async () => {
     for (const step of STEPS) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await s
         .open()
         .add({ id: 'a', credential: oauth('r-old'), identity: 'acct-old' })
@@ -758,7 +762,7 @@ describe('strict mode and an interrupted replace', () => {
     ]
     for (const [title, edit] of crafts) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await seed()
       await editState(edit)
       const store = strict()

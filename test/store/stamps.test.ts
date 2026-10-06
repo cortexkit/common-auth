@@ -1,10 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import {
   REFRESH_STAMP_TOLERANCE_MS,
   type StoredCredential,
 } from '../../src/store/index.js'
 import { saveAccountState } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { oauth, rejectionOf, type Scenario, scenario } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
 
 let s: Scenario
 // The injected clock is pinned at the real clock when each test starts and
@@ -14,7 +18,7 @@ let s: Scenario
 let T0: number
 let clock: number
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
   T0 = Date.now()
   clock = T0
 })
@@ -142,7 +146,7 @@ describe('refresh stamps against the legacy comparator', () => {
       const outcomes: string[] = []
       for (const expires of [EXPIRES + 1_000, EXPIRES - 1_000]) {
         s.cleanup()
-        s = await scenario()
+        s = hooks.lifetime.manage(await scenario())
         const store = await seed(T0 + prior)
         const outcome = await store
           .refresh('a', async () => ({

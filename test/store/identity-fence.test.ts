@@ -1,10 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type { PoolRow } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { oauth, rejectionOf, type Scenario, scenario } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
 
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 

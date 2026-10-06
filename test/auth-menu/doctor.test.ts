@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { runAccountMenu } from '../../src/auth-menu/accounts.js'
 import {
   DOCTOR_CHECK_FAILED,
@@ -7,8 +7,12 @@ import {
   runDoctorChecks,
 } from '../../src/auth-menu/doctor.js'
 import { runMenu } from '../../src/auth-menu/menu.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { oauth, type Scenario, scenario } from '../store/helpers.js'
 import { choose, fakeTerminal, NO, YES } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let s: Scenario
 beforeEach(async () => {

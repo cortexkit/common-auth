@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type { CommandDialogPayload } from '../../src/commands/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apply,
   type MenuScenario,
@@ -9,6 +10,9 @@ import {
   populate,
   rosterIds,
 } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
 
 let m: MenuScenario
 beforeEach(async () => {
