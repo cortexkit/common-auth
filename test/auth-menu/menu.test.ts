@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { parseKeys } from '../../src/auth-menu/ansi.js'
 import { confirm } from '../../src/auth-menu/confirm.js'
 import { type MenuAction, runMenu } from '../../src/auth-menu/menu.js'
 import {
@@ -51,6 +52,54 @@ describe('menu runtime', () => {
     expect(frames[3]).toContain('○ Action third')
   })
 
+  test('handles several keys delivered in one input chunk', async () => {
+    const first = action('first')
+    const second = action('second')
+    const third = action('third')
+    const fake = fakeTerminal([`${KEY.down}${KEY.down}${KEY.down}${KEY.enter}`])
+
+    const outcome = await runMenu({
+      title: 'Example accounts',
+      actions: [first.action, second.action, third.action],
+      terminal: fake.terminal,
+    })
+
+    expect(outcome).toEqual({ status: 'ran', action: 'first' })
+    expect(fake.frames()).toHaveLength(4)
+  })
+
+  test('handles mixed keys delivered in one input chunk', async () => {
+    const first = action('first')
+    const second = action('second')
+    const third = action('third')
+    const chunk = `${KEY.down}x${KEY.up}${KEY.down}${KEY.enter}`
+    expect(parseKeys(chunk)).toEqual(['down', 'char', 'up', 'down', 'enter'])
+    const fake = fakeTerminal([chunk])
+
+    const outcome = await runMenu({
+      title: 'Example accounts',
+      actions: [first.action, second.action, third.action],
+      terminal: fake.terminal,
+    })
+
+    expect(outcome).toEqual({ status: 'ran', action: 'second' })
+    expect(fake.frames()).toHaveLength(4)
+  })
+
+  test('an incomplete escape prefix at a chunk boundary is ignored', async () => {
+    const first = action('first')
+    const second = action('second')
+    const fake = fakeTerminal(['\x1b[', KEY.down, KEY.enter])
+
+    const outcome = await runMenu({
+      title: 'Example accounts',
+      actions: [first.action, second.action],
+      terminal: fake.terminal,
+    })
+
+    expect(outcome).toEqual({ status: 'ran', action: 'second' })
+  })
+
   test('Escape cancels the menu, runs nothing and restores the terminal', async () => {
     const only = action('only')
     const fake = fakeTerminal([KEY.escape])
@@ -65,6 +114,21 @@ describe('menu runtime', () => {
     expect(only.run).not.toHaveBeenCalled()
     expect(fake.rawModes).toEqual([true, false])
     expect(fake.listening()).toBe(0)
+  })
+
+  test('Ctrl-C cancels the menu, runs nothing and restores the terminal', async () => {
+    const only = action('only')
+    const fake = fakeTerminal([KEY.ctrlC])
+
+    const outcome = await runMenu({
+      title: 'Example accounts',
+      actions: [only.action, action('other').action],
+      terminal: fake.terminal,
+    })
+
+    expect(outcome).toEqual({ status: 'cancelled' })
+    expect(only.run).not.toHaveBeenCalled()
+    expect(fake.rawModes).toEqual([true, false])
   })
 
   test('a non-interactive terminal gets a plain list and nothing runs', async () => {
