@@ -1,0 +1,82 @@
+[
+  {
+    "control": "remove store returned-thenable rejection absorption",
+    "expected_red": "built store lock absorbs rejected contended observer promises under Bun",
+    "captured_output": "(fail) built store lock absorbs rejected contended observer promises under Bun [115.33ms]",
+    "applied_evidence": "src/store/refresh-lock.ts: during src/store/refresh-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty; VM dist rebuilt from the mutant",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "child_exit_assertion_failed": true
+  },
+  {
+    "control": "remove store returned-thenable rejection absorption",
+    "expected_red": "built store lock absorbs rejected acquired observer promises under Bun",
+    "captured_output": "(fail) built store lock absorbs rejected acquired observer promises under Bun [78.51ms]",
+    "applied_evidence": "src/store/refresh-lock.ts: during src/store/refresh-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty; VM dist rebuilt from the mutant",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "child_exit_assertion_failed": true
+  },
+  {
+    "control": "remove store returned-thenable rejection absorption",
+    "expected_red": "built store lock absorbs rejected released observer promises under Bun",
+    "captured_output": "(fail) built store lock absorbs rejected released observer promises under Bun [89.87ms]",
+    "applied_evidence": "src/store/refresh-lock.ts: during src/store/refresh-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty; VM dist rebuilt from the mutant",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "child_exit_assertion_failed": true
+  },
+  {
+    "control": "remove store returned-thenable rejection absorption",
+    "expected_red": "built store lock absorbs rejected contended observer promises under Node 24 strict",
+    "captured_output": "(fail) built store lock absorbs rejected contended observer promises under Node 24 strict [43.44ms]",
+    "applied_evidence": "src/store/refresh-lock.ts: during src/store/refresh-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty; VM dist rebuilt from the mutant",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "child_exit_assertion_failed": true
+  },
+  {
+    "control": "remove store returned-thenable rejection absorption",
+    "expected_red": "built store lock absorbs rejected acquired observer promises under Node 24 strict",
+    "captured_output": "(fail) built store lock absorbs rejected acquired observer promises under Node 24 strict [99.94ms]",
+    "applied_evidence": "src/store/refresh-lock.ts: during src/store/refresh-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty; VM dist rebuilt from the mutant",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "child_exit_assertion_failed": true
+  },
+  {
+    "control": "remove store returned-thenable rejection absorption",
+    "expected_red": "built store lock absorbs rejected released observer promises under Node 24 strict",
+    "captured_output": "(fail) built store lock absorbs rejected released observer promises under Node 24 strict [116.43ms]",
+    "applied_evidence": "src/store/refresh-lock.ts: during src/store/refresh-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty; VM dist rebuilt from the mutant",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "child_exit_assertion_failed": true
+  },
+  {
+    "control": "remove fs returned-thenable rejection absorption",
+    "expected_red": "built fs lock absorbs rejected contended observer promises under Bun",
+    "captured_output": "(fail) built fs lock absorbs rejected contended observer promises under Bun [20.74ms]",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty; VM dist rebuilt from the mutant",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "child_exit_assertion_failed": true
+  },
+  {
+    "control": "remove fs returned-thenable rejection absorption",
+    "expected_red": "built fs lock absorbs rejected contended observer promises under Node 24 strict",
+    "captured_output": "(fail) built fs lock absorbs rejected contended observer promises under Node 24 strict [46.52ms]",
+    "applied_evidence": "src/fs/refresh-file-lock.ts: during src/fs/refresh-file-lock.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty; VM dist rebuilt from the mutant",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "child_exit_assertion_failed": true
+  },
+  {
+    "control": "treat every non-acquired event as a release",
+    "expected_red": "contended lock events preserve acquired lock evidence until release",
+    "captured_output": "(fail) contended lock events preserve acquired lock evidence until release [1.56ms]",
+    "applied_evidence": "test/store/refresh.test.ts: during test/store/refresh.test.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after checkout and touch empty",
+    "outcome": "reddened",
+    "exit_code": 1
+  }
+]
