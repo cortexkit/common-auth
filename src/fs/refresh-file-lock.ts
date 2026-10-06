@@ -306,9 +306,10 @@ export async function acquireRefreshFileLock(options: {
     return true
   }
 
-  // Marker loss after a write may mean our record replaced a successor's.
-  // Delete only a record still owned by us; a concurrent successor write can
-  // then yield zero winners, never two.
+  // Marker loss after a write may mean another contender has taken over.
+  // Delete only a record still owned by us, so an already-installed
+  // successor is preserved. The owner read and the removal are not atomic:
+  // a successor record written between them can still be deleted.
   async function relinquishLockAfterMarkerLoss() {
     for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
       if (options.onStep) await options.onStep('relinquish-read')
