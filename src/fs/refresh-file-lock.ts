@@ -67,6 +67,7 @@ export async function acquireRefreshFileLock(options: {
       | 'stale-lock-observed'
       | 'stale-lock-confirmed'
       | 'stale-lock-removed'
+      | 'stale-lock-recreated'
       | 'eviction-marker-acquired'
       | 'renewal-owner-confirmed'
       | 'renewal-marker-unavailable'
@@ -305,9 +306,10 @@ export async function acquireRefreshFileLock(options: {
     return true
   }
 
-  // Marker loss after a write may mean our record replaced a successor's.
-  // Delete only a record still owned by us; a concurrent successor write can
-  // then yield zero winners, never two.
+  // Marker loss after a write may mean another contender has taken over.
+  // Delete only a record still owned by us, so an already-installed
+  // successor is preserved. The owner read and the removal are not atomic:
+  // a successor record written between them can still be deleted.
   async function relinquishLockAfterMarkerLoss() {
     for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
       if (options.onStep) await options.onStep('relinquish-read')
@@ -469,11 +471,12 @@ export async function acquireRefreshFileLock(options: {
         if (options.onStep) await options.onStep('stale-lock-removed')
         acquired = await tryAcquire()
         if (!acquired) return null
+        if (options.onStep) await options.onStep('stale-lock-recreated')
         // Fence check 4: re-verify ownership after acquiring the lock. If the
         // marker was stolen between tryAcquire and this check, release the
         // just-acquired lock and return null (fail-closed).
         if (!(await ownsEvictionMarker())) {
-          await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+          await relinquishLockAfterMarkerLoss()
           acquired = false
           return null
         }

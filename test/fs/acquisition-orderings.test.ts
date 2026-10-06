@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect } from 'bun:test'
-import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
@@ -44,7 +44,7 @@ async function scenario() {
   const name = 'refresh'
   const lockPath = `${path}.${name}.lock`
   const marker = `${lockPath}.evicting`
-  const now = Date.now()
+  let now = Date.now()
   await writeFile(
     lockPath,
     JSON.stringify({ ownerId: 'original-stale', expiresAt: now - 1 }),
@@ -66,17 +66,24 @@ async function scenario() {
     pause?:
       | { step: Step; gate: ReturnType<typeof barrier> }
       | { step: Step; gate: ReturnType<typeof barrier> }[],
+    onStep?: (step: Step) => Promise<void>,
+    renew = false,
   ) => {
     const operation = acquireRefreshFileLock({
       path,
       name,
       ttlMs: 60_000,
+      renew,
       now: () => now,
+      onRenewalTimer: (event) => {
+        steps.push(`renewal-${event}`)
+      },
       onContended: () => {
         steps.push('live-owner-refused')
       },
       onStep: async (step) => {
         steps.push(step)
+        await onStep?.(step)
         for (const point of pause
           ? Array.isArray(pause)
             ? pause
@@ -93,16 +100,114 @@ async function scenario() {
       }),
     )
   }
-  return { start, staleMarker, owner }
+  return {
+    start,
+    staleMarker,
+    owner,
+    lockPath,
+    marker,
+    advance: () => {
+      now += 60_001
+    },
+  }
 }
 const stolen = [
   'stale-lock-observed',
   'eviction-marker-acquired',
   'stale-lock-confirmed',
   'stale-lock-removed',
+  'stale-lock-recreated',
 ]
 
 describe('deterministic stale acquisition orderings', () => {
+  it('stale lock recreation hook rejection propagates and leaves one unrenewed lease until takeover', async () => {
+    const s = await scenario()
+    const a: string[] = [],
+      beforeExpiry: string[] = [],
+      afterExpiry: string[] = []
+    const failure = new Error('recreation control failed')
+    let createdOwner: string | undefined
+    const first = s.start(
+      a,
+      undefined,
+      async (step) => {
+        if (step !== 'stale-lock-recreated') return
+        createdOwner = (await s.owner()).ownerId
+        throw failure
+      },
+      true,
+    )
+    expect(
+      await first.then(
+        () => undefined,
+        (error: unknown) => error,
+      ),
+    ).toBe(failure)
+    expect(a).toEqual(stolen)
+    expect(createdOwner).toBeString()
+    expect(createdOwner).not.toBe('original-stale')
+    const abandoned = await s.owner()
+    expect(abandoned.ownerId).toBe(createdOwner!)
+    expect(await stat(s.marker).catch((error) => error.code)).toBe('ENOENT')
+    expect(await s.start(beforeExpiry)).toBeNull()
+    expect(beforeExpiry).toEqual(['live-owner-refused'])
+    expect(await s.owner()).toEqual(abandoned)
+    s.advance()
+    const successor = await s.start(afterExpiry)
+    expect(successor).not.toBeNull()
+    expect(afterExpiry).toEqual(stolen)
+    expect(successor!.ownerId).not.toBe(createdOwner!)
+    expect((await s.owner()).ownerId).toBe(successor!.ownerId)
+    await successor!.assertOwned()
+    expect(a).toEqual(stolen)
+  })
+
+  it('post-fence marker loss preserves the successor after stale lock recreation', async () => {
+    const s = await scenario()
+    const a: string[] = [],
+      b: string[] = []
+    const gate = barrier()
+    const first = s.start(a, { step: 'stale-lock-recreated', gate })
+    await observed(hooks.lifetime, gate.entered)
+    const displaced = await s.owner()
+    expect(a).toEqual(stolen)
+    s.advance()
+    const winner = await s.start(b)
+    expect(winner).not.toBeNull()
+    const successor = await s.owner()
+    expect(successor.ownerId).toBe(winner!.ownerId)
+    expect(successor.ownerId).not.toBe(displaced.ownerId)
+    expect(b).toEqual([
+      'stale-lock-observed',
+      'stale-marker-stat',
+      'stale-marker-claimed',
+      ...stolen,
+    ])
+    await winner!.assertOwned()
+    gate.resume()
+    expect(await first).toBeNull()
+    expect(await s.owner()).toEqual(successor)
+    await winner!.assertOwned()
+    expect(a).toEqual([...stolen, 'relinquish-read'])
+  })
+
+  it('post-fence marker loss removes its own recreated record without an orphan', async () => {
+    const s = await scenario()
+    const a: string[] = []
+    const gate = barrier()
+    const first = s.start(a, { step: 'stale-lock-recreated', gate })
+    await observed(hooks.lifetime, gate.entered)
+    expect((await s.owner()).ownerId).not.toBe('original-stale')
+    expect(a).toEqual(stolen)
+    await rm(s.marker, { recursive: true, force: true })
+    gate.resume()
+    expect(await first).toBeNull()
+    expect(
+      await readFile(s.lockPath, 'utf8').catch((error) => error.code),
+    ).toBe('ENOENT')
+    expect(a).toEqual([...stolen, 'relinquish-read'])
+  })
+
   it('ordering 1 refuses a fresh occupied eviction marker after observing the original stale lock', async () => {
     const s = await scenario()
     const a: string[] = [],
@@ -178,7 +283,7 @@ describe('deterministic stale acquisition orderings', () => {
     const successor = await s.owner()
     gap.resume()
     expect(await holder).toBeNull()
-    expect(a).toEqual(stolen)
+    expect(a).toEqual(stolen.slice(0, -1))
     expect(b).toEqual([
       'stale-lock-observed',
       'stale-marker-stat',

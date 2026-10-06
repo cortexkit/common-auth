@@ -1162,3 +1162,7 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | fs | Deterministic second liveness check under a displaced marker | new (neither copy) | ordering 2 rechecks liveness under the marker and preserves the replacement owner |
 | fs | Deterministic exclusive creation in the stale deletion gap | new (neither copy) | ordering 3 gives the top-of-loop exclusive create the deletion gap and refuses the holder recreate |
 | fs | Deterministic live successor refusal after stale-marker retry | new (neither copy) | ordering 4 refuses the newly live lock on retry after its earlier stale observation |
+
+| fs | Preserve successor ownership after recreated contender loses its marker | new (neither copy) | post-fence marker loss preserves the successor after stale lock recreation |
+| fs | Remove an owned recreated record after marker loss without leaving an orphan | new (neither copy) | post-fence marker loss removes its own recreated record without an orphan |
+| fs | Recreated control-barrier rejection preserves its lease until expiry and propagates the exact error | new (neither copy) | stale lock recreation hook rejection propagates and leaves one unrenewed lease until takeover |
