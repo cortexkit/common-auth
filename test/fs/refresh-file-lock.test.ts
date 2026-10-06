@@ -8,6 +8,7 @@ import {
 } from '../../src/fs/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
+import { phaseClock } from '../fixtures/phase-clock.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 const hooks = lifetimeHooks()
@@ -800,20 +801,28 @@ describe('acquireRefreshFileLock', () => {
     const name = 'plain-contention'
     const lockPath = `${path}.${name}.lock`
 
-    for (let round = 0; round < 512; round++) {
-      await writeFile(
-        lockPath,
-        `${JSON.stringify({ ownerId: 'stale-owner', expiresAt: 0 })}\n`,
-        { encoding: 'utf8', mode: 0o600 },
-      )
-      const contenders = await Promise.all([
-        acquireRefreshFileLock({ name, path, ttlMs: 1_000 }),
-        acquireRefreshFileLock({ name, path, ttlMs: 1_000 }),
-      ])
-      const winners = contenders.filter((lock) => lock !== null)
+    const clock = phaseClock('Stale elections failure phases', 30_000)
+    try {
+      for (let round = 0; round < 512; round++) {
+        clock.mark('round-start', { round })
+        await writeFile(
+          lockPath,
+          `${JSON.stringify({ ownerId: 'stale-owner', expiresAt: 0 })}\n`,
+          { encoding: 'utf8', mode: 0o600 },
+        )
+        const contenders = await Promise.all([
+          acquireRefreshFileLock({ name, path, ttlMs: 1_000 }),
+          acquireRefreshFileLock({ name, path, ttlMs: 1_000 }),
+        ])
+        const winners = contenders.filter((lock) => lock !== null)
 
-      expect(winners).toHaveLength(1)
-      await winners[0]?.release()
+        expect(winners).toHaveLength(1)
+        await winners[0]?.release()
+        clock.mark('round-end', { round })
+      }
+      clock.succeeded()
+    } finally {
+      clock.finish()
     }
   }, 30_000)
 })
