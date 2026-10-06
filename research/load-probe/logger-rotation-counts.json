@@ -1,0 +1,502 @@
+[
+  {
+    "host": "mac",
+    "bun": "1.3.14",
+    "summary": {
+      "passes": 20,
+      "failures": 0,
+      "runs": 20,
+      "workers": 0
+    },
+    "clockRecords": 20,
+    "callCounts": {
+      "writeFileSync": 80,
+      "chmodSync": 140,
+      "flushLogs": 20,
+      "existsSync": 100,
+      "statSync": 120,
+      "renameSync": 60,
+      "appendFileSync": 20,
+      "readFileSync": 60
+    },
+    "maximumDurationMs": {
+      "writeFileSync": 8.323959000000002,
+      "chmodSync": 0.11424999999999841,
+      "flushLogs": 2.266582999999997,
+      "existsSync": 0.11683299999999974,
+      "statSync": 0.18108399999999847,
+      "renameSync": 1.3289999999999935,
+      "appendFileSync": 0.8398330000000129,
+      "readFileSync": 0.18404200000000515
+    },
+    "worstPhase": {
+      "writeFileSync": {
+        "operation": "writeFileSync",
+        "basename": "test.log",
+        "startMs": 0.5435829999999982,
+        "durationMs": 8.323959000000002
+      },
+      "chmodSync": {
+        "operation": "chmodSync",
+        "basename": "test.log.3",
+        "startMs": 3.955083000000002,
+        "durationMs": 0.11424999999999841
+      },
+      "flushLogs": {
+        "operation": "flushLogs",
+        "basename": "test.log",
+        "startMs": 6.444917000000004,
+        "durationMs": 2.266582999999997
+      },
+      "existsSync": {
+        "operation": "existsSync",
+        "basename": "test.log",
+        "startMs": 5.824334,
+        "durationMs": 0.11683299999999974
+      },
+      "statSync": {
+        "operation": "statSync",
+        "basename": "test.log",
+        "startMs": 3.0930000000000035,
+        "durationMs": 0.18108399999999847
+      },
+      "renameSync": {
+        "operation": "renameSync",
+        "basename": "test.log.1",
+        "startMs": 6.807292000000004,
+        "durationMs": 1.3289999999999935
+      },
+      "appendFileSync": {
+        "operation": "appendFileSync",
+        "basename": "test.log",
+        "startMs": 5.94279199999999,
+        "durationMs": 0.8398330000000129
+      },
+      "readFileSync": {
+        "operation": "readFileSync",
+        "basename": "test.log.2",
+        "startMs": 6.105958000000001,
+        "durationMs": 0.18404200000000515
+      }
+    },
+    "fileDurationMs": [
+      778,
+      638,
+      653,
+      679,
+      664,
+      622,
+      644,
+      617,
+      621,
+      620,
+      661,
+      633,
+      608,
+      634,
+      594,
+      675,
+      685,
+      628,
+      777,
+      652
+    ],
+    "rotationDurationMs": [
+      3.413125000000008,
+      7.04175,
+      10.619667000000007,
+      6.364625000000004,
+      8.977000000000004,
+      6.4525839999999945,
+      3.4181659999999994,
+      5.519458,
+      3.7267499999999956,
+      3.9482909999999976,
+      3.4979160000000036,
+      6.575667000000003,
+      3.570750000000004,
+      4.135833999999996,
+      4.816915999999999,
+      4.836584000000002,
+      9.675416999999996,
+      3.299666000000002,
+      9.585625000000007,
+      3.9585830000000044
+    ]
+  },
+  {
+    "host": "mac",
+    "bun": "1.4.2",
+    "summary": {
+      "passes": 20,
+      "failures": 0,
+      "runs": 20,
+      "workers": 0
+    },
+    "clockRecords": 20,
+    "callCounts": {
+      "writeFileSync": 80,
+      "chmodSync": 140,
+      "flushLogs": 20,
+      "existsSync": 100,
+      "statSync": 120,
+      "renameSync": 60,
+      "appendFileSync": 20,
+      "readFileSync": 60
+    },
+    "maximumDurationMs": {
+      "writeFileSync": 50.61504100000002,
+      "chmodSync": 1.8862079999999821,
+      "flushLogs": 199.48904099999993,
+      "existsSync": 0.020832999999996105,
+      "statSync": 0.021500000000003183,
+      "renameSync": 198.66174999999998,
+      "appendFileSync": 1.390625,
+      "readFileSync": 7.197667000000024
+    },
+    "worstPhase": {
+      "writeFileSync": {
+        "operation": "writeFileSync",
+        "basename": "test.log",
+        "startMs": 1.1480840000000399,
+        "durationMs": 50.61504100000002
+      },
+      "chmodSync": {
+        "operation": "chmodSync",
+        "basename": "test.log.3",
+        "startMs": 5.565917000000013,
+        "durationMs": 1.8862079999999821
+      },
+      "flushLogs": {
+        "operation": "flushLogs",
+        "basename": "test.log",
+        "startMs": 52.251959000000056,
+        "durationMs": 199.48904099999993
+      },
+      "existsSync": {
+        "operation": "existsSync",
+        "basename": "test.log",
+        "startMs": 5.379625000000004,
+        "durationMs": 0.020832999999996105
+      },
+      "statSync": {
+        "operation": "statSync",
+        "basename": "test.log.1",
+        "startMs": 2.5956659999999943,
+        "durationMs": 0.021500000000003183
+      },
+      "renameSync": {
+        "operation": "renameSync",
+        "basename": "test.log.2",
+        "startMs": 52.54337499999997,
+        "durationMs": 198.66174999999998
+      },
+      "appendFileSync": {
+        "operation": "appendFileSync",
+        "basename": "test.log",
+        "startMs": 20.316542,
+        "durationMs": 1.390625
+      },
+      "readFileSync": {
+        "operation": "readFileSync",
+        "basename": "test.log",
+        "startMs": 19.326542000000018,
+        "durationMs": 7.197667000000024
+      }
+    },
+    "fileDurationMs": [
+      613,
+      651,
+      624,
+      735,
+      864,
+      718,
+      619,
+      622,
+      592,
+      718,
+      1488,
+      2996,
+      807,
+      609,
+      610,
+      625,
+      715,
+      583,
+      604,
+      607
+    ],
+    "rotationDurationMs": [
+      2.653666000000001,
+      3.293417000000005,
+      4.0412079999999975,
+      12.354041999999993,
+      4.465417000000002,
+      3.1299999999999955,
+      5.653417000000005,
+      6.243958000000006,
+      5.015666000000003,
+      4.0211670000000055,
+      26.648625000000038,
+      257.605542,
+      33.18350000000004,
+      14.153375000000004,
+      5.335084000000002,
+      21.929084000000003,
+      3.306666000000007,
+      6.297499999999999,
+      3.2357080000000025,
+      2.587834000000001
+    ]
+  },
+  {
+    "host": "vm",
+    "bun": "1.3.14",
+    "summary": {
+      "passes": 20,
+      "failures": 0,
+      "runs": 20,
+      "workers": 16
+    },
+    "clockRecords": 20,
+    "callCounts": {
+      "writeFileSync": 80,
+      "chmodSync": 140,
+      "flushLogs": 20,
+      "existsSync": 100,
+      "statSync": 120,
+      "renameSync": 60,
+      "appendFileSync": 20,
+      "readFileSync": 60
+    },
+    "maximumDurationMs": {
+      "writeFileSync": 9.758228000000003,
+      "chmodSync": 0.016852999999997564,
+      "flushLogs": 3.721001000000001,
+      "existsSync": 0.012337999999999738,
+      "statSync": 0.0106049999999982,
+      "renameSync": 0.12689499999999043,
+      "appendFileSync": 3.468691000000007,
+      "readFileSync": 3.3688939999999548
+    },
+    "worstPhase": {
+      "writeFileSync": {
+        "operation": "writeFileSync",
+        "basename": "test.log",
+        "startMs": 21.293983999999995,
+        "durationMs": 9.758228000000003
+      },
+      "chmodSync": {
+        "operation": "chmodSync",
+        "basename": "test.log",
+        "startMs": 10.734068000000008,
+        "durationMs": 0.016852999999997564
+      },
+      "flushLogs": {
+        "operation": "flushLogs",
+        "basename": "test.log",
+        "startMs": 13.641140999999976,
+        "durationMs": 3.721001000000001
+      },
+      "existsSync": {
+        "operation": "existsSync",
+        "basename": "test.log.4",
+        "startMs": 10.716823000000005,
+        "durationMs": 0.012337999999999738
+      },
+      "statSync": {
+        "operation": "statSync",
+        "basename": "test.log.1",
+        "startMs": 15.62594,
+        "durationMs": 0.0106049999999982
+      },
+      "renameSync": {
+        "operation": "renameSync",
+        "basename": "test.log.2",
+        "startMs": 18.794094,
+        "durationMs": 0.12689499999999043
+      },
+      "appendFileSync": {
+        "operation": "appendFileSync",
+        "basename": "test.log",
+        "startMs": 13.892068999999992,
+        "durationMs": 3.468691000000007
+      },
+      "readFileSync": {
+        "operation": "readFileSync",
+        "basename": "test.log.2",
+        "startMs": 19.006227000000024,
+        "durationMs": 3.3688939999999548
+      }
+    },
+    "fileDurationMs": [
+      1019,
+      773,
+      1129,
+      975,
+      920,
+      890,
+      915,
+      903,
+      1059,
+      836,
+      831,
+      1058,
+      753,
+      882,
+      829,
+      873,
+      817,
+      890,
+      974,
+      856
+    ],
+    "rotationDurationMs": [
+      19.670417000000043,
+      15.645135999999994,
+      22.44403699999998,
+      9.609892000000002,
+      13.786702999999989,
+      28.925888999999984,
+      35.21418299999999,
+      9.918588,
+      10.745722999999998,
+      11.328681000000017,
+      17.573424999999986,
+      19.23332099999999,
+      12.825872000000004,
+      10.819515999999993,
+      17.82844800000001,
+      19.003503999999992,
+      16.567802,
+      14.126643000000001,
+      20.289015000000006,
+      12.921145000000024
+    ]
+  },
+  {
+    "host": "vm",
+    "bun": "1.4.2",
+    "summary": {
+      "passes": 20,
+      "failures": 0,
+      "runs": 20,
+      "workers": 16
+    },
+    "clockRecords": 20,
+    "callCounts": {
+      "writeFileSync": 80,
+      "chmodSync": 140,
+      "flushLogs": 20,
+      "existsSync": 100,
+      "statSync": 120,
+      "renameSync": 60,
+      "appendFileSync": 20,
+      "readFileSync": 60
+    },
+    "maximumDurationMs": {
+      "writeFileSync": 15.690547999999993,
+      "chmodSync": 0.014651000000000636,
+      "flushLogs": 3.9318430000000006,
+      "existsSync": 0.009343000000001211,
+      "statSync": 3.5242080000000016,
+      "renameSync": 0.13633900000000665,
+      "appendFileSync": 0.05066999999999666,
+      "readFileSync": 3.7786099999999863
+    },
+    "worstPhase": {
+      "writeFileSync": {
+        "operation": "writeFileSync",
+        "basename": "test.log",
+        "startMs": 3.200750999999997,
+        "durationMs": 15.690547999999993
+      },
+      "chmodSync": {
+        "operation": "chmodSync",
+        "basename": "test.log",
+        "startMs": 19.685828,
+        "durationMs": 0.014651000000000636
+      },
+      "flushLogs": {
+        "operation": "flushLogs",
+        "basename": "test.log",
+        "startMs": 19.571740000000005,
+        "durationMs": 3.9318430000000006
+      },
+      "existsSync": {
+        "operation": "existsSync",
+        "basename": "test.log",
+        "startMs": 16.239709000000005,
+        "durationMs": 0.009343000000001211
+      },
+      "statSync": {
+        "operation": "statSync",
+        "basename": "test.log",
+        "startMs": 19.624042000000003,
+        "durationMs": 3.5242080000000016
+      },
+      "renameSync": {
+        "operation": "renameSync",
+        "basename": "test.log.2",
+        "startMs": 19.702731999999997,
+        "durationMs": 0.13633900000000665
+      },
+      "appendFileSync": {
+        "operation": "appendFileSync",
+        "basename": "test.log",
+        "startMs": 23.452512,
+        "durationMs": 0.05066999999999666
+      },
+      "readFileSync": {
+        "operation": "readFileSync",
+        "basename": "test.log",
+        "startMs": 19.435062000000002,
+        "durationMs": 3.7786099999999863
+      }
+    },
+    "fileDurationMs": [
+      743,
+      764,
+      746,
+      766,
+      748,
+      812,
+      768,
+      748,
+      779,
+      761,
+      732,
+      707,
+      789,
+      816,
+      796,
+      732,
+      811,
+      751,
+      749,
+      737
+    ],
+    "rotationDurationMs": [
+      13.454864,
+      19.510916999999992,
+      20.007153000000002,
+      15.569271,
+      18.395954000000003,
+      20.187483999999998,
+      14.749435000000005,
+      18.989766000000003,
+      16.745609,
+      18.921841,
+      16.439534999999992,
+      18.770903000000004,
+      20.307317999999995,
+      19.22708399999999,
+      16.45058999999999,
+      18.976807000000008,
+      23.298168999999987,
+      23.709587999999997,
+      20.370295,
+      16.125058999999993
+    ]
+  }
+]
