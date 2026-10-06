@@ -58,7 +58,8 @@ export async function acquireRefreshFileLock(options: {
   renewIntervalMs?: number
   /** Notifies a live-owner refusal without awaiting; observer failures are ignored. */
   onContended?: () => void
-  /** Timer lifecycle steps notify synchronously without awaiting and ignore observer failures. */
+  /** Synchronous, never awaited; throws and returned promise/thenable rejections are isolated. */
+  onRenewalTimer?: (event: 'scheduled' | 'cancelled') => void
   onStep?: (
     step:
       | 'stale-marker-stat'
@@ -71,8 +72,6 @@ export async function acquireRefreshFileLock(options: {
       | 'renewal-write-ready'
       | 'relinquish-read'
       | 'renewal-finished'
-      | 'renewal-scheduled'
-      | 'renewal-cancelled'
       | 'release-owner-confirmed',
   ) => void | Promise<void>
 }): Promise<RefreshFileLock | null> {
@@ -88,9 +87,9 @@ export async function acquireRefreshFileLock(options: {
     resolveLoss = resolve
   })
 
-  function notifyTimerStep(step: 'renewal-scheduled' | 'renewal-cancelled') {
+  function notifyTimerStep(event: 'scheduled' | 'cancelled') {
     try {
-      const result: unknown = options.onStep?.(step)
+      const result: unknown = options.onRenewalTimer?.(event)
       if (
         result &&
         (typeof result === 'object' || typeof result === 'function') &&
@@ -108,7 +107,7 @@ export async function acquireRefreshFileLock(options: {
     if (!renewTimer) return
     clearRefreshLockRenewalTimeout(renewTimer)
     renewTimer = null
-    notifyTimerStep('renewal-cancelled')
+    notifyTimerStep('cancelled')
   }
 
   function recordLoss(
@@ -411,7 +410,7 @@ export async function acquireRefreshFileLock(options: {
       })
     }, intervalMs)
     if ('unref' in renewTimer) renewTimer.unref()
-    notifyTimerStep('renewal-scheduled')
+    notifyTimerStep('scheduled')
   }
 
   function contended(): null {
