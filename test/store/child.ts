@@ -82,6 +82,8 @@ const store = openPoolStore({
     ...(task.renew !== undefined ? { renew: task.renew } : {}),
   },
   onLockEvent: (event) => {
+    if (event.type === 'contended')
+      console.log(`contended:${event.name}@${event.path}`)
     if (event.type !== 'acquired') return
     const path = `${event.path}.${event.name}.lock`
     heldPaths.add(path)

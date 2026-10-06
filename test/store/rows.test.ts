@@ -13,12 +13,12 @@ import {
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
+  blocked,
   deferred,
   oauth,
   rejectionOf,
   type Scenario,
   scenario,
-  settlesWithin,
 } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -397,8 +397,16 @@ describe('store concurrency and the store-lock list', () => {
       path: s.configPath,
       ttlMs: 10_000,
     })
+    hooks.lifetime.unpark(() => {
+      void holder?.release()
+    })
     const add = s.open().add({ id: 'a', credential: oauth('r-a') })
-    expect(await settlesWithin(add, 300)).toBe(false)
+    await blocked(
+      hooks.lifetime,
+      add,
+      s.contended(hooks.lifetime, 'save', s.configPath),
+    )
+    expect(await s.bytes()).toEqual({ config: null, state: null })
     await holder?.release()
     expect((await add).outcome).toBe('added')
   })
@@ -435,15 +443,25 @@ describe('store concurrency and the store-lock list', () => {
     })
     const add = store.add({ id: 'b', credential: oauth('r-b') })
     await reached.promise
-    const legacy = mutateAccounts((current) => {
-      current.accounts.push({
-        id: 'legacy',
-        type: 'oauth',
-        refresh: 'r-legacy',
-      })
-      return current
-    }, s.paths)
-    expect(await settlesWithin(legacy, 300)).toBe(false)
+    const refused = deferred()
+    const legacy = mutateAccounts(
+      (current) => {
+        current.accounts.push({
+          id: 'legacy',
+          type: 'oauth',
+          refresh: 'r-legacy',
+        })
+        return current
+      },
+      s.paths,
+      {
+        onContended: (path) => {
+          if (path === s.configPath) refused.resolve()
+        },
+      },
+    )
+    await blocked(hooks.lifetime, legacy, refused.promise)
+    expect((await s.config()).accounts.map((row: any) => row.id)).toEqual(['a'])
     paused.resolve()
     await Promise.all([add, legacy])
     const ids = (await s.config()).accounts.map((row: any) => row.id)
@@ -467,6 +485,7 @@ describe('store concurrency and the store-lock list', () => {
     })
     const add = store.add({ id: 'b', credential: oauth('r-b') })
     await reached.promise
+    const refused = deferred()
     const legacy = saveAccountState(
       {
         version: 1,
@@ -474,8 +493,14 @@ describe('store concurrency and the store-lock list', () => {
       },
       s.paths,
       { accounts: ['a'] },
+      {
+        onContended: (path) => {
+          if (path === s.statePath) refused.resolve()
+        },
+      },
     )
-    expect(await settlesWithin(legacy, 300)).toBe(false)
+    await blocked(hooks.lifetime, legacy, refused.promise)
+    expect((await s.state()).accounts.a.lastUsed).not.toBe(777)
     paused.resolve()
     await Promise.all([add, legacy])
     const state = await s.state()

@@ -1,7 +1,8 @@
 // Vendored for downgrade and mixed-version tests; see docs/sources.md.
 // Verbatim excerpts of openai-auth packages/core/src/accounts.ts at main
 // 5809e38c335481199221b97c5af9a839693b274b. Only the import block below is
-// rewritten: the lock and atomic-write primitives come from this repository's
+// rewritten, and optional contention observers are threaded through save locks
+// for mixed-version exclusion tests: the lock and atomic-write primitives come from this repository's
 // src/fs, and the custody, logger, oauth, paths and provider symbols come from
 // ./stubs.ts. Region markers name the source line range of each excerpt.
 // biome-ignore-all lint/correctness/noUnusedVariables: excerpts keep symbols the entry points do not reach
@@ -1083,7 +1084,11 @@ function mergeStorageForSave(
   }
 }
 
-async function acquireSaveAccountsLock(path: string, renew = false) {
+async function acquireSaveAccountsLock(
+  path: string,
+  renew = false,
+  onContended?: (path: string) => void,
+) {
   const startedAt = Date.now()
   const deadline = startedAt + SAVE_ACCOUNTS_LOCK_WAIT_MS
   let attempts = 0
@@ -1094,6 +1099,7 @@ async function acquireSaveAccountsLock(path: string, renew = false) {
       ttlMs: SAVE_ACCOUNTS_LOCK_TTL_MS,
       path,
       renew,
+      onContended: () => onContended?.(path),
     })
     if (lock) return lock
 
@@ -1560,13 +1566,20 @@ export async function mutateAccounts(
     context?: MutateAccountsContext,
   ) => AccountStorage | undefined,
   paths: AccountPaths,
-  options: { allowDrop?: readonly string[] } = {},
+  options: {
+    allowDrop?: readonly string[]
+    onContended?: (path: string) => void
+  } = {},
 ): Promise<AccountStorage> {
   const path = paths.configPath
   const statePath = paths.statePath
-  const lock = await acquireSaveAccountsLock(path)
+  const lock = await acquireSaveAccountsLock(path, false, options.onContended)
   try {
-    const stateLock = await acquireSaveAccountsLock(statePath)
+    const stateLock = await acquireSaveAccountsLock(
+      statePath,
+      false,
+      options.onContended,
+    )
     try {
       const configJson = await readJsonIfPresent(path)
       const stateJson = await readJsonIfPresent(statePath)
@@ -1726,11 +1739,16 @@ export async function saveAccountState(
     mainRefresh: true,
     accounts: true,
   },
+  options: { onContended?: (path: string) => void } = {},
 ) {
   const statePath = paths.statePath
   // Serialize concurrent read-modify-write on the state file to prevent lost
   // updates when two callers (e.g. quota push + sidebar refresh) race.
-  const lock = await acquireSaveAccountsLock(statePath)
+  const lock = await acquireSaveAccountsLock(
+    statePath,
+    false,
+    options.onContended,
+  )
   try {
     const existing = (await readJsonIfPresent(statePath)).value
     const next: AccountRuntimeState = isRecord(existing)
