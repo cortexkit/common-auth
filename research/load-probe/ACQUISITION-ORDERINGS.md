@@ -4,7 +4,7 @@
 
 - Shape: add `stale-lock-observed` and `stale-lock-removed` to the existing `onStep` union in `src/fs/refresh-file-lock.ts:67–69`.
 - Emission sites: `src/fs/refresh-file-lock.ts:441`, after the first liveness check observes staleness and before marker mkdir; `src/fs/refresh-file-lock.ts:469`, after stale-file removal and the post-removal marker-ownership check, immediately before exclusive recreation.
-- Delivery: awaited, like the existing control barriers. Callback failure propagates through the acquisition's marker-release finally block. No hook means no extra scheduling boundary.
+- Delivery: awaited, like the existing control barriers. A rejected `stale-lock-observed` callback propagates before marker admission, so there is no marker to release; a rejected `stale-lock-removed` callback propagates after the stale file is gone and skips recreation, and the acquisition's finally block releases the marker. No hook means no extra scheduling boundary.
 - Semantics: removal has completed and marker ownership was checked; the pathname is not reserved. A competing exclusive create can win while the callback is parked. The holder must still respect recreation failure.
 - Limits: the callback does not reserve the empty pathname or guarantee continued marker ownership. This is a control barrier, not a fire-and-forget observer.
 - Source changes are two union values and two awaited emissions, in separate source-only commits. Existing barriers cannot park a plain stale contender before marker mkdir, or park the holder in the deletion gap. Pausing after the first stale observation lets the test exercise the second liveness check without another contender changing marker ownership first; pausing after removal lets it exercise failure of exclusive recreation.
