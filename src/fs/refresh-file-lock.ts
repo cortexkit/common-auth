@@ -100,7 +100,7 @@ export async function acquireRefreshFileLock(options: {
         void Promise.resolve(result).catch(() => {})
       }
     } catch {
-      // Timer observations cannot change renewal or ownership behavior.
+      // Timer observer failures must not replace the lock operation result.
     }
   }
 
