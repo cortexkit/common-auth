@@ -48,9 +48,12 @@ async function post(
   path: string,
   body: string,
   phases?: ReturnType<typeof requestPhaseClock>,
+  request = 'oversized',
 ) {
   const started = performance.now()
-  phases?.mark('fetch-start')
+  const mark = (phase: string, detail: Record<string, unknown> = {}) =>
+    phases?.mark(phase, { request, ...detail })
+  mark('fetch-start')
   let phase = 'fetch'
   try {
     const response = await fetch(`http://127.0.0.1:${server.port}${path}`, {
@@ -65,21 +68,21 @@ async function post(
         hooks.lifetime.signal,
       ]),
     })
-    phases?.mark('fetch-settled', { outcome: 'resolved' })
-    phases?.mark('client-headers', {
+    mark('fetch-settled', { outcome: 'resolved' })
+    mark('client-headers', {
       status: response.status,
       connection: response.headers.get('connection'),
     })
     phase = 'json'
     const decoded: unknown = await response.json()
-    phases?.mark('json-settled', { outcome: 'resolved' })
+    mark('json-settled', { outcome: 'resolved' })
     return {
       status: response.status,
       body: decoded,
       ms: performance.now() - started,
     }
   } catch (error) {
-    phases?.mark(`${phase}-settled`, {
+    mark(`${phase}-settled`, {
       outcome: 'rejected',
       error: String(error),
     })
@@ -106,7 +109,9 @@ test('a request body over the 1 MiB cap answers 413', async () => {
   expect(out.status).toBe(413)
   expect(out.body).toEqual({ error: 'body too large' })
   // The server stays usable after refusing an oversized body.
-  expect((await post(server, '/rpc/apply', '{}')).status).toBe(200)
+  expect(
+    (await post(server, '/rpc/apply', '{}', clock, 'follow-up')).status,
+  ).toBe(200)
   if (!hooks.lifetime.signal.aborted) clock.succeeded()
 })
 
