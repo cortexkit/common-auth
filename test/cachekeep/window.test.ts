@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import {
   isWithinCacheKeepWindow,
   normalizeCacheKeepWindow,
 } from '../../src/cachekeep/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { body, DUE_MS, fakeNow, makeManager } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { test } = hooks
 
 describe('getCacheKeepWindow', () => {
   test('returns undefined for null storage', () => {

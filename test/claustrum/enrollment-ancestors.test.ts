@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from 'bun:test'
+import { expect, spyOn } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import {
@@ -21,8 +21,12 @@ import {
   ClaustrumScopedCustody,
   getClaustrumEnrollmentPaths,
 } from '../../src/claustrum/index.ts'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 
 import { family } from './helpers.ts'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 const dirs: string[] = []
 const uid = process.geteuid?.() ?? 0

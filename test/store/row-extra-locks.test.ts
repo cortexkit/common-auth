@@ -1,10 +1,14 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect } from 'bun:test'
 import type { LockEvent } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { oauth, type Scenario, scenario } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 

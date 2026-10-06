@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import {
   POOL_KEY,
   type PoolOperationError,
   type PullRequest,
 } from '../../src/store/index.js'
 import { mutateAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   deferred,
@@ -14,9 +15,12 @@ import {
   settlesWithin,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -33,10 +37,15 @@ describe('pulls never block the caller', () => {
       ['b', 'r-b'],
     ])
     const requested: string[] = []
+    const stop = deferred()
+    hooks.lifetime.unpark(() => stop.resolve())
     const store = s.open({
-      pull: (request) => {
+      pull: async (request) => {
         requested.push(request.id)
-        return new Promise(() => {})
+        // These pulls stay pending for every assertion. Only teardown rejects
+        // them, without returning an observation that could write after cleanup.
+        await stop.promise
+        throw new Error('test pull stopped during teardown')
       },
     })
     const load = store.load()
@@ -112,6 +121,7 @@ describe('pulls never block the caller', () => {
   it('load fires a pull once per process per row and a refresh re-read never fires one', async () => {
     await seed([['a', 'r-a']])
     const release = deferred()
+    hooks.lifetime.unpark(() => release.resolve())
     let calls = 0
     const store = s.open({
       pull: async () => {
@@ -161,10 +171,16 @@ describe('roster rows without a per-row entry', () => {
       }
       const before = await s.bytes()
       const release = deferred()
+      hooks.lifetime.unpark(() => release.resolve())
+      const stop = deferred()
+      hooks.lifetime.unpark(() => stop.resolve())
       const issued = deferred<{ request: PullRequest; entry: unknown }>()
       const store = s.open({
         pull: async (request) => {
-          if (request.id !== 'y') return new Promise(() => {})
+          if (request.id !== 'y') {
+            await stop.promise
+            throw new Error('test pull stopped during teardown')
+          }
           issued.resolve({
             request,
             entry: (await s.config())[POOL_KEY].rows.y,

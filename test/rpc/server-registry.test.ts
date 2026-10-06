@@ -1,4 +1,12 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { describe, expect, mock } from 'bun:test'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+
+const hooks = lifetimeHooks()
+const { test, afterEach } = hooks
+afterEach(() => {})
+const trackedAdoptRpcServer: typeof adoptRpcServer = (...args) =>
+  hooks.lifetime.operation(adoptRpcServer(...args))
+
 import type { RpcServerHandle } from '../../src/rpc/rpc-server.js'
 import { adoptRpcServer } from '../../src/rpc/server-registry.js'
 
@@ -32,17 +40,18 @@ describe('RPC server registry', () => {
     const key = testKey('same-directory')
     const firstEntered = deferred()
     const allowFirst = deferred()
+    hooks.lifetime.unpark(() => allowFirst.resolve())
     const first = handle(1)
     const second = handle(2)
     let secondCreateCalls = 0
 
-    const firstPromise = adoptRpcServer(registryKey, key, async () => {
+    const firstPromise = trackedAdoptRpcServer(registryKey, key, async () => {
       firstEntered.resolve()
       await allowFirst.promise
       return first
     })
     await firstEntered.promise
-    const secondPromise = adoptRpcServer(registryKey, key, async () => {
+    const secondPromise = trackedAdoptRpcServer(registryKey, key, async () => {
       secondCreateCalls += 1
       return second
     })
@@ -78,17 +87,22 @@ describe('RPC server registry', () => {
     const secondKey = testKey('project-b')
     const firstEntered = deferred()
     const allowFirst = deferred()
+    hooks.lifetime.unpark(() => allowFirst.resolve())
     const first = handle(1)
     const second = handle(2)
 
-    const firstPromise = adoptRpcServer(registryKey, firstKey, async () => {
-      firstEntered.resolve()
-      await allowFirst.promise
-      return first
-    })
+    const firstPromise = trackedAdoptRpcServer(
+      registryKey,
+      firstKey,
+      async () => {
+        firstEntered.resolve()
+        await allowFirst.promise
+        return first
+      },
+    )
     await firstEntered.promise
 
-    const secondAdoption = await adoptRpcServer(
+    const secondAdoption = await trackedAdoptRpcServer(
       registryKey,
       secondKey,
       async () => second,

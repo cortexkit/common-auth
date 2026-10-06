@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import {
   PoolReentryError,
   type PoolStore,
   type ProviderRefreshResult,
 } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   deferred,
@@ -14,9 +15,12 @@ import {
   settlesWithin,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -108,6 +112,7 @@ describe('hooks never re-enter the library', () => {
     const store = s.open()
     const aEntered = deferred()
     const aRelease = deferred()
+    hooks.lifetime.unpark(() => aRelease.resolve())
     const bWaiting = deferred()
     const bStore = s.open({
       onLockEvent: (event) => {

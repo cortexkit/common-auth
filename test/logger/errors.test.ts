@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'bun:test'
+import { expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -8,7 +8,11 @@ import {
   createLoggerInstance,
   createRedactor,
 } from '../../src/logger/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
 
 let dir: string | undefined
 afterEach(async () => {

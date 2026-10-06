@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -10,6 +10,7 @@ import {
   getClaustrumEnrollmentPaths,
   readVaultRoster,
 } from '../../src/claustrum/index.ts'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   captureLogger,
   cleanupDirs,
@@ -22,6 +23,9 @@ import {
   type MockDaemon,
   startMockDaemon,
 } from './mock-daemon.ts'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 const daemons: MockDaemon[] = []
 const closers: Array<{ close(): void }> = []

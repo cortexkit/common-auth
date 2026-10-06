@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect } from 'bun:test'
 import { readFile, writeFile } from 'node:fs/promises'
 import {
   type PoolLoad,
@@ -8,6 +8,7 @@ import {
   type ProviderStateCodec,
   type WriteStep,
 } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   oauth,
   type ParsedJson,
@@ -17,9 +18,12 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -262,7 +266,7 @@ test('a replace stopped at either write point never pairs a credential with the 
   }
   for (const [step, pair] of Object.entries(expected)) {
     s.cleanup()
-    s = await scenario()
+    s = hooks.lifetime.manage(await scenario())
     await addAB(open())
     await stoppedAt(step as WriteStep, replace)
     const reader = open()
@@ -299,7 +303,7 @@ test('a rotate or refresh stopped at either write point never pairs a credential
       'before-config-write',
     ] as const) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await open().add({
         id: 'a',
         credential: oauth('r-a1'),
@@ -692,7 +696,7 @@ test('a provider state is not shown beside a credential, epoch or identity it wa
   }
   for (const [name, edit] of Object.entries(cases)) {
     s.cleanup()
-    s = await scenario()
+    s = hooks.lifetime.manage(await scenario())
     await addAB(open())
     await edit()
     const row = await rowOf(open(), 'a')

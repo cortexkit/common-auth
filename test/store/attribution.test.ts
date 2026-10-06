@@ -1,28 +1,39 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type { PoolOperationError, PullRequest } from '../../src/store/index.js'
 import { mutateAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { deferred, oauth, type Scenario, scenario } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
 
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
 /**
  * A pull hook whose first call pauses until released and whose later calls
- * never settle, so only the paused reading can ever be recorded.
+ * remain pending throughout the body, so only the paused reading is recorded.
+ * Teardown rejects later calls without returning an observation to persist.
  */
 function pausedPull() {
   const entered = deferred<PullRequest>()
   const release = deferred()
+  hooks.lifetime.unpark(() => release.resolve())
+  const stop = deferred()
+  hooks.lifetime.unpark(() => stop.resolve())
   let calls = 0
   return {
     entered,
     release,
     hook: async (request: PullRequest) => {
       calls++
-      if (calls > 1) return new Promise<never>(() => {})
+      if (calls > 1) {
+        await stop.promise
+        throw new Error('test pull stopped during teardown')
+      }
       entered.resolve(request)
       await release.promise
       return `reading-for-${request.credential.type === 'oauth' ? request.credential.refresh : ''}`
@@ -130,6 +141,7 @@ describe('attribution', () => {
   it('a pull issued during a live replace captures the credential and its epoch in one locked read', async () => {
     await s.open().add({ id: 'r', credential: oauth('r-old') })
     const paused = deferred()
+    hooks.lifetime.unpark(() => paused.resolve())
     const reached = deferred()
     const replacer = s.open({
       onStep: async (step) => {

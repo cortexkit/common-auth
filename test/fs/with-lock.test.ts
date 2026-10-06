@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
+import { beforeEach, expect, spyOn } from 'bun:test'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -12,7 +12,11 @@ import {
   acquireRefreshFileLock,
   isLostMarkerRaceError,
 } from '../../src/fs/refresh-file-lock.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let dir: string
 let target: string

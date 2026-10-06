@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn } from 'bun:test'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -10,7 +10,11 @@ import {
   createSidebarFile,
   type SidebarWriteResult,
 } from '../../src/sidebar-file/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let dir: string
 let target: string

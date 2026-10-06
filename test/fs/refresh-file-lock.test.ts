@@ -1,12 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
-  acquireRefreshFileLock,
+  acquireRefreshFileLock as acquireRawRefreshFileLock,
   LockOwnershipError,
 } from '../../src/fs/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+const acquireRefreshFileLock: typeof acquireRawRefreshFileLock = async (
+  ...args
+) => {
+  const lifetime = hooks.lifetime
+  const lock = await lifetime.operation(acquireRawRefreshFileLock(...args))
+  if (lock) {
+    lifetime.finish(() => lock.release())
+    // whenLost() intentionally remains pending after a normal release. Join
+    // release itself, not that subscription, before deleting the directory.
+    return lock
+  }
+  return lock
+}
 
 let dir: string
 
@@ -384,6 +401,7 @@ describe('acquireRefreshFileLock', () => {
     const lockPath = `${path}.${name}.lock`
     const renewalConfirmed = deferred()
     const releaseRenewal = deferred()
+    hooks.lifetime.unpark(() => releaseRenewal.resolve())
     const renewalFinished = deferred()
     const start = Date.now()
     let currentNow = start
@@ -430,6 +448,7 @@ describe('acquireRefreshFileLock', () => {
     const lockPath = `${path}.${name}.lock`
     const releaseConfirmed = deferred()
     const releaseRemoval = deferred()
+    hooks.lifetime.unpark(() => releaseRemoval.resolve())
     const start = Date.now()
     let currentNow = start
 
@@ -473,6 +492,7 @@ describe('acquireRefreshFileLock', () => {
     const lockPath = `${path}.${name}.lock`
     const renewalWriteFenced = deferred()
     const releaseRenewal = deferred()
+    hooks.lifetime.unpark(() => releaseRenewal.resolve())
     const renewalFinished = deferred()
     const currentNow = Date.now()
 
@@ -509,6 +529,7 @@ describe('acquireRefreshFileLock', () => {
     const lockPath = `${path}.${name}.lock`
     const renewalWriteFenced = deferred()
     const releaseRenewal = deferred()
+    hooks.lifetime.unpark(() => releaseRenewal.resolve())
     const renewalFinished = deferred()
     const start = Date.now()
     let currentNow = start
@@ -555,6 +576,7 @@ describe('acquireRefreshFileLock', () => {
     const lockPath = `${path}.${name}.lock`
     const renewalWriteReady = deferred()
     const releaseRenewal = deferred()
+    hooks.lifetime.unpark(() => releaseRenewal.resolve())
     const renewalFinished = deferred()
     const start = Date.now()
     let currentNow = start
@@ -605,7 +627,9 @@ describe('acquireRefreshFileLock', () => {
     const renewalWriteReady = deferred()
     const relinquishRead = deferred()
     const allowRelinquishRead = deferred()
+    hooks.lifetime.unpark(() => allowRelinquishRead.resolve())
     const releaseRenewal = deferred()
+    hooks.lifetime.unpark(() => releaseRenewal.resolve())
     const renewalFinished = deferred()
     const start = Date.now()
     let currentNow = start

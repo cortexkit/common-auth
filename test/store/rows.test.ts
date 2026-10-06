@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import { LockContentionError } from '../../src/fs/with-lock.js'
 import {
@@ -10,6 +10,7 @@ import {
   mutateAccounts,
   saveAccountState,
 } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   deferred,
@@ -20,9 +21,12 @@ import {
   settlesWithin,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -419,6 +423,7 @@ describe('store concurrency and the store-lock list', () => {
   it('a legacy config writer waits for the library store locks and neither write is lost', async () => {
     await s.open().add({ id: 'a', credential: oauth('r-a') })
     const paused = deferred()
+    hooks.lifetime.unpark(() => paused.resolve())
     const reached = deferred()
     const store = s.open({
       onStep: async (step) => {
@@ -450,6 +455,7 @@ describe('store concurrency and the store-lock list', () => {
   it('a legacy state writer waits for the library store locks and neither write is lost', async () => {
     await s.open().add({ id: 'a', credential: oauth('r-a') })
     const paused = deferred()
+    hooks.lifetime.unpark(() => paused.resolve())
     const reached = deferred()
     const store = s.open({
       onStep: async (step) => {

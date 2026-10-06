@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { beforeEach, describe, expect, mock } from 'bun:test'
 import type { CacheKeepProfile } from '../../src/cachekeep/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   body,
   DUE_MS,
@@ -10,6 +11,9 @@ import {
   sessions,
   TTL_MS,
 } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { test } = hooks
 
 const BACKOFF_MS = 10 * 60_000
 const LONG_TTL = 30 * 60_000

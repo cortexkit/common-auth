@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type { Attribution, PoolRow, PoolStore } from '../../src/store/index.js'
 import { mutateAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   oauth,
   objectStateCodec,
@@ -10,6 +11,9 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
+
 // An attribution names a row by id, credential epoch and identity. A plugin
 // chooses its ids and often reuses one (`main`), so a row removed and added
 // again under the same id must not be mistaken for the removed one: work
@@ -18,7 +22,7 @@ import {
 
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario('pool-id-reuse-')
+  s = hooks.lifetime.manage(await scenario('pool-id-reuse-'))
 })
 afterEach(() => s.cleanup())
 

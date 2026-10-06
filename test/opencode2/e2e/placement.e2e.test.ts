@@ -5,7 +5,7 @@
 // CLI, so it only runs when COMMON_AUTH_OPENCODE2_E2E=1 (its own CI job).
 // COMMON_AUTH_OPENCODE2_E2E_CLI_DIR may point at a directory that already
 // holds the pinned CLI install, to skip the install while iterating.
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { beforeAll, describe, expect } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { placeholderSecret } from '../../../src/opencode2/index.js'
+import { lifetimeHooks } from '../../fixtures/lifetime-hooks.js'
 import {
   type AccountName,
   type MockProvider,
@@ -21,6 +22,9 @@ import {
   startMockProvider,
   type WireRecord,
 } from './mock-provider.js'
+
+const hooks = lifetimeHooks()
+const { afterAll, test } = hooks
 
 const ENABLED = process.env.COMMON_AUTH_OPENCODE2_E2E === '1'
 const REUSE_CLI_DIR = process.env.COMMON_AUTH_OPENCODE2_E2E_CLI_DIR

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import {
   chmod,
   mkdir,
@@ -17,7 +17,11 @@ import {
   sweepRpcState,
   writePortFile,
 } from '../../src/rpc/port-file.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 const sweepFixture = (root: string, active: string) =>
   sweepRpcState(root, active, (name) => isManagedRpcStateDir(name, 'fixture-'))

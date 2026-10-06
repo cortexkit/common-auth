@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import type {
   OpenPoolStoreOptions,
   PoolCredential,
   PoolRow,
   PoolStore,
 } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   oauth,
@@ -14,9 +15,12 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -147,7 +151,7 @@ const CORRUPTIONS: Corruption[] = [
 
 async function corrupted(corruption: Corruption): Promise<void> {
   s.cleanup()
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
   await interruptedReplace(corruption.kind)
   await editState(corruption.edit)
 }
@@ -284,7 +288,7 @@ describe('a strict store and a torn replace whose stamp no longer describes the 
   it('a strict store still completes an untouched interrupted replace forward, OAuth and API to a new endpoint', async () => {
     for (const kind of [OAUTH, API]) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await interruptedReplace(kind)
       const apiRow = kind.type === 'api'
 

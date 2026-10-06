@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import {
@@ -8,6 +8,7 @@ import {
   type ProviderRefreshResult,
 } from '../../src/store/index.js'
 import { saveAccountState } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   deferred,
@@ -19,9 +20,12 @@ import {
   settlesWithin,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -37,6 +41,7 @@ function result(refresh: string, extra: Partial<ProviderRefreshResult> = {}) {
 function pausedProvider(value: ProviderRefreshResult) {
   const entered = deferred()
   const release = deferred()
+  hooks.lifetime.unpark(() => release.resolve())
   const seen: string[] = []
   return {
     entered,
@@ -241,7 +246,7 @@ describe('lock order, ownership, hooks and refusal', () => {
   it('an awaited refuse predicate refuses at each of its three sites and leaves the stored credential untouched', async () => {
     for (const site of [1, 2, 3]) {
       s.cleanup()
-      s = await scenario()
+      s = hooks.lifetime.manage(await scenario())
       await s.open().add({ id: 'a', credential: oauth('r-a') })
       const before = await s.bytes()
       let calls = 0

@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { rm } from 'node:fs/promises'
 import { request } from 'node:http'
 import { join } from 'node:path'
@@ -8,7 +8,11 @@ import {
   type RpcServerOptions,
   startRpcServer,
 } from '../../src/rpc/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 let dir: string | undefined
 let handle: RpcServerHandle | undefined

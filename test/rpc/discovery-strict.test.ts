@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from 'bun:test'
+import { expect, spyOn } from 'bun:test'
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import http, * as httpNamed from 'node:http'
 import { createServer } from 'node:http'
@@ -12,7 +12,11 @@ import {
   sweepRpcState,
   writePortFile,
 } from '../../src/rpc/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 const TOKEN = 'f'.repeat(64)
 let dir: string | undefined

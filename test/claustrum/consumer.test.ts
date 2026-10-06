@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { join } from 'node:path'
 import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
 import {
@@ -9,6 +9,7 @@ import {
   type VaultRosterFile,
 } from '../../src/claustrum/index.ts'
 import { admit, type RoutingRow } from '../../src/routing/index.ts'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   cleanupDirs,
   deferred,
@@ -18,7 +19,13 @@ import {
   writeToken,
 } from './helpers.ts'
 
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
+
 const consumers: ClaustrumConsumer[] = []
+function managedConsumer(options: ClaustrumConsumerOptions) {
+  return hooks.lifetime.manage(new ClaustrumConsumer(options))
+}
 afterEach(async () => {
   for (const consumer of consumers.splice(0)) consumer.close()
   await cleanupDirs()
@@ -69,7 +76,7 @@ async function fixture() {
     },
     pollIntervalMs: 0,
   }
-  const consumer = new ClaustrumConsumer(options)
+  const consumer = managedConsumer(options)
   consumers.push(consumer)
   const route = (roster: VaultRosterFile | undefined, credentialId: string) => {
     const id = roster?.rows.find(
@@ -147,7 +154,8 @@ test('a late connector is closed rather than resurrected after shutdown', async 
   const f = await fixture()
   const started = deferred<void>()
   const connection = deferred<ClaustrumScopedClient>()
-  const consumer = new ClaustrumConsumer({
+  hooks.lifetime.unpark(() => connection.resolve(f.client))
+  const consumer = managedConsumer({
     ...f.options,
     connect: () => {
       started.resolve()
@@ -170,7 +178,7 @@ test('a late connector is closed rather than resurrected after shutdown', async 
 test('local mode performs no vault connection and rejects any stale scoped dispatch', async () => {
   const f = await fixture()
   let active = true
-  const consumer = new ClaustrumConsumer({
+  const consumer = managedConsumer({
     ...f.options,
     isCustodyActive: () => active,
   })
@@ -180,7 +188,7 @@ test('local mode performs no vault connection and rejects any stale scoped dispa
   active = false
   expect(await consumer.refresh()).toBeUndefined()
   await expect(consumer.authorize(id)).rejects.toThrow('not active')
-  const local = new ClaustrumConsumer({
+  const local = managedConsumer({
     ...f.options,
     isCustodyActive: () => false,
   })
@@ -197,7 +205,7 @@ test('a peer replacing an account cannot leave its old route authorized', async 
   const original = f.rows[0]
   if (!original) throw new Error('missing fixture row')
   f.rows[0] = { ...original, accountId: 'replacement-provider' }
-  const peer = new ClaustrumConsumer(f.options)
+  const peer = managedConsumer(f.options)
   consumers.push(peer)
   await peer.refresh()
   await expect(f.consumer.authorize(id)).rejects.toThrow('changed')
@@ -253,7 +261,8 @@ test('cancelling a dispatch during connection setup does not wait for or cancel 
   const f = await fixture()
   const entered = deferred<void>()
   const connection = deferred<ClaustrumScopedClient>()
-  const consumer = new ClaustrumConsumer({
+  hooks.lifetime.unpark(() => connection.resolve(f.client))
+  const consumer = managedConsumer({
     ...f.options,
     connect: () => {
       entered.resolve()
@@ -287,7 +296,8 @@ test('shutdown rejects connection waiters immediately and closes a late client',
   const entered = deferred<void>()
   const closed = deferred<void>()
   const connection = deferred<ClaustrumScopedClient>()
-  const consumer = new ClaustrumConsumer({
+  hooks.lifetime.unpark(() => connection.resolve(f.client))
+  const consumer = managedConsumer({
     ...f.options,
     connect: () => {
       entered.resolve()
@@ -323,7 +333,7 @@ test('onRoster fires only when the discovery view changes', async () => {
   const f = await fixture()
   let view = 'v1'
   const seen: string[] = []
-  const consumer = new ClaustrumConsumer({
+  const consumer = managedConsumer({
     ...f.options,
     connect: async () => ({
       ...f.client,
@@ -349,8 +359,9 @@ test('two project runtimes sharing storage serve the persisted roster while a pe
   const original = await f.consumer.refresh()
   const entered = deferred<void>()
   const release = deferred<void>()
+  hooks.lifetime.unpark(() => release.resolve())
   let peerLists = 0
-  const peer = new ClaustrumConsumer({
+  const peer = managedConsumer({
     ...f.options,
     connect: async () => ({
       ...f.client,
@@ -365,7 +376,7 @@ test('two project runtimes sharing storage serve the persisted roster while a pe
   consumers.push(peer)
   const held = peer.refresh()
   await entered.promise
-  const another = new ClaustrumConsumer(f.options)
+  const another = managedConsumer(f.options)
   consumers.push(another)
   try {
     const alreadyCommitted = await another.refresh()
@@ -421,7 +432,7 @@ test.each(['quota', 'profile'] as const)(
 test('a send never enrolls: without a token it fails before reaching the vault', async () => {
   const f = await fixture()
   const id = f.route(await f.consumer.refresh(), 'oauth:test')
-  const unenrolled = new ClaustrumConsumer({
+  const unenrolled = managedConsumer({
     ...f.options,
     tokenPath: join(f.dir, 'missing-token.json'),
   })
@@ -490,7 +501,7 @@ test('requireAssertion applies to every authorization the consumer makes', async
       }
     },
   })
-  const strict = new ClaustrumConsumer({
+  const strict = managedConsumer({
     ...f.options,
     connect,
     requireAssertion: true,
@@ -498,7 +509,7 @@ test('requireAssertion applies to every authorization the consumer makes', async
   consumers.push(strict)
   const id = f.route(await strict.refresh(), 'oauth:test')
   await expect(strict.authorize(id)).rejects.toThrow('did not assert')
-  const lenient = new ClaustrumConsumer({ ...f.options, connect })
+  const lenient = managedConsumer({ ...f.options, connect })
   consumers.push(lenient)
   await lenient.refresh()
   expect((await lenient.authorize(id)).accountIdentitySource).toBe('expected')

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { readdir, readFile } from 'node:fs/promises'
 import { POOL_KEY, PoolOperationError } from '../../src/store/index.js'
 import {
@@ -7,6 +7,7 @@ import {
   migrateIfNeeded,
   mutateAccounts,
 } from '../fixtures/legacy-openai-auth/accounts.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
   oauth,
@@ -15,9 +16,12 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -304,10 +308,14 @@ describe('store shapes', () => {
         await new Promise((resolve) => setImmediate(resolve))
       }
     })()
-    for (let index = 0; index < 20; index++)
-      await store.add({ id: `r${index}`, credential: oauth(`r-${index}`) })
-    stop = true
-    await reader
+    try {
+      for (let index = 0; index < 20; index++)
+        await store.add({ id: `r${index}`, credential: oauth(`r-${index}`) })
+    } finally {
+      // A failed write must not leave the observation loop running forever.
+      stop = true
+      await reader
+    }
     expect(observed.length).toBeGreaterThan(0)
     for (const text of observed) expect(() => JSON.parse(text)).not.toThrow()
     // Every config write went through a temp file renamed into place: each

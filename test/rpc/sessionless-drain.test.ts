@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from 'bun:test'
+import { expect, spyOn } from 'bun:test'
 import {
   drainNotifications,
   isTuiConnected,
@@ -7,6 +7,10 @@ import {
   pushNotification,
   resetNotificationsForTest,
 } from '../../src/rpc/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 // A plugin whose TUI polls before a route has an active session drains with
 // no session id; in broadcast-only mode that drain must never see another

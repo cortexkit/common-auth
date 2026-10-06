@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
 import { withLock } from '../../src/fs/with-lock.js'
 import {
   POOL_KEY,
   type PoolOperationError,
   type PullRequest,
 } from '../../src/store/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   CRASH_EXIT_CODE,
   deferred,
@@ -15,9 +16,12 @@ import {
   scenario,
 } from './helpers.js'
 
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
+
 let s: Scenario
 beforeEach(async () => {
-  s = await scenario()
+  s = hooks.lifetime.manage(await scenario())
 })
 afterEach(() => s.cleanup())
 
@@ -34,6 +38,7 @@ function crashChild(task: Record<string, unknown>) {
 function pausedPull() {
   const entered = deferred<PullRequest>()
   const release = deferred()
+  hooks.lifetime.unpark(() => release.resolve())
   return {
     entered,
     release,
@@ -258,6 +263,7 @@ describe('crash windows, with the observer surviving', () => {
     await s.open().add({ id: 'r', credential: oauth('r-old') })
     const entered = deferred()
     const release = deferred()
+    hooks.lifetime.unpark(() => release.resolve())
     const log: string[] = []
     const refresh = s.open().refresh(
       'r',

@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect } from 'bun:test'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apply,
   credentialPaths,
@@ -8,6 +9,9 @@ import {
   populate,
   SECRETS,
 } from './helpers.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, it } = hooks
 
 let m: MenuScenario
 beforeEach(async () => {

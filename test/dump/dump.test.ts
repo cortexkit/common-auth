@@ -1,12 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  spyOn,
-  test,
-} from 'bun:test'
+import { beforeEach, describe, expect, mock, spyOn } from 'bun:test'
 import * as fs from 'node:fs/promises'
 import {
   chmod,
@@ -26,7 +18,11 @@ import {
   type DumpOptions,
   sweepDumpDirectory,
 } from '../../src/dump/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+
+const hooks = lifetimeHooks()
+const { afterEach, test } = hooks
 
 const MASK = '***REDACTED***'
 let root: string
