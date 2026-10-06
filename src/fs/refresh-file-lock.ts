@@ -56,6 +56,8 @@ export async function acquireRefreshFileLock(options: {
   now?: () => number
   renew?: boolean
   renewIntervalMs?: number
+  /** Notifies a refused attempt against a live owner; never awaited. */
+  onContended?: () => void
   onStep?: (
     step:
       | 'stale-marker-stat'
@@ -387,12 +389,21 @@ export async function acquireRefreshFileLock(options: {
     if ('unref' in renewTimer) renewTimer.unref()
   }
 
+  function contended(): null {
+    try {
+      options.onContended?.()
+    } catch {
+      // Observers cannot change whether the lock is acquired.
+    }
+    return null
+  }
+
   let acquired = await tryAcquire()
   if (!acquired) {
     for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
       acquired = await tryAcquire()
       if (acquired) break
-      if (await lockIsLive()) return null
+      if (await lockIsLive()) return contended()
 
       try {
         if (!(await tryAcquireEvictionMarker())) {
@@ -410,7 +421,7 @@ export async function acquireRefreshFileLock(options: {
       }
 
       try {
-        if (await lockIsLive()) return null
+        if (await lockIsLive()) return contended()
         // Verify marker ownership before removing a lock found not live.
         if (!(await ownsEvictionMarker())) return null
         if (options.onStep) await options.onStep('stale-lock-confirmed')
