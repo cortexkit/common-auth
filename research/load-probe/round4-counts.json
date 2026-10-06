@@ -1,0 +1,8663 @@
+[
+  {
+    "file": "bg753-natural-elections.jsonl",
+    "summary": {
+      "passes": 3,
+      "failures": 0,
+      "runs": 3,
+      "workers": 0
+    },
+    "runs": [
+      {
+        "run": 1,
+        "code": 0,
+        "durationMs": 8281,
+        "bodyMs": 8204.429,
+        "rounds": 512,
+        "roundMeanMs": 16.000228515625007,
+        "roundMedianMs": 5.451999999999771,
+        "roundMaxMs": 700.9499999999998
+      },
+      {
+        "run": 2,
+        "code": 0,
+        "durationMs": 6947,
+        "bodyMs": 6828.459,
+        "rounds": 512,
+        "roundMeanMs": 13.324722656249996,
+        "roundMedianMs": 5.325000000000273,
+        "roundMaxMs": 1480.156
+      },
+      {
+        "run": 3,
+        "code": 0,
+        "durationMs": 7207,
+        "bodyMs": 7120.88,
+        "rounds": 512,
+        "roundMeanMs": 13.897199218750005,
+        "roundMedianMs": 6.4305000000001655,
+        "roundMaxMs": 223.41600000000017
+      }
+    ]
+  },
+  {
+    "file": "bg753-natural-quotas.jsonl",
+    "summary": {
+      "passes": 3,
+      "failures": 0,
+      "runs": 3,
+      "workers": 0
+    },
+    "runs": [
+      {
+        "run": 1,
+        "code": 0,
+        "durationMs": 139,
+        "bodyMs": 100.398,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.288,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 13.696,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 15.243,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 16.336,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 17.594,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 42.634,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 42.647,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 58.941,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 59.571,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 60.505,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 61.915,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 78.113,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 78.376
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 78.62
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 79.241
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.539,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.546
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.649,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.651
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.759,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.76
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.761,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.761
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.763,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.764
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.764,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.765
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.767,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.767
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.768,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.768
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.769,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.77
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.786,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.787
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.789,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.79
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.791,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.792
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.793,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.794
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.795,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.795
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.797,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.797
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.799,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.799
+          },
+          {
+            "phase": "print-start",
+            "ms": 79.799,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 79.8
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.26,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.284
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.294,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.294
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.295,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.297
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.299,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.299
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.3,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.3
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.302,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.303
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.303,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.304
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.304,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.305
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.308,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.308
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.31,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.31
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.311,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.312
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.313,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.313
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.314,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.314
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.315,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.315
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.316,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.317
+          },
+          {
+            "phase": "print-start",
+            "ms": 81.317,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 81.318
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.72,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.726
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.736,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.737
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.738,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.738
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.739,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.74
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.74,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.741
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.742,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.742
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.743,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.744
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.745,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.745
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.748,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.749
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.75,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.751
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.753,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.753
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.754,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.754
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.756,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.756
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.757,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.758
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.759,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.762
+          },
+          {
+            "phase": "print-start",
+            "ms": 82.763,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 82.763
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.066,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.07
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.088,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.091
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.092,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.092
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.093,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.093
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.093,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.094
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.095,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.1
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.1,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.101
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.101,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.101
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.134,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.137
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.141,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.141
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.143,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.143
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.144,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.145
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.145,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.146
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.148,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.148
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.15,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.15
+          },
+          {
+            "phase": "print-start",
+            "ms": 84.15,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 84.15
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.602,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.604
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.611,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.611
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.612,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.612
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.628,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.628
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.629,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.629
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.63,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.63
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.63,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.636
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.639,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.639
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.642,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.642
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.643,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.643
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.644,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.644
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.645,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.645
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.646,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.646
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.647,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.647
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.648,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.648
+          },
+          {
+            "phase": "print-start",
+            "ms": 85.648,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 85.648
+          },
+          {
+            "phase": "print-start",
+            "ms": 87.367,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 87.375
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 87.57
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 89.341
+          },
+          {
+            "phase": "poll-start",
+            "ms": 89.393,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 89.432,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 89.448,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 93.721,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 94.358,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 97.732,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 97.756,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 97.787,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 97.903
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 99.227
+          },
+          {
+            "phase": "print-start",
+            "ms": 99.276,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 99.278
+          },
+          {
+            "phase": "print-start",
+            "ms": 99.468,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 99.469
+          },
+          {
+            "phase": "print-start",
+            "ms": 99.47,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 99.471
+          },
+          {
+            "phase": "print-start",
+            "ms": 99.472,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 99.472
+          },
+          {
+            "phase": "print-start",
+            "ms": 99.474,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 99.474
+          },
+          {
+            "phase": "menu-end",
+            "ms": 99.477
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 99.568
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 100.35
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 100.398
+          }
+        ]
+      },
+      {
+        "run": 2,
+        "code": 0,
+        "durationMs": 77,
+        "bodyMs": 43.516,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.282,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 8.878,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 9.804,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 10.741,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 11.21,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 17.458,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 17.468,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 21.356,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 21.983,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 22.606,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 22.902,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 28.438,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 28.677
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 28.859
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 29.226
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.524,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.53
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.641,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.65
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.748,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.749
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.75,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.751
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.753,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.753
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.753,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.754
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.755,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.756
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.757,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.757
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.758,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.759
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.778,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.779
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.781,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.782
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.791,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.792
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.793,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.794
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.795,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.796
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.797,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.798
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.799,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.8
+          },
+          {
+            "phase": "print-start",
+            "ms": 29.8,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 29.801
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.186,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.207
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.214,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.214
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.215,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.217
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.218,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.218
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.218,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.218
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.22,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.221
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.221,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.221
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.222,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.222
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.225,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.225
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.227,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.227
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.228,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.228
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.229,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.229
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.23,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.23
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.231,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.231
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.232,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.233
+          },
+          {
+            "phase": "print-start",
+            "ms": 31.233,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 31.233
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.644,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.647
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.653,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.653
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.654,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.654
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.655,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.655
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.656,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.656
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.657,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.657
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.658,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.658
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.658,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.659
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.66,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.661
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.662,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.662
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.663,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.663
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.664,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.664
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.665,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.666
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.667,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.667
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.668,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.669
+          },
+          {
+            "phase": "print-start",
+            "ms": 32.67,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 32.67
+          },
+          {
+            "phase": "print-start",
+            "ms": 33.96,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 33.964
+          },
+          {
+            "phase": "print-start",
+            "ms": 33.985,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 33.987
+          },
+          {
+            "phase": "print-start",
+            "ms": 33.988,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 33.988
+          },
+          {
+            "phase": "print-start",
+            "ms": 33.99,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 33.99
+          },
+          {
+            "phase": "print-start",
+            "ms": 33.99,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 33.991
+          },
+          {
+            "phase": "print-start",
+            "ms": 33.992,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 33.996
+          },
+          {
+            "phase": "print-start",
+            "ms": 33.997,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 33.997
+          },
+          {
+            "phase": "print-start",
+            "ms": 33.998,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 33.998
+          },
+          {
+            "phase": "print-start",
+            "ms": 34.001,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 34.001
+          },
+          {
+            "phase": "print-start",
+            "ms": 34.002,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 34.003
+          },
+          {
+            "phase": "print-start",
+            "ms": 34.004,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 34.004
+          },
+          {
+            "phase": "print-start",
+            "ms": 34.005,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 34.005
+          },
+          {
+            "phase": "print-start",
+            "ms": 34.006,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 34.006
+          },
+          {
+            "phase": "print-start",
+            "ms": 34.008,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 34.008
+          },
+          {
+            "phase": "print-start",
+            "ms": 34.009,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 34.009
+          },
+          {
+            "phase": "print-start",
+            "ms": 34.009,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 34.009
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.309,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.313
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.323,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.323
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.324,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.324
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.343,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.344
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.344,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.344
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.345,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.346
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.346,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.351
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.355,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.355
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.358,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.358
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.359,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.359
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.36,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.36
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.361,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.361
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.362,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.363
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.363,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.364
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.364,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.365
+          },
+          {
+            "phase": "print-start",
+            "ms": 35.365,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 35.365
+          },
+          {
+            "phase": "print-start",
+            "ms": 36.862,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 36.868
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 37.075
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 37.332
+          },
+          {
+            "phase": "poll-start",
+            "ms": 37.367,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 37.398,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 37.414,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 40.602,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 41.081,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 42.524,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 42.53,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 42.556,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 42.679
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 43.026
+          },
+          {
+            "phase": "print-start",
+            "ms": 43.048,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 43.049
+          },
+          {
+            "phase": "print-start",
+            "ms": 43.182,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 43.183
+          },
+          {
+            "phase": "print-start",
+            "ms": 43.184,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 43.184
+          },
+          {
+            "phase": "print-start",
+            "ms": 43.185,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 43.185
+          },
+          {
+            "phase": "print-start",
+            "ms": 43.186,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 43.186
+          },
+          {
+            "phase": "menu-end",
+            "ms": 43.188
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 43.302
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 43.475
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 43.516
+          }
+        ]
+      },
+      {
+        "run": 3,
+        "code": 0,
+        "durationMs": 426,
+        "bodyMs": 392.801,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.276,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 7.237,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 7.82,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 8.665,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 9.116,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 15.199,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 15.211,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 18.8,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 19.869,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 20.571,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 20.959,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 264.812,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 264.976
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 265.146
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 279.296
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.248,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.257
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.364,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.368
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.473,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.474
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.475,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.476
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.478,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.478
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.479,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.48
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.482,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.482
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.483,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.483
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.484,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.486
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.504,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.505
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.508,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.508
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.51,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.51
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.511,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.512
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.513,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.514
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.515,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.515
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.517,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.517
+          },
+          {
+            "phase": "print-start",
+            "ms": 280.518,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 280.518
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.017,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.044
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.055,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.056
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.109,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.123
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.132,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.133
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.134,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.134
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.14,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.14
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.141,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.141
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.142,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.143
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.148,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.148
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.15,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.15
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.151,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.152
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.153,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.153
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.154,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.155
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.156,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.157
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.158,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.158
+          },
+          {
+            "phase": "print-start",
+            "ms": 285.159,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 285.159
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.615,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.621
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.632,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.633
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.634,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.634
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.636,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.636
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.637,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.637
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.638,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.639
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.639,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.64
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.641,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.641
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.645,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.645
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.647,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.648
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.649,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.649
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.651,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.651
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.652,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.652
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.654,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.654
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.656,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.66
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.661,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.662
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.004,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.007
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.026,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.028
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.03,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.03
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.031,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.032
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.032,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.033
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.034,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.041
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.042,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.042
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.043,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.043
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.047,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.047
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.048,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.049
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.05,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.05
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.051,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.052
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.053,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.053
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.056,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.057
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.058,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.058
+          },
+          {
+            "phase": "print-start",
+            "ms": 288.058,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 288.058
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.433,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.44
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.454,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.454
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.455,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.455
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.511,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.517
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.518,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.518
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.522,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.522
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.523,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.533
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.54,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.54
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.545,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.545
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.547,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.547
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.548,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.548
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.549,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.549
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.55,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.551
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.552,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.552
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.553,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.553
+          },
+          {
+            "phase": "print-start",
+            "ms": 295.554,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 295.554
+          },
+          {
+            "phase": "print-start",
+            "ms": 300.47,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 300.48
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 300.699
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 301.537
+          },
+          {
+            "phase": "poll-start",
+            "ms": 301.58,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 301.613,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 301.628,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 335.31,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 337.618,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 389.412,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 389.424,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 389.459,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 389.583
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 391.178
+          },
+          {
+            "phase": "print-start",
+            "ms": 391.224,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 391.225
+          },
+          {
+            "phase": "print-start",
+            "ms": 391.41,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 391.411
+          },
+          {
+            "phase": "print-start",
+            "ms": 391.412,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 391.412
+          },
+          {
+            "phase": "print-start",
+            "ms": 391.413,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 391.414
+          },
+          {
+            "phase": "print-start",
+            "ms": 391.415,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 391.415
+          },
+          {
+            "phase": "menu-end",
+            "ms": 391.417
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 391.514
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 392.748
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 392.801
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "loaded.1.3.14.elections.jsonl",
+    "summary": {
+      "passes": 3,
+      "failures": 0,
+      "runs": 3,
+      "workers": 16
+    },
+    "runs": [
+      {
+        "run": 1,
+        "code": 0,
+        "durationMs": 3882,
+        "bodyMs": 2923.901,
+        "rounds": 512,
+        "roundMeanMs": 5.6818476562500075,
+        "roundMedianMs": 0.7519999999999527,
+        "roundMaxMs": 178.7550000000001
+      },
+      {
+        "run": 2,
+        "code": 0,
+        "durationMs": 2780,
+        "bodyMs": 2105.537,
+        "rounds": 512,
+        "roundMeanMs": 4.109292968750006,
+        "roundMedianMs": 0.7319999999999709,
+        "roundMaxMs": 103.82400000000007
+      },
+      {
+        "run": 3,
+        "code": 0,
+        "durationMs": 1975,
+        "bodyMs": 1639.682,
+        "rounds": 512,
+        "roundMeanMs": 3.1799550781250003,
+        "roundMedianMs": 0.7540000000000191,
+        "roundMaxMs": 121.995
+      }
+    ]
+  },
+  {
+    "file": "loaded.1.3.14.quotas.jsonl",
+    "summary": {
+      "passes": 3,
+      "failures": 0,
+      "runs": 3,
+      "workers": 16
+    },
+    "runs": [
+      {
+        "run": 1,
+        "code": 0,
+        "durationMs": 540,
+        "bodyMs": 303.845,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.386,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 160.517,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 189.385,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 190.377,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 190.534,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 192.822,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 192.84,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 205.359,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 205.596,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 205.902,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 206.27,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 207.476,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 207.738
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 208.066
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 208.5
+          },
+          {
+            "phase": "print-start",
+            "ms": 208.978,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 208.986
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.17,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.173
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.322,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.325
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.327,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.328
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.331,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.332
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.333,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.334
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.337,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.337
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.339,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.34
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.341,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.344
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.361,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.363
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.367,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.368
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.371,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.371
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.374,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.375
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.377,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.377
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.38,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.381
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.383,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.384
+          },
+          {
+            "phase": "print-start",
+            "ms": 209.385,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 209.386
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.381,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.384
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.394,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.395
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.396,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.402
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.403,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.404
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.405,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.406
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.41,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.411
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.412,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.413
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.414,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.415
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.422,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.422
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.426,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.426
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.428,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.429
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.431,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.432
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.434,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.434
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.437,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.437
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.439,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.44
+          },
+          {
+            "phase": "print-start",
+            "ms": 219.441,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 219.442
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.297,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.314
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.328,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.329
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.331,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.332
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.334,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.335
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.336,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.337
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.339,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.34
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.341,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.342
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.344,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.344
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.351,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.351
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.355,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.356
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.359,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.36
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.38,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.381
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.383,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.384
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.386,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.387
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.389,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.397
+          },
+          {
+            "phase": "print-start",
+            "ms": 243.398,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 243.399
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.485,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.516
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.538,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.544
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.546,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.547
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.549,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.549
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.55,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.552
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.554,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.554
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.555,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.556
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.557,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.557
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.563,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.564
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.567,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.567
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.569,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.57
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.572,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.573
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.575,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.575
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.577,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.578
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.579,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.579
+          },
+          {
+            "phase": "print-start",
+            "ms": 247.58,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 247.581
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.221,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.224
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.246,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.246
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.248,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.248
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.262,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.262
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.263,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.264
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.265,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.266
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.266,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.267
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.268,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.268
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.272,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.273
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.275,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.275
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.277,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.277
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.279,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.279
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.281,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.281
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.283,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.284
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.285,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.285
+          },
+          {
+            "phase": "print-start",
+            "ms": 251.286,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 251.286
+          },
+          {
+            "phase": "print-start",
+            "ms": 252.53,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 252.531
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 252.935
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 253.328
+          },
+          {
+            "phase": "poll-start",
+            "ms": 253.373,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 253.423,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 253.453,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 274.498,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 274.716,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 285.656,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 285.678,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 285.781,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 286.005
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 286.349
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.417,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.42
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.723,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.724
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.726,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.726
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.729,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.729
+          },
+          {
+            "phase": "print-start",
+            "ms": 286.731,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 286.732
+          },
+          {
+            "phase": "menu-end",
+            "ms": 286.739
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 286.921
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 303.703
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 303.845
+          }
+        ]
+      },
+      {
+        "run": 2,
+        "code": 0,
+        "durationMs": 580,
+        "bodyMs": 268.53,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.396,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 44.39,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 56.373,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 139.403,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 139.76,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 142.765,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 142.78,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 144.603,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 144.801,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 144.975,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 145.882,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 146.968,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 147.196
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 147.514
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 155.361
+          },
+          {
+            "phase": "print-start",
+            "ms": 155.846,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 155.859
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.031,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.034
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.151,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.154
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.156,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.156
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.159,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.16
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.161,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.162
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.165,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.165
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.167,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.167
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.169,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.171
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.199,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.2
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.205,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.206
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.208,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.209
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.212,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.213
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.214,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.215
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.218,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.219
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.223,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.224
+          },
+          {
+            "phase": "print-start",
+            "ms": 156.225,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 156.226
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.301,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.335
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.351,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.352
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.353,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.356
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.358,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.359
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.359,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.36
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.363,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.363
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.364,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.365
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.366,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.366
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.377,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.377
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.38,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.381
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.383,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.383
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.385,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.385
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.389,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.389
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.392,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.392
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.394,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.395
+          },
+          {
+            "phase": "print-start",
+            "ms": 183.396,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 183.396
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.328,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.35
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.365,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.366
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.367,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.368
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.37,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.371
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.376,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.377
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.379,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.38
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.381,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.382
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.383,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.384
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.391,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.392
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.396,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.396
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.399,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.4
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.402,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.403
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.405,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.406
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.408,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.409
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.41,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.434
+          },
+          {
+            "phase": "print-start",
+            "ms": 205.44,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 205.441
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.323,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.346
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.38,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.381
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.383,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.384
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.388,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.388
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.389,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.391
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.393,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.393
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.395,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.395
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.396,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.397
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.403,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.403
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.406,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.406
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.408,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.409
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.411,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.412
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.413,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.414
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.416,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.416
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.418,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.418
+          },
+          {
+            "phase": "print-start",
+            "ms": 222.419,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 222.419
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.317,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.343
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.36,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.361
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.362,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.362
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.364,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.365
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.366,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.366
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.367,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.368
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.37,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.382
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.384,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.412
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.419,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.42
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.423,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.424
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.426,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.426
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.429,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.429
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.431,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.432
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.434,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.435
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.436,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.437
+          },
+          {
+            "phase": "print-start",
+            "ms": 250.437,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 250.438
+          },
+          {
+            "phase": "print-start",
+            "ms": 256.548,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 256.554
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 256.949
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 259.546
+          },
+          {
+            "phase": "poll-start",
+            "ms": 259.602,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 259.655,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 259.682,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 264.85,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 265.057,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 265.762,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 265.769,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 265.812,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 265.963
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 266.252
+          },
+          {
+            "phase": "print-start",
+            "ms": 266.301,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 266.303
+          },
+          {
+            "phase": "print-start",
+            "ms": 266.537,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 266.538
+          },
+          {
+            "phase": "print-start",
+            "ms": 266.539,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 266.54
+          },
+          {
+            "phase": "print-start",
+            "ms": 266.542,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 266.542
+          },
+          {
+            "phase": "print-start",
+            "ms": 266.544,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 266.544
+          },
+          {
+            "phase": "menu-end",
+            "ms": 266.548
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 266.719
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 268.447
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 268.53
+          }
+        ]
+      },
+      {
+        "run": 3,
+        "code": 0,
+        "durationMs": 913,
+        "bodyMs": 647.158,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.334,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 230.873,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 231.128,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 231.988,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 232.131,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 234.381,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 234.416,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 236.182,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 236.438,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 236.614,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 236.852,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 320.582,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 320.925
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 321.274
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 338.626
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.153,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.163
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.384,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.387
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.537,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.541
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.543,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.543
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.547,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.547
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.548,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.55
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.557,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.558
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.56,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.561
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.562,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.565
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.58,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.582
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.587,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.588
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.59,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.591
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.594,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.594
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.596,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.597
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.6,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.601
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.606,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.606
+          },
+          {
+            "phase": "print-start",
+            "ms": 339.607,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 339.608
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.811,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.813
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.819,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.819
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.821,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.826
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.828,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.828
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.829,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.83
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.833,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.834
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.835,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.836
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.837,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.838
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.841,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.842
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.845,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.846
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.848,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.849
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.851,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.851
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.853,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.854
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.856,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.857
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.858,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.859
+          },
+          {
+            "phase": "print-start",
+            "ms": 340.861,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 340.861
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.413,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.424
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.434,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.435
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.437,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.438
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.44,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.441
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.443,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.444
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.446,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.447
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.448,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.449
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.451,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.451
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.457,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.458
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.461,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.462
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.465,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.465
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.468,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.469
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.471,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.472
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.475,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.476
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.478,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.481
+          },
+          {
+            "phase": "print-start",
+            "ms": 353.483,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 353.483
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.911,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.927
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.951,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.953
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.955,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.955
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.957,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.957
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.958,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.959
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.96,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.961
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.962,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.963
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.963,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.964
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.967,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.967
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.969,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.97
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.972,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.972
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.974,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.974
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.976,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.976
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.978,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.978
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.98,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.98
+          },
+          {
+            "phase": "print-start",
+            "ms": 354.981,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 354.981
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.375,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.376
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.404,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.404
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.405,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.406
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.426,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.426
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.427,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.427
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.433,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.433
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.434,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.435
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.435,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.436
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.438,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.438
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.44,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.44
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.442,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.442
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.443,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.444
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.445,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.446
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.447,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.447
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.449,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.449
+          },
+          {
+            "phase": "print-start",
+            "ms": 363.449,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 363.45
+          },
+          {
+            "phase": "print-start",
+            "ms": 385.583,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 385.589
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 385.975
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 477.042
+          },
+          {
+            "phase": "poll-start",
+            "ms": 477.19,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 477.278,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 477.311,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 491.954,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 492.154,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 641.609,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 641.633,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 641.726,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 641.96
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 642.414
+          },
+          {
+            "phase": "print-start",
+            "ms": 642.482,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 642.484
+          },
+          {
+            "phase": "print-start",
+            "ms": 642.804,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 642.806
+          },
+          {
+            "phase": "print-start",
+            "ms": 642.807,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 642.808
+          },
+          {
+            "phase": "print-start",
+            "ms": 642.81,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 642.81
+          },
+          {
+            "phase": "print-start",
+            "ms": 642.813,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 642.813
+          },
+          {
+            "phase": "menu-end",
+            "ms": 642.819
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 643.014
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 646.625
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 647.158
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "loaded.1.4.2.elections.jsonl",
+    "summary": {
+      "passes": 3,
+      "failures": 0,
+      "runs": 3,
+      "workers": 16
+    },
+    "runs": [
+      {
+        "run": 1,
+        "code": 0,
+        "durationMs": 5800,
+        "bodyMs": 5558.935,
+        "rounds": 512,
+        "roundMeanMs": 10.853478515625024,
+        "roundMedianMs": 0.9470000000001164,
+        "roundMaxMs": 128.77199999999993
+      },
+      {
+        "run": 2,
+        "code": 0,
+        "durationMs": 1023,
+        "bodyMs": 847.68,
+        "rounds": 512,
+        "roundMeanMs": 1.6533222656249977,
+        "roundMedianMs": 0.9059999999999775,
+        "roundMaxMs": 17.669000000000004
+      },
+      {
+        "run": 3,
+        "code": 0,
+        "durationMs": 743,
+        "bodyMs": 528.381,
+        "rounds": 512,
+        "roundMeanMs": 1.0296035156249994,
+        "roundMedianMs": 0.8520000000000181,
+        "roundMaxMs": 13.029000000000003
+      }
+    ]
+  },
+  {
+    "file": "loaded.1.4.2.quotas.jsonl",
+    "summary": {
+      "passes": 3,
+      "failures": 0,
+      "runs": 3,
+      "workers": 16
+    },
+    "runs": [
+      {
+        "run": 1,
+        "code": 0,
+        "durationMs": 471,
+        "bodyMs": 286.593,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.758,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 47.348,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 47.759,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 58.352,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 71.348,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 73.746,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 73.758,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 132.271,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 148.561,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 148.979,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 149.14,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 176.303,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 176.663
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 177.028
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 200.588
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.161,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.173
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.405,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.408
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.564,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.567
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.568,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.569
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.572,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.573
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.574,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.575
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.578,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.579
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.58,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.581
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.583,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.584
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.61,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.612
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.622,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.623
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.626,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.627
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.629,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.629
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.634,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.634
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.638,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.639
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.641,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.642
+          },
+          {
+            "phase": "print-start",
+            "ms": 201.643,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 201.643
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.543,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.569
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.585,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.586
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.587,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.592
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.594,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.597
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.598,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.598
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.604,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.604
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.605,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.606
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.607,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.607
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.614,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.614
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.617,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.618
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.62,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.62
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.622,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.623
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.625,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.625
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.629,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.629
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.631,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.632
+          },
+          {
+            "phase": "print-start",
+            "ms": 214.632,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 214.633
+          },
+          {
+            "phase": "print-start",
+            "ms": 215.716,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 215.725
+          },
+          {
+            "phase": "print-start",
+            "ms": 215.728,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 215.728
+          },
+          {
+            "phase": "print-start",
+            "ms": 215.729,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 215.73
+          },
+          {
+            "phase": "print-start",
+            "ms": 215.731,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 215.732
+          },
+          {
+            "phase": "print-start",
+            "ms": 215.741,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 215.741
+          },
+          {
+            "phase": "print-start",
+            "ms": 215.743,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 215.743
+          },
+          {
+            "phase": "print-start",
+            "ms": 215.744,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 215.745
+          },
+          {
+            "phase": "print-start",
+            "ms": 215.746,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 215.746
+          },
+          {
+            "phase": "print-start",
+            "ms": 227.295,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 227.302
+          },
+          {
+            "phase": "print-start",
+            "ms": 227.327,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 227.331
+          },
+          {
+            "phase": "print-start",
+            "ms": 227.341,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 227.342
+          },
+          {
+            "phase": "print-start",
+            "ms": 227.344,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 227.344
+          },
+          {
+            "phase": "print-start",
+            "ms": 227.349,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 227.349
+          },
+          {
+            "phase": "print-start",
+            "ms": 227.352,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 227.352
+          },
+          {
+            "phase": "print-start",
+            "ms": 227.356,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 227.36
+          },
+          {
+            "phase": "print-start",
+            "ms": 227.361,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 227.361
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.45,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.451
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.473,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.473
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.474,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.474
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.476,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.476
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.477,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.478
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.479,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.48
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.481,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.481
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.482,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.483
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.486,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.486
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.488,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.49
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.491,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.492
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.493,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.494
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.495,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.496
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.497,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.498
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.501,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.502
+          },
+          {
+            "phase": "print-start",
+            "ms": 228.502,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 228.503
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.696,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.698
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.715,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.716
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.716,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.717
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.729,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.73
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.73,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.731
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.732,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.732
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.736,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.744
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.745,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.745
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.749,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.749
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.751,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.752
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.754,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.754
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.756,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.756
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.758,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.758
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.759,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.76
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.764,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.764
+          },
+          {
+            "phase": "print-start",
+            "ms": 229.765,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 229.765
+          },
+          {
+            "phase": "print-start",
+            "ms": 240.496,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 240.513
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 240.864
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 243.647
+          },
+          {
+            "phase": "poll-start",
+            "ms": 243.693,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 243.748,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 243.771,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 256.092,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 268.53,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 281.973,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 281.99,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 282.066,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 282.28
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 282.75
+          },
+          {
+            "phase": "print-start",
+            "ms": 282.811,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 282.813
+          },
+          {
+            "phase": "print-start",
+            "ms": 283.157,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 283.159
+          },
+          {
+            "phase": "print-start",
+            "ms": 283.161,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 283.161
+          },
+          {
+            "phase": "print-start",
+            "ms": 283.163,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 283.164
+          },
+          {
+            "phase": "print-start",
+            "ms": 283.166,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 283.166
+          },
+          {
+            "phase": "menu-end",
+            "ms": 283.172
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 283.34
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 286.525
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 286.593
+          }
+        ]
+      },
+      {
+        "run": 2,
+        "code": 0,
+        "durationMs": 254,
+        "bodyMs": 92.44,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.707,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 35.016,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 35.373,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 39.467,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 39.644,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 41.634,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 41.644,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 49.957,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 50.181,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 50.478,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 50.829,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 58.313,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 58.518
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 58.794
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 59.068
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.498,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.508
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.704,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.707
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.865,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.868
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.87,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.871
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.874,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.875
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.876,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.876
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.879,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.88
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.881,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.882
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.883,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.885
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.907,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.908
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.912,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.912
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.915,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.915
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.917,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.918
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.921,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.922
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.925,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.926
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.928,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.929
+          },
+          {
+            "phase": "print-start",
+            "ms": 59.93,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 59.93
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.386,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.404
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.412,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.412
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.413,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.415
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.417,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.417
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.418,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.418
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.421,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.421
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.422,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.422
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.423,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.424
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.427,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.428
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.43,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.43
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.432,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.432
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.434,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.434
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.436,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.436
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.443,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.444
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.445,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.446
+          },
+          {
+            "phase": "print-start",
+            "ms": 63.446,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 63.447
+          },
+          {
+            "phase": "print-start",
+            "ms": 67.262,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 67.266
+          },
+          {
+            "phase": "print-start",
+            "ms": 67.269,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 67.27
+          },
+          {
+            "phase": "print-start",
+            "ms": 67.271,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 67.271
+          },
+          {
+            "phase": "print-start",
+            "ms": 67.273,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 67.273
+          },
+          {
+            "phase": "print-start",
+            "ms": 67.28,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 67.281
+          },
+          {
+            "phase": "print-start",
+            "ms": 67.287,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 67.287
+          },
+          {
+            "phase": "print-start",
+            "ms": 67.289,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 67.29
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.262,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.266
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.279,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.288
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.299,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.3
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.302,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.302
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.304,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.304
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.306,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.306
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.308,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.308
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.31,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.313
+          },
+          {
+            "phase": "print-start",
+            "ms": 73.313,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 73.314
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.383,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.384
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.397,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.397
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.398,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.399
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.4,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.4
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.401,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.402
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.403,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.403
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.404,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.405
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.405,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.406
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.408,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.408
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.41,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.411
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.412,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.413
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.417,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.417
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.419,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.419
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.42,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.421
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.423,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.423
+          },
+          {
+            "phase": "print-start",
+            "ms": 74.424,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 74.424
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.566,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.567
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.576,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.576
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.577,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.577
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.588,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.588
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.589,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.589
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.59,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.59
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.591,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.597
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.597,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.598
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.599,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.6
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.601,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.602
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.603,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.603
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.607,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.607
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.609,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.609
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.61,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.611
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.614,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.614
+          },
+          {
+            "phase": "print-start",
+            "ms": 75.617,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 75.618
+          },
+          {
+            "phase": "print-start",
+            "ms": 77.333,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 77.342
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 77.616
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 81.325
+          },
+          {
+            "phase": "poll-start",
+            "ms": 81.361,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 81.41,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 81.43,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 86.146,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 90.425,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 91.193,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 91.199,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 91.265,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 91.401
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 91.603
+          },
+          {
+            "phase": "print-start",
+            "ms": 91.639,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 91.641
+          },
+          {
+            "phase": "print-start",
+            "ms": 91.882,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 91.883
+          },
+          {
+            "phase": "print-start",
+            "ms": 91.884,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 91.884
+          },
+          {
+            "phase": "print-start",
+            "ms": 91.886,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 91.887
+          },
+          {
+            "phase": "print-start",
+            "ms": 91.889,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 91.889
+          },
+          {
+            "phase": "menu-end",
+            "ms": 91.892
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 92.016
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 92.388
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 92.44
+          }
+        ]
+      },
+      {
+        "run": 3,
+        "code": 0,
+        "durationMs": 369,
+        "bodyMs": 199.792,
+        "events": [
+          {
+            "phase": "store-add-start",
+            "ms": 0.671,
+            "id": "a"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 43.167,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 53.888,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 65.464,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 75.439,
+            "operation": "add",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 115.375,
+            "id": "a"
+          },
+          {
+            "phase": "store-add-start",
+            "ms": 115.401,
+            "id": "b"
+          },
+          {
+            "phase": "before-state-write",
+            "ms": 151.742,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-state-write",
+            "ms": 152.036,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 152.348,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 152.583,
+            "operation": "add",
+            "rowId": "b"
+          },
+          {
+            "phase": "store-add-end",
+            "ms": 163.059,
+            "id": "b"
+          },
+          {
+            "phase": "menu-start",
+            "ms": 163.359
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 163.714
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 164.119
+          },
+          {
+            "phase": "print-start",
+            "ms": 164.622,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 164.634
+          },
+          {
+            "phase": "print-start",
+            "ms": 164.845,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 164.848
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.012,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.015
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.016,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.017
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.02,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.021
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.022,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.023
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.025,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.026
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.028,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.028
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.029,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.031
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.053,
+            "bytes": 87
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.054
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.058,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.058
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.061,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.061
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.063,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.064
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.068,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.068
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.072,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.072
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.074,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.075
+          },
+          {
+            "phase": "print-start",
+            "ms": 165.076,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 165.076
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.329,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.359
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.369,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.37
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.372,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.375
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.377,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.377
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.378,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.379
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.382,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.382
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.384,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.384
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.385,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.386
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.403,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.403
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.405,
+            "bytes": 97
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.406
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.408,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.409
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.41,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.411
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.412,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.413
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.417,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.417
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.419,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.42
+          },
+          {
+            "phase": "print-start",
+            "ms": 166.421,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 166.421
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.345,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.36
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.369,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.37
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.371,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.371
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.373,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.374
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.379,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.379
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.381,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.381
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.383,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.384
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.385,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.385
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.39,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.39
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.399,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.399
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.406,
+            "bytes": 82
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.406
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.408,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.409
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.411,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.411
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.413,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.414
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.415,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.419
+          },
+          {
+            "phase": "print-start",
+            "ms": 174.42,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 174.42
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.501,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.503
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.524,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.526
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.529,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.529
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.531,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.531
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.532,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.533
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.535,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.535
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.536,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.536
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.537,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.537
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.54,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.54
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.542,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.543
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.545,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.545
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.55,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.55
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.552,
+            "bytes": 106
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.552
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.554,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.554
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.557,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.557
+          },
+          {
+            "phase": "print-start",
+            "ms": 175.558,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 175.558
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.629,
+            "bytes": 10
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.63
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.643,
+            "bytes": 34
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.644
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.644,
+            "bytes": 16
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.645
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.657,
+            "bytes": 43
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.657
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.658,
+            "bytes": 5
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.658
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.659,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.659
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.66,
+            "bytes": 29
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.672
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.673,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.673
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.675,
+            "bytes": 90
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.676
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.677,
+            "bytes": 100
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.678
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.679,
+            "bytes": 85
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.68
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.684,
+            "bytes": 109
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.685
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.686,
+            "bytes": 103
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.687
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.688,
+            "bytes": 63
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.688
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.693,
+            "bytes": 73
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.693
+          },
+          {
+            "phase": "print-start",
+            "ms": 176.697,
+            "bytes": 17
+          },
+          {
+            "phase": "print-end",
+            "ms": 176.697
+          },
+          {
+            "phase": "print-start",
+            "ms": 184.491,
+            "bytes": 6
+          },
+          {
+            "phase": "print-end",
+            "ms": 184.494
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 184.834
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 185.858
+          },
+          {
+            "phase": "poll-start",
+            "ms": 185.921,
+            "id": "a"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 185.979,
+            "id": "a"
+          },
+          {
+            "phase": "store-record-quota-start",
+            "ms": 186.004,
+            "id": "a"
+          },
+          {
+            "phase": "before-config-write",
+            "ms": 188.013,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "after-config-write",
+            "ms": 188.212,
+            "operation": "pull",
+            "rowId": "a"
+          },
+          {
+            "phase": "store-record-quota-end",
+            "ms": 189.101,
+            "id": "a"
+          },
+          {
+            "phase": "poll-start",
+            "ms": 189.108,
+            "id": "b"
+          },
+          {
+            "phase": "poll-end",
+            "ms": 189.156,
+            "id": "b"
+          },
+          {
+            "phase": "store-read-start",
+            "ms": 189.332
+          },
+          {
+            "phase": "store-read-end",
+            "ms": 189.635
+          },
+          {
+            "phase": "print-start",
+            "ms": 189.686,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 189.687
+          },
+          {
+            "phase": "print-start",
+            "ms": 190.02,
+            "bytes": 53
+          },
+          {
+            "phase": "print-end",
+            "ms": 190.022
+          },
+          {
+            "phase": "print-start",
+            "ms": 190.024,
+            "bytes": 3
+          },
+          {
+            "phase": "print-end",
+            "ms": 190.024
+          },
+          {
+            "phase": "print-start",
+            "ms": 190.027,
+            "bytes": 31
+          },
+          {
+            "phase": "print-end",
+            "ms": 190.027
+          },
+          {
+            "phase": "print-start",
+            "ms": 190.03,
+            "bytes": 19
+          },
+          {
+            "phase": "print-end",
+            "ms": 190.031
+          },
+          {
+            "phase": "menu-end",
+            "ms": 190.035
+          },
+          {
+            "phase": "verification-read-start",
+            "ms": 190.195
+          },
+          {
+            "phase": "verification-read-end",
+            "ms": 199.661
+          },
+          {
+            "phase": "trace-finish",
+            "ms": 199.792
+          }
+        ]
+      }
+    ]
+  }
+]

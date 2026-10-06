@@ -9,6 +9,7 @@ import type { LoginAccount, MenuLogin } from '../../src/auth-menu/login.js'
 import { quotaCodec } from '../../src/quota/index.js'
 import { POOL_KEY } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { phaseClock } from '../fixtures/phase-clock.js'
 import { oauth, type Scenario, scenario } from '../store/helpers.js'
 import { choose, fakeTerminal, KEY, NO, YES } from './helpers.js'
 
@@ -249,42 +250,83 @@ describe('account actions', () => {
   })
 
   test('Check quotas polls each account once and prints its windows from the store', async () => {
-    const quotaStore = () => s.open({ quota: quotaCodec })
-    await seed(['a', 'b'])
-    const polled: string[] = []
-    const { fake, run } = menu(choose(LOCAL.quotas), {
-      store: quotaStore(),
-      pollQuota: async (row) => {
-        polled.push(row.id)
-        if (row.id === 'b') throw new Error('HTTP 503')
-        return {
-          checkedAt: 1_000,
-          readings: [
-            {
-              label: 'primary',
-              usedPercent: 42,
-              windowMinutes: 300,
-              resetsAt: '2030-01-01T00:00:00.000Z',
-            },
-          ],
+    const clock = phaseClock('Check quotas failure phases', 5_000)
+    try {
+      const quotaStore = () =>
+        s.open({
+          quota: quotaCodec,
+          onStep: (step, info) => clock.mark(step, { ...info }),
+        })
+      const store = quotaStore()
+      for (const id of ['a', 'b'])
+        await clock.span('store-add', { id }, () =>
+          store.add({
+            id,
+            credential: oauth(`refresh-${id}`),
+            identity: `acct-${id}`,
+          }),
+        )
+      const recordQuota = store.recordQuota.bind(store)
+      store.recordQuota = (...args) =>
+        clock.span('store-record-quota', { id: args[0] }, () =>
+          recordQuota(...args),
+        )
+      const read = store.read.bind(store)
+      store.read = (...args) =>
+        clock.span('store-read', {}, () => read(...args))
+      const polled: string[] = []
+      const { fake, run } = menu(choose(LOCAL.quotas), {
+        store,
+        pollQuota: (row) =>
+          clock.span('poll', { id: row.id }, async () => {
+            polled.push(row.id)
+            if (row.id === 'b') throw new Error('HTTP 503')
+            return {
+              checkedAt: 1_000,
+              readings: [
+                {
+                  label: 'primary',
+                  usedPercent: 42,
+                  windowMinutes: 300,
+                  resetsAt: '2030-01-01T00:00:00.000Z',
+                },
+              ],
+            }
+          }),
+      })
+      const write = fake.terminal.output.write.bind(fake.terminal.output)
+      fake.terminal.output.write = (text) => {
+        clock.mark('print-start', { bytes: Buffer.byteLength(text) })
+        try {
+          return write(text)
+        } finally {
+          clock.mark('print-end')
         }
-      },
-    })
+      }
 
-    expect(await run()).toEqual({ status: 'ran', action: 'check-quotas' })
+      expect(await clock.span('menu', {}, run)).toEqual({
+        status: 'ran',
+        action: 'check-quotas',
+      })
 
-    expect(polled).toEqual(['a', 'b'])
-    expect(fake.text()).toContain(
-      'a:\n  primary: 58% left, resets 2030-01-01T00:00:00.000Z\n',
-    )
-    expect(fake.text()).toContain(
-      'b:\n  quota check failed: HTTP 503\n  no quota reading\n',
-    )
-    const load = await quotaStore().read()
-    if (load.status !== 'ready') throw new Error(load.status)
-    expect(load.rows[0]?.quota).toMatchObject({
-      limits: [{ label: 'primary', usedPercent: 42 }],
-    })
+      expect(polled).toEqual(['a', 'b'])
+      expect(fake.text()).toContain(
+        'a:\n  primary: 58% left, resets 2030-01-01T00:00:00.000Z\n',
+      )
+      expect(fake.text()).toContain(
+        'b:\n  quota check failed: HTTP 503\n  no quota reading\n',
+      )
+      const load = await clock.span('verification-read', {}, () =>
+        quotaStore().read(),
+      )
+      if (load.status !== 'ready') throw new Error(load.status)
+      expect(load.rows[0]?.quota).toMatchObject({
+        limits: [{ label: 'primary', usedPercent: 42 }],
+      })
+      clock.succeeded()
+    } finally {
+      clock.finish()
+    }
   })
 
   test('custody mode lists accounts read-only with enable and disable', async () => {

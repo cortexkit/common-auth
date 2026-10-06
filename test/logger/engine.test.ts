@@ -22,6 +22,7 @@ import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observedState } from '../fixtures/observed.js'
 
 import { makeTempDir } from '../fixtures/scratch.js'
+import { rotationClocks } from './rotation-clocks.js'
 
 const hooks = lifetimeHooks()
 const { afterEach, it } = hooks
@@ -356,21 +357,52 @@ it('capture sink receives only scrubbed messages and payloads', () => {
   expect(capture.records).toEqual([])
 })
 
-it('rotates at 5 MiB keeping three private generations', () => {
-  writeFileSync(logFile, 'x'.repeat(5 * 1024 * 1024))
-  for (let i = 1; i <= 3; i++)
-    writeFileSync(`${logFile}.${i}`, `generation-${i}`)
-  for (const file of [logFile, `${logFile}.1`, `${logFile}.2`, `${logFile}.3`])
-    chmodSync(file, 0o644)
-  createLogger('rotation').info('new-line')
-  flushLogs()
-  expect(readFileSync(logFile, 'utf8')).toContain('new-line')
-  expect(statSync(`${logFile}.1`).size).toBe(5 * 1024 * 1024)
-  expect(readFileSync(`${logFile}.2`, 'utf8')).toBe('generation-1')
-  expect(readFileSync(`${logFile}.3`, 'utf8')).toBe('generation-2')
-  expect(existsSync(`${logFile}.4`)).toBe(false)
-  for (const file of [logFile, `${logFile}.1`, `${logFile}.2`, `${logFile}.3`])
-    expect(statSync(file).mode & 0o777).toBe(0o600)
+it('rotates at 5 MiB keeping three private generations', async () => {
+  const started = performance.now()
+  const clocks = rotationClocks(hooks.lifetime.signal, started)
+  let failed = false
+  try {
+    writeFileSync(logFile, 'x'.repeat(5 * 1024 * 1024))
+    for (let i = 1; i <= 3; i++)
+      writeFileSync(`${logFile}.${i}`, `generation-${i}`)
+    for (const file of [
+      logFile,
+      `${logFile}.1`,
+      `${logFile}.2`,
+      `${logFile}.3`,
+    ])
+      chmodSync(file, 0o644)
+    createLogger('rotation').info('new-line')
+    clocks.measure('flushLogs', logFile, flushLogs)
+    // Three renames confirm the engine's imported renameSync is intercepted,
+    // rather than still calling an original function captured before spying.
+    expect(
+      clocks.phases.filter((phase) => phase.operation === 'renameSync'),
+    ).toHaveLength(3)
+    expect(readFileSync(logFile, 'utf8')).toContain('new-line')
+    expect(statSync(`${logFile}.1`).size).toBe(5 * 1024 * 1024)
+    expect(readFileSync(`${logFile}.2`, 'utf8')).toBe('generation-1')
+    expect(readFileSync(`${logFile}.3`, 'utf8')).toBe('generation-2')
+    expect(existsSync(`${logFile}.4`)).toBe(false)
+    for (const file of [
+      logFile,
+      `${logFile}.1`,
+      `${logFile}.2`,
+      `${logFile}.3`,
+    ])
+      expect(statSync(file).mode & 0o777).toBe(0o600)
+  } catch (error) {
+    failed = true
+    throw error
+  } finally {
+    try {
+      // Yield so Bun can enforce its 5000 ms test timeout after blocking I/O.
+      await Bun.sleep(0)
+      clocks.finish(failed)
+    } finally {
+      clocks.restore()
+    }
+  }
 })
 
 it('buffers until fifty lines or the 500 ms flush deadline', async () => {
