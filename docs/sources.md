@@ -743,6 +743,9 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | dump | An uncapped dumper never sweeps | new (neither copy) | an uncapped dumper never evicts old dumps |
 | dump | The automatic sweep runs at most once per interval; sweep() runs now | anthropic-auth packages/core/src/dump.ts (77e4c900) | the automatic sweep runs at most once per interval while sweep runs now |
 | auth-menu | Arrow keys move the full-screen selection and every redraw is a new frame | reference/openai-auth/packages/opencode/src/auth/ui/select.ts | renders full-screen and moves the selection with the arrow keys |
+| auth-menu | Multiple down and Enter keys in one input chunk are handled in order | new (neither copy) | handles several keys delivered in one input chunk |
+| auth-menu | An incomplete escape prefix at a chunk boundary does not become a key | new (neither copy) | an incomplete escape prefix at a chunk boundary is ignored |
+| auth-menu | Arrow keys and printable characters in a single chunk preserve key order | new (neither copy) | handles mixed keys delivered in one input chunk |
 | auth-menu | Escape cancels the menu, runs nothing and restores raw mode | reference/openai-auth/packages/opencode/src/auth/ui/select.ts | Escape cancels the menu, runs nothing and restores the terminal |
 | auth-menu | Without a TTY the menu prints a plain list and runs nothing | new (neither copy) | a non-interactive terminal gets a plain list and nothing runs |
 | auth-menu | A declined confirmation keeps a destructive action from running | reference/openai-auth/packages/opencode/src/auth/ui/confirm.ts | a destructive action does not run when its confirmation is declined |

@@ -18,7 +18,7 @@ export {
   toggleAccountAction,
 } from './accounts.js'
 export type { KeyAction } from './ansi.js'
-export { ANSI, parseKey, stripAnsi, truncateAnsi } from './ansi.js'
+export { ANSI, parseKey, parseKeys, stripAnsi, truncateAnsi } from './ansi.js'
 export { confirm } from './confirm.js'
 export type {
   DoctorActionOptions,

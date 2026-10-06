@@ -1,4 +1,4 @@
-import { ANSI, parseKey, truncateAnsi } from './ansi.js'
+import { ANSI, parseKeys, truncateAnsi } from './ansi.js'
 import { isInteractive, type MenuTerminal } from './terminal.js'
 
 export interface MenuItem<T = string> {
@@ -156,30 +156,35 @@ export async function select<T>(
     }
     const onSignal = () => finish(null)
     const onKey = (data: Buffer | string) => {
-      if (escapeTimeout) {
-        clearTimeout(escapeTimeout)
-        escapeTimeout = null
-      }
-      switch (parseKey(data)) {
-        case 'up':
-          cursor = (cursor - 1 + items.length) % items.length
-          render()
-          break
-        case 'down':
-          cursor = (cursor + 1) % items.length
-          render()
-          break
-        case 'enter':
-          finish(items[cursor]?.value ?? null)
-          break
-        case 'escape':
-          finish(null)
-          break
-        case 'escape-start':
-          // A bare Escape byte is also the start of an arrow-key sequence
-          // that may arrive split across reads; only a lone one cancels.
-          escapeTimeout = setTimeout(() => finish(null), ESCAPE_TIMEOUT_MS)
-          break
+      for (const key of parseKeys(data)) {
+        if (cleaned) break
+        if (escapeTimeout) {
+          clearTimeout(escapeTimeout)
+          escapeTimeout = null
+        }
+        switch (key) {
+          case 'up':
+            cursor = (cursor - 1 + items.length) % items.length
+            render()
+            break
+          case 'down':
+            cursor = (cursor + 1) % items.length
+            render()
+            break
+          case 'enter':
+            finish(items[cursor]?.value ?? null)
+            break
+          case 'escape':
+            finish(null)
+            break
+          case 'escape-start':
+            // A bare Escape byte is also the start of an arrow-key sequence
+            // that may arrive split across reads; only a lone one cancels.
+            escapeTimeout = setTimeout(() => finish(null), ESCAPE_TIMEOUT_MS)
+            break
+          default:
+            break
+        }
       }
     }
 
