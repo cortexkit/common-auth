@@ -2,7 +2,7 @@ import { beforeEach, describe, expect } from 'bun:test'
 import type { PoolOperationError, PullRequest } from '../../src/store/index.js'
 import { mutateAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
-import { deferred, oauth, type Scenario, scenario } from './helpers.js'
+import { blocked, deferred, oauth, type Scenario, scenario } from './helpers.js'
 
 const hooks = lifetimeHooks()
 const { afterEach, it } = hooks
@@ -154,14 +154,21 @@ describe('attribution', () => {
     const replace = replacer.replace('r', oauth('r-new'))
     await reached.promise
     const captured = deferred<PullRequest>()
+    let called = false
     const puller = s.open({
       pull: async (request) => {
+        called = true
         captured.resolve(request)
         return 'reading'
       },
     })
     puller.requestReading('r')
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    await blocked(
+      hooks.lifetime,
+      puller.pullsSettled(),
+      s.contended(hooks.lifetime, 'save', s.configPath),
+    )
+    expect(called).toBe(false)
     paused.resolve()
     await replace
     const request = await captured.promise

@@ -1,3 +1,4 @@
+import { expect } from 'bun:test'
 import { spawn } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
 import { open, readFile, writeFile } from 'node:fs/promises'
@@ -10,7 +11,9 @@ import {
   type ProviderStateCodec,
   type QuotaCodec,
 } from '../../src/store/index.js'
+import { observed } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+import type { TestLifetime } from '../fixtures/test-lifetime.js'
 
 /** A trivial quota codec: the map is a list of observations in arrival order. */
 export const listCodec: QuotaCodec = {
@@ -51,6 +54,7 @@ export interface Scenario {
   bytes(): Promise<{ config: string | null; state: string | null }>
   writeConfig(value: unknown): Promise<void>
   writeState(value: unknown): Promise<void>
+  contended(lifetime: TestLifetime, name: string, path?: string): Promise<void>
   cleanup(): void
 }
 
@@ -60,7 +64,22 @@ export async function scenario(prefix = 'pool-store-'): Promise<Scenario> {
   const statePath = join(dir, 'openai-auth-state.json')
   const read = async (path: string) =>
     existsSync(path) ? await readFile(path, 'utf8') : null
+  const refusals: Array<{ name: string; path: string }> = []
+  const waiters: Array<{ name: string; path: string; resolve: () => void }> = []
   return {
+    contended: (lifetime, name, path = statePath) =>
+      observed(
+        lifetime,
+        new Promise<void>((resolve) => {
+          const index = refusals.findIndex(
+            (event) => event.name === name && event.path === path,
+          )
+          if (index >= 0) {
+            refusals.splice(index, 1)
+            resolve()
+          } else waiters.push({ name, path, resolve })
+        }),
+      ),
     dir,
     configPath,
     statePath,
@@ -72,6 +91,17 @@ export async function scenario(prefix = 'pool-store-'): Promise<Scenario> {
         statePath,
         quota: listCodec,
         ...overrides,
+        onLockEvent: (event) => {
+          if (event.type === 'contended') {
+            const index = waiters.findIndex(
+              (waiter) =>
+                waiter.name === event.name && waiter.path === event.path,
+            )
+            if (index >= 0) waiters.splice(index, 1)[0]?.resolve()
+            else refusals.push(event)
+          }
+          overrides.onLockEvent?.(event)
+        },
       }),
     config: async () => JSON.parse((await read(configPath)) ?? 'null'),
     state: async () => JSON.parse((await read(statePath)) ?? 'null'),
@@ -116,22 +146,23 @@ export function deferred<T = void>() {
   return { promise, resolve, reject }
 }
 
-export async function settlesWithin(
-  promise: Promise<unknown>,
-  ms: number,
-): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const result = await Promise.race([
-    promise.then(
-      () => true,
-      () => true,
-    ),
-    new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(false), ms)
-    }),
-  ])
-  if (timer) clearTimeout(timer)
-  return result
+/** Assert exclusion after a refused attempt; teardown cancels a missing observation. */
+export async function blocked(
+  lifetime: TestLifetime,
+  operation: Promise<unknown>,
+  refusal: Promise<void>,
+): Promise<void> {
+  let settled = false
+  void operation.then(
+    () => {
+      settled = true
+    },
+    () => {
+      settled = true
+    },
+  )
+  await observed(lifetime, refusal)
+  expect(settled).toBe(false)
 }
 
 /** Awaits a promise expected to reject and returns the rejection. */

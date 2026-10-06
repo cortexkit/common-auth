@@ -9,6 +9,7 @@ import { loadAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
+  blocked,
   CRASH_EXIT_CODE,
   deferred,
   oauth,
@@ -17,7 +18,6 @@ import {
   runChild,
   type Scenario,
   scenario,
-  settlesWithin,
 } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -174,7 +174,11 @@ describe('reorder', () => {
         { name: 'extra-2', path: s.statePath },
       ],
     })
-    expect(await settlesWithin(reorder, 300)).toBe(false)
+    await blocked(
+      hooks.lifetime,
+      reorder,
+      s.contended(hooks.lifetime, 'extra-1'),
+    )
     // While reorder waits on the extra lock, a store write still gets the
     // store locks: reorder has not taken them yet. Await the write itself
     // rather than a fixed window, which a loaded host can outlast; if reorder

@@ -4,6 +4,7 @@ import { loadAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
+  blocked,
   CRASH_EXIT_CODE,
   deferred,
   oauth,
@@ -11,7 +12,6 @@ import {
   runChild,
   type Scenario,
   scenario,
-  settlesWithin,
 } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -247,7 +247,12 @@ describe('remove', () => {
     })
     await entered.promise
     const removal = s.open().remove('a')
-    expect(await settlesWithin(removal, 300)).toBe(false)
+    await blocked(
+      hooks.lifetime,
+      removal,
+      s.contended(hooks.lifetime, 'row-acct-a'),
+    )
+    expect((await ready()).rows.map((row) => row.id)).toEqual(['a', 'b', 'k'])
     release.resolve()
     expect(await refresh).toMatchObject({ status: 'rotated' })
     expect(await removal).toEqual({ id: 'a', outcome: 'removed' })

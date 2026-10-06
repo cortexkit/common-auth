@@ -9,13 +9,13 @@ import {
 } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
+  blocked,
   deferred,
   oauth,
   type ParsedJson,
   rejectionOf,
   type Scenario,
   scenario,
-  settlesWithin,
 } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -354,9 +354,15 @@ test('an attributed disable and a concurrent merge of the provider state both la
 
     const held = first === 'rotate' ? rotate() : disable()
     await entered.promise
+    const beforeContender = await s.bytes()
     const waiting = first === 'rotate' ? disable() : rotate()
     // The second writer waits for the first one's locks.
-    expect(await settlesWithin(waiting, 300)).toBe(false)
+    await blocked(
+      hooks.lifetime,
+      waiting,
+      s.contended(hooks.lifetime, 'row-acct-a'),
+    )
+    expect(await s.bytes()).toEqual(beforeContender)
     gate.resolve()
     await Promise.all([held, waiting])
 

@@ -12,12 +12,12 @@ import {
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
+  blocked,
   oauth,
   type ParsedJson,
   rejectionOf,
   type Scenario,
   scenario,
-  settlesWithin,
 } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -583,7 +583,11 @@ describe('strict mode and writers that land while an operation waits', () => {
     )
     const rotation = strict().rotate('a', oauth('r-rotated'))
     try {
-      expect(await settlesWithin(rotation, 300)).toBe(false)
+      await blocked(
+        hooks.lifetime,
+        rotation,
+        s.contended(hooks.lifetime, 'row-acct-a'),
+      )
       await editState((accounts) => {
         accounts.a.refresh = 'r-foreign'
       })

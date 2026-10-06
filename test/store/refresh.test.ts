@@ -11,13 +11,13 @@ import { saveAccountState } from '../fixtures/legacy-openai-auth/accounts.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   apiKey,
+  blocked,
   deferred,
   oauth,
   rejectionOf,
   runChild,
   type Scenario,
   scenario,
-  settlesWithin,
 } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -62,6 +62,21 @@ async function rowsOf() {
   return load.rows
 }
 
+function recordOwnership(held: Set<string>, name: string, event: LockEvent) {
+  if (event.type === 'acquired') held.add(name)
+  else if (event.type === 'released') held.delete(name)
+}
+
+it('contended lock events preserve acquired lock evidence until release', () => {
+  const held = new Set<string>()
+  const lock = { name: 'row-a', path: s.statePath }
+  recordOwnership(held, lock.name, { type: 'acquired', ...lock })
+  recordOwnership(held, lock.name, { type: 'contended', ...lock })
+  expect([...held]).toEqual(['row-a'])
+  recordOwnership(held, lock.name, { type: 'released', ...lock })
+  expect([...held]).toEqual([])
+})
+
 describe('lock order, ownership, hooks and refusal', () => {
   it('a refresh takes row, provider-wide and extra locks in order, never holds the store locks across the provider call, and releases in reverse after the hook', async () => {
     await s
@@ -73,8 +88,7 @@ describe('lock order, ownership, hooks and refusal', () => {
       onLockEvent: (event: LockEvent) => {
         const name = `${event.name}@${event.path === s.configPath ? 'config' : 'state'}`
         log.push(`${event.type} ${name}`)
-        if (event.type === 'acquired') held.add(name)
-        else held.delete(name)
+        recordOwnership(held, name, event)
       },
     })
     let heldDuringProvider: string[] = []
@@ -185,6 +199,9 @@ describe('lock order, ownership, hooks and refusal', () => {
       path: s.statePath,
       ttlMs: 10_000,
     })
+    hooks.lifetime.unpark(() => {
+      void holder?.release()
+    })
     const seen: string[] = []
     const refresh = s.open().refresh(
       'a',
@@ -194,7 +211,11 @@ describe('lock order, ownership, hooks and refusal', () => {
       },
       { extraLocks: [{ name: 'legacy-refresh', path: s.statePath }] },
     )
-    expect(await settlesWithin(refresh, 300)).toBe(false)
+    await blocked(
+      hooks.lifetime,
+      refresh,
+      s.contended(hooks.lifetime, 'legacy-refresh'),
+    )
     expect(seen).toEqual([])
     await saveAccountState(
       {
@@ -362,7 +383,11 @@ describe('row lock and provider-wide lock schedules', () => {
         bCalled = true
         return result('r-b2')
       })
-    expect(await settlesWithin(refreshB, 300)).toBe(false)
+    await blocked(
+      hooks.lifetime,
+      refreshB,
+      s.contended(hooks.lifetime, 'provider-openai'),
+    )
     expect(bCalled).toBe(false)
     a.release.resolve()
     await Promise.all([refreshA, refreshB])
@@ -385,7 +410,7 @@ describe('row lock and provider-wide lock schedules', () => {
     const refreshB = s
       .open({
         onLockEvent: (event) => {
-          if (event.name === 'save') return
+          if (event.name === 'save' || event.type === 'contended') return
           events.push(`${event.type} ${event.name}`)
           if (event.type === 'acquired' && event.name === 'row-b') {
             // An uncontrolled writer records b's identity while b waits.
@@ -450,7 +475,12 @@ describe('row lock and provider-wide lock schedules', () => {
     const refreshA = s.open().refresh('a', a.fn)
     await a.entered.promise
     const addB = s.open().add({ id: 'b', credential: oauth('r-b') })
-    expect(await settlesWithin(addB, 300)).toBe(false)
+    await blocked(
+      hooks.lifetime,
+      addB,
+      s.contended(hooks.lifetime, 'provider-openai'),
+    )
+    expect((await rowsOf()).map((row) => row.id)).toEqual(['a'])
     await s.open().add({ id: 'k', credential: apiKey('key-k') })
     a.release.resolve()
     await Promise.all([refreshA, addB])
@@ -525,8 +555,11 @@ describe('replace and a live refresh', () => {
       id: 'r',
       credential: oauth('r-replacement'),
     })
-    await child.printed('started')
-    await new Promise((resolve) => setTimeout(resolve, 400))
+    await blocked(
+      hooks.lifetime,
+      child.exited,
+      child.printed(`contended:row-r@${s.statePath}`),
+    )
     let row = (await rowsOf())[0]
     expect(row).toMatchObject({ credentialEpoch: 1 })
     expect(row?.credential).toMatchObject({ refresh: 'r-old' })

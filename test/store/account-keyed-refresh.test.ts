@@ -7,12 +7,12 @@ import type {
   ProviderRefreshResult,
 } from '../../src/store/index.js'
 import {
+  blocked,
   deferred,
   oauth,
   rejectionOf,
   type Scenario,
   scenario,
-  settlesWithin,
 } from './helpers.js'
 import { TestLifetime } from './test-lifetime.js'
 
@@ -61,7 +61,7 @@ function lockLog() {
   return {
     log,
     as: (who: string) => (event: LockEvent) => {
-      if (event.name === 'save') return
+      if (event.name === 'save' || event.type === 'contended') return
       log.push(`${who} ${event.type} ${event.name}`)
     },
   }
@@ -288,7 +288,8 @@ describe('a row of known identity refreshing under an account-keyed provider loc
     const addY = s
       .open({ onLockEvent: locks.as('Y') })
       .add({ id: 'y', credential: oauth('r-y'), identity: A })
-    expect(await settlesWithin(addY, 300)).toBe(false)
+    await blocked(lifetime, addY, s.contended(lifetime, 'row-acct-A'))
+    expect((await rosterView()).map((row) => row.id)).toEqual(['x'])
     park.go.resolve()
     expect(await refreshX).toMatchObject({ status: 'rotated', rowId: 'x' })
     expect(await addY).toMatchObject({ id: 'y', outcome: 'added-disabled' })
@@ -359,6 +360,9 @@ describe('a row of known identity refreshing under an account-keyed provider loc
     // row lock, so y's refresh reads y unkeyed and queues behind it.
     const gate: PoolLockSpec = { name: 'gate', path: s.statePath }
     const gateHolder = await acquireRefreshFileLock({ ...gate, ttlMs: 30_000 })
+    lifetime.unpark(() => {
+      void gateHolder?.release()
+    })
     const recordHoldsRow = deferred()
     const logR = locks.as('R')
     const recordY = s
@@ -375,14 +379,15 @@ describe('a row of known identity refreshing under an account-keyed provider loc
     const refreshY = s
       .open({ onLockEvent: locks.as('Y') })
       .refresh('y', providerY.fn, { providerLock: accountLock('y') })
-    expect(await settlesWithin(refreshY, 300)).toBe(false)
+    await blocked(lifetime, refreshY, s.contended(lifetime, 'row-y'))
+    expect(providerY.seen).toEqual([])
     await gateHolder?.release()
     // Recording A on y, the earlier roster row, disables x while x's
     // provider call is still pending.
     expect(await recordY).toEqual({ id: 'y', disabled: ['x'] })
     // y's refresh now finds y keyed by A, releases, and waits on row-acct-A,
     // which x still holds.
-    expect(await settlesWithin(refreshY, 300)).toBe(false)
+    await blocked(lifetime, refreshY, s.contended(lifetime, 'row-acct-A'))
     expect(providerY.seen).toEqual([])
 
     park.go.resolve()
@@ -442,11 +447,19 @@ describe('rows of different accounts under account-keyed provider locks', () => 
       return lock ? { providerLock: lock } : {}
     }
     const refreshX = current.open().refresh('x', provider('x'), options(A))
+    await entered.x.promise
     const refreshZ = current.open().refresh('z', provider('z'), options(B))
-    const both = Promise.all([entered.x.promise, entered.z.promise])
-    const overlapped = requireOverlap
-      ? await both.then(() => true)
-      : await settlesWithin(both, 1_000)
+    let overlapped = true
+    if (requireOverlap) await entered.z.promise
+    else {
+      await blocked(
+        lifetime,
+        refreshZ,
+        current.contended(lifetime, 'provider-openai'),
+      )
+      expect(seen).toEqual(['r-x'])
+      overlapped = false
+    }
     release.resolve()
     const outcomes = await Promise.all([refreshX, refreshZ])
     return { overlapped, outcomes, seen }

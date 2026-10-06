@@ -35,7 +35,7 @@ export const POOL_LOCK_DEFAULTS: Readonly<PoolLockOptions> = Object.freeze({
 })
 
 export type LockEvent = {
-  type: 'acquired' | 'released'
+  type: 'acquired' | 'released' | 'contended'
   name: string
   path: string
 }
@@ -67,6 +67,25 @@ export async function acquirePoolLock(
   defaults: PoolLockOptions,
   env: LockEnvironment,
 ): Promise<HeldLock> {
+  const emit = (type: LockEvent['type']) => {
+    try {
+      const result: unknown = env.onLockEvent?.({
+        type,
+        name: spec.name,
+        path: spec.path,
+      })
+      if (
+        result &&
+        (typeof result === 'object' || typeof result === 'function') &&
+        'then' in result &&
+        typeof result.then === 'function'
+      ) {
+        void Promise.resolve(result).catch(() => {})
+      }
+    } catch {
+      // Lock observers must not affect acquisition or release.
+    }
+  }
   const options = { ...defaults, ...definedOnly(spec) }
   const started = performance.now()
   for (;;) {
@@ -76,6 +95,7 @@ export async function acquirePoolLock(
       ttlMs: options.ttlMs,
       now: env.now,
       renew: options.renew,
+      onContended: () => emit('contended'),
       ...(options.renewIntervalMs !== undefined
         ? { renewIntervalMs: options.renewIntervalMs }
         : {}),
@@ -87,22 +107,14 @@ export async function acquirePoolLock(
         : {}),
     })
     if (lock) {
-      env.onLockEvent?.({
-        type: 'acquired',
-        name: spec.name,
-        path: spec.path,
-      })
+      emit('acquired')
       const held: HeldLock = {
         name: spec.name,
         path: spec.path,
         assertOwned: () => lock.assertOwned(),
         release: async () => {
           await lock.release()
-          env.onLockEvent?.({
-            type: 'released',
-            name: spec.name,
-            path: spec.path,
-          })
+          emit('released')
         },
       }
       try {
