@@ -64,6 +64,7 @@ export async function acquireRefreshFileLock(options: {
     step:
       | 'stale-marker-stat'
       | 'stale-marker-claimed'
+      | 'stale-lock-observed'
       | 'stale-lock-confirmed'
       | 'stale-lock-removed'
       | 'eviction-marker-acquired'
@@ -437,6 +438,7 @@ export async function acquireRefreshFileLock(options: {
       acquired = await tryAcquire()
       if (acquired) break
       if (await lockIsLive()) return contended()
+      if (options.onStep) await options.onStep('stale-lock-observed')
 
       try {
         if (!(await tryAcquireEvictionMarker())) {
