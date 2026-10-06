@@ -1140,3 +1140,4 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | tooling | Ordinary owned rejection still fails normally | new (neither copy) | ordinary body rejection fails its own test without a late outcome |
 | fs | Renewal handle is owned before setup can fail outside finally | new (neither copy) | renewal staging lock is released by its lifetime when setup fails before the body finally |
 | tooling | Late successful completion stays attributed to its already-failed test | new (neither copy) | late body completion is recorded by owner while its timeout remains failed |
+| tooling | JSON cancellation cannot pass with a response body that already completed | new (neither copy) | JSON cancellation phase control rejects an immediately completed response body |

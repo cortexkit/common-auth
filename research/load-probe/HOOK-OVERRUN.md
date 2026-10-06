@@ -96,7 +96,7 @@ Local Bun 1.4.2, TypeScript 7.0.2, Biome 2.5.14: build (8 local package manifest
 
 `aft_inspect` initially could not resolve `@cortexkit/common-auth/{fs,sidebar-file,tui-prefs}` in untouched TUI fixtures before build, and its Biome language server had not published diagnostics within the inspection budget. After build, inspection of the five changed implementation/test files was fresh with zero diagnostics. The authoritative build/typecheck passed.
 
-### Final completed implementation
+### First delivery verification (before the readiness follow-up)
 
 - `bun run build` — passed, TypeScript 7.0.2; 8 manifests and 12 installed dependency ranges checked.
 - `bun run typecheck` (`tsc --noEmit`) — passed, TypeScript 7.0.2 (silent-success compiler gate).
@@ -118,3 +118,75 @@ Compared this file on base and branch and compared full-suite order as well, wit
 Together with the base Bun 1.3.14 full-order failure at the same phase-sensitive control, this proves the fixture can miss its intended phase on base too, but does not rule out a whole-suite interaction. No RPC timing, timeout, retry, skip or expected phase was changed to make this gate green. The completed implementation's focused controls passed; the unrelated final full-suite/source gate failure remains explicitly reported.
 
 Final artifacts are `branch/final-full-1.3.14.log`, `final-test-results-1.3.14.xml`, `final-full-1.4.2.log`, `final-test-results-1.4.2.xml`, and `base/full-built-1.4.2.log` / `test-results-1.4.2.xml` under the VM snapshot directory above. Comment review found no unclear code comments; report wording was clarified to identify its artifacts, controls and exact cancellation reason.
+
+## Follow-up: deterministic cancellation readiness and additional full-order evidence
+
+### Establish the phase before the body deadline
+
+`rpc-abort.fixture.ts` now prepares the socket/request in a real `beforeEach`, after `lifetimeHooks` creates the test's owner and **before** Bun starts the unchanged 50 ms body deadline. The fetch control waits for the server to receive the request. The JSON control flushes response headers, never sends a body byte in its normal mode, awaits the actual fetch response, and calls `response.json()` before returning from preparation. A fulfillment/rejection observer records the body's actual state.
+
+The test asserts `phase === 'json'`, `state === 'pending'`, and that the server has not ended the response, then prints `CONTROL json pending`. Only after those assertions does it arm the legacy 100 ms abort timer. The legacy signal is an AbortController with that timer's TimeoutError; the lifetime mode combines it with the owning lifetime signal. Thus preparation cannot consume either cancellation budget. The body deadline and legacy cancellation delay are unchanged. The server withholds the body until cancellation; teardown closes connections only after the tracked body drains.
+
+Both original branches remain: the old runner-facing/signal control emits a JSON TimeoutError between tests after its deadline; the lifetime control emits a JSON AbortError, completes its tracked body, and has no between-tests error. The parent test now requires the explicit pending-phase marker in both branches, not merely an error whose phase happened to be JSON.
+
+The additional immediate-body control makes the server end with `{}`. Preparation consumes that response before checking state, so the test deterministically fails the pending-body assertion with `Received: "fulfilled"`, before any timeout is armed. Both old and lifetime modes are tested. Removing those pending-body assertions makes that new parent test red (`Expected: 1, Received: 0`); the other five cancellation tests pass. Removing lifetime cancellation only for the JSON mode makes the original JSON cancellation parent test red (TimeoutError instead of AbortError); the other five tests pass. Each mutation staged the live fixture first, recorded an empty unstaged diff, recorded a non-empty diff during mutation, and restored with checkout/touch to an empty unstaged diff. No test assertion or expected cancellation phase was weakened.
+
+Commands on `tester@2.28.133.11`, from `/home/tester/hook-overrun-bg2aa/branch`: one batch of twenty complete cancellation-file invocations per runtime, with sixteen busy-loop workers:
+
+```sh
+TEST_BUN="$HOME/rt/bun-1.4.2/bun" "$HOME/rt/bun-1.4.2/bun" \
+  scripts/load-probe.mjs test/fixtures/request-cancellation.test.ts '.*' 20 16
+TEST_BUN="$HOME/rt/bun-1.3.14/bun" "$HOME/rt/bun-1.3.14/bun" \
+  scripts/load-probe.mjs test/fixtures/request-cancellation.test.ts '.*' 20 16
+```
+
+**20/20 passed on Bun 1.4.2 and 20/20 passed on Bun 1.3.14.** Each invocation ran all six tests in the file, including old/new fetch and JSON cancellation, direct rejection preservation, and the immediate-body negative control: 120 passing parent cases and 900 assertions per runtime. JSON preparation is no longer a race against the test deadline. Raw evidence is `/home/tester/hook-overrun-bg2aa/branch/cancellation-ready-1.4.2.jsonl` and `cancellation-ready-1.3.14.jsonl` in the same directory on that VM.
+
+### Bun 1.3.14 default hook budget
+
+An explicit manual probe, `research/load-probe/hook-timeout-default.fixture.ts`, registers `beforeEach(() => new Promise(() => {}))` with **no timeout argument** and no lifetime wrapper. Command: `npx --yes bun@1.3.14 test ./research/load-probe/hook-timeout-default.fixture.ts`. Bun 1.3.14 (`0d9b296a`) failed the sole probe at **5000.03 ms**, with its native `a beforeEach/afterEach hook timed out` diagnostic. Exit 1 is the intended measurement, not a passing suite test.
+
+The normal default is therefore **5 seconds**, not 10 seconds. The approximately 10-second elapsed durations in the overloaded historical logs do not establish a ten-second configured budget. `lifetimeHooks` passing 5000 does not lower the normal default in this repository; no `setDefaultTimeout` use was found. Its explicit short parameter remains only for the child overrun control. The predecessor diagnostic timer remains the previously approved 90%-budget deadline; destructive cleanup still waits.
+
+Runner-source corroboration: [CLI default](https://github.com/oven-sh/bun/blob/7e57e529/src/cli.zig#L341-L343) is `5 * std.time.ms_per_s`; [hook registration](https://github.com/oven-sh/bun/blob/7e57e529/src/bun.js/test/bun_test.zig#L42-L57) uses hook argument parsing; [timeout resolution](https://github.com/oven-sh/bun/blob/7e57e529/src/bun.js/test/ScopeFunctions.zig#L418-L421) prefers explicit timeout, then `setDefaultTimeout`, then runner default. This source commit is in the 1.3.13-to-1.3.14 release range; the exact released binary was independently measured above. Explicit 5000 would override an intentionally customized default, but none is configured in these runs.
+
+### Three additional loaded full orders per revision
+
+To keep the causal comparison stable, froze the hook-outcome implementation at **5add9a0**, without the new pre-deadline JSON preparation, in `/home/tester/hook-overrun-bg2aa/comparison-branch-5add9a0`. Base remains `e6abdda`. Ran three further full suites each on Bun 1.3.14, alternating base/branch, with the same full-suite wrapper, one invocation and 16 busy workers per run. These six runs are the requested additional comparisons, not retries until success. They retain the original branch's hook timeout and diagnostics unchanged.
+
+| Loaded run | Base dump interval test | Branch 5add9a0 dump interval test | Other full-suite failures |
+| --- | --- | --- | --- |
+| Original run 1 | pass | fail at unchanged membership assertion, 146.75 ms | Branch: dump interval only |
+| Additional run 2 | pass, 110.20 ms | pass, 107.91 ms | Base: old fetch and JSON phase controls; branch: none |
+| Additional run 3 | pass, 140.80 ms | pass, 113.54 ms | Base: old JSON phase control; branch: none |
+| Additional run 4 | pass, 179.78 ms | pass, 145.62 ms | Base and branch: old JSON phase control |
+
+Additional base full-suite totals were 1109/2 fail, 1110/1 fail and 1110/1 fail; branch totals were 1119/0 fail, 1119/0 fail and 1118/1 fail, with ten existing opt-in skips each. Each base suite ran 1121 cases; each frozen branch suite ran 1129. Raw JSONL/JUnit artifacts are `loaded-extra-{2,3,4}.{jsonl,xml}` under `/home/tester/hook-overrun-bg2aa/base` and `/home/tester/hook-overrun-bg2aa/comparison-branch-5add9a0`. The dump failure did not recur naturally. This observation alone does not establish whether branch scheduling contributed to its first occurrence.
+
+### Investigate the proposed branch effects, rather than relying on isolation passes
+
+The original failing full-run output contains **no** `Waiting for previous test body`, `Late test body failure`, or `Late test body completion` diagnostics anywhere, including the dump file. Those console.error calls therefore did not execute in that run and cannot account for its dump assertion through extra printed output. The explicit native hook timeout is 5 seconds, equal to Bun 1.3.14's measured default, so it did not shorten that hook budget. The interval body failed at 146.75 ms, not through a hook timeout.
+
+The unchanged test awaits its first dump and waits for three artifacts, then adds an aged synthetic artifact. That artifact-count check is **not a join of the first scheduled sweep**. `src/dump/index.ts:735-742` starts the sweep with `void sweepDumpDirectory(...)`; the sweep awaits directory lstat before readdir at lines 246–250. If the first sweep's directory read occurs after the synthetic artifact is added, that first sweep can remove it even though the second dump correctly schedules no sweep within the interval. The assertion then mistakes a still-running first sweep for an unwanted second sweep.
+
+`research/load-probe/dump-sweep-overlap.mjs` demonstrates that exact ordering on both revisions without modifying production code or the original expectation. It copies the real interval test, parks the **first actual directory lstat**, lets the original body write the aged artifact and second dump, then releases that sweep and joins the actual unlink of the synthetic artifact. The original membership assertion fails on **base and branch**, with the same absent artifact and two surviving dump groups as the historical failure. The driver itself exits 0 only when the unchanged assertion fails by name, not by timeout. Neither timeout shortening nor named console output is needed for this reproduction. One VM invocation per snapshot, Bun 1.3.14, produced:
+
+- Base: original interval assertion failed at 243.47 ms; one failing copied test, no timeout.
+- Branch 5add9a0: original interval assertion failed at 527.16 ms; one failing copied test, no timeout.
+
+The runner-facing wrapper adds promise continuations, so it can change scheduling relative to filesystem work; that remains a possible trigger for exposing the pre-existing sweep overlap. There is no captured trace proving which scheduling event triggered the original uninstrumented run. The overlap is now reproduced on base, but the original full-run trigger remains untraced. No dump source or original dump test was changed, and no isolation pass is presented as proof against a full-order interaction. Driver output is `/home/tester/hook-overrun-bg2aa/base/dump-overlap.log` and `/home/tester/hook-overrun-bg2aa/comparison-branch-5add9a0/dump-overlap.log`.
+
+### Final readiness-fixed gates
+
+The readiness fix supersedes the first delivery's failed RPC phase-control gate. No changes were made to `src`, the dump test, or the hook's configured timeout in this follow-up.
+
+- Local Bun 1.4.2, TypeScript 7.0.2: build passed (8 package manifests, 12 installed ranges); `tsc --noEmit` passed; Biome 2.5.14 lint and format checks passed (226 files each).
+- Scoped fixture diagnostics: fresh, zero errors/warnings; two unchanged TypeScript hints in direct rejection assertions.
+- Final VM Bun 1.3.14 full JUnit: **1120 pass, 10 existing skip, 0 fail**, 1130 cases / 98 files, 4988 assertions, 154.32 s. `check-sources`: **1113/1113 matched**.
+- Final VM Bun 1.4.2 full JUnit: **1120 pass, 10 existing skip, 0 fail**, 1130 cases / 98 files, 4988 assertions, 89.91 s. `check-sources`: **1113/1113 matched**.
+- Both final full-order runs passed the dump interval test and deterministic fetch/JSON controls.
+- Phase-guard mutation: `rpc-abort.fixture.ts`, `1 file changed, 1 insertion(+), 4 deletions(-)` while mutated; empty `git diff --stat` after checkout/touch. Sole failure was `JSON cancellation phase control rejects an immediately completed response body`; the other five tests passed.
+- JSON lifetime-signal mutation: same fixture, `1 file changed, 3 insertions(+), 1 deletion(-)` while mutated; empty stat after checkout/touch. Sole failure was `runner timeout cancels json in its own drain without a between-tests rejection`; the other five tests passed.
+- The other tests in both mutation runs are the file's unchanged exact titles: `runner timeout cancels fetch in its own drain without a between-tests rejection`, `lifetime aborts requests before joining bodies and before cleanup`, `lifetime preserves an unrelated body rejection during teardown`, `lifetime preserves a timer abort rather than treating it as teardown cancellation`, plus the non-mutated JSON control of the two named above.
+
+Final VM artifacts: `/home/tester/hook-overrun-bg2aa/branch/ready-full-{1.3.14,1.4.2}.log` and `ready-test-results-{1.3.14,1.4.2}.xml`. Comment review covered all new/changed code comments; no unclear code comments remained. Report artifact paths were made explicit.
