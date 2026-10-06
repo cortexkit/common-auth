@@ -1165,3 +1165,4 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 
 | fs | Preserve successor ownership after recreated contender loses its marker | new (neither copy) | post-fence marker loss preserves the successor after stale lock recreation |
 | fs | Remove an owned recreated record after marker loss without leaving an orphan | new (neither copy) | post-fence marker loss removes its own recreated record without an orphan |
+| fs | Recreated control-barrier rejection preserves its lease until expiry and propagates the exact error | new (neither copy) | stale lock recreation hook rejection propagates and leaves one unrenewed lease until takeover |
