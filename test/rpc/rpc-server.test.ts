@@ -455,7 +455,10 @@ describe('rpc-server', () => {
         authorization: `Bearer ${server.token}`,
       },
       body: JSON.stringify({ command: 'fixture-reset', arguments: '' }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.any([
+        AbortSignal.timeout(15_000),
+        hooks.lifetime.signal,
+      ]),
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ text: 'slow-ok', knobs: {} })

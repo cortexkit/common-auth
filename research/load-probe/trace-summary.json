@@ -1,0 +1,288 @@
+{
+  "natural-1.3.14": {
+    "runtime": "v26.3.0",
+    "executable": "/Users/ufukaltinok/.bun/bin/bun",
+    "file": "test/rpc/request-errors.test.ts",
+    "name": "a request body over the 1 MiB cap answers 413",
+    "runs": 10,
+    "workers": 0,
+    "passes": 10,
+    "failures": 0,
+    "bodyEnds": 0,
+    "peerFins": 0,
+    "phases": {
+      "fetch-start": {
+        "count": 10,
+        "min": 0,
+        "max": 0
+      },
+      "server-request": {
+        "count": 10,
+        "min": 1.52,
+        "max": 7.313
+      },
+      "server-write-head": {
+        "count": 10,
+        "min": 2.513,
+        "max": 9.762
+      },
+      "server-response-end-call": {
+        "count": 10,
+        "min": 2.738,
+        "max": 10.015
+      },
+      "server-response-finish": {
+        "count": 10,
+        "min": 2.959,
+        "max": 10.458
+      },
+      "fetch-resolve-headers": {
+        "count": 10,
+        "min": 3.064,
+        "max": 12.645
+      },
+      "json-start": {
+        "count": 10,
+        "min": 3.088,
+        "max": 12.683
+      },
+      "json-resolve": {
+        "count": 10,
+        "min": 3.108,
+        "max": 13.285
+      },
+      "server-stop-close-call": {
+        "count": 10,
+        "min": 4.572,
+        "max": 16.425
+      },
+      "server-socket-local-destroy": {
+        "count": 10,
+        "min": 4.665,
+        "max": 16.75
+      },
+      "server-socket-close": {
+        "count": 10,
+        "min": 4.746,
+        "max": 16.956
+      }
+    }
+  },
+  "natural-1.4.2": {
+    "runtime": "v26.3.0",
+    "executable": "/Users/ufukaltinok/.bun/bin/bun",
+    "file": "test/rpc/request-errors.test.ts",
+    "name": "a request body over the 1 MiB cap answers 413",
+    "runs": 10,
+    "workers": 0,
+    "passes": 10,
+    "failures": 0,
+    "bodyEnds": 0,
+    "peerFins": 0,
+    "phases": {
+      "fetch-start": {
+        "count": 10,
+        "min": 0,
+        "max": 0
+      },
+      "server-request": {
+        "count": 10,
+        "min": 1.974,
+        "max": 6.297
+      },
+      "server-write-head": {
+        "count": 10,
+        "min": 2.87,
+        "max": 7.874
+      },
+      "server-response-end-call": {
+        "count": 10,
+        "min": 3.122,
+        "max": 8.148
+      },
+      "server-socket-local-end": {
+        "count": 10,
+        "min": 3.506,
+        "max": 8.645
+      },
+      "server-response-finish": {
+        "count": 10,
+        "min": 3.748,
+        "max": 8.917
+      },
+      "fetch-resolve-headers": {
+        "count": 10,
+        "min": 3.834,
+        "max": 11.056
+      },
+      "json-start": {
+        "count": 10,
+        "min": 3.851,
+        "max": 11.077
+      },
+      "json-resolve": {
+        "count": 10,
+        "min": 3.928,
+        "max": 11.101
+      },
+      "server-socket-local-destroy": {
+        "count": 10,
+        "min": 4.205,
+        "max": 10.658
+      },
+      "server-socket-close": {
+        "count": 10,
+        "min": 4.369,
+        "max": 10.997
+      },
+      "server-stop-close-call": {
+        "count": 10,
+        "min": 5.478,
+        "max": 21.79
+      }
+    }
+  },
+  "loaded-1.3.14": {
+    "runtime": "v24.3.0",
+    "executable": "/home/tester/rt/bun-1.3.14/bun",
+    "file": "test/rpc/request-errors.test.ts",
+    "name": "a request body over the 1 MiB cap answers 413",
+    "runs": 50,
+    "workers": 16,
+    "passes": 50,
+    "failures": 0,
+    "bodyEnds": 0,
+    "peerFins": 0,
+    "phases": {
+      "fetch-start": {
+        "count": 50,
+        "min": 0,
+        "max": 0
+      },
+      "server-request": {
+        "count": 50,
+        "min": 2.646,
+        "max": 41.719
+      },
+      "server-write-head": {
+        "count": 50,
+        "min": 8.132,
+        "max": 53.926
+      },
+      "server-response-end-call": {
+        "count": 50,
+        "min": 8.565,
+        "max": 54.28
+      },
+      "server-response-finish": {
+        "count": 50,
+        "min": 11.619,
+        "max": 121.721
+      },
+      "fetch-resolve-headers": {
+        "count": 50,
+        "min": 13.451,
+        "max": 129.032
+      },
+      "json-start": {
+        "count": 50,
+        "min": 13.542,
+        "max": 129.211
+      },
+      "json-resolve": {
+        "count": 50,
+        "min": 13.61,
+        "max": 129.268
+      },
+      "server-stop-close-call": {
+        "count": 50,
+        "min": 15.803,
+        "max": 218.878
+      },
+      "server-socket-local-destroy": {
+        "count": 50,
+        "min": 18.021,
+        "max": 222.315
+      },
+      "server-socket-close": {
+        "count": 50,
+        "min": 18.201,
+        "max": 222.512
+      }
+    }
+  },
+  "loaded-1.4.2": {
+    "runtime": "v26.3.0",
+    "executable": "/home/tester/rt/bun-1.4.2/bun",
+    "file": "test/rpc/request-errors.test.ts",
+    "name": "a request body over the 1 MiB cap answers 413",
+    "runs": 50,
+    "workers": 16,
+    "passes": 50,
+    "failures": 0,
+    "bodyEnds": 0,
+    "peerFins": 0,
+    "phases": {
+      "fetch-start": {
+        "count": 50,
+        "min": 0,
+        "max": 0
+      },
+      "server-request": {
+        "count": 50,
+        "min": 3.114,
+        "max": 27.56
+      },
+      "server-write-head": {
+        "count": 50,
+        "min": 4.346,
+        "max": 48.957
+      },
+      "server-response-end-call": {
+        "count": 50,
+        "min": 7.949,
+        "max": 49.441
+      },
+      "server-socket-local-end": {
+        "count": 50,
+        "min": 8.705,
+        "max": 50.135
+      },
+      "server-response-finish": {
+        "count": 50,
+        "min": 10.199,
+        "max": 50.738
+      },
+      "server-socket-local-destroy": {
+        "count": 50,
+        "min": 12.703,
+        "max": 64.045
+      },
+      "server-socket-close": {
+        "count": 50,
+        "min": 12.922,
+        "max": 64.225
+      },
+      "fetch-resolve-headers": {
+        "count": 50,
+        "min": 12.161,
+        "max": 55.036
+      },
+      "json-start": {
+        "count": 50,
+        "min": 12.186,
+        "max": 55.08
+      },
+      "json-resolve": {
+        "count": 50,
+        "min": 12.226,
+        "max": 55.124
+      },
+      "server-stop-close-call": {
+        "count": 50,
+        "min": 14.718,
+        "max": 79.035
+      }
+    }
+  }
+}
