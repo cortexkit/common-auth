@@ -21,7 +21,7 @@ export type KeyAction =
   | 'enter'
   | 'escape'
   | 'escape-start'
-  | string
+  | 'char'
   | null
 
 /** Tokenize complete keys in one read; incomplete escape sequences are ignored. */
@@ -35,8 +35,9 @@ export function parseKeys(data: Buffer | string): KeyAction[] {
       const arrow =
         sequence[1] === '[' || sequence[1] === 'O' ? sequence[2] : undefined
       if (arrow && 'ABCD'.includes(arrow)) {
-        const action = { A: 'up', B: 'down', C: 'right', D: 'left' }[arrow]
-        if (action) keys.push(action)
+        const action = { A: 'up', B: 'down', C: 'right', D: 'left' } as const
+        const parsed = action[arrow as keyof typeof action]
+        if (parsed) keys.push(parsed)
         index += 3
       } else if (index + 1 === value.length) {
         // Only a chunk consisting solely of ESC gets the legacy Escape timeout.
@@ -55,7 +56,7 @@ export function parseKeys(data: Buffer | string): KeyAction[] {
     }
     if (char === '\r' || char === '\n') keys.push('enter')
     else if (char === '\x03') keys.push('escape')
-    else if (char && char >= ' ') keys.push(char)
+    else if (char && char >= ' ') keys.push('char')
     index += 1
   }
   return keys

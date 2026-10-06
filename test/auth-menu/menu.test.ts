@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { parseKeys } from '../../src/auth-menu/ansi.js'
 import { confirm } from '../../src/auth-menu/confirm.js'
 import { type MenuAction, runMenu } from '../../src/auth-menu/menu.js'
 import {
@@ -71,7 +72,9 @@ describe('menu runtime', () => {
     const first = action('first')
     const second = action('second')
     const third = action('third')
-    const fake = fakeTerminal([`${KEY.down}x${KEY.up}${KEY.down}${KEY.enter}`])
+    const chunk = `${KEY.down}x${KEY.up}${KEY.down}${KEY.enter}`
+    expect(parseKeys(chunk)).toEqual(['down', 'char', 'up', 'down', 'enter'])
+    const fake = fakeTerminal([chunk])
 
     const outcome = await runMenu({
       title: 'Example accounts',
