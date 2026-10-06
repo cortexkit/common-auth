@@ -89,21 +89,29 @@ export class RpcRequestError extends Error {
 const MAX_BODY_BYTES = 1_000_000
 
 /** The request body exceeded the cap; answered 413. */
-class BodyTooLargeError extends Error {}
+class BodyTooLargeError extends Error {
+  constructor(readonly declaredOversize: boolean) {
+    super('body too large')
+  }
+}
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
-    const tooLarge = () => {
-      // Keep reading and discarding the rest, so the client finishes sending
-      // and can read the 413 instead of seeing a reset connection.
+    const tooLarge = (declaredOversize = false) => {
+      // Streamed overflow drains without closing at response finish: doing so
+      // caused EPIPE on a Bun 1.4.2 uploader. Declared oversize also drains, but
+      // half-closes after the 413: Bun 1.3.14 reused refused fetch connections
+      // despite Connection: close. Half-close preserved complete 413 JSON for
+      // tested fetch and slow declared-length uploaders on both runtimes (see
+      // research/load-probe/RPC-413-CLOSE.md for the delivery/lifecycle samples).
       req.removeAllListeners('data')
       req.on('data', () => {})
       req.resume()
-      reject(new BodyTooLargeError('body too large'))
+      reject(new BodyTooLargeError(declaredOversize))
     }
     const declared = Number(req.headers['content-length'])
     if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
-      tooLarge()
+      tooLarge(true)
       return
     }
     const chunks: Buffer[] = []
@@ -215,8 +223,20 @@ export async function startRpcServer(
         body = await readBody(req)
       } catch (error) {
         if (!(error instanceof BodyTooLargeError)) throw error
-        // Close the connection after answering: the rest of the oversized
-        // body is not worth keeping the socket for.
+        if (error.declaredOversize) {
+          const socket = req.socket
+          res.once('finish', () => {
+            socket.end()
+            // Bound an abandoned upload to two seconds, matching the server's
+            // default request-delivery timeout. end() alone left Bun 1.3.14
+            // compatibility sockets open.
+            const timer = setTimeout(() => socket.destroy(), 2_000)
+            timer.unref()
+            req.once('end', () => socket.destroy())
+            socket.once('close', () => clearTimeout(timer))
+            if (req.complete) socket.destroy()
+          })
+        }
         return json(413, { error: 'body too large' }, { connection: 'close' })
       }
       let params: unknown
