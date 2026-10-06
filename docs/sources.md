@@ -1157,3 +1157,8 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | store | Built store absorbs released observer rejection under strict Node 24 | new (neither copy) | built store lock absorbs rejected released observer promises under Node 24 strict |
 | fs | Built file lock absorbs contention observer rejection under strict Node 24 | new (neither copy) | built fs lock absorbs rejected contended observer promises under Node 24 strict |
 | store | Contention does not erase the ownership recorder's held-lock evidence | new (neither copy) | contended lock events preserve acquired lock evidence until release |
+
+| fs | Deterministic fresh-marker refusal after stale observation | new (neither copy) | ordering 1 refuses a fresh occupied eviction marker after observing the original stale lock |
+| fs | Deterministic second liveness check under a displaced marker | new (neither copy) | ordering 2 rechecks liveness under the marker and preserves the replacement owner |
+| fs | Deterministic exclusive creation in the stale deletion gap | new (neither copy) | ordering 3 gives the top-of-loop exclusive create the deletion gap and refuses the holder recreate |
+| fs | Deterministic live successor refusal after stale-marker retry | new (neither copy) | ordering 4 refuses the newly live lock on retry after its earlier stale observation |
