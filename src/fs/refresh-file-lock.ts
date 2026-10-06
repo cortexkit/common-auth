@@ -475,7 +475,7 @@ export async function acquireRefreshFileLock(options: {
         // marker was stolen between tryAcquire and this check, release the
         // just-acquired lock and return null (fail-closed).
         if (!(await ownsEvictionMarker())) {
-          await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+          await relinquishLockAfterMarkerLoss()
           acquired = false
           return null
         }
