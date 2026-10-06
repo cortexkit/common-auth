@@ -1,7 +1,12 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
+
+const hooks = lifetimeHooks()
+const { test } = hooks
 
 function findNode(): string | null {
   try {
@@ -49,12 +54,11 @@ try {
   // Probe the actual server's framing independently of the client's parser.
   const wire = await new Promise((resolve, reject) => {
     const socket = connect({ host: '127.0.0.1', port: server.port });
-    const timer = setTimeout(() => { socket.destroy(); reject(new Error('HTTP/1.0 did not close')); }, 1000);
     let response = '';
     socket.on('connect', () => socket.write('POST /rpc/pending-notifications HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nAuthorization: Bearer ' + server.token + '\\r\\nContent-Length: 2\\r\\n\\r\\n{}'));
     socket.on('data', chunk => { response += chunk.toString(); });
     socket.on('error', reject);
-    socket.on('end', () => { clearTimeout(timer); resolve(response); });
+    socket.on('end', () => resolve(response));
   });
   const separator = wire.indexOf('\\r\\n\\r\\n');
   assert.ok(separator > 0);
@@ -113,11 +117,15 @@ try {
         stdout: 'pipe',
         stderr: 'pipe',
       })
-      const [out, err, exitCode] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ])
+      hooks.lifetime.unpark(() => proc.kill())
+      const [out, err, exitCode] = await observed(
+        hooks.lifetime,
+        Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]),
+      )
       expect(exitCode, `stderr: ${err} stdout: ${out}`).toBe(0)
       const result = JSON.parse(out)
       expect(result.applyRes.text).toBe('ok: proxy-apply')

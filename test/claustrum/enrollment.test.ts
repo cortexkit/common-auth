@@ -27,6 +27,7 @@ import {
   readClaustrumEnrollmentToken,
 } from '../../src/claustrum/index.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
 
 const hooks = lifetimeHooks()
 const { afterEach, test } = hooks
@@ -444,11 +445,13 @@ describe('ClaustrumEnrollmentManager', () => {
     })
     hooks.lifetime.unpark(() => release())
     let proposals = 0
+    const proposed = Promise.withResolvers<void>()
     const first = manager(
       paths,
       client({
         enrollPropose: async () => {
           proposals += 1
+          proposed.resolve()
           await gate
           return { requestId: 'request-1' }
         },
@@ -456,7 +459,7 @@ describe('ClaustrumEnrollmentManager', () => {
     )
     const second = manager(paths, client())
     const firstRun = first.reconcile()
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await observed(hooks.lifetime, proposed.promise)
     await expect(second.reconcile()).resolves.toEqual({ state: 'busy' })
     release()
     await firstRun

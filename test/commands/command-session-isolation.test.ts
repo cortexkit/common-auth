@@ -2,6 +2,7 @@ import { beforeEach, describe, expect } from 'bun:test'
 import type { CommandInvocation } from '../../src/commands/index.js'
 import type { AddInput } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
 import {
   apply,
   deferred,
@@ -31,11 +32,15 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 describe('command hook session isolation', () => {
   it('a second session interleaving inside the add await-window does not steal the add notification', async () => {
     const loginGate = deferred<void>()
+    hooks.lifetime.unpark(() => loginGate.resolve())
+    const enteredLogin = deferred<void>()
+    const notified = deferred<void>()
     const completion = deferred<AddInput | undefined>()
     const menu = m.menu({
       accounts: {
         login: {
           run: async () => {
+            enteredLogin.resolve()
             await loginGate.promise
             return {
               status: 'pending',
@@ -47,8 +52,10 @@ describe('command hook session isolation', () => {
       },
     })
     const delivered: Array<{ session: string; message: string }> = []
-    const notifierFor = (session: string) => (message: string) =>
-      void delivered.push({ session, message })
+    const notifierFor = (session: string) => (message: string) => {
+      delivered.push({ session, message })
+      notified.resolve()
+    }
     // One context object the host rebinds per command: the race's setup.
     const shared: CommandInvocation = {
       sessionId: 'sess-A',
@@ -60,7 +67,7 @@ describe('command hook session isolation', () => {
       sectionId: 'accounts',
       actionId: 'add',
     })
-    await tick()
+    await observed(hooks.lifetime, enteredLogin.promise)
 
     // Session B: the host rebinds the shared context and runs a command.
     shared.sessionId = 'sess-B'
@@ -79,8 +86,7 @@ describe('command hook session isolation', () => {
       credential: oauth('refresh-new'),
       label: 'Account A',
     })
-    const deadline = Date.now() + 2_000
-    while (delivered.length === 0 && Date.now() < deadline) await tick()
+    await observed(hooks.lifetime, notified.promise)
     expect(delivered).toEqual([
       { session: 'sess-A', message: 'Added Account A.' },
     ])

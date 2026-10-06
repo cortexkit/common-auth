@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect } from 'bun:test'
 import type { Credential } from '@opencode/plugin'
 import {
   isPlaceholderCredential,
@@ -7,6 +7,11 @@ import {
   placeholderSecret,
   registerOpenCode2AuthMethods,
 } from '../../src/opencode2/index.js'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observed } from '../fixtures/observed.js'
+
+const hooks = lifetimeHooks()
+const { test } = hooks
 
 type Registered = {
   integrationID: string
@@ -90,7 +95,7 @@ function setup(
 describe('registerOpenCode2AuthMethods', () => {
   test('a code login writes into the pool and leaves the host a placeholder', async () => {
     const { host, logins, registration } = setup(() => {})
-    await registration
+    await observed(hooks.lifetime, registration)
     expect(
       host.registered.map((entry) => [entry.integrationID, entry.method.id]),
     ).toEqual([
@@ -122,12 +127,12 @@ describe('registerOpenCode2AuthMethods', () => {
 
   test('an automatic login resolves to a placeholder only after the pool write', async () => {
     const order: string[] = []
-    const { host } = setup(async (result) => {
+    const { host, registration } = setup(async (result) => {
       // A slow pool write: the host must still wait for it.
       await new Promise((resolve) => setTimeout(resolve, 5))
       order.push(`pool:${result}`)
     })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await observed(hooks.lifetime, registration)
     const pending = await host.registered[1]!.authorize({})
     expect(pending.mode).toBe('auto')
     expect(pending.expiresAt).toBe(NOW + 60_000)
@@ -139,20 +144,20 @@ describe('registerOpenCode2AuthMethods', () => {
   })
 
   test('a failed pool write fails the host login', async () => {
-    const { host } = setup(() => {
+    const { host, registration } = setup(() => {
       throw new Error('pool locked')
     })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await observed(hooks.lifetime, registration)
     const pending = await host.registered[0]!.authorize({})
     await expect(pending.callback('1234')).rejects.toThrow('pool locked')
   })
 
   test('host refresh hands back a placeholder and never calls the pool', async () => {
     let poolCalls = 0
-    const { host } = setup(() => {
+    const { host, registration } = setup(() => {
       poolCalls += 1
     })
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await observed(hooks.lifetime, registration)
     const realLooking: Credential.OAuth = {
       type: 'oauth',
       methodID: 'acme-code' as Credential.OAuth['methodID'],

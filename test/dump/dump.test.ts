@@ -19,6 +19,7 @@ import {
   sweepDumpDirectory,
 } from '../../src/dump/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { observedState } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 const hooks = lifetimeHooks()
@@ -504,14 +505,6 @@ async function writeAged(path: string, bytes: string, mtimeMs: number) {
 }
 
 /** Poll until `check` holds; the automatic sweep runs off the request path. */
-async function eventually(check: () => Promise<boolean>) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (await check()) return
-    await Bun.sleep(10)
-  }
-  throw new Error('condition never held')
-}
-
 describe('response artifacts', () => {
   test('failed request dumps return no handle or orphan response artifact', async () => {
     await mkdir(dumpDir, { recursive: true })
@@ -949,7 +942,10 @@ describe('dump directory byte cap', () => {
     })
     // The old dump is evicted with all four of its files; the new dump is
     // younger than the one-minute floor and is the dump just written, so it stays.
-    await eventually(async () => (await readdir(dumpDir)).length === 3)
+    await observedState(
+      hooks.lifetime,
+      async () => (await readdir(dumpDir)).length === 3,
+    )
     expect((await readdir(dumpDir)).sort()).toEqual(
       Object.values(result!.files)
         .map((path) => path.split('/').pop()!)

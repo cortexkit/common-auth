@@ -1,0 +1,622 @@
+[
+  {
+    "control": "promise observation 1 suppressed for test/store/pull.test.ts",
+    "expected_red": "load and a reading request return while pulls that never resolve are pending",
+    "captured_output": "(fail) pulls never block the caller > load and a reading request return while pulls that never resolve are pending [5035.36ms]\nLate test body failure: load and a reading request return while pulls that never resolve are pending  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/store/pull.test.ts",
+    "expected_red": "load and a reading request return while pulls that never resolve are pending",
+    "captured_output": "(fail) pulls never block the caller > load and a reading request return while pulls that never resolve are pending [5010.25ms]\nLate test body failure: load and a reading request return while pulls that never resolve are pending  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/store/hooks.test.ts",
+    "expected_red": "work a hook schedules on a timer or a detached promise is rejected while the caller continuation succeeds",
+    "captured_output": "(fail) hooks never re-enter the library > work a hook schedules on a timer or a detached promise is rejected while the caller continuation succeeds [5007.84ms]\nLate test body failure: work a hook schedules on a timer or a detached promise is rejected while the caller continuation succeeds  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "state observation 1 suppressed for test/store/renewal.test.ts",
+    "expected_red": "the row and provider-wide locks across a paused provider call renew while a contender fails",
+    "captured_output": "(fail) lock renewal > the row and provider-wide locks across a paused provider call renew while a contender fails [5040.31ms]\nLate test body failure: the row and provider-wide locks across a paused provider call renew while a contender fails 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "state observation 1 suppressed for test/store/renewal.test.ts",
+    "expected_red": "the store-lock list across one read-modify-write renews while a contender fails",
+    "captured_output": "(fail) lock renewal > the store-lock list across one read-modify-write renews while a contender fails [5763.73ms]\nLate test body failure: the store-lock list across one read-modify-write renews while a contender fails 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "circular observation 1 suppressed for test/logger/engine.test.ts",
+    "expected_red": "circular payload preserves non-circular fields and marks [Circular]",
+    "captured_output": "(fail) logger safety > circular payload preserves non-circular fields and marks [Circular] [2.19ms]",
+    "applied_evidence": "test/logger/engine.test.ts: during: test/logger/engine.test.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": false
+  },
+  {
+    "control": "diamond observation 1 suppressed for test/logger/engine.test.ts",
+    "expected_red": "diamond shared ref (no cycle) serializes fully without [Circular]",
+    "captured_output": "(fail) logger safety > diamond shared ref (no cycle) serializes fully without [Circular] [7.53ms]",
+    "applied_evidence": "test/logger/engine.test.ts: during: test/logger/engine.test.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": false
+  },
+  {
+    "control": "bigint observation 1 suppressed for test/logger/engine.test.ts",
+    "expected_red": "degrade-catch net still catches non-cycle throws (BigInt) and emits [unserializable]",
+    "captured_output": "(fail) logger safety > degrade-catch net still catches non-cycle throws (BigInt) and emits [unserializable] [8.13ms]",
+    "applied_evidence": "test/logger/engine.test.ts: during: test/logger/engine.test.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": false
+  },
+  {
+    "control": "state observation 1 suppressed for test/logger/engine.test.ts",
+    "expected_red": "buffers until fifty lines or the 500 ms flush deadline",
+    "captured_output": "(fail) buffers until fifty lines or the 500 ms flush deadline [5025.50ms]\nLate test body failure: buffers until fifty lines or the 500 ms flush deadline 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "sink observation 1 suppressed for test/logger/sink-only.test.ts",
+    "expected_red": "a sink-only logger instance prints nothing and creates no file",
+    "captured_output": "(fail) a sink-only logger instance prints nothing and creates no file [106.77ms]",
+    "applied_evidence": "test/logger/sink-only.test.ts: during: test/logger/sink-only.test.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": false
+  },
+  {
+    "control": "state observation 1 suppressed for test/tui-prefs/watcher.test.ts",
+    "expected_red": "fires after the file changes",
+    "captured_output": "(fail) fires after the file changes [5014.88ms]\nLate test body failure: fires after the file changes 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "state observation 1 suppressed for test/tui-prefs/watcher.test.ts",
+    "expected_red": "observes a change made immediately after the watcher returns",
+    "captured_output": "(fail) observes a change made immediately after the watcher returns [5007.22ms]\nLate test body failure: observes a change made immediately after the watcher returns 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "state observation 1 suppressed for test/tui-prefs/watcher.test.ts",
+    "expected_red": "polls when directory watcher construction fails",
+    "captured_output": "(fail) polls when directory watcher construction fails [5011.37ms]\nLate test body failure: polls when directory watcher construction fails 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "state observation 1 suppressed for test/tui-prefs/watcher.test.ts",
+    "expected_red": "ignores sibling files that share the preferences name as a prefix",
+    "captured_output": "(fail) ignores sibling files that share the preferences name as a prefix [5004.09ms]\nLate test body failure: ignores sibling files that share the preferences name as a prefix 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "state observation 1 suppressed for test/sidebar-file/sidebar-file.test.ts",
+    "expected_red": "sidebar lock renews with unchanged owner and private mode",
+    "captured_output": "(fail) sidebar lock renews with unchanged owner and private mode [15093.69ms]\nLate test body failure: sidebar lock renews with unchanged owner and private mode 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "state observation 1 suppressed for test/tui-prefs/tui-preferences.test.ts",
+    "expected_red": "preferences renews its lease while a staged write is held",
+    "captured_output": "(fail) preferences renews its lease while a staged write is held [15009.07ms]\nLate test body failure: preferences renews its lease while a staged write is held 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "state observation 1 suppressed for test/dump/dump.test.ts",
+    "expected_red": "a capped dumper evicts the oldest whole dumps after writing a new one",
+    "captured_output": "(fail) dump directory byte cap > a capped dumper evicts the oldest whole dumps after writing a new one [5020.12ms]\nLate test body failure: a capped dumper evicts the oldest whole dumps after writing a new one 23 |   while (!lifetime.signal.aborted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/cachekeep/warm.test.ts",
+    "expected_red": "track self-arms an unstarted manager and the timer fires a due target",
+    "captured_output": "(fail) CacheKeepManager tick/prewarm > track self-arms an unstarted manager and the timer fires a due target [5000.42ms]\nLate test body failure: track self-arms an unstarted manager and the timer fires a due target  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/commands/failure-projection.test.ts",
+    "expected_red": "a late login failure is reported by its projected message, not its exception text",
+    "captured_output": "(fail) command failure projection > a late login failure is reported by its projected message, not its exception text [5002.65ms]\nLate test body failure: a late login failure is reported by its projected message, not its exception text  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/commands/command-session-isolation.test.ts",
+    "expected_red": "a second session interleaving inside the add await-window does not steal the add notification",
+    "captured_output": "(fail) command hook session isolation > a second session interleaving inside the add await-window does not steal the add notification [5026.80ms]\nLate test body failure: a second session interleaving inside the add await-window does not steal the add notification  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/commands/command-session-isolation.test.ts",
+    "expected_red": "a second session interleaving inside the add await-window does not steal the add notification",
+    "captured_output": "(fail) command hook session isolation > a second session interleaving inside the add await-window does not steal the add notification [5005.67ms]\nLate test body failure: a second session interleaving inside the add await-window does not steal the add notification  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/claustrum/enrollment.test.ts",
+    "expected_red": "serializes concurrent process instances so only one proposal is sent",
+    "captured_output": "(fail) ClaustrumEnrollmentManager > serializes concurrent process instances so only one proposal is sent [5069.09ms]\nLate test body failure: serializes concurrent process instances so only one proposal is sent  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/opencode2/integration.test.ts",
+    "expected_red": "a code login writes into the pool and leaves the host a placeholder",
+    "captured_output": "(fail) registerOpenCode2AuthMethods > a code login writes into the pool and leaves the host a placeholder [5002.19ms]\nLate test body failure: a code login writes into the pool and leaves the host a placeholder  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/opencode2/integration.test.ts",
+    "expected_red": "an automatic login resolves to a placeholder only after the pool write",
+    "captured_output": "(fail) registerOpenCode2AuthMethods > an automatic login resolves to a placeholder only after the pool write [5000.36ms]\nLate test body failure: an automatic login resolves to a placeholder only after the pool write  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/opencode2/integration.test.ts",
+    "expected_red": "a failed pool write fails the host login",
+    "captured_output": "(fail) registerOpenCode2AuthMethods > a failed pool write fails the host login [5000.56ms]\nLate test body failure: a failed pool write fails the host login  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/opencode2/integration.test.ts",
+    "expected_red": "host refresh hands back a placeholder and never calls the pool",
+    "captured_output": "(fail) registerOpenCode2AuthMethods > host refresh hands back a placeholder and never calls the pool [5000.62ms]\nLate test body failure: host refresh hands back a placeholder and never calls the pool  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/rpc/stop-runtime.test.ts",
+    "expected_red": "RPC stop closes held partial requests under the running Bun",
+    "captured_output": "(fail) RPC stop closes held partial requests under the running Bun [5000.45ms]\nLate test body failure: RPC stop closes held partial requests under the running Bun  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/rpc/stop-runtime.test.ts",
+    "expected_red": "RPC stop closes held partial requests under Node 24",
+    "captured_output": "(fail) RPC stop closes held partial requests under Node 24 [5001.17ms]\nLate test body failure: RPC stop closes held partial requests under Node 24  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/rpc/stop-runtime.test.ts",
+    "expected_red": "a pending apply does not keep the process alive after stop under the running Bun",
+    "captured_output": "(fail) a pending apply does not keep the process alive after stop under the running Bun [15000.59ms]\nLate test body failure: a pending apply does not keep the process alive after stop under the running Bun  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/rpc/stop-runtime.test.ts",
+    "expected_red": "a pending apply does not keep the process alive after stop under Node 24",
+    "captured_output": "(fail) a pending apply does not keep the process alive after stop under Node 24 [15000.38ms]\nLate test body failure: a pending apply does not keep the process alive after stop under Node 24  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/rpc/client-proxy.test.ts",
+    "expected_red": "loopback RPC client bypasses HTTP_PROXY, http_proxy and HTTPS_PROXY",
+    "captured_output": "(fail) loopback RPC client bypasses HTTP_PROXY, http_proxy and HTTPS_PROXY [5002.17ms]\nLate test body failure: loopback RPC client bypasses HTTP_PROXY, http_proxy and HTTPS_PROXY  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/rpc/client-proxy.test.ts",
+    "expected_red": "loopback RPC client under Node with NODE_USE_ENV_PROXY bypasses HTTP_PROXY",
+    "captured_output": "(fail) loopback RPC client under Node with NODE_USE_ENV_PROXY bypasses HTTP_PROXY [5002.31ms]\nLate test body failure: loopback RPC client under Node with NODE_USE_ENV_PROXY bypasses HTTP_PROXY  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "observes takeover on the next renewal and stops renewing",
+    "captured_output": "(fail) acquireRefreshFileLock > observes takeover on the next renewal and stops renewing [5014.15ms]\nLate test body failure: observes takeover on the next renewal and stops renewing  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "observes takeover on the next renewal and stops renewing",
+    "captured_output": "(fail) acquireRefreshFileLock > observes takeover on the next renewal and stops renewing [5176.16ms]\nLate test body failure: observes takeover on the next renewal and stops renewing  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "assertOwned observes takeover with ownership details without renewal",
+    "captured_output": "(fail) acquireRefreshFileLock > assertOwned observes takeover with ownership details without renewal [5013.16ms]\nLate test body failure: assertOwned observes takeover with ownership details without renewal  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "assertion loss fences an already in-flight renewal",
+    "captured_output": "(fail) acquireRefreshFileLock > assertion loss fences an already in-flight renewal [5027.53ms]\nLate test body failure: assertion loss fences an already in-flight renewal  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "assertion loss fences an already in-flight renewal",
+    "captured_output": "(fail) acquireRefreshFileLock > assertion loss fences an already in-flight renewal [5003.58ms]\nLate test body failure: assertion loss fences an already in-flight renewal  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "assertOwned observes unreadable ownership",
+    "captured_output": "(fail) acquireRefreshFileLock > assertOwned observes unreadable ownership [5004.42ms]\nLate test body failure: assertOwned observes unreadable ownership  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "observes terminal renewal failure when the owner file becomes unreadable",
+    "captured_output": "(fail) acquireRefreshFileLock > observes terminal renewal failure when the owner file becomes unreadable [5003.83ms]\nLate test body failure: observes terminal renewal failure when the owner file becomes unreadable  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "renewal errors stop immediately when ownership cannot remain live",
+    "captured_output": "(fail) acquireRefreshFileLock > renewal errors stop immediately when ownership cannot remain live [5003.40ms]\nLate test body failure: renewal errors stop immediately when ownership cannot remain live  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "renewal errors stop immediately when ownership cannot remain live",
+    "captured_output": "(fail) acquireRefreshFileLock > renewal errors stop immediately when ownership cannot remain live [5003.91ms]\nLate test body failure: renewal errors stop immediately when ownership cannot remain live  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "observes expiry when renewal cannot extend an expired lease",
+    "captured_output": "(fail) acquireRefreshFileLock > observes expiry when renewal cannot extend an expired lease [5004.40ms]\nLate test body failure: observes expiry when renewal cannot extend an expired lease  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "does not let a stalled renewal overwrite a successor that stole its marker",
+    "captured_output": "(fail) acquireRefreshFileLock > does not let a stalled renewal overwrite a successor that stole its marker [5003.48ms]\nLate test body failure: does not let a stalled renewal overwrite a successor that stole its marker  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "does not let a stalled renewal overwrite a successor that stole its marker",
+    "captured_output": "(fail) acquireRefreshFileLock > does not let a stalled renewal overwrite a successor that stole its marker [5011.74ms]\nLate test body failure: does not let a stalled renewal overwrite a successor that stole its marker  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "does not let a stalled release remove a successor that stole its marker",
+    "captured_output": "(fail) acquireRefreshFileLock > does not let a stalled release remove a successor that stole its marker [5009.39ms]\nLate test body failure: does not let a stalled release remove a successor that stole its marker  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "waits for an in-flight renewal before release can remove the lock",
+    "captured_output": "(fail) acquireRefreshFileLock > waits for an in-flight renewal before release can remove the lock [5003.75ms]\nLate test body failure: waits for an in-flight renewal before release can remove the lock  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "waits for an in-flight renewal before release can remove the lock",
+    "captured_output": "(fail) acquireRefreshFileLock > waits for an in-flight renewal before release can remove the lock [5003.70ms]\nLate test body failure: waits for an in-flight renewal before release can remove the lock  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "re-checks ownership after the renewal write seam before writing",
+    "captured_output": "(fail) acquireRefreshFileLock > re-checks ownership after the renewal write seam before writing [5414.50ms]\nLate test body failure: re-checks ownership after the renewal write seam before writing  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "re-checks ownership after the renewal write seam before writing",
+    "captured_output": "(fail) acquireRefreshFileLock > re-checks ownership after the renewal write seam before writing [5020.70ms]\nLate test body failure: re-checks ownership after the renewal write seam before writing  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "relinquishes the lock when its marker is stolen after the final renewal check",
+    "captured_output": "(fail) acquireRefreshFileLock > relinquishes the lock when its marker is stolen after the final renewal check [5030.45ms]\nLate test body failure: relinquishes the lock when its marker is stolen after the final renewal check  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "relinquishes the lock when its marker is stolen after the final renewal check",
+    "captured_output": "(fail) acquireRefreshFileLock > relinquishes the lock when its marker is stolen after the final renewal check [5018.09ms]\nLate test body failure: relinquishes the lock when its marker is stolen after the final renewal check  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 3 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "relinquishes the lock when its marker is stolen after the final renewal check",
+    "captured_output": "(fail) acquireRefreshFileLock > relinquishes the lock when its marker is stolen after the final renewal check [5004.65ms]\nLate test body failure: relinquishes the lock when its marker is stolen after the final renewal check  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "preserves a successor record during post-write relinquish",
+    "captured_output": "(fail) acquireRefreshFileLock > preserves a successor record during post-write relinquish [5004.65ms]\nLate test body failure: preserves a successor record during post-write relinquish  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "preserves a successor record during post-write relinquish",
+    "captured_output": "(fail) acquireRefreshFileLock > preserves a successor record during post-write relinquish [5004.45ms]\nLate test body failure: preserves a successor record during post-write relinquish  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 3 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "preserves a successor record during post-write relinquish",
+    "captured_output": "(fail) acquireRefreshFileLock > preserves a successor record during post-write relinquish [5004.44ms]\nLate test body failure: preserves a successor record during post-write relinquish  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "reschedules after a renewal marker failure throws",
+    "captured_output": "(fail) acquireRefreshFileLock > reschedules after a renewal marker failure throws [5002.58ms]\nLate test body failure: reschedules after a renewal marker failure throws  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 2 suppressed for test/fs/refresh-file-lock.test.ts",
+    "expected_red": "reschedules after a renewal marker failure throws",
+    "captured_output": "(fail) acquireRefreshFileLock > reschedules after a renewal marker failure throws [5002.22ms]\nLate test body failure: reschedules after a renewal marker failure throws  8 |   promise: Promise<T>,",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "timer observation 1 suppressed for test/rpc/stop-runtime.test.ts",
+    "expected_red": "a pending apply does not keep the process alive after stop under the running Bun",
+    "captured_output": "(fail) a pending apply does not keep the process alive after stop under the running Bun [40.63ms]",
+    "applied_evidence": "test/rpc/stop-runtime.test.ts: during: test/rpc/stop-runtime.test.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": false
+  },
+  {
+    "control": "timer observation 1 suppressed for test/rpc/stop-runtime.test.ts",
+    "expected_red": "a pending apply does not keep the process alive after stop under Node 24",
+    "captured_output": "(fail) a pending apply does not keep the process alive after stop under Node 24 [136.07ms]",
+    "applied_evidence": "test/rpc/stop-runtime.test.ts: during: test/rpc/stop-runtime.test.ts | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": false
+  },
+  {
+    "control": "Server health success observation suppressed in placement fixture on VM Bun 1.3.14",
+    "expected_red": "http carries the chosen account per request and switches mid-session",
+    "captured_output": "(fail) OpenCode 2 placement contract > http carries the chosen account per request and switches mid-session [180017.74ms]\nLate test body failure: http carries the chosen account per request and switches mid-session 104 |       throw new Error('Server readiness observation suppressed')",
+    "applied_evidence": "test/opencode2/e2e/placement.e2e.test.ts: during: 4 +++-, 1 file changed, 3 insertions(+), 1 deletion(-); after git checkout and touch: empty git diff --stat; mutant copied to VM and live fixture copied back after run",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/store/hooks.test.ts",
+    "expected_red": "every row operation and refresh called from an after-persist hook rejects immediately and the refresh still completes",
+    "captured_output": "(fail) hooks never re-enter the library > every row operation and refresh called from an after-persist hook rejects immediately and the refresh still completes [5056.76ms]\nLate test body failure: every row operation and refresh called from an after-persist hook rejects immediately and the refresh still completes 360 |       if (options.onPersisted) {",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  },
+  {
+    "control": "promise observation 1 suppressed for test/store/hooks.test.ts",
+    "expected_red": "every row operation and refresh called from a refresh failure hook rejects immediately",
+    "captured_output": "(fail) hooks never re-enter the library > every row operation and refresh called from a refresh failure hook rejects immediately [5019.83ms]\nLate test body failure: every row operation and refresh called from a refresh failure hook rejects immediately  99 |           },",
+    "applied_evidence": "test/fixtures/observed.ts: during: test/fixtures/observed.ts | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-); after restore: empty git diff --stat",
+    "outcome": "reddened",
+    "exit_code": 1,
+    "other_failed_tests": [],
+    "late_failure_named": true
+  }
+]
