@@ -58,6 +58,8 @@ export async function acquireRefreshFileLock(options: {
   renewIntervalMs?: number
   /** Notifies a live-owner refusal without awaiting; observer failures are ignored. */
   onContended?: () => void
+  /** Synchronous, never awaited; throws and returned promise/thenable rejections are isolated. */
+  onRenewalTimer?: (event: 'scheduled' | 'cancelled') => void
   onStep?: (
     step:
       | 'stale-marker-stat'
@@ -85,6 +87,29 @@ export async function acquireRefreshFileLock(options: {
     resolveLoss = resolve
   })
 
+  function notifyTimerStep(event: 'scheduled' | 'cancelled') {
+    try {
+      const result: unknown = options.onRenewalTimer?.(event)
+      if (
+        result &&
+        (typeof result === 'object' || typeof result === 'function') &&
+        'then' in result &&
+        typeof result.then === 'function'
+      ) {
+        void Promise.resolve(result).catch(() => {})
+      }
+    } catch {
+      // Timer observer failures must not replace the lock operation result.
+    }
+  }
+
+  function cancelRenewalTimer() {
+    if (!renewTimer) return
+    clearRefreshLockRenewalTimeout(renewTimer)
+    renewTimer = null
+    notifyTimerStep('cancelled')
+  }
+
   function recordLoss(
     reason: LockLoss['reason'],
     owner?: { ownerId?: unknown; expiresAt?: unknown },
@@ -100,10 +125,7 @@ export async function acquireRefreshFileLock(options: {
         ? { observedExpiresAt: owner.expiresAt }
         : {}),
     })
-    if (renewTimer) {
-      clearRefreshLockRenewalTimeout(renewTimer)
-      renewTimer = null
-    }
+    cancelRenewalTimer()
     resolveLoss(loss)
   }
   let renewalInFlight: Promise<void> | null = null
@@ -308,6 +330,7 @@ export async function acquireRefreshFileLock(options: {
     const intervalMs =
       options.renewIntervalMs ?? Math.max(1_000, Math.floor(options.ttlMs / 3))
     renewTimer = setRefreshLockRenewalTimeout(() => {
+      renewTimer = null
       const renewal = (async () => {
         let shouldReschedule = !released
         try {
@@ -387,6 +410,7 @@ export async function acquireRefreshFileLock(options: {
       })
     }, intervalMs)
     if ('unref' in renewTimer) renewTimer.unref()
+    notifyTimerStep('scheduled')
   }
 
   function contended(): null {
@@ -495,10 +519,7 @@ export async function acquireRefreshFileLock(options: {
     },
     release: async () => {
       released = true
-      if (renewTimer) {
-        clearRefreshLockRenewalTimeout(renewTimer)
-        renewTimer = null
-      }
+      cancelRenewalTimer()
       await renewalInFlight
       for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
         try {

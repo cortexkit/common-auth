@@ -152,33 +152,50 @@ describe('acquireRefreshFileLock', () => {
   })
 
   it('assertion loss cancels a pending renewal timer', async () => {
-    const path = join(dir, 'cancel-timer.json')
-    let ticks = 0
-    const lock = (await acquireRefreshFileLock({
-      path,
-      name: 'cancel',
-      ttlMs: 10_000,
-      renew: true,
-      renewIntervalMs: 50,
-      onStep: (step) => {
-        if (step === 'renewal-finished') ticks++
-      },
-    }))!
-    try {
-      await writeFile(
-        `${path}.cancel.lock`,
-        JSON.stringify({
-          ownerId: 'successor',
-          expiresAt: Date.now() + 10_000,
-        }),
+    for (const mode of ['normal', 'throw', 'reject', 'pending']) {
+      const path = join(dir, `cancel-timer-${mode}.json`)
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          new URL('../fixtures/renewal-timers.ts', import.meta.url).pathname,
+          path,
+          mode,
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
       )
-      await expect(lock.assertOwned()).rejects.toBeInstanceOf(
-        LockOwnershipError,
+      hooks.lifetime.unpark(() => {
+        if (child.exitCode === null) child.kill()
+      })
+      const [code, stdout, stderr] = await observed(
+        hooks.lifetime,
+        hooks.lifetime.operation(
+          Promise.all([
+            child.exited,
+            new Response(child.stdout).text(),
+            new Response(child.stderr).text(),
+          ]),
+        ),
       )
-      await new Promise((resolve) => setTimeout(resolve, 120))
-      expect(ticks).toBe(0)
-    } finally {
-      await lock.release()
+      expect(code, stderr).toBe(0)
+      expect(stderr).toBe('')
+      const result = JSON.parse(stdout)
+      expect(result).toMatchObject({
+        afterSchedule: { pending: 1, cleared: 0, ticks: 0 },
+        beforeLoss: { pending: 1, cleared: 0, ticks: 0 },
+        afterCancel: { pending: 0, cleared: 1, ticks: 0 },
+        ownershipError: 'LockOwnershipError',
+        loss: { reason: 'taken-over', observedOwnerId: 'successor' },
+      })
+      expect(
+        result.onStepValues.filter((step: string) =>
+          [
+            'scheduled',
+            'cancelled',
+            'renewal-scheduled',
+            'renewal-cancelled',
+          ].includes(step),
+        ),
+      ).toEqual([])
     }
   })
 
@@ -805,19 +822,27 @@ describe('acquireRefreshFileLock', () => {
     try {
       for (let round = 0; round < 512; round++) {
         clock.mark('round-start', { round })
-        await writeFile(
-          lockPath,
-          `${JSON.stringify({ ownerId: 'stale-owner', expiresAt: 0 })}\n`,
-          { encoding: 'utf8', mode: 0o600 },
+        await clock.span('stale-write', { round }, () =>
+          writeFile(
+            lockPath,
+            `${JSON.stringify({ ownerId: 'stale-owner', expiresAt: 0 })}\n`,
+            { encoding: 'utf8', mode: 0o600 },
+          ),
         )
         const contenders = await Promise.all([
-          acquireRefreshFileLock({ name, path, ttlMs: 1_000 }),
-          acquireRefreshFileLock({ name, path, ttlMs: 1_000 }),
+          clock.span('acquire-A', { round }, () =>
+            acquireRefreshFileLock({ name, path, ttlMs: 1_000 }),
+          ),
+          clock.span('acquire-B', { round }, () =>
+            acquireRefreshFileLock({ name, path, ttlMs: 1_000 }),
+          ),
         ])
         const winners = contenders.filter((lock) => lock !== null)
 
         expect(winners).toHaveLength(1)
-        await winners[0]?.release()
+        await clock.span('release', { round }, async () => {
+          await winners[0]?.release()
+        })
         clock.mark('round-end', { round })
       }
       clock.succeeded()
