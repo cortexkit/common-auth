@@ -69,7 +69,19 @@ export async function acquirePoolLock(
 ): Promise<HeldLock> {
   const emit = (type: LockEvent['type']) => {
     try {
-      env.onLockEvent?.({ type, name: spec.name, path: spec.path })
+      const result: unknown = env.onLockEvent?.({
+        type,
+        name: spec.name,
+        path: spec.path,
+      })
+      if (
+        result &&
+        (typeof result === 'object' || typeof result === 'function') &&
+        'then' in result &&
+        typeof result.then === 'function'
+      ) {
+        void Promise.resolve(result).catch(() => {})
+      }
     } catch {
       // Lock observers must not affect acquisition or release.
     }

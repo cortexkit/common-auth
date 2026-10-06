@@ -56,7 +56,7 @@ export async function acquireRefreshFileLock(options: {
   now?: () => number
   renew?: boolean
   renewIntervalMs?: number
-  /** Notifies a refused attempt against a live owner; never awaited. */
+  /** Notifies a live-owner refusal without awaiting; observer failures are ignored. */
   onContended?: () => void
   onStep?: (
     step:
@@ -391,7 +391,15 @@ export async function acquireRefreshFileLock(options: {
 
   function contended(): null {
     try {
-      options.onContended?.()
+      const result: unknown = options.onContended?.()
+      if (
+        result &&
+        (typeof result === 'object' || typeof result === 'function') &&
+        'then' in result &&
+        typeof result.then === 'function'
+      ) {
+        void Promise.resolve(result).catch(() => {})
+      }
     } catch {
       // Observers cannot change whether the lock is acquired.
     }
