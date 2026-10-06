@@ -2,6 +2,14 @@ import { createServer } from 'node:http'
 import { lifetimeHooks } from './lifetime-hooks.js'
 import { TestLifetime } from './test-lifetime.js'
 
+// The uncancelled control must retain the old runner-facing promise. Otherwise
+// named late-outcome reporting would mask the RPC cancellation control's leak.
+if (process.env.RPC_ABORT_LIFETIME !== '1') {
+  TestLifetime.prototype.runnerBody = function (body) {
+    return this.tracked(body)
+  }
+}
+
 const identities = new WeakMap<Promise<unknown>, string>()
 const tracked = TestLifetime.prototype.tracked
 TestLifetime.prototype.tracked = function (body) {

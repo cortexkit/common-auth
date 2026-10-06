@@ -7,6 +7,31 @@ export class TestLifetime {
   private readonly releases: Array<() => void> = []
   private readonly finalizers: Array<() => Promise<unknown>> = []
   private closing = false
+  private runningName: string | undefined
+
+  get pendingBodyName(): string | undefined {
+    return this.runningName
+  }
+
+  /** Keep an abandoned runner promise from reassigning a late body failure. */
+  runnerBody(body: () => unknown, name: string): Promise<unknown> {
+    this.runningName = name
+    return this.tracked(body)
+      .then((value) => {
+        if (this.closing) console.error(`Late test body completion: ${name}`)
+        return value
+      })
+      .catch((error: unknown) => {
+        if (!this.closing) throw error
+        // Teardown cannot start until Bun has ended this test. If its body is
+        // still running, the runner deadline has already failed it by name.
+        // Report the original error instead of rejecting Bun's abandoned promise.
+        console.error(`Late test body failure: ${name}`, error)
+      })
+      .finally(() => {
+        this.runningName = undefined
+      })
+  }
   private readonly cancellation = new AbortController()
 
   /** Cancel test-owned requests before teardown waits for their bodies. */

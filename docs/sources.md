@@ -1131,3 +1131,12 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | test lifetime | Cancellation precedes body joins and resource cleanup | new (neither copy) | lifetime aborts requests before joining bodies and before cleanup |
 | test lifetime | Unrelated failures remain visible after teardown starts | new (neither copy) | lifetime preserves an unrelated body rejection during teardown |
 | test lifetime | Timer aborts are not teardown cancellation | new (neither copy) | lifetime preserves a timer abort rather than treating it as teardown cancellation |
+
+| tooling | Bun reports the abandoned test body's rejection as an error between tests | new (neither copy) | old runner wiring exposes a body rejection after its hook is abandoned |
+| tooling | Late owned rejection records its owner and original stack | new (neither copy) | abandoned body failure is visible by owner name and stack, not between tests |
+| tooling | Successor setup cannot run under an abandoned predecessor body | new (neither copy) | successor wait failure names the previous body without allowing successor setup |
+| tooling | Normal bodies have no late-outcome diagnostics | new (neither copy) | normal completion records no late body outcome |
+| tooling | Unowned late rejection stays visible to the runner | new (neither copy) | unowned late rejection remains an unattributed runner error |
+| tooling | Ordinary owned rejection still fails normally | new (neither copy) | ordinary body rejection fails its own test without a late outcome |
+| fs | Renewal handle is owned before setup can fail outside finally | new (neither copy) | renewal staging lock is released by its lifetime when setup fails before the body finally |
+| tooling | Late successful completion stays attributed to its already-failed test | new (neither copy) | late body completion is recorded by owner while its timeout remains failed |

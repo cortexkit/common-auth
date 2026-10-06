@@ -262,13 +262,19 @@ for (const invalidation of ['foreign', 'expired', 'unreadable']) {
 
 test('renewal stages private owner bytes and atomically renames while assertOwned remains valid', async () => {
   const path = lockPathFor(target, name)
-  const lock = await acquireRefreshFileLock({
-    path: target,
-    name,
-    ttlMs: 10000,
-    renew: true,
-    renewIntervalMs: 100,
-  })
+  const lifetime = hooks.lifetime
+  const lock = await lifetime.operation(
+    acquireRefreshFileLock({
+      path: target,
+      name,
+      ttlMs: 10000,
+      renew: true,
+      renewIntervalMs: 100,
+    }),
+  )
+  // Acquisition can succeed before a setup read fails, outside the body's finally.
+  // Releasing the handle also stops and joins its renewal timer.
+  if (lock) lifetime.finish(() => lock.release())
   const before = JSON.parse(await fs.readFile(path, 'utf8'))
   const originalOpen = fs.open
   const originalRename = fs.rename
@@ -310,8 +316,14 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
       return originalRename(...args)
     },
   )
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    await Promise.race([observed, sleep(1000)])
+    await Promise.race([
+      observed,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 1000)
+      }),
+    ])
     expect(writes).toBeGreaterThan(0)
     expect(renames).toBeGreaterThan(0)
     expect(observedError).toBeUndefined()
@@ -323,6 +335,7 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
     expect((await fs.stat(path)).mode & 0o777).toBe(0o600)
     await lock!.assertOwned()
   } finally {
+    clearTimeout(timer)
     writeSpy.mockRestore()
     renameSpy.mockRestore()
     await lock?.release()
