@@ -316,14 +316,18 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
       return originalRename(...args)
     },
   )
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    await Promise.race([
-      observed,
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, 1000)
+    // Wait for the renewal itself, not a fixed window: on a loaded host the
+    // first 100 ms renewal can take longer than any chosen window. If renewal
+    // never runs, the runner's own test timeout fails this test by name, and
+    // teardown's abort releases this wait so the body can finish and cleanup
+    // is not held until the hook times out.
+    const stopped = new Promise<void>((resolve) =>
+      lifetime.signal.addEventListener('abort', () => resolve(), {
+        once: true,
       }),
-    ])
+    )
+    await Promise.race([observed, stopped])
     expect(writes).toBeGreaterThan(0)
     expect(renames).toBeGreaterThan(0)
     expect(observedError).toBeUndefined()
@@ -335,7 +339,6 @@ test('renewal stages private owner bytes and atomically renames while assertOwne
     expect((await fs.stat(path)).mode & 0o777).toBe(0o600)
     await lock!.assertOwned()
   } finally {
-    clearTimeout(timer)
     writeSpy.mockRestore()
     renameSpy.mockRestore()
     await lock?.release()
