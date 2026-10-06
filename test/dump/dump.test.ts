@@ -968,13 +968,38 @@ describe('dump directory byte cap', () => {
   test('the automatic sweep runs at most once per interval while sweep runs now', async () => {
     await mkdir(dumpDir)
     let t = Date.now()
-    const d = dumper({ maxBytes: 1, now: () => t, sweepMinAgeMs: 0 })
+    // A removal makes the sweep emit its terminal debug message. Unlike the
+    // artifact count, that message observes completion of its filesystem work.
+    await writeAged(join(dumpDir, dumpArtifactName(2)), '12345678', 1_000)
+    let finishFirstSweep!: () => void
+    const firstSweep = new Promise<void>((resolve) => {
+      finishFirstSweep = resolve
+    })
+    const d = dumper({
+      maxBytes: 1,
+      now: () => t,
+      sweepMinAgeMs: 0,
+      logger: {
+        debug: (message) => {
+          if (message === 'removed old dump files') finishFirstSweep()
+        },
+        warn: mock(() => {}),
+      },
+    })
+    const statSpy = spyOn(fs, 'lstat')
+    hooks.lifetime.finish(async () => statSpy.mockRestore())
+    const sweepStarts = () =>
+      statSpy.mock.calls.filter(([path]) => path === dumpDir).length
     await d.dump({ session: 's', channel: 'http', bodyText: '{}' })
-    await eventually(async () => (await readdir(dumpDir)).length === 3)
+    await firstSweep
+    expect(sweepStarts()).toBe(1)
+    expect(await readdir(dumpDir)).not.toContain(dumpArtifactName(2))
     await writeAged(join(dumpDir, dumpArtifactName(1)), '12345678', 1_000)
     t += 1000
     await d.dump({ session: 's', channel: 'http', bodyText: '{}' })
-    await Bun.sleep(100)
+    // A scheduled sweep calls directory lstat before its first await, so no
+    // sleep is needed to detect an unwanted second sweep after dump resolves.
+    expect(sweepStarts()).toBe(1)
     expect(await readdir(dumpDir)).toContain(dumpArtifactName(1))
 
     expect((await d.sweep()).removed).toBeGreaterThan(0)
