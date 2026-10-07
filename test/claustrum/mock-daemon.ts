@@ -106,6 +106,10 @@ export async function startMockDaemon(input: {
   credentials?: Record<string, MockCredential>
   category?: string
   refreshAdapter?: string
+  /** Exact list_scoped wire result, without generated inventory fields. */
+  listScopedResult?: Wire
+  /** Exact get_scoped wire results, without generated payload or identity fields. */
+  getScopedResults?: Record<string, Wire>
 }): Promise<MockDaemon> {
   const category = input.category ?? 'test-native'
   const adapter = input.refreshAdapter ?? 'test-provider'
@@ -187,6 +191,7 @@ export async function startMockDaemon(input: {
   function handle(method: string | undefined, params: Wire): Wire {
     if (method === 'credential.list_scoped') {
       state.lists++
+      if (input.listScopedResult) return { result: input.listScopedResult }
       return inventory()
     }
     if (method === 'credential.get_scoped') {
@@ -195,6 +200,8 @@ export async function startMockDaemon(input: {
         credential_id: id,
         enrollment_token: params.enrollment_token as string | undefined,
       })
+      const wireResult = id ? input.getScopedResults?.[id] : undefined
+      if (wireResult) return { result: wireResult }
       const credential = id ? state.credentials[id] : undefined
       if (!credential) return error('not_found')
       if (credential.refuse) return error(credential.refuse, 'auth_required')

@@ -524,6 +524,21 @@ expect_message = 'expected a rejection'
 # --- Claustrum vault consumer ---
 
 [[control]]
+id = 'claustrum-admits-captured-antigravity-wire'
+guards = 'the captured antigravity auth_method and refresh adapter reach an asserted OAuth receipt through the real client decoder, rather than silently disappearing from the roster'
+file = 'src/claustrum/custody.ts'
+old = "  if (!row.operations.includes('read')) return undefined"
+new = '''  if (!row.operations.includes('read')) return undefined
+  // NON-VACUITY BREAK: refuse the antigravity refresh adapter.
+  if (row.refreshAdapter === 'antigravity') return undefined'''
+test_file = 'test/claustrum/antigravity-wire.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/antigravity-wire.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^the\scaptured\santigravity\swire\scredential\sroutes\sand\sserves\san\sasserted\sOAuth\sreceipt$']
+expect_message = '/Expected length: 1\s+Received length: 0/'
+
+[[control]]
 id = 'claustrum-receipt-carries-served-project-id'
 guards = 'the Google Cloud project id served by get_scoped reaches the send receipt instead of being silently dropped'
 file = 'src/claustrum/custody.ts'
