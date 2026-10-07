@@ -146,6 +146,26 @@ for (const kind of ['file', 'symlink'] as const) {
   })
 }
 
+// A predictable stage name (a fixed suffix, or the pid) lets another local
+// user plant a file or symlink there before the write; every write must pick
+// a fresh random one.
+test('atomic writer stages each write under a fresh unpredictable name', async () => {
+  const stages: string[] = []
+  const record = async () => {
+    stages.push(
+      ...(await fs.readdir(dir)).filter((name) => name.endsWith('.tmp')),
+    )
+  }
+  await writeJsonAtomic(target, { write: 1 }, { beforeRename: record })
+  await writeJsonAtomic(target, { write: 2 }, { beforeRename: record })
+  expect(stages).toHaveLength(2)
+  expect(stages[0]).not.toBe(stages[1])
+  for (const stage of stages)
+    expect(stage).toMatch(
+      /^state\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/,
+    )
+})
+
 test('atomic writer restores private mode despite restrictive umask', async () => {
   const previous = process.umask(0o777)
   try {

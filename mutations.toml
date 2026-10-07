@@ -1,0 +1,1088 @@
+# Mutation proofs replayed by the pinned ck-mutate runner (see README.md,
+# "Mutation catalogue"). Each row deliberately breaks one production guard
+# and names the Bun test(s) that must fail because of it.
+#
+# Every row is a `command` row: `{test}` is a Bun `-t` filter, which Bun reads
+# as a regular expression over the full test name (describe names and the
+# test name joined by single spaces). The ids are anchored (^...$) and escaped,
+# with `\s` standing for each space because ck-mutate refuses whitespace in an
+# id. `Ran {count} test` matches Bun's summary line ("Ran 1 test across 1
+# file."), which proves the filter selected a test on both the clean and the
+# mutated tree. Test fixtures import the built package through dist/, so the
+# prebuild steps install and build before the baseline and again after every
+# mutant edit. Replay with the Bun version .github/workflows/ci.yml pins
+# (1.3.14): the row rpc-declared-oversize-413-half-closes guards a workaround for
+# Bun 1.3.14 reusing a connection the server refused with 413, which Bun 1.4.2
+# no longer does, so that row survives on 1.4.2.
+prebuild = [
+  { name = "install", command = ["bun", "install", "--frozen-lockfile"], timeout_s = 600 },
+  { name = "build", command = ["bun", "run", "build"], timeout_s = 600 },
+]
+
+# --- fs locks ---
+
+[[control]]
+id = 'fs-lock-live-holder-excludes-second-acquirer'
+guards = 'a live lock refuses a second acquirer: a holder whose lease has not expired is never treated as stale and evicted'
+file = 'src/fs/refresh-file-lock.ts'
+old = 'return Number(currentOwner?.expiresAt) > now()'
+new = 'return false'
+test_file = 'test/fs/with-lock.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/with-lock.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^contention\swaits\sand\sreports\slock\sidentity$']
+expect_message = '/Expected constructor: \[class LockContentionError[^\n]*\nReceived value: undefined/'
+
+[[control]]
+id = 'fs-lock-try-once-refuses-held-lock'
+guards = 'the try-once acquire returns null while another owner holds the lock, instead of reporting an existing lock file as acquired'
+file = 'src/fs/refresh-file-lock.ts'
+old = "if (code === 'EEXIST' || code === 'EISDIR') return false"
+new = "if (code === 'EEXIST' || code === 'EISDIR') return true"
+test_file = 'test/fs/with-lock.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/with-lock.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^the\sfs\ssubpath\sexports\sthe\stry-once\slock:\sa\sheld\slock\sreturns\snull\suntil\sreleased$']
+expect_message = '/expect\(received\)\.toBeNull\(\)\s+Received: \{/'
+
+[[control]]
+id = 'fs-lock-release-is-owner-fenced'
+guards = "release removes the lock only while it still carries this owner's id, never a successor's lock"
+file = 'src/fs/refresh-file-lock.ts'
+old = '''
+            const owner = await readOwner()
+            if (owner?.ownerId !== ownerId) return
+            if (options.onStep) await options.onStep('release-owner-confirmed')'''
+new = '''
+            const owner = await readOwner()
+            void owner
+            if (options.onStep) await options.onStep('release-owner-confirmed')'''
+test_file = 'test/fs/refresh-file-lock.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/refresh-file-lock.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^acquireRefreshFileLock\sassertOwned\sobserves\stakeover\swith\sownership\sdetails\swithout\srenewal$']
+expect_message = '/ENOENT: no such file or directory, open .*assert-observed\.json\.assert\.lock/'
+
+[[control]]
+id = 'fs-lock-relinquish-after-marker-loss-is-owner-fenced'
+guards = 'after losing its eviction marker post-write, a renewal relinquishes only a lock record that still carries its own owner id'
+file = 'src/fs/refresh-file-lock.ts'
+old = '''
+      if (owner?.ownerId !== ownerId) return
+      try {
+        await rm(lockPath, { recursive: true, force: true })'''
+new = '''
+      void owner
+      try {
+        await rm(lockPath, { recursive: true, force: true })'''
+test_file = 'test/fs/refresh-file-lock.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/refresh-file-lock.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^acquireRefreshFileLock\spreserves\sa\ssuccessor\srecord\sduring\spost-write\srelinquish$']
+expect_message = '/expect\(existsSync\(lockPath\)\)\.toBe\(true\)[\s\S]*Received: false/'
+
+[[control]]
+id = 'fs-lock-post-fence-acquire-relinquishes-not-removes'
+guards = 'an acquisition that loses its marker after recreating a stale lock relinquishes through the owner check, never removing a successor by pathname'
+file = 'src/fs/refresh-file-lock.ts'
+old = '''
+          await relinquishLockAfterMarkerLoss()
+          acquired = false'''
+new = '''
+          await rm(lockPath, { recursive: true, force: true })
+          acquired = false'''
+test_file = 'test/fs/acquisition-orderings.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/acquisition-orderings.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^deterministic\sstale\sacquisition\sorderings\spost-fence\smarker\sloss\spreserves\sthe\ssuccessor\safter\sstale\slock\srecreation$']
+expect_message = '/ENOENT: no such file or directory, open .*tokens\.json\.refresh\.lock/'
+
+[[control]]
+id = 'fs-lock-stale-lock-is-reclaimed'
+guards = 'an expired lock is removed under the eviction marker and recreated, so a crashed holder cannot block the lock forever'
+file = 'src/fs/refresh-file-lock.ts'
+old = '''
+        await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+        // Fence check 3'''
+new = '        // Fence check 3'
+test_file = 'test/fs/with-lock.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/with-lock.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^reads\sexpired\slegacy\sowner\.json\sdespite\sa\sfresh\sdirectory\smtime$']
+expect_message = 'LockContentionError: Timed out acquiring'
+
+[[control]]
+id = 'fs-lock-stale-reclaim-rechecks-liveness-under-marker'
+guards = 'a contender that saw a stale lock rechecks liveness after taking the eviction marker, so a replacement owner installed meanwhile is preserved'
+file = 'src/fs/refresh-file-lock.ts'
+old = '''
+      try {
+        if (await lockIsLive()) return contended()'''
+new = '''
+      try {
+        if (false) return contended()'''
+test_file = 'test/fs/acquisition-orderings.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/acquisition-orderings.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^deterministic\sstale\sacquisition\sorderings\sordering\s2\srechecks\sliveness\sunder\sthe\smarker\sand\spreserves\sthe\sreplacement\sowner$']
+expect_message = '/expect\(await first\)\.toBeNull\(\)[\s\S]*Received: \{/'
+
+[[control]]
+id = 'fs-lock-renewal-error-stops-on-takeover'
+guards = 'a renewal that fails after another owner took the lock records the loss and stops, instead of retrying to extend a lock it no longer holds'
+file = 'src/fs/refresh-file-lock.ts'
+old = "if (owner?.ownerId !== ownerId) recordLoss('taken-over', owner)"
+new = "if (false) recordLoss('taken-over', owner)"
+test_file = 'test/fs/refresh-file-lock.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/refresh-file-lock.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^acquireRefreshFileLock\srenewal\serrors\sstop\simmediately\swhen\sownership\scannot\sremain\slive$']
+expect_message = '/expect\(lock\.hasLost\(\)\)\.toBe\(true\)[\s\S]*Received: false/'
+
+# --- atomic and staged file writes ---
+
+[[control]]
+id = 'atomic-write-stages-under-random-name'
+guards = 'writeJsonAtomic stages under a fresh random name, never a predictable one another local user could pre-plant'
+file = 'src/fs/atomic-write.ts'
+old = '(options.stageName ?? randomUUID)()'
+new = '(options.stageName ?? (() => String(process.pid)))()'
+test_file = 'test/fs/atomic-write.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/atomic-write.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^atomic\swriter\sstages\seach\swrite\sunder\sa\sfresh\sunpredictable\sname$']
+expect_message = '/Expected: not "state\.json\.\d+\.tmp"/'
+
+[[control]]
+id = 'atomic-write-stage-is-exclusive'
+guards = "writeJsonAtomic creates its stage with O_EXCL ('wx'), so a planted file or symlink at the stage name is refused, not followed"
+file = 'src/fs/atomic-write.ts'
+old = "handle = await open(tempPath, 'wx', 0o600)"
+new = "handle = await open(tempPath, 'w', 0o600)"
+test_file = 'test/fs/atomic-write.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/atomic-write.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^atomic\swriter\srefuses\san\sexisting\sstage\ssymlink$']
+expect_message = 'Received promise that resolved'
+
+[[control]]
+id = 'atomic-write-stage-is-0600-before-rename'
+guards = 'writeJsonAtomic chmods its stage to 0600 before the rename, whatever the umask'
+file = 'src/fs/atomic-write.ts'
+old = '''
+    await handle.chmod(0o600)
+    await handle.close()'''
+new = '    await handle.close()'
+test_file = 'test/fs/atomic-write.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/atomic-write.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^atomic\swriter\srestores\sprivate\smode\sdespite\srestrictive\sumask$']
+expect_message = '/Expected: 384\s+Received: 0/'
+
+[[control]]
+id = 'atomic-write-cleans-only-its-own-stage'
+guards = 'writeJsonAtomic removes a stage only when it created it, never a colliding file it failed to create'
+file = 'src/fs/atomic-write.ts'
+old = 'if (created) await rm(tempPath, { force: true }).catch(() => {})'
+new = 'await rm(tempPath, { force: true }).catch(() => {})'
+test_file = 'test/fs/atomic-write.test.ts'
+runner = "command"
+command = ["bun", "test", "test/fs/atomic-write.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^atomic\swriter\srefuses\san\sexisting\sstage\sfile$']
+expect_message = "/ENOENT: no such file or directory, lstat '[^']*state\\.json\\.seeded\\.tmp'/"
+
+[[control]]
+id = 'port-file-stages-under-random-name'
+guards = 'writePortFile stages the token-bearing port file under a random name, so a stale file at the old pid-based name cannot block or capture it'
+file = 'src/rpc/port-file.ts'
+old = '(options.stageName ?? randomUUID)()'
+new = '(options.stageName ?? (() => String(process.pid)))()'
+test_file = 'test/rpc/staging-security.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/staging-security.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^port\sstaging\sprotects\sold\sfile\sunder\sBun$']
+expect_message = "/EEXIST: file already exists, open '[^']*port-123\\.json\\.\\d+\\.tmp'/"
+
+[[control]]
+id = 'port-file-cleans-only-its-own-stage'
+guards = 'writePortFile unlinks a stage only when it created it, never a colliding file at the stage name'
+file = 'src/rpc/port-file.ts'
+old = 'if (created) await unlink(tmp).catch(() => {})'
+new = 'await unlink(tmp).catch(() => {})'
+test_file = 'test/rpc/staging-security.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/staging-security.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^port\sstaging\sprotects\scollision\sfile\sunder\sBun$']
+expect_message = "/ENOENT: no such file or directory, lstat '[^']*port-123\\.json\\.seeded\\.tmp'/"
+
+[[control]]
+id = 'dump-response-stage-is-exclusive'
+guards = "the dump's replaceFile creates its stage with O_EXCL ('wx'), so a planted symlink at the stage name is never followed"
+file = 'src/dump/index.ts'
+old = "handle = await open(staging, 'wx', 0o600)"
+new = "handle = await open(staging, 'w', 0o600)"
+test_file = 'test/dump/dump.test.ts'
+runner = "command"
+command = ["bun", "test", "test/dump/dump.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^response\sdump\srefuses\san\sexisting\sstage\ssymlink$']
+expect_message = '/expect\(received\)\.toBeUndefined\(\)\s+Received: "[^"]*\.response\.json"/'
+
+[[control]]
+id = 'enrollment-state-is-0600-before-rename'
+guards = 'the Claustrum enrollment state (which holds the request secret) is chmodded to 0600 before its rename, whatever the umask'
+file = 'src/claustrum/enrollment.ts'
+old = '''
+    await descriptor.chmod(0o600)
+    await descriptor.sync()'''
+new = '    await descriptor.sync()'
+test_file = 'test/claustrum/enrollment.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/enrollment.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^ClaustrumEnrollmentManager\spersists\sthe\senrollment\sstate\s0600\sdespite\sa\sumask\sthat\sstrips\sowner\swrite$']
+expect_message = '/Expected: 384\s+Received: 256/'
+
+# --- account store: crash safety, stamps, epochs, fences ---
+
+[[control]]
+id = 'store-torn-row-is-not-a-candidate'
+guards = 'a row left half-replaced by a crash between the two replace writes is shown completed but is never a routing candidate'
+file = 'src/store/torn.ts'
+old = '''
+      row.torn = true
+      row.candidate = false'''
+new = '      row.torn = true'
+test_file = 'test/store/torn.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/torn.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sreplace\storn\sbetween\sits\swrites\sa\srow\storn\sbetween\sthe\swrites\sof\sreplace\sis\sshown\sas\sthe\sreplacement,\sis\sno\scandidate,\sand\sthe\snext\swrite\scompletes\sit$']
+expect_message = '/\+\s+"candidate": true/'
+
+[[control]]
+id = 'store-pull-refuses-torn-row'
+guards = 'a quota reading is never recorded against a row torn between the two writes of an operation (here a first-identity record)'
+file = 'src/store/attribution.ts'
+old = '''
+          row.torn ||
+          !entry ||'''
+new = '          !entry ||'
+test_file = 'test/store/torn.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/torn.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^crash\stable:\severy\swrite\sstep\sof\severy\soperation\sthat\swrites\sa\srow\sa\scrash\sat\safter-state-write\sof\srecordIdentity\sof\sa\sfirst\sidentity\sshows\sa\sfresh\sreader,\sa\sfresh\spull\sand\sthe\snext\swrite\sonly\swhole\srows$']
+expect_message = '/expect\(recorded\)\.toBe\(false\)[\s\S]*Received: true/'
+
+[[control]]
+id = 'store-strict-unbound-row-is-not-a-candidate'
+guards = 'with requireCredentialStamps, a row whose stamp is not bound loads unbound and is never a routing candidate'
+file = 'src/store/torn.ts'
+old = '''
+      row.unbound = true
+      row.candidate = false'''
+new = '      row.unbound = true'
+test_file = 'test/store/credential-stamps.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/credential-stamps.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^credential\sstamp\sstatus\severy\scrafted\srow\sloads\swith\sits\sstamp\sstatus,\sand\sonly\sstrict\smode\smakes\sit\sunbound$']
+expect_message = '/\+\s+"tightCandidate": true/'
+
+[[control]]
+id = 'store-strict-operations-refuse-unbound-rows'
+guards = 'a strict store refuses every operation on an unbound row before any provider call or write'
+file = 'src/store/runtime.ts'
+old = '''
+  if (row.unbound)
+    throw refusal('''
+new = '''
+  if (false)
+    throw refusal('''
+test_file = 'test/store/credential-stamps.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/credential-stamps.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^strict\smode\srefuses\sunbound\srows\sstrict\srefresh\srefuses\severy\sunbound\srow\sbefore\sthe\sprovider\scall\sand\swrites\snothing$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-dispatch-digest-covers-access-token'
+guards = 'the stamp dispatch digest covers the OAuth access token, so an access-only bearer swap leaves the row unbound'
+file = 'src/store/schema.ts'
+old = "typeof credential.access === 'string' ? credential.access : null,"
+new = 'null,'
+test_file = 'test/store/stamp-coverage.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/stamp-coverage.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^stamps\scover\sthe\stoken\ssent\sand\sthe\saccount\sand\sendpoint\sit\sgoes\sto\sstrict\smode\smust\sreject\san\saccess-only\sbearer\sswap$']
+expect_message = '/\+\s+"stamp": "bound"/'
+
+[[control]]
+id = 'store-dispatch-digest-covers-expiry'
+guards = 'the stamp dispatch digest covers the expiry, so a strict store does not complete a torn replace whose expiry was changed'
+file = 'src/store/schema.ts'
+old = '''
+          typeof credential.expires === 'number' &&
+          Number.isFinite(credential.expires)
+            ? credential.expires
+            : null,'''
+new = '          null,'
+test_file = 'test/store/strict-torn-dispatch.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/strict-torn-dispatch.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sstrict\sstore\sand\sa\storn\sreplace\swhose\sstamp\sno\slonger\sdescribes\sthe\scredential\sa\sstrict\sstore\sneither\scompletes\snor\soperates\son\sa\storn\sOAuth\sreplace\swhose\sexpiry\swas\schanged$']
+expect_message = '/\+\s+"torn": true/'
+
+[[control]]
+id = 'store-strict-torn-replace-completes-only-on-matching-credential'
+guards = 'a strict store completes an interrupted replace only when the stamp dispatch digest still matches the credential beside it'
+file = 'src/store/torn.ts'
+old = '''
+          dispatchDigest(projectedReplacement(row.credential, stamp.binding))
+        )
+          continue'''
+new = '''
+          dispatchDigest(projectedReplacement(row.credential, stamp.binding))
+        )
+          void 0'''
+test_file = 'test/store/strict-torn-dispatch.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/strict-torn-dispatch.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sstrict\sstore\sand\sa\storn\sreplace\swhose\sstamp\sno\slonger\sdescribes\sthe\scredential\sstrict\scorrupted-dispatch\storn\sreplacement\smust\srefuse\sbefore\sany\sconfig\srepair$']
+expect_message = '/\+\s+"torn": true/'
+
+[[control]]
+id = 'store-lock-order-row-then-extra-then-store'
+guards = 'add takes the row lock and provider-wide lock before the extra locks, and those before the store locks'
+file = 'src/store/rows.ts'
+old = '''
+      await locks.acquire(rowLockSpec(rt, { id, identity }))
+      if (credential.type === 'oauth')
+        await locks.acquire(options.providerLock ?? rt.providerLock)
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)'''
+new = '''
+      for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
+      await locks.acquire(rowLockSpec(rt, { id, identity }))
+      if (credential.type === 'oauth')
+        await locks.acquire(options.providerLock ?? rt.providerLock)'''
+test_file = 'test/store/row-extra-locks.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/row-extra-locks.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^add,\sreplace,\srotate\sand\srecordIdentity\stake\sextra\slocks\safter\sthe\srow\sand\sprovider-wide\slocks\sand\sbefore\sthe\sstore\slocks$']
+expect_message = '/\+\s+"(?:row-acct-1|extra-1)@state"/'
+
+[[control]]
+id = 'store-readded-id-starts-past-retired-epochs'
+guards = 'a removed and re-added id starts past every credential epoch it held, so work attributed to the old credential never matches the new one'
+file = 'src/store/schema.ts'
+old = '    Math.max(retiredEpochIn(config, id) ?? 0, entryEpochIn(config, id) ?? 0) + 1'
+new = '    (entryEpochIn(config, id) ?? 0) + 1'
+test_file = 'test/store/id-reuse.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/id-reuse.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sre-added\sid\sstarts\spast\severy\sepoch\sit\sheld,\sincluding\sthose\sof\sreplaced\scredentials$']
+expect_message = '/Expected: 3\s+Received: 1/'
+
+[[control]]
+id = 'store-attributed-transition-is-epoch-fenced'
+guards = 'an attributed disable or enable issued for a credential the row no longer holds is refused and writes nothing'
+file = 'src/store/rows.ts'
+old = '''
+              (row.credentialEpoch ?? 1) !== fence.credentialEpoch ||
+              row.identity !== fence.identity'''
+new = '              false'
+test_file = 'test/store/row-transition.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/row-transition.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\sattributed\sdisable\sfor\sa\scredential\sthe\srow\sno\slonger\sholds\sis\srefused\sand\swrites\snothing$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-refresh-detects-identity-contradiction'
+guards = 'a refresh that returns another account than the row records is reported as identity-contradicted: the successor is persisted, the row disabled and not propagated'
+file = 'src/store/refresh.ts'
+old = '''
+            current.identity !== result.identity
+              ? {'''
+new = '''
+            current.identity === result.identity
+              ? {'''
+test_file = 'test/store/refresh.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/refresh.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^refresh\sidentity\scontinuity\sa\scontradicted\sknown\sidentity\spersists\sthe\ssuccessor\sbound\sbut\sdisabled\swithout\spropagating\sit$']
+expect_message = '/\+\s+"status": "rotated"/'
+
+[[control]]
+id = 'store-refresh-contradiction-disable-is-in-the-state-write'
+guards = 'the identity-contradiction disable is stamped into the state write that persists the successor, so a crash before the config write never exposes it enabled'
+file = 'src/store/refresh.ts'
+old = '''
+            transition,
+            identity: learnt,'''
+new = '            identity: learnt,'
+test_file = 'test/store/crash.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/crash.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\scontradicted\srefresh\scrash\sat\safter-state-write\snever\sexposes\srotated\senabled\scredentials$']
+expect_message = '/\+\s+"enabled": true/'
+
+[[control]]
+id = 'store-enable-refuses-identity-contradicted-row'
+guards = 'a plain enable of an identity-contradicted row is refused until an identity-validated replacement'
+file = 'src/store/rows.ts'
+old = '''
+            flag.enabled &&
+            row.disabledReason?.startsWith(IDENTITY_CONTRADICTED_REASON_PREFIX)'''
+new = '''
+            flag.enabled &&
+            row.disabledReason?.startsWith('never-a-reason-prefix: ')'''
+test_file = 'test/store/refresh.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/refresh.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^refresh\sidentity\scontinuity\sa\scontradicted\sknown\sidentity\spersists\sthe\ssuccessor\sbound\sbut\sdisabled\swithout\spropagating\sit$']
+expect_message = 'expected a rejection'
+
+# --- Claustrum vault consumer ---
+
+[[control]]
+id = 'claustrum-reports-only-401'
+guards = 'only a 401 is reported to the vault; 429, 402 and 5xx are never reported as authentication failures'
+file = 'src/claustrum/custody.ts'
+old = 'if (status !== 401) return'
+new = 'if (status < 400) return'
+test_file = 'test/claustrum/custody.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/custody.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^scoped\scustody\sdispatch\sauthorization\sreports\sonly\s401\susing\sexact\ssend-time\senrollment\sand\sserved\sversion$']
+expect_message = '/Expected length: 0\s+Received length: 1/'
+
+[[control]]
+id = 'claustrum-401-reports-the-served-record-version'
+guards = 'a final 401 is reported against the receipt (record version) the failing send was actually served, including after a retry'
+file = 'src/claustrum/consumer.ts'
+old = '''
+        served = current
+        response = await dispatch(current, signal)'''
+new = '        response = await dispatch(current, signal)'
+test_file = 'test/claustrum/consumer.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/consumer.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^profile\s401\sretries\sthe\snew\srecord\sand\sreports\sits\sversion\sif\sit\salso\sfails$']
+expect_message = '/Expected: 4\s+Received: 3/'
+
+[[control]]
+id = 'claustrum-incomplete-reply-marks-unlisted-account-stale'
+guards = 'an incomplete vault reply keeps an account it does not account for as a stale row, not a live one'
+file = 'src/claustrum/roster.ts'
+old = '''
+        ...(aliases.length && { aliases }),
+        stale: true,'''
+new = '        ...(aliases.length && { aliases }),'
+test_file = 'test/claustrum/roster.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/roster.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\smalformed\sor\sduplicated\sfallback\srecord\skeeps\sits\saccount\sas\sstale$']
+expect_message = '/-\s+"stale": true/'
+
+[[control]]
+id = 'claustrum-relisted-credential-is-stripped-from-stale-row'
+guards = 'a credential an incomplete reply lists under another account is taken out of its old stale row, so it is never authorized under two accounts'
+file = 'src/claustrum/roster.ts'
+old = '''
+    const [credentialId, ...aliases] = memberIds(row).filter(
+      (id) => !listed.has(id),
+    )'''
+new = '''
+    const [credentialId, ...aliases] = memberIds(row).filter(
+      (id) => id !== '',
+    )'''
+test_file = 'test/claustrum/consumer.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/consumer.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\scredential\san\sincomplete\sreply\sre-lists\sunder\sanother\saccount\sis\snever\sauthorized\sor\squota-recorded\sunder\sits\sold\saccount$']
+expect_message = '/\+\s+"vault:oauth:test~/'
+
+[[control]]
+id = 'claustrum-decline-follows-the-account'
+guards = 'a decline is keyed on the provider account, so a new credential id or alias of the same account stays declined'
+file = 'src/claustrum/interlock.ts'
+old = '''
+  if (entry.accountIdentity !== undefined && accountIdentity !== undefined)
+    return entry.accountIdentity === accountIdentity
+  return entry.credentialId === credentialId'''
+new = '  return entry.credentialId === credentialId'
+test_file = 'test/claustrum/roster.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/roster.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sdeclined\saccount\sstays\sdeclined\sunder\sa\snew\scredential\sid\sor\salias,\sand\safter\sleaving\sand\sreturning$']
+expect_message = '/Expected: false\s+Received: true/'
+
+[[control]]
+id = 'claustrum-private-group-refuses-other-member'
+guards = 'a group-writable enrollment ancestor is accepted only when the group lists no member other than the effective user'
+file = 'src/claustrum/enrollment.ts'
+old = "members.split(',').every((member) => member === name)"
+new = "members.split(',').some((member) => member === name)"
+test_file = 'test/claustrum/enrollment-ancestors.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^refuses\sa\sgroup-writable\sancestor\swith\sanother\sexplicit\sgroup\smember$']
+expect_message = 'Received promise that resolved'
+
+[[control]]
+id = 'claustrum-private-group-refuses-other-primary-user'
+guards = 'a group-writable enrollment ancestor is refused when another user has that group as its primary group'
+file = 'src/claustrum/enrollment.ts'
+old = '!users.some((user) => Number(user[2]) !== uid && Number(user[3]) === gid)'
+new = 'true'
+test_file = 'test/claustrum/enrollment-ancestors.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^refuses\sa\sgroup-writable\sancestor\swith\sanother\sprimary-gid\suser$']
+expect_message = 'Received promise that resolved'
+
+[[control]]
+id = 'claustrum-request-path-token-read-skips-ancestor-check'
+guards = 'the per-request token read does not run the setup-time ancestor check, so an owner-only token below a non-private writable ancestor still authorizes'
+file = 'src/claustrum/enrollment.ts'
+old = '''
+  const value = await readBoundedJson(tokenPath)
+  if (value === undefined)
+    throw new ClaustrumConsumerError(
+      'not-enrolled','''
+new = '''
+  await refuseWritableAncestor(dirname(tokenPath))
+  const value = await readBoundedJson(tokenPath)
+  if (value === undefined)
+    throw new ClaustrumConsumerError(
+      'not-enrolled','''
+test_file = 'test/claustrum/enrollment-ancestors.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^authorizes\swith\san\sowner-only\stoken\sbelow\sa\snon-private\swritable\sancestor$']
+expect_message = 'has a writable ancestor'
+
+# --- sidebar RPC: port files, proxy bypass, request limits ---
+
+[[control]]
+id = 'rpc-stop-removes-port-file-only-if-token-matches'
+guards = "stop removes the port file only when it still holds this server's token, so a successor's file survives"
+file = 'src/rpc/rpc-server.ts'
+old = 'if (current?.port === port && current.token === token)'
+new = 'if (current?.port === port)'
+test_file = 'test/rpc/rpc-server.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/rpc-server.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^stop\sport-file\sidentity\sfence:\sdifferent\stoken$']
+expect_message = '/ENOENT: no such file or directory, open .*port-\d+\.json/'
+
+[[control]]
+id = 'rpc-stop-removes-port-file-only-if-port-matches'
+guards = "stop removes the port file only when it still names this server's port, so a successor's file survives"
+file = 'src/rpc/rpc-server.ts'
+old = 'if (current?.port === port && current.token === token)'
+new = 'if (current?.token === token)'
+test_file = 'test/rpc/rpc-server.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/rpc-server.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^stop\sport-file\sidentity\sfence:\sdifferent\sport$']
+expect_message = '/ENOENT: no such file or directory, open .*port-\d+\.json/'
+
+[[control]]
+id = 'rpc-client-never-routes-through-http-proxy'
+guards = 'the loopback RPC client connects straight to the port file port and never to a configured HTTP proxy, which would see the bearer token'
+file = 'src/rpc/rpc-client.ts'
+old = "socket = connect({ host: '127.0.0.1', port: entry.port })"
+new = "socket = connect({ host: '127.0.0.1', port: Number(new URL(process.env.HTTP_PROXY ?? `http://127.0.0.1:${entry.port}`).port) })"
+test_file = 'test/rpc/client-proxy.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/client-proxy.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^loopback\sRPC\sclient\sbypasses\sHTTP_PROXY,\shttp_proxy\sand\sHTTPS_PROXY$']
+expect_message = '/assert\.equal\(pending\.length, 1\)[\s\S]*actual: 0,/'
+
+# Bun 1.3.14's fetch reuses a connection after the server answers 413 with
+# "Connection: close", so the next request queues behind the unread upload and
+# stalls. The server therefore half-closes the socket after the 413 and drains
+# the rest of the upload for a bounded time. Bun 1.4.2 never reuses that
+# connection, so on 1.4.2 this break survives: replay it with Bun 1.3.14, the
+# version ci.yml pins. Measurements: research/load-probe/RPC-413-CLOSE.md.
+[[control]]
+id = 'rpc-declared-oversize-413-half-closes'
+guards = 'a declared-oversize upload gets its 413 and then a bounded half-close of the connection, so the refused socket is not reused'
+file = 'src/rpc/rpc-server.ts'
+old = 'if (error.declaredOversize) {'
+new = 'if (error.declaredOversize && !error.declaredOversize) {'
+test_file = 'test/rpc/request-errors.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/request-errors.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\srequest\sbody\sover\sthe\s1\sMiB\scap\sanswers\s413$']
+expect_message = "/event\\.phase === 'socket-local-end'[\\s\\S]*Received: false/"
+
+[[control]]
+id = 'rpc-streamed-body-is-capped'
+guards = 'a request body streamed without a declared length is refused with 413 once it grows past the 1 MB cap'
+file = 'src/rpc/rpc-server.ts'
+old = 'if (size > MAX_BODY_BYTES) {'
+new = 'if (false) {'
+test_file = 'test/rpc/request-errors.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/request-errors.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\schunked\srequest\sbody\sthat\sgrows\spast\sthe\scap\sanswers\s413$']
+expect_message = '/\+\s+"error": "invalid json"/'
+
+[[control]]
+id = 'rpc-malformed-pending-params-rejected-before-drain'
+guards = 'a pending-notifications call with a malformed cursor or session is answered 400 without draining the queue'
+file = 'src/rpc/rpc-server.ts'
+old = '''
+              throw new Error('invalid params')
+            pending = {'''
+new = '''
+              void 0
+            pending = {'''
+test_file = 'test/rpc/pending.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/pending.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^pending\srejects\smalformed\sdefault\scursors\sand\ssessions\swithout\sdraining$']
+expect_message = '/Expected: 400\s+Received: 200/'
+
+[[control]]
+id = 'rpc-session-drains-only-its-own-notifications'
+guards = "a session drain returns only that session's notifications and broadcasts, never another session's"
+file = 'src/rpc/notifications.ts'
+old = ': n.sessionId === undefined || n.sessionId === sessionId'
+new = ': true'
+test_file = 'test/rpc/notifications.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/notifications.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^notifications\ssession\sscoping:\sa\ssession\sonly\sdrains\sits\sown\s\+\sglobal$']
+expect_message = '/\+\s+"fixture-dump"/'
+
+[[control]]
+id = 'rpc-sessionless-ack-cannot-prune-other-sessions'
+guards = "a sessionless acknowledgement in the default mode prunes nothing, so it cannot consume another session's notifications"
+file = 'src/rpc/notifications.ts'
+old = 'return !broadcastOnly || n.sessionId !== undefined'
+new = 'return false'
+test_file = 'test/rpc/rpc-server.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/rpc-server.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^rpc-server\sa\ssession-less\snotification\sdrain\sdelivers\severy\snotice\sbut\scannot\sprune\sanother\ssession$']
+expect_message = '/\+ \[\]/'
+
+[[control]]
+id = 'rpc-broadcast-only-sessionless-drain-gets-no-targeted'
+guards = 'in broadcast-only mode a sessionless drain returns broadcasts only, never notifications targeted at a session'
+file = 'src/rpc/notifications.ts'
+old = '? !broadcastOnly || n.sessionId === undefined'
+new = '? true'
+test_file = 'test/rpc/sessionless-drain.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/sessionless-drain.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sbroadcast-only\ssessionless\sdrain\sreturns\sbroadcasts\sand\snever\stargeted\snotifications$']
+expect_message = '/\+\s+"session-a"/'
+
+# --- credential scrubbing in commands and the logger ---
+
+[[control]]
+id = 'commands-seam-drops-credential-fields'
+guards = 'the command seam drops credential-shaped properties from every payload it hands the host'
+file = 'src/commands/seam.ts'
+old = '''
+    if (isCredentialName(name)) {
+      report.dropped.push(`${path}.${name}`)'''
+new = '''
+    if (false) {
+      report.dropped.push(`${path}.${name}`)'''
+test_file = 'test/commands/seam.test.ts'
+runner = "command"
+command = ["bun", "test", "test/commands/seam.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^command\spayload\sseam\sa\splugin\ssection\sleaking\sa\scredential-shaped\sfield\sis\sscrubbed\sand\sthe\sdropped\snames\sare\swarned,\snever\sthe\svalues$']
+expect_message = 'Expected to not contain: "rt-leak-2"'
+
+[[control]]
+id = 'commands-seam-redacts-string-values'
+guards = 'every string crossing the command seam passes through the redactor'
+file = 'src/commands/seam.ts'
+old = 'const clean = report.redact(value)'
+new = 'const clean = value'
+test_file = 'test/commands/failure-projection.test.ts'
+runner = "command"
+command = ["bun", "test", "test/commands/failure-projection.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^command\sfailure\sprojection\san\soutcome\stext\squoting\ssecrets\sis\smasked,\susing\sthe\splugin\spattern\sfor\sits\skey\sshape$']
+expect_message = 'Expected to not contain: "synthetic-audit-secret"'
+
+[[control]]
+id = 'commands-unknown-failure-shows-generic-message'
+guards = 'an exception the seam cannot vouch for is shown only as a generic code and message, never its raw text'
+file = 'src/commands/seam.ts'
+old = '''
+    }
+  return ACTION_FAILED
+}'''
+new = '''
+    }
+  return { code: ACTION_FAILED.code, text: String((error as Error)?.message ?? error) }
+}'''
+test_file = 'test/commands/failure-projection.test.ts'
+runner = "command"
+command = ["bun", "test", "test/commands/failure-projection.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^command\sfailure\sprojection\sa\sthrown\sfailure\squoting\sa\sbearer\stoken\sshows\sonly\sthe\sgeneric\scode\sand\smessage$']
+expect_message = '/\+\s+"text": "upstream said 401/'
+
+[[control]]
+id = 'logger-redacts-token-named-keys'
+guards = 'the logger masks the values of compound token-named keys (accessToken, refreshToken, bearerToken)'
+file = 'src/logger/redact.ts'
+old = "(normalized.endsWith('token') && !normalized.endsWith('tokens')) ||"
+new = 'false ||'
+test_file = 'test/logger/engine.test.ts'
+runner = "command"
+command = ["bun", "test", "test/logger/engine.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^logger\sredaction\sredacts\scompound\ssecret\skeys\s\(accessToken,\sapiKey,\sclientSecret,\sbearerToken,\srefreshToken\)$']
+expect_message = 'Expected to not contain: "should-be-redacted"'
+
+[[control]]
+id = 'logger-masks-token-shaped-values'
+guards = 'the logger masks bearer tokens, sk- keys and JWTs inside any logged string'
+file = 'src/logger/redact.ts'
+old = 'const patterns = [TOKEN_VALUE, ...(options.extraValuePatterns ?? [])]'
+new = 'const patterns = [...(options.extraValuePatterns ?? [])]'
+test_file = 'test/logger/redact.test.ts'
+runner = "command"
+command = ["bun", "test", "test/logger/redact.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^scrubs\sembedded\seyJabc\sin\splace\swhile\spreserving\ssurrounding\smessage\stext$']
+expect_message = 'Received: "before eyJabc after"'
+
+[[control]]
+id = 'logger-error-serialization-is-scrubbed'
+guards = 'a logged Error is rendered through the same scrubbing walk, so a token in its message or stack is masked'
+file = 'src/logger/redact.ts'
+old = "if (error && errorDepth >= MAX_ERROR_DEPTH) return '[Truncated]'"
+new = 'if (error) return { name: value.name, message: value.message, stack: value.stack }'
+test_file = 'test/logger/errors.test.ts'
+runner = "command"
+command = ["bun", "test", "test/logger/errors.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\stoken\sinside\sa\slogged\serror\smessage\sand\sstack\sis\sredacted$']
+expect_message = 'Received: "request failed for sk-fixture-not-a-real-key'
+
+# --- routing and quota admission ---
+
+[[control]]
+id = 'routing-api-key-row-skips-quota'
+guards = 'an API-key row is admitted without consulting quota'
+file = 'src/routing/admission.ts'
+old = '''
+    if (row.kind === 'api-key') {
+      survivors.push'''
+new = '''
+    if (false) {
+      survivors.push'''
+test_file = 'test/routing/admission.test.ts'
+runner = "command"
+command = ["bun", "test", "test/routing/admission.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^admission\sgates\sgate\s1:\san\sapi-key\srow\sis\sadmitted\swithout\squota$']
+expect_message = '/\+ \[\]/'
+
+[[control]]
+id = 'routing-unknown-reset-fails-closed'
+guards = 'an exhausted reading whose reset is missing, unparsable or past cannot confirm the exhaustion, so the row is refused as unknown (fail closed) and a pull is requested, never admitted'
+file = 'src/routing/admission.ts'
+old = 'if (futureResetAt(limit, now) === undefined) {'
+new = 'if (false) {'
+test_file = 'test/routing/admission.test.ts'
+runner = "command"
+command = ["bun", "test", "test/routing/admission.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^admission\sgates\sgate\s4:\san\sexhausted\sreading\swith\sa\smissing\sreset\sis\srefused\sunknown\swith\sa\spull$']
+expect_message = '/expect\(result\.refused\)\.toEqual\(\[[\s\S]*\+ \[\]/'
+
+[[control]]
+id = 'routing-spent-credit-budget-is-refused'
+guards = 'a row whose credit budget is known spent is refused while another path survives'
+file = 'src/routing/admission.ts'
+old = "refused.push({ id: row.id, stage: 2, reason: 'budget-spent', ...reset })"
+new = 'admitted.push(row)'
+test_file = 'test/routing/admission.test.ts'
+runner = "command"
+command = ["bun", "test", "test/routing/admission.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^admission\scredit\sbudget\sadmission\squota\sskips\sa\sfallback\swhose\scredit\sbudget\sis\sspent$']
+expect_message = '/\+\s+"work-alt"/'
+
+[[control]]
+id = 'routing-sticky-pin-moves-only-on-confirmed-exhaustion'
+guards = 'the move policy keeps a pin whose row is refused for unknown quota or excluded; only confirmed exhaustion or a killswitch verdict moves it'
+file = 'src/routing/sticky.ts'
+old = '''
+      pinRefusal?.reason === 'exhausted' ||
+      pinRefusal?.reason === 'budget-spent')'''
+new = '      pinRefusal !== undefined)'
+test_file = 'test/routing/sticky.test.ts'
+runner = "command"
+command = ["bun", "test", "test/routing/sticky.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^routeSticky\srefused\spin\spolicy\sthe\smove\spolicy\skeeps\sa\spin\swhose\srow\sis\srefused\sfor\sunknown\squota\sor\sexcluded,\sserving\selsewhere$']
+expect_message = '/\+\s+"action": "assign"/'
+
+[[control]]
+id = 'routing-sticky-pin-moves-on-killswitch'
+guards = 'the move policy moves a pin whose row the killswitch kills'
+file = 'src/routing/sticky.ts'
+old = '(input.killswitch?.get(input.pin.accountId) === false ||'
+new = '(false ||'
+test_file = 'test/routing/sticky.test.ts'
+runner = "command"
+command = ["bun", "test", "test/routing/sticky.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^routeSticky\srefused\spin\spolicy\sthe\smove\spolicy\smoves\sa\spin\swhose\srow\sthe\skillswitch\skills$']
+expect_message = '/\+\s+"action": "retain"/'
+
+# --- OpenCode 2 request hooks ---
+
+[[control]]
+id = 'opencode2-request-without-account-is-refused'
+guards = 'a model request the adapter chose no account for is refused locally, never sent with the host credential'
+file = 'src/opencode2/install.ts'
+old = '''
+        if (rec.accountId === undefined) throw noAccount(rec.scope)
+        applyHeaderEdits(draft.headers, {'''
+new = '        applyHeaderEdits(draft.headers, {'
+test_file = 'test/opencode2/install.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/install.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\sa\srequest\swith\sno\saccount\sis\srefused\sand\sits\sretry\svetoed$']
+expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nReceived value: undefined/'
+
+[[control]]
+id = 'opencode2-host-placeholder-never-leaves'
+guards = "a request still carrying the host's placeholder credential is refused before it leaves"
+file = 'src/opencode2/install.ts'
+old = 'if (forbidden.some((secret) => value.includes(secret))) {'
+new = 'if (false) {'
+test_file = 'test/opencode2/install.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/install.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\sa\srequest\sstill\scarrying\sthe\shost\splaceholder\sis\srefused\sbefore\sit\sleaves$']
+expect_message = "(evaluating 'http.kind')"
+
+[[control]]
+id = 'opencode2-unproven-response-is-dropped'
+guards = 'an http.response whose request the installer did not produce is dropped, not attributed to an outstanding attempt'
+file = 'src/opencode2/install.ts'
+old = 'const rec = byRequest.get(draft.request)'
+new = 'const rec = byRequest.get(draft.request) ?? newestOf(keyOf(draft.sessionID, draft.kind))'
+test_file = 'test/opencode2/attempts.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/attempts.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\sattempts\sa\sresponse\sthe\shost\shands\sback\son\sanother\srequest\sobject\sis\sdropped,\seven\swith\sone\sattempt\soutstanding$']
+expect_message = '/\+\s+"response:s1\/primary#1"/'
+
+[[control]]
+id = 'opencode2-ws-frame-rewrite-never-drops-a-frame'
+guards = 'a WebSocket frame rewrite that returns nothing sends the original frame unchanged'
+file = 'src/opencode2/install.ts'
+old = 'if (frame !== undefined) draft.frame = frame'
+new = "draft.frame = frame ?? ''"
+test_file = 'test/opencode2/attempts.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/attempts.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\sWebSocket\sframe\srewrite\sa\srewrite\sreturning\sundefined\ssends\sthe\sframe\sunchanged$']
+expect_message = 'Received: ""'
+
+# --- sidebar-file ---
+
+[[control]]
+id = 'sidebar-merge-rechecks-before-write'
+guards = 'an update re-reads the file after merging and remerges when it changed, so a stale merge result is never written'
+file = 'src/sidebar-file/sidebar-file.ts'
+old = 'if ((await readRaw()) !== raw) continue'
+new = 'if (false) continue'
+test_file = 'test/sidebar-file/sidebar-file.test.ts'
+runner = "command"
+command = ["bun", "test", "test/sidebar-file/sidebar-file.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^merge\srechecks\snew\sbytes\sand\snever\swrites\sthe\sfirst\sresult$']
+expect_message = '/expect\(seen\)\.toEqual\(\[1, 2\]\)[\s\S]*-\s+2,/'
+
+# --- tui-build ---
+
+[[control]]
+id = 'tui-build-emits-one-copy-per-shared-module'
+guards = 'a shared module reached from several importers is emitted once, so its consumers share one module instance'
+file = 'src/tui-build/build-tui.ts'
+old = '''
+    const previous = copied.get(source)
+    if (previous) return previous'''
+new = '''
+    const previous = copied.get(source)
+    if (previous && source === '') return previous'''
+test_file = 'test/tui-build/linking.test.ts'
+runner = "command"
+command = ["bun", "test", "test/tui-build/linking.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^inlined\sfs\sand\ssidebar\sconsumers\sshare\sone\sLockContentionError\sidentity$']
+expect_message = 'is claimed by both'
+
+[[control]]
+id = 'tui-build-shared-names-are-package-relative'
+guards = 'a shared module name is derived from its package name and package-relative path, never the absolute checkout path'
+file = 'src/tui-build/build-tui.ts'
+old = 'return `package:${name}/${portable(path)}`'
+new = 'return `package:${name}/${source}`'
+test_file = 'test/tui-build/reproducible.test.ts'
+runner = "command"
+command = ["bun", "test", "test/tui-build/reproducible.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^builds\sof\sone\ssource\sgraph\sfrom\stwo\scheckout\sdirectories\semit\sbyte-identical\strees$']
+expect_message = '/expect\(\[\.\.\.b\.keys\(\)\]\)\.toEqual\(\[\.\.\.a\.keys\(\)\]\)/'
+
+# --- dump ---
+
+[[control]]
+id = 'dump-counter-is-process-wide'
+guards = 'the dump sequence counter is shared by every dumper in the process, so two dumpers never pick the same name in one millisecond'
+edits = [
+  { file = 'src/dump/index.ts', old = "  function remember(key: string, text: string): void {", new = "  let dumperCounter = 0\n  function remember(key: string, text: string): void {" },
+  { file = 'src/dump/index.ts', old = "const counter = ++processDumpCounter", new = "const counter = ++dumperCounter" },
+]
+test_file = 'test/dump/dump.test.ts'
+runner = "command"
+command = ["bun", "test", "test/dump/dump.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^request\sdumps\stwo\sdumpers\sin\sone\sprocess\snever\scollide\sin\sthe\ssame\smillisecond$']
+expect_message = '/expect\(received\)\.toBeDefined\(\)\s+Received: undefined/'
+
+[[control]]
+id = 'dump-sweep-evicts-oldest-first'
+guards = 'the dump byte cap evicts whole dumps oldest first'
+file = 'src/dump/index.ts'
+old = 'left.newest - right.newest || leftName.localeCompare(rightName)'
+new = 'right.newest - left.newest || leftName.localeCompare(rightName)'
+test_file = 'test/dump/dump.test.ts'
+runner = "command"
+command = ["bun", "test", "test/dump/dump.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^dump\sdirectory\sbyte\scap\senforces\sthe\scap\sin\sa\sconfigured\scustom\sdump\sdirectory$']
+expect_message = '/\+\s+"2026-07-17T12-00-00-000Z-4242-000001-session-http\.body\.json"/'
+
+[[control]]
+id = 'dump-sweep-stops-under-the-cap'
+guards = 'the dump sweep stops evicting once the directory is under its cap'
+file = 'src/dump/index.ts'
+old = 'if (total <= maxBytes) break'
+new = 'if (total < 0) break'
+test_file = 'test/dump/dump.test.ts'
+runner = "command"
+command = ["bun", "test", "test/dump/dump.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^dump\sdirectory\sbyte\scap\sevicts\scomplete\sdump\sartifact\sgroups\sinstead\sof\sorphaning\srequest\spairs$']
+expect_message = '/\+\s+"removed": 4/'
+
+# --- scan guards ---
+
+[[control]]
+id = 'check-local-deps-rejects-outside-file-dependency'
+guards = 'the local dependency checker fails on a file: dependency that resolves outside the repository'
+file = 'scripts/check-local-deps.mjs'
+old = '  if (outsideRoot(resolved)) {'
+new = '  if (false) {'
+test_file = 'test/tooling/check-local-deps.test.ts'
+runner = "command"
+command = ["bun", "test", "test/tooling/check-local-deps.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^local\sdependency\schecker\srejects\san\soutside\sfile\sdependency$']
+expect_message = '/expect\(result\.exitCode\)\.toBe\(1\)[\s\S]*Received: 0/'
+
+[[control]]
+id = 'check-installed-ranges-rejects-drift'
+guards = 'the installed-range checker fails when an installed version is outside its declared range'
+file = 'scripts/check-installed-ranges.mjs'
+old = '} else if (!Bun.semver.satisfies(version, range)) {'
+new = '} else if (false) {'
+test_file = 'test/tooling/check-sources.test.ts'
+runner = "command"
+command = ["bun", "test", "test/tooling/check-sources.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installed\srange\schecker\senumerates\sroot\sand\sworkspace\sglobs\sand\srejects\sdrift$']
+expect_message = '/expect\(drift\.exitCode\)\.toBe\(1\)[\s\S]*Received: 0/'
+
+[[control]]
+id = 'check-sources-counts-only-passed-tests'
+guards = 'the docs/sources.md gate counts a test only when it passed: a skipped, failed or errored case does not satisfy a row'
+file = 'scripts/check-sources.mjs'
+old = "if (/<(?:skipped|failure|error)\\b/.test(match[2] ?? '')) continue"
+new = 'void 0'
+test_file = 'test/tooling/check-sources.test.ts'
+runner = "command"
+command = ["bun", "test", "test/tooling/check-sources.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^source\schecker\sexcludes\sskipped,\sfailed\sand\serrored\ssynthetic\scases$']
+expect_message = '/expect\(result\.exitCode\)\.toBe\(1\)[\s\S]*Received: 0/'
+
+[[control]]
+id = 'check-sources-rejects-empty-table'
+guards = 'the docs/sources.md gate fails when it parses no test cells at all, instead of passing vacuously'
+file = 'scripts/check-sources.mjs'
+old = 'if (cells.length === 0 || unmatched.length > 0) {'
+new = 'if (unmatched.length > 0) {'
+test_file = 'test/tooling/check-sources.test.ts'
+runner = "command"
+command = ["bun", "test", "test/tooling/check-sources.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^source\schecker\srejects\sempty\stables\sand\sunmatched\scells$']
+expect_message = '/expect\(empty\.exitCode\)\.toBe\(1\)[\s\S]*Received: 0/'

@@ -394,6 +394,31 @@ describe('ClaustrumEnrollmentManager', () => {
     expect(calls).toBe(0)
   })
 
+  // open(..., 0o600) is masked by the umask, so only the chmod before the
+  // rename keeps the request secret's file owner read-write. A umask that
+  // strips the owner's write bit shows whether that chmod ran.
+  test('persists the enrollment state 0600 despite a umask that strips owner write', async () => {
+    const paths = await fixture()
+    let proposedMode: number | undefined
+    const instance = manager(
+      paths,
+      client({
+        enrollPropose: async () => {
+          proposedMode = (await stat(paths.statePath)).mode & 0o777
+          return { requestId: 'request-1' }
+        },
+      }),
+    )
+    const previous = process.umask(0o277)
+    try {
+      await instance.reconcile()
+    } finally {
+      process.umask(previous)
+    }
+    expect(proposedMode).toBe(0o600)
+    expect((await stat(paths.statePath)).mode & 0o777).toBe(0o600)
+  })
+
   test('refuses to persist a request secret below an unsafe writable ancestor', async () => {
     const paths = await fixture()
     const unsafe = join(dirname(paths.tokenPath), 'unsafe')

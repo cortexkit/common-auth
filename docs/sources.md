@@ -59,6 +59,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | fs | Atomic writer defaults to pretty JSON with newline and private mode | reference/openai-auth/packages/core/src/atomic-write.ts | atomic writer defaults to pretty JSON with newline and private mode |
 | fs | Atomic writer cleans staging after write failure | reference/antigravity-auth/packages/core/src/atomic-write.ts | atomic writer cleans staging after write failure |
 | fs | Atomic writer cleans staging after rename failure | reference/antigravity-auth/packages/core/src/atomic-write.ts | atomic writer cleans staging after rename failure |
+| fs | Atomic writer stages each write under a fresh random name, never a fixed or pid-based one | new (neither copy) | atomic writer stages each write under a fresh unpredictable name |
 | logger | Scrubs embedded eyJabc in place, preserving surrounding message text | reference/openai-auth/packages/core/src/logger.ts | scrubs embedded eyJabc in place while preserving surrounding message text |
 | logger | Case-insensitive full-key redaction plus normalized apikey substring and secret/password/token suffix rules, preserving token counts | reference/openai-auth/packages/core/src/logger.ts | redacts the full case-insensitive key set and normalized secret key families |
 | logger | Base leaves plugin identity keys visible; extraSecretKeys receives normalized keys and opts in to redaction | new (neither copy) | base redaction leaves plugin identity keys visible and extras receive normalized keys |
@@ -908,6 +909,7 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | claustrum | The one-shot token is written before pending state is replaced | anthropic-auth/packages/core/src/claustrum-enrollment.ts | writes the one-shot token before replacing pending metadata |
 | claustrum | An existing token suppresses every wire call | anthropic-auth/packages/core/src/claustrum-enrollment.ts | an existing token suppresses all wire calls and scrubs interrupted pending state |
 | claustrum | A group-readable enrollment file fails closed | anthropic-auth/packages/core/src/claustrum-enrollment.ts | fails closed on an owner-readable enrollment file with group permissions |
+| claustrum | The enrollment state is chmodded 0600 before its rename, whatever the umask | new (neither copy) | persists the enrollment state 0600 despite a umask that strips owner write |
 | claustrum | A writable ancestor refuses the secret write | anthropic-auth/packages/core/src/claustrum-enrollment.ts | refuses to persist a request secret below an unsafe writable ancestor |
 | claustrum | A symlinked state file is refused before any wire call | anthropic-auth/packages/core/src/claustrum-enrollment.ts | refuses a symlinked enrollment state before any wire call |
 | claustrum | Concurrent ceremonies send one proposal | anthropic-auth/packages/core/src/claustrum-enrollment.ts | serializes concurrent process instances so only one proposal is sent |
