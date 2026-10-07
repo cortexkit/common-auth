@@ -408,16 +408,69 @@ expect_message = '/Expected: 3\s+Received: 1/'
 id = 'store-attributed-transition-is-epoch-fenced'
 guards = 'an attributed disable or enable issued for a credential the row no longer holds is refused and writes nothing'
 file = 'src/store/rows.ts'
-old = '''
-              (row.credentialEpoch ?? 1) !== fence.credentialEpoch ||
-              row.identity !== fence.identity'''
-new = '              false'
+old = '            assertRowAttribution(operation, id, row, fence)'
+new = '            void fence'
 test_file = 'test/store/row-transition.test.ts'
 runner = "command"
 command = ["bun", "test", "test/store/row-transition.test.ts", "-t", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^an\sattributed\sdisable\sfor\sa\scredential\sthe\srow\sno\slonger\sholds\sis\srefused\sand\swrites\snothing$']
 expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-attributed-replace-is-fenced'
+guards = 'replace checks the locked row attribution before any hook, stamp, state write or config write, so a late replacement cannot overwrite a successor'
+file = 'src/store/rows.ts'
+old = "            assertRowAttribution('replace', id, tx.row(id), options.attribution)"
+new = '            void options.attribution // NON-VACUITY BREAK'
+test_file = 'test/store/row-write-attribution.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/row-write-attribution.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\sattributed\sreplace\swith\sa\sstale\sepoch\srefuses\sbefore\shooks\sand\swrites\snothing$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-attributed-rotate-is-fenced'
+guards = 'rotate checks the locked row attribution before any stamp or file write, so a late rotation cannot overwrite a successor'
+file = 'src/store/rows.ts'
+old = "            assertRowAttribution('rotate', id, tx.row(id), options.attribution)"
+new = '            void options.attribution // NON-VACUITY BREAK'
+test_file = 'test/store/row-write-attribution.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/row-write-attribution.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\sattributed\srotate\swith\sa\sstale\sepoch\srefuses\sbefore\shooks\sand\swrites\snothing$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-attribution-compares-exact-identity'
+guards = 'the shared transition and credential-write fence compares identity exactly: an absent identity never matches a row that records one'
+file = 'src/store/rows.ts'
+old = '    row.identity !== fence.identity'
+new = '    false // NON-VACUITY BREAK'
+test_file = 'test/store/row-write-attribution.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/row-write-attribution.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\sattributed\sreplace\srefuses\sabsent\sagainst\srecorded\sand\swrites\snothing$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-replacement-hook-receives-previous-identity'
+guards = 'onReplace receives the identity recorded on the locked row before replacement, separately from the incoming identity'
+file = 'src/store/provider-state.ts'
+old = '''
+          ...(row.identity !== undefined
+            ? { previousIdentity: row.identity }
+            : {}),'''
+new = '          // NON-VACUITY BREAK: omit the previously recorded identity.'
+test_file = 'test/store/replacement-identity.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/replacement-identity.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^onReplace\sreceives\sthe\sprevious\srecorded\sidentity\sbeside\sthe\sincoming\sidentity$']
+expect_message = '/-\s+"previousIdentity": "acct-a"/'
 
 [[control]]
 id = 'store-refresh-detects-identity-contradiction'

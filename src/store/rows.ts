@@ -84,6 +84,20 @@ export interface RowOperationOptions {
   extraLocks?: readonly PoolLockSpec[]
 }
 
+/** Options of `replace` and `rotate`; an unfenced call keeps its usual behavior. */
+export interface RowWriteOptions extends RowOperationOptions {
+  /**
+   * The credential epoch and recorded identity the caller's evidence for the
+   * write was obtained under (as `recordQuota`'s attribution: an identity left
+   * out means the row had none). Compared under the row and store locks before
+   * any write or replacement hook, including completion of an interrupted
+   * replace. The call is refused (`attribution`, retryable, nothing written)
+   * once the row holds another epoch or identity, so a late write never
+   * overwrites the credential of its successor.
+   */
+  attribution?: Attribution
+}
+
 /**
  * Options of `disable`, `enable` and `remove`. The provider-wide lock guards
  * changes to the recorded identity a row lock is named by; none of these
@@ -439,6 +453,47 @@ function requireUsableRow(
   return row
 }
 
+function validateAttribution(
+  operation: PoolOperationError['operation'],
+  id: string,
+  fence: Attribution | undefined,
+): void {
+  if (
+    fence !== undefined &&
+    !isCredentialEpoch(isRecord(fence) ? fence.credentialEpoch : undefined)
+  )
+    throw refusal(
+      operation,
+      id,
+      'invalid-input',
+      'the attribution must name a credential epoch that is a positive safe integer',
+    )
+}
+
+/** Exact recorded identity, including absence, is part of a credential fence. */
+function assertRowAttribution(
+  operation: PoolOperationError['operation'],
+  id: string,
+  row: PoolRow | undefined,
+  fence: Attribution,
+): void {
+  if (!row) throw unknownRow(operation, id)
+  // An invalid entry has no epoch to compare the fence with.
+  if (row.invalid)
+    throw refusal(operation, id, 'invalid-row', `row ${id} failed validation`)
+  if (
+    (row.credentialEpoch ?? 1) !== fence.credentialEpoch ||
+    row.identity !== fence.identity
+  )
+    throw refusal(
+      operation,
+      id,
+      'attribution',
+      `the ${operation} of ${id} was issued for a credential or account the row no longer holds`,
+      true,
+    )
+}
+
 /** The row is recorded for another account than the one given. */
 function identityMismatch(
   operation: 'add' | 'rotate' | 'recordIdentity',
@@ -664,7 +719,7 @@ export async function replaceRow(
   id: string,
   credential: PoolCredential,
   input: CredentialWriteInput = {},
-  options: RowOperationOptions = {},
+  options: RowWriteOptions = {},
 ): Promise<{
   id: string
   credential: StoredCredential
@@ -679,6 +734,7 @@ export async function replaceRow(
     options.onFailure,
     async (locks, progress) => {
       checkInput('replace', id, credential)
+      validateAttribution('replace', id, options.attribution)
       const incoming =
         input.providerState === undefined
           ? undefined
@@ -699,6 +755,13 @@ export async function replaceRow(
         progress,
         { operation: 'replace', rowId: id },
         async (tx) => {
+          if (options.attribution !== undefined) {
+            // Readers project a torn replacement's epoch and identity. Check
+            // that row before completing it on disk: stale work must not even
+            // repair the successor it was never issued for.
+            assertRowAttribution('replace', id, tx.row(id), options.attribution)
+            await tx.completeTorn()
+          }
           const row = requireUsableRow('replace', id, tx.row(id), credential)
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged('replace', id)
@@ -752,6 +815,7 @@ export async function replaceRow(
           await tx.commitConfig()
           return { id, credential: stored, credentialEpoch }
         },
+        { completeTorn: options.attribution === undefined },
       )
     },
   )
@@ -764,7 +828,7 @@ export async function rotateRow(
   id: string,
   credential: RotateCredential,
   input: CredentialWriteInput = {},
-  options: RowOperationOptions = {},
+  options: RowWriteOptions = {},
 ): Promise<{ id: string; credential: StoredCredential }> {
   assertNotInsideHook('rotate')
   const { ctx } = rt
@@ -775,6 +839,7 @@ export async function rotateRow(
     options.onFailure,
     async (locks, progress) => {
       checkInput('rotate', id, credential)
+      validateAttribution('rotate', id, options.attribution)
       const incoming =
         input.providerState === undefined
           ? undefined
@@ -795,6 +860,10 @@ export async function rotateRow(
         progress,
         { operation: 'rotate', rowId: id },
         async (tx) => {
+          if (options.attribution !== undefined) {
+            assertRowAttribution('rotate', id, tx.row(id), options.attribution)
+            await tx.completeTorn()
+          }
           const row = requireUsableRow('rotate', id, tx.row(id), credential)
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged('rotate', id)
@@ -843,6 +912,7 @@ export async function rotateRow(
           if (configChanged) await tx.commitConfig()
           return { id, credential: stored }
         },
+        { completeTorn: options.attribution === undefined },
       )
     },
   )
@@ -924,16 +994,7 @@ async function transitionRow(
     id,
     options.onFailure,
     async (locks, progress) => {
-      if (
-        fence !== undefined &&
-        !isCredentialEpoch(isRecord(fence) ? fence.credentialEpoch : undefined)
-      )
-        throw refusal(
-          operation,
-          id,
-          'invalid-input',
-          'the attribution must name a credential epoch that is a positive safe integer',
-        )
+      validateAttribution(operation, id, fence)
       if (mutator !== undefined) {
         if (typeof mutator !== 'function')
           throw refusal(
@@ -975,27 +1036,8 @@ async function transitionRow(
           if (!row || !tx.rosterRow(id)) throw unknownRow(operation, id)
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged(operation, id)
-          if (fence !== undefined) {
-            // An invalid entry has no epoch to compare the fence with.
-            if (row.invalid)
-              throw refusal(
-                operation,
-                id,
-                'invalid-row',
-                `row ${id} failed validation`,
-              )
-            if (
-              (row.credentialEpoch ?? 1) !== fence.credentialEpoch ||
-              row.identity !== fence.identity
-            )
-              throw refusal(
-                operation,
-                id,
-                'attribution',
-                `the ${operation} of ${id} was issued for a credential or account the row no longer holds`,
-                true,
-              )
-          }
+          if (fence !== undefined)
+            assertRowAttribution(operation, id, row, fence)
           if (
             flag.enabled &&
             row.disabledReason?.startsWith(IDENTITY_CONTRADICTED_REASON_PREFIX)

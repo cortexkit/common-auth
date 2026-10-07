@@ -50,6 +50,7 @@ export type {
   RowToggleOptions,
   RowTransitionOptions,
   RowTransitionResult,
+  RowWriteOptions,
 } from './rows.js'
 export type { PullReason } from './runtime.js'
 export type {

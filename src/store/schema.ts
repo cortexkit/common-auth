@@ -61,14 +61,16 @@ export interface QuotaCodec {
 }
 
 /**
- * What `ProviderStateCodec.onReplace` is told about a replacement: the row,
- * the credential epoch the new credential starts, the identity the replace
- * records (absent: none), and the provider state the caller handed to
- * `replace`, if any.
+ * What `ProviderStateCodec.onReplace` is told about a replacement: the row id,
+ * the credential epoch the new credential starts, `previousIdentity` (the
+ * identity the locked row recorded before the replace), `identity` (the
+ * identity the replace records), and the provider state the caller handed to
+ * `replace`, if any. Each identity is absent when none was recorded.
  */
 export interface ProviderStateReplacement {
   id: string
   credentialEpoch: number
+  previousIdentity?: string
   identity?: string
   incoming?: unknown
 }

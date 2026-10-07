@@ -129,6 +129,9 @@ export function replacementProviderState(
         {
           id: row.id,
           credentialEpoch,
+          ...(row.identity !== undefined
+            ? { previousIdentity: row.identity }
+            : {}),
           ...(identity !== undefined ? { identity } : {}),
           ...(incoming !== undefined
             ? { incoming: structuredClone(incoming) }

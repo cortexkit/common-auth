@@ -507,13 +507,19 @@ test('replace runs onReplace with the previous provider state and stores what it
       {
         id: 'a',
         credentialEpoch: 2,
+        previousIdentity: 'acct-a',
         identity: 'acct-a',
         incoming: { project: 'P-given' },
       },
     ],
     [
       { fingerprint: 'F1', project: 'P-new' },
-      { id: 'a', credentialEpoch: 3, identity: 'acct-gone' },
+      {
+        id: 'a',
+        credentialEpoch: 3,
+        previousIdentity: 'acct-a',
+        identity: 'acct-gone',
+      },
     ],
   ])
 })

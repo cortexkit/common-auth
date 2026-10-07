@@ -41,6 +41,7 @@ import {
   type RowToggleOptions,
   type RowTransitionOptions,
   type RowTransitionResult,
+  type RowWriteOptions,
   recordRowIdentity,
   removeRow,
   reorderRows,
@@ -152,12 +153,14 @@ export interface PoolStore {
    * Gives a row a new credential and a new credential epoch. Since 0.6.0 the
    * row's provider state is whatever `ProviderStateCodec.onReplace` returns;
    * without that hook it is `input.providerState`, else cleared.
+   * Optional `attribution` fences the write on the prior credential under the
+   * locks, before any write or replacement hook; see `RowWriteOptions`.
    */
   replace(
     id: string,
     credential: PoolCredential,
     input?: CredentialWriteInput,
-    options?: RowOperationOptions,
+    options?: RowWriteOptions,
   ): Promise<{
     id: string
     credential: StoredCredential
@@ -168,12 +171,13 @@ export interface PoolStore {
    * endpoint. Since 0.4.1 an API key may leave out `baseURL` and `authHeader`
    * to keep the row's, and one that gives another is refused
    * (`endpoint-mismatch`) before writing: that is a `replace`.
+   * Takes the same optional attribution fence as `replace` (`RowWriteOptions`).
    */
   rotate(
     id: string,
     credential: RotateCredential,
     input?: CredentialWriteInput,
-    options?: RowOperationOptions,
+    options?: RowWriteOptions,
   ): Promise<{ id: string; credential: StoredCredential }>
   /**
    * Changes a row's provider state without touching its credential (since
