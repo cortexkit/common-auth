@@ -442,10 +442,13 @@ export interface OpenCode2AuthInstallation<Q, A = unknown> {
    * handle.
    */
   accountFor(sessionID: string, kind: RequestKind): string | undefined
-  /** Drops every attempt of a session. Session deletion does this itself. */
+  /**
+   * Drops every attempt and revokes in-flight auth selections of a session.
+   * Session deletion does this itself. Later requests may reuse the session id.
+   */
   forgetSession(sessionID: string): void
   /** Number of attempts held. */
   readonly size: number
-  /** Removes every hook and stops listening for session deletion. */
+  /** Removes every hook, revokes in-flight auth and stops listening for session deletion. */
   dispose(): Promise<void>
 }

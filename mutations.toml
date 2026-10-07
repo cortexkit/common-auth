@@ -979,9 +979,9 @@ id = 'opencode2-request-without-account-is-refused'
 guards = 'a model request the adapter chose no account for is refused locally, never sent with the host credential'
 file = 'src/opencode2/install.ts'
 old = '''
-        if (rec.accountId === undefined) throw noAccount(rec.scope)
-        applyHeaderEdits(draft.headers, {'''
-new = '        applyHeaderEdits(draft.headers, {'
+          if (rec.accountId === undefined) throw noAccount(rec.scope)
+          applyHeaderEdits(draft.headers, {'''
+new = '          applyHeaderEdits(draft.headers, {'
 test_file = 'test/opencode2/install.test.ts'
 runner = "command"
 command = ["bun", "test", "test/opencode2/install.test.ts", "-t", "{test}"]
@@ -1027,6 +1027,180 @@ command = ["bun", "test", "test/opencode2/attempts.test.ts", "-t", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^installOpenCode2Auth\sWebSocket\sframe\srewrite\sa\srewrite\sreturning\sundefined\ssends\sthe\sframe\sunchanged$']
 expect_message = 'Received: ""'
+
+[[control]]
+id = 'opencode2-selection-checks-after-choice'
+guards = 'a forgotten selection refuses immediately after chooseAccount, before starting accountHeaders'
+file = 'src/opencode2/install.ts'
+old = '''    const accountId = await adapter.chooseAccount(input)
+    assertActive()'''
+new = '''    const accountId = await adapter.chooseAccount(input)
+    // NON-VACUITY BREAK: omit the post-choice revocation check.'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\safter\schooseAccount\srefuses\smodel\.request\swithout\spublishing\sor\spreparing\sauth$']
+expect_message = '/expect\(headerCalls\)\.toBe[\s\S]*Expected: 0\nReceived: 1/'
+
+[[control]]
+id = 'opencode2-selection-checks-after-headers'
+guards = 'a forgotten selection refuses after accountHeaders, before remembering an attempt or emitting select'
+file = 'src/opencode2/install.ts'
+old = '''      const result = await adapter.accountHeaders({ ...scope, accountId })
+      assertActive()'''
+new = '''      const result = await adapter.accountHeaders({ ...scope, accountId })
+      // NON-VACUITY BREAK: omit the post-headers revocation check.'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\safter\saccountHeaders\srefuses\smodel\.request\swithout\spublishing\sor\spreparing\sauth$']
+expect_message = '/expect\(installation\.size\)\.toBe\(0\)[\s\S]*Expected: 0\nReceived: 1/'
+
+[[control]]
+id = 'opencode2-dispose-revokes-in-flight'
+guards = 'dispose revokes selections not yet remembered as attempts, before removing hooks'
+file = 'src/opencode2/install.ts'
+old = '      for (const sessionID of inFlight.keys()) revokeSelections(sessionID)'
+new = '      // NON-VACUITY BREAK: leave active selections alive on dispose.'
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sdispose\safter\schooseAccount\srefuses\smodel\.request\swithout\spublishing\sor\spreparing\sauth$']
+expect_message = '/expect\(headerCalls\)\.toBe[\s\S]*Expected: 0\nReceived: 1/'
+
+[[control]]
+id = 'opencode2-model-handoff-checks-revocation'
+guards = 'model.request rechecks revocation after awaiting selection before publishing account headers'
+file = 'src/opencode2/install.ts'
+old = '''          assertActive()
+          if (rec.accountId === undefined) throw noAccount(rec.scope)'''
+new = '''          // NON-VACUITY BREAK: publish the revoked model selection.
+          if (rec.accountId === undefined) throw noAccount(rec.scope)'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\sat\sthe\sselection\shandoff\srefuses\smodel\.request\sbefore\spublishing\sauth$']
+expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nReceived value: undefined/'
+
+[[control]]
+id = 'opencode2-http-handoff-checks-revocation'
+guards = 'http.request rechecks revocation after awaiting its attempt binding before preparing an authenticated request'
+file = 'src/opencode2/install.ts'
+old = '''            'http',
+            mark,
+            assertActive,
+          )
+          assertActive()'''
+new = '''            'http',
+            mark,
+            assertActive,
+          )
+          // NON-VACUITY BREAK: prepare the revoked HTTP selection.'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\sat\sthe\sselection\shandoff\srefuses\shttp\.request\sbefore\spublishing\sauth$']
+expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nReceived value: undefined/'
+
+[[control]]
+id = 'opencode2-http-rewrite-checks-revocation'
+guards = 'http.request rechecks revocation after an asynchronous adapter rewrite before preparing auth'
+file = 'src/opencode2/install.ts'
+old = '''                })) ?? request
+              assertActive()'''
+new = '''                })) ?? request
+              // NON-VACUITY BREAK: prepare auth after a revoked rewrite.'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\sduring\san\sHTTP\srewrite\srefuses\sthe\sprepared\sauthenticated\srequest$']
+expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nReceived value: undefined/'
+
+[[control]]
+id = 'opencode2-ws-handoff-checks-revocation'
+guards = 'the WebSocket handshake rechecks revocation after awaiting its attempt binding before publishing auth'
+file = 'src/opencode2/install.ts'
+old = '''            'ws',
+            mark,
+            assertActive,
+          )
+          assertActive()'''
+new = '''            'ws',
+            mark,
+            assertActive,
+          )
+          // NON-VACUITY BREAK: publish the revoked WebSocket selection.'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\sat\sthe\sselection\shandoff\srefuses\sexperimental\.ws\.handshake\sbefore\spublishing\sauth$']
+expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nReceived value: undefined/'
+
+[[control]]
+id = 'opencode2-retry-end-checks-revocation'
+guards = 'retry rechecks revocation after waiting for onAttemptEnd, before recording or announcing a retry'
+file = 'src/opencode2/install.ts'
+old = '''              await rec.ended
+              assertActive()'''
+new = '''              await rec.ended
+              // NON-VACUITY BREAK: retry after the forgotten attempt ends.'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\swhile\sretry\sawaits\sattempt\send\srefuses\slocally\swithout\sremembering\sa\sretry$']
+expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nReceived value: \{/'
+
+[[control]]
+id = 'opencode2-retry-limit-checks-revocation'
+guards = 'retry rechecks revocation after waiting for limit listeners, before recording or announcing a retry'
+file = 'src/opencode2/install.ts'
+old = '''              await rec.limit.delivered
+              assertActive()'''
+new = '''              await rec.limit.delivered
+              // NON-VACUITY BREAK: reroute after the session was forgotten.'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\swhile\sretry\sawaits\slimit\slistener\srefuses\slocally\swithout\sremembering\sa\sretry$']
+expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nReceived value: \{/'
+
+[[control]]
+id = 'opencode2-forget-revokes-in-flight'
+guards = 'forgetSession revokes selections still inside adapter awaits, not only remembered attempts'
+file = 'src/opencode2/install.ts'
+old = '''  const forgetSession = (sessionID: string) => {
+    revokeSelections(sessionID)'''
+new = '''  const forgetSession = (sessionID: string) => {
+    // NON-VACUITY BREAK: forget only attempts already remembered.'''
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sforget\safter\schooseAccount\srefuses\smodel\.request\swithout\spublishing\sor\spreparing\sauth$']
+expect_message = '/expect\(headerCalls\)\.toBe[\s\S]*Expected: 0\nReceived: 1/'
+
+[[control]]
+id = 'opencode2-selection-tracking-does-not-grow'
+guards = 'settled selections release the private session map even without forgetSession; no tombstones accumulate'
+file = 'src/opencode2/install.ts'
+old = '''      if (selections.size === 0 && inFlight.get(scope.sessionID) === selections)
+        inFlight.delete(scope.sessionID)'''
+new = '      // NON-VACUITY BREAK: retain empty sets after selection settles.'
+test_file = 'test/opencode2/revocation.test.ts'
+runner = "command"
+command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^installOpenCode2Auth\srevocation\sin-flight\stracking\sdrops\sforgotten\ssessions\simmediately\sand\sall\stokens\swhen\sselections\ssettle$']
+expect_message = '/expect\(tracking\?\.size\)\.toBe\(0\)[\s\S]*Expected: 0\nReceived: 1/'
 
 # --- sidebar-file ---
 

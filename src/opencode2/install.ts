@@ -233,6 +233,9 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     Set<(payload: never) => void | Promise<void>>
   >()
   let seq = 0
+  let disposed = false
+  /** Only active hook calls are held; forgetting never leaves a session tombstone. */
+  const inFlight = new Map<string, Set<object>>()
 
   const warn = (message: string, data?: unknown) => {
     try {
@@ -317,13 +320,54 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       ? undefined
       : { ...rec.scope, accountId: rec.accountId }
 
-  const noAccount = (scope: RequestScope) =>
+  const noAccount = (scope: RequestScope, message?: string) =>
     new OpenCode2AuthError({
       kind: 'no-account',
       providerID,
       sessionID: scope.sessionID,
       requestKind: scope.kind,
+      ...(message === undefined ? {} : { message }),
     })
+
+  const revokeSelections = (sessionID: string) => {
+    inFlight.get(sessionID)?.clear()
+    inFlight.delete(sessionID)
+  }
+
+  /**
+   * Owns selection through its transport handoff, not just the adapter calls.
+   * Deleting a session's set revokes its old calls without poisoning reuse of
+   * that id. Each await must recheck before calling the adapter or publishing.
+   */
+  const withSelection = async <T>(
+    scope: RequestScope,
+    run: (assertActive: () => void) => Promise<T>,
+  ): Promise<T> => {
+    const revoked = () =>
+      noAccount(
+        scope,
+        `${providerID} ${scope.kind} request has no account: its auth selection was revoked by session forgetting or installation disposal`,
+      )
+    if (disposed) throw revoked()
+    let selections = inFlight.get(scope.sessionID)
+    if (!selections) {
+      selections = new Set()
+      inFlight.set(scope.sessionID, selections)
+    }
+    const token = {}
+    selections.add(token)
+    const assertActive = () => {
+      if (!selections.has(token)) throw revoked()
+    }
+    try {
+      return await run(assertActive)
+    } finally {
+      selections.delete(token)
+      // An old call may settle after a new call has reused the session id.
+      if (selections.size === 0 && inFlight.get(scope.sessionID) === selections)
+        inFlight.delete(scope.sessionID)
+    }
+  }
 
   const guard = (scope: RequestScope, headers: Iterable<[string, string]>) => {
     for (const [name, value] of headers) {
@@ -363,6 +407,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   const select = async (
     scope: RequestScope,
     hook: SelectingHook,
+    assertActive: () => void,
     transport?: Transport,
   ): Promise<AttemptRecord<A>> => {
     const key = keyOf(scope.sessionID, scope.kind)
@@ -378,10 +423,12 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         : { rerouteFrom: retried.rerouteFrom }),
     }
     const accountId = await adapter.chooseAccount(input)
+    assertActive()
     let headers: HeaderEdits = {}
     let data: A | undefined
     if (accountId !== undefined) {
       const result = await adapter.accountHeaders({ ...scope, accountId })
+      assertActive()
       if (isHeadersResult(result)) {
         headers = result.headers
         data = result.attempt
@@ -436,6 +483,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     hook: SelectingHook,
     transport: Transport,
     mark: string | undefined,
+    assertActive: () => void,
   ): Promise<AttemptRecord<A>> => {
     const key = keyOf(scope.sessionID, scope.kind)
     let rec = mark === undefined ? undefined : attempts.get(mark)
@@ -456,7 +504,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       }
     }
     if (!rec || rec.transport !== undefined || rec.ended)
-      rec = await select(scope, hook, transport)
+      rec = await select(scope, hook, assertActive, transport)
     else {
       rec.transport = transport
       if (rec.attempt) rec.attempt.transport = transport
@@ -597,52 +645,67 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   registrations.push(
     await ctx.session.hook(
       'model.request',
-      async (draft) => {
-        const rec = await select(scopeOf(draft), 'model.request')
-        if (rec.accountId === undefined) throw noAccount(rec.scope)
-        applyHeaderEdits(draft.headers, {
-          ...rec.headers,
-          [ATTEMPT_HEADER]: rec.id,
-        })
-      },
+      (draft) =>
+        withSelection(scopeOf(draft), async (assertActive) => {
+          const rec = await select(
+            scopeOf(draft),
+            'model.request',
+            assertActive,
+          )
+          assertActive()
+          if (rec.accountId === undefined) throw noAccount(rec.scope)
+          applyHeaderEdits(draft.headers, {
+            ...rec.headers,
+            [ATTEMPT_HEADER]: rec.id,
+          })
+        }),
       scoped,
     ),
   )
   registrations.push(
     await ctx.session.hook(
       'http.request',
-      async (draft) => {
-        const mark = draft.request.headers.get(ATTEMPT_HEADER) ?? undefined
-        const rec = await bind(scopeOf(draft), 'http.request', 'http', mark)
-        const account = accountOf(rec)
-        const attempt = rec.attempt
-        if (!account || !attempt) throw noAccount(rec.scope)
-        await failing(rec, async () => {
-          let request = draft.request
-          if (adapter.rewriteRequest) {
-            if (mark !== undefined) {
-              // The mark is the installer's own; the adapter's rewrite never
-              // sees it.
-              const unmarked = new Headers(request.headers)
-              unmarked.delete(ATTEMPT_HEADER)
-              request = new Request(request, { headers: unmarked })
+      (draft) =>
+        withSelection(scopeOf(draft), async (assertActive) => {
+          const mark = draft.request.headers.get(ATTEMPT_HEADER) ?? undefined
+          const rec = await bind(
+            scopeOf(draft),
+            'http.request',
+            'http',
+            mark,
+            assertActive,
+          )
+          assertActive()
+          const account = accountOf(rec)
+          const attempt = rec.attempt
+          if (!account || !attempt) throw noAccount(rec.scope)
+          await failing(rec, async () => {
+            let request = draft.request
+            if (adapter.rewriteRequest) {
+              if (mark !== undefined) {
+                // The mark is the installer's own; the adapter's rewrite never
+                // sees it.
+                const unmarked = new Headers(request.headers)
+                unmarked.delete(ATTEMPT_HEADER)
+                request = new Request(request, { headers: unmarked })
+              }
+              request =
+                (await adapter.rewriteRequest({
+                  ...account,
+                  request,
+                  attempt,
+                })) ?? request
+              assertActive()
             }
-            request =
-              (await adapter.rewriteRequest({
-                ...account,
-                request,
-                attempt,
-              })) ?? request
-          }
-          const headers = new Headers(request.headers)
-          headers.delete(ATTEMPT_HEADER)
-          applyHeaderEditsTo(headers, rec.headers)
-          guard(rec.scope, headers.entries())
-          const final = new Request(request, { headers })
-          byRequest.set(final, rec)
-          draft.request = final
-        })
-      },
+            const headers = new Headers(request.headers)
+            headers.delete(ATTEMPT_HEADER)
+            applyHeaderEditsTo(headers, rec.headers)
+            guard(rec.scope, headers.entries())
+            const final = new Request(request, { headers })
+            byRequest.set(final, rec)
+            draft.request = final
+          })
+        }),
       scoped,
     ),
   )
@@ -736,33 +799,36 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   registrations.push(
     await ctx.session.hook(
       'experimental.ws.handshake',
-      async (draft) => {
-        let mark: string | undefined
-        for (const name of Object.keys(draft.headers)) {
-          if (name.toLowerCase() !== ATTEMPT_HEADER) continue
-          mark ??= draft.headers[name]
-          delete draft.headers[name]
-        }
-        const rec = await bind(
-          scopeOf(draft),
-          'experimental.ws.handshake',
-          'ws',
-          mark,
-        )
-        const account = accountOf(rec)
-        const attempt = rec.attempt
-        if (!account || !attempt) throw noAccount(rec.scope)
-        await failing(rec, async () => {
-          applyHeaderEdits(draft.headers, rec.headers)
-          const url = adapter.rewriteHandshakeURL?.({
-            ...account,
-            url: draft.url,
-            attempt,
+      (draft) =>
+        withSelection(scopeOf(draft), async (assertActive) => {
+          let mark: string | undefined
+          for (const name of Object.keys(draft.headers)) {
+            if (name.toLowerCase() !== ATTEMPT_HEADER) continue
+            mark ??= draft.headers[name]
+            delete draft.headers[name]
+          }
+          const rec = await bind(
+            scopeOf(draft),
+            'experimental.ws.handshake',
+            'ws',
+            mark,
+            assertActive,
+          )
+          assertActive()
+          const account = accountOf(rec)
+          const attempt = rec.attempt
+          if (!account || !attempt) throw noAccount(rec.scope)
+          await failing(rec, async () => {
+            applyHeaderEdits(draft.headers, rec.headers)
+            const url = adapter.rewriteHandshakeURL?.({
+              ...account,
+              url: draft.url,
+              attempt,
+            })
+            if (url !== undefined) draft.url = url
+            guard(rec.scope, Object.entries(draft.headers))
           })
-          if (url !== undefined) draft.url = url
-          guard(rec.scope, Object.entries(draft.headers))
-        })
-      },
+        }),
       scoped,
     ),
   )
@@ -822,60 +888,71 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           return
         }
         const rec = picked
-        rec.judged = true
-        let decision: SessionRetryDecision = hostDecision
-        let reason: RetryReason
-        let rerouteFrom: PendingRetry['rerouteFrom']
-        const attempt = rec.attempt
-        if (rec.accountId === undefined || !attempt) {
-          decision = { retry: false }
-          reason = 'no-account'
-        } else if (rec.outputStarted) {
-          // The user has already seen part of this answer; a retry would
-          // send it again.
-          decision = { retry: false }
-          reason = 'output-started'
-        } else {
-          if (!rec.limit) {
-            const signal = adapter.limitFromError?.(draft.error, attempt)
-            if (signal) noteLimit(rec, signal, 'error')
-          }
-          // The next `chooseAccount` should see whatever the plugin learnt
-          // from how this attempt ended.
-          if (rec.ended) await rec.ended
-          if (rec.limit) {
-            await rec.limit.delivered
-            rec.rerouted = true
-            rerouteFrom = { accountId: rec.accountId, limit: rec.limit.signal }
-            // No delay: the next attempt goes to another account, and the
-            // host would otherwise wait out the refused account's backoff,
-            // or not retry at all for errors it deems final.
-            decision = { retry: true, delay: 0 }
-            reason = 'reroute'
+        await withSelection(rec.scope, async (assertActive) => {
+          rec.judged = true
+          let decision: SessionRetryDecision = hostDecision
+          let reason: RetryReason
+          let rerouteFrom: PendingRetry['rerouteFrom']
+          const attempt = rec.attempt
+          if (rec.accountId === undefined || !attempt) {
+            decision = { retry: false }
+            reason = 'no-account'
+          } else if (rec.outputStarted) {
+            // The user has already seen part of this answer; a retry would
+            // send it again.
+            decision = { retry: false }
+            reason = 'output-started'
           } else {
-            reason = 'host-decides'
+            if (!rec.limit) {
+              const signal = adapter.limitFromError?.(draft.error, attempt)
+              if (signal) noteLimit(rec, signal, 'error')
+            }
+            // The next `chooseAccount` should see whatever the plugin learnt
+            // from how this attempt ended.
+            if (rec.ended) {
+              await rec.ended
+              assertActive()
+            }
+            if (rec.limit) {
+              await rec.limit.delivered
+              assertActive()
+              rec.rerouted = true
+              rerouteFrom = {
+                accountId: rec.accountId,
+                limit: rec.limit.signal,
+              }
+              // No delay: the next attempt goes to another account, and the
+              // host would otherwise wait out the refused account's backoff,
+              // or not retry at all for errors it deems final.
+              decision = { retry: true, delay: 0 }
+              reason = 'reroute'
+            } else {
+              reason = 'host-decides'
+            }
           }
-        }
-        draft.decision = decision
-        // The host's retry runs `model.request` again for this attempt's
-        // session and kind; that next attempt, and no other attempt of the
-        // session, is told what this one ended with.
-        if (decision.retry && rec.accountId !== undefined) {
-          pendingRetries.set(rec.key, {
-            sessionID: rec.scope.sessionID,
-            accountId: rec.accountId,
-            ...(rerouteFrom === undefined ? {} : { rerouteFrom }),
+          draft.decision = decision
+          // The host's retry runs `model.request` again for this attempt's
+          // session and kind; that next attempt, and no other attempt of the
+          // session, is told what this one ended with.
+          if (decision.retry && rec.accountId !== undefined) {
+            pendingRetries.set(rec.key, {
+              sessionID: rec.scope.sessionID,
+              accountId: rec.accountId,
+              ...(rerouteFrom === undefined ? {} : { rerouteFrom }),
+            })
+          }
+          await emit('retry', {
+            sessionID: draft.sessionID,
+            ...(rec.accountId === undefined
+              ? {}
+              : { accountId: rec.accountId }),
+            kind: rec.scope.kind,
+            attempt: draft.attempt,
+            reason,
+            hostDecision,
+            decision,
+            ...(attempt === undefined ? {} : { handle: attempt }),
           })
-        }
-        await emit('retry', {
-          sessionID: draft.sessionID,
-          ...(rec.accountId === undefined ? {} : { accountId: rec.accountId }),
-          kind: rec.scope.kind,
-          attempt: draft.attempt,
-          reason,
-          hostDecision,
-          decision,
-          ...(attempt === undefined ? {} : { handle: attempt }),
         })
       },
       scoped,
@@ -883,6 +960,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   )
 
   const forgetSession = (sessionID: string) => {
+    revokeSelections(sessionID)
     for (const rec of [...attempts.values()]) {
       if (rec.scope.sessionID !== sessionID) continue
       abandon(rec, 'its session was forgotten')
@@ -912,7 +990,6 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     })()
   }
 
-  let disposed = false
   return {
     on(event, listener) {
       let set = listeners.get(event)
@@ -936,6 +1013,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     async dispose() {
       if (disposed) return
       disposed = true
+      for (const sessionID of inFlight.keys()) revokeSelections(sessionID)
       abort.abort()
       for (const rec of attempts.values())
         abandon(rec, 'the installation was disposed')
