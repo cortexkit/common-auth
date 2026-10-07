@@ -201,7 +201,7 @@ runner = "command"
 command = ["bun", "test", "test/fs/atomic-write.test.ts", "-t", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^atomic\swriter\srefuses\san\sexisting\sstage\sfile$']
-expect_message = "/ENOENT: no such file or directory, lstat '[^']*state\\.json\\.seeded\\.tmp'/"
+expect_message = "/ENOENT: no such file or directory, (lstat|statx) '[^']*state\\.json\\.seeded\\.tmp'/"
 
 [[control]]
 id = 'port-file-stages-under-random-name'
@@ -227,7 +227,7 @@ runner = "command"
 command = ["bun", "test", "test/rpc/staging-security.test.ts", "-t", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^port\sstaging\sprotects\scollision\sfile\sunder\sBun$']
-expect_message = "/ENOENT: no such file or directory, lstat '[^']*port-123\\.json\\.seeded\\.tmp'/"
+expect_message = "/ENOENT: no such file or directory, (lstat|statx) '[^']*port-123\\.json\\.seeded\\.tmp'/"
 
 [[control]]
 id = 'dump-response-stage-is-exclusive'
