@@ -833,36 +833,36 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | store | A removal stopped between its writes leaves no loadable provider state and a later add does not inherit it | new (neither copy) | a removal stopped between its writes leaves a provider state no reader loads and no later add inherits |
 | store | The codec merge hook decides between the stored and the incoming provider state | new (neither copy) | the codec merge decides between the provider state on disk and the one a write brings |
 | store | Replace runs onReplace and stores what it returns | new (neither copy) | replace runs onReplace with the previous provider state and stores what it returns |
-| store | A matching replace fence succeeds and advances the epoch | new (antigravity-auth adoption) | an attributed replace with a matching epoch and identity succeeds |
-| store | A matching rotate fence succeeds without changing the epoch | new (antigravity-auth adoption) | an attributed rotate with a matching epoch and identity succeeds |
-| store | Replace accepts an absent identity only when the row records none | new (antigravity-auth adoption) | an attributed replace with no identity matches only a row with no identity |
-| store | Rotate accepts an absent identity only when the row records none | new (antigravity-auth adoption) | an attributed rotate with no identity matches only a row with no identity |
-| store | A stale replace fence refuses before the replacement hook or any write and calls onFailure | new (antigravity-auth adoption) | an attributed replace with a stale epoch refuses before hooks and writes nothing |
-| store | A stale rotate fence refuses before provider-state merging or any write and calls onFailure | new (antigravity-auth adoption) | an attributed rotate with a stale epoch refuses before hooks and writes nothing |
-| store | Replace refuses an absent fence identity against a recorded identity | new (antigravity-auth adoption) | an attributed replace refuses absent against recorded and writes nothing |
-| store | Rotate refuses an absent fence identity against a recorded identity | new (antigravity-auth adoption) | an attributed rotate refuses absent against recorded and writes nothing |
-| store | Replace refuses a fence identity other than the row's | new (antigravity-auth adoption) | an attributed replace refuses another recorded identity and writes nothing |
-| store | Rotate refuses a fence identity other than the row's | new (antigravity-auth adoption) | an attributed rotate refuses another recorded identity and writes nothing |
-| store | Replace refuses a recorded fence identity against a row with none | new (antigravity-auth adoption) | an attributed replace refuses recorded against absent and writes nothing |
-| store | Rotate refuses a recorded fence identity against a row with none | new (antigravity-auth adoption) | an attributed rotate refuses recorded against absent and writes nothing |
-| store | Replace refuses an attribution taken before removal and re-add, even with the same identity | new (antigravity-auth adoption) | an attributed replace refuses an id removed and re-added with the same identity |
-| store | Rotate refuses an attribution taken before removal and re-add, even with the same identity | new (antigravity-auth adoption) | an attributed rotate refuses an id removed and re-added with the same identity |
-| store | A fenced replace of a removed row stays unknown-row | new (antigravity-auth adoption) | an attributed replace of a removed id stays unknown-row |
-| store | A fenced rotate of a removed row stays unknown-row | new (antigravity-auth adoption) | an attributed rotate of a removed id stays unknown-row |
-| store | Replace validates the attribution epoch before writing | new (antigravity-auth adoption) | an attributed replace rejects an invalid epoch before writing |
-| store | Rotate validates the attribution epoch before writing | new (antigravity-auth adoption) | an attributed rotate rejects an invalid epoch before writing |
-| store | Default-mode replace does not complete an interrupted replace on a fence mismatch | new (antigravity-auth adoption) | a fenced replace in default mode leaves an interrupted replace untouched on mismatch |
-| store | Default-mode rotate does not complete an interrupted replace on a fence mismatch | new (antigravity-auth adoption) | a fenced rotate in default mode leaves an interrupted replace untouched on mismatch |
-| store | Strict-mode replace does not complete an interrupted replace on a fence mismatch | new (antigravity-auth adoption) | a fenced replace in strict mode leaves an interrupted replace untouched on mismatch |
-| store | Strict-mode rotate does not complete an interrupted replace on a fence mismatch | new (antigravity-auth adoption) | a fenced rotate in strict mode leaves an interrupted replace untouched on mismatch |
-| store | Default-mode replace completes an interrupted replace when fenced on its projected identity and epoch | new (antigravity-auth adoption) | a fenced replace in default mode completes an interrupted replace when attribution matches |
-| store | Default-mode rotate completes an interrupted replace when fenced on its projected identity and epoch | new (antigravity-auth adoption) | a fenced rotate in default mode completes an interrupted replace when attribution matches |
-| store | Strict-mode replace completes an interrupted replace when fenced on its projected identity and epoch | new (antigravity-auth adoption) | a fenced replace in strict mode completes an interrupted replace when attribution matches |
-| store | Strict-mode rotate completes an interrupted replace when fenced on its projected identity and epoch | new (antigravity-auth adoption) | a fenced rotate in strict mode completes an interrupted replace when attribution matches |
-| store | Two same-epoch replacements serialize under real locks and only one writes | new (antigravity-auth adoption) | two replacements attributed to the same epoch race under real locks and only one writes |
-| store | The replacement hook sees both the previous recorded identity and the incoming identity | new (antigravity-auth adoption) | onReplace receives the previous recorded identity beside the incoming identity |
-| store | The replacement hook omits previousIdentity when the row recorded none | new (antigravity-auth adoption) | onReplace omits previousIdentity when the row recorded none |
-| store | The replacement hook sees the identity as read under the row lock, not its pre-lock snapshot | new (antigravity-auth adoption) | onReplace sees an identity recorded while replace waited for its row lock |
+| store | A matching replace fence succeeds and advances the epoch | new (neither copy) | an attributed replace with a matching epoch and identity succeeds |
+| store | A matching rotate fence succeeds without changing the epoch | new (neither copy) | an attributed rotate with a matching epoch and identity succeeds |
+| store | Replace accepts an absent identity only when the row records none | new (neither copy) | an attributed replace with no identity matches only a row with no identity |
+| store | Rotate accepts an absent identity only when the row records none | new (neither copy) | an attributed rotate with no identity matches only a row with no identity |
+| store | A stale replace fence refuses before the replacement hook or any write and calls onFailure | new (neither copy) | an attributed replace with a stale epoch refuses before hooks and writes nothing |
+| store | A stale rotate fence refuses before provider-state merging or any write and calls onFailure | new (neither copy) | an attributed rotate with a stale epoch refuses before hooks and writes nothing |
+| store | Replace refuses an absent fence identity against a recorded identity | new (neither copy) | an attributed replace refuses absent against recorded and writes nothing |
+| store | Rotate refuses an absent fence identity against a recorded identity | new (neither copy) | an attributed rotate refuses absent against recorded and writes nothing |
+| store | Replace refuses a fence identity other than the row's | new (neither copy) | an attributed replace refuses another recorded identity and writes nothing |
+| store | Rotate refuses a fence identity other than the row's | new (neither copy) | an attributed rotate refuses another recorded identity and writes nothing |
+| store | Replace refuses a recorded fence identity against a row with none | new (neither copy) | an attributed replace refuses recorded against absent and writes nothing |
+| store | Rotate refuses a recorded fence identity against a row with none | new (neither copy) | an attributed rotate refuses recorded against absent and writes nothing |
+| store | Replace refuses an attribution taken before removal and re-add, even with the same identity | new (neither copy) | an attributed replace refuses an id removed and re-added with the same identity |
+| store | Rotate refuses an attribution taken before removal and re-add, even with the same identity | new (neither copy) | an attributed rotate refuses an id removed and re-added with the same identity |
+| store | A fenced replace of a removed row stays unknown-row | new (neither copy) | an attributed replace of a removed id stays unknown-row |
+| store | A fenced rotate of a removed row stays unknown-row | new (neither copy) | an attributed rotate of a removed id stays unknown-row |
+| store | Replace validates the attribution epoch before writing | new (neither copy) | an attributed replace rejects an invalid epoch before writing |
+| store | Rotate validates the attribution epoch before writing | new (neither copy) | an attributed rotate rejects an invalid epoch before writing |
+| store | Default-mode replace does not complete an interrupted replace on a fence mismatch | new (neither copy) | a fenced replace in default mode leaves an interrupted replace untouched on mismatch |
+| store | Default-mode rotate does not complete an interrupted replace on a fence mismatch | new (neither copy) | a fenced rotate in default mode leaves an interrupted replace untouched on mismatch |
+| store | Strict-mode replace does not complete an interrupted replace on a fence mismatch | new (neither copy) | a fenced replace in strict mode leaves an interrupted replace untouched on mismatch |
+| store | Strict-mode rotate does not complete an interrupted replace on a fence mismatch | new (neither copy) | a fenced rotate in strict mode leaves an interrupted replace untouched on mismatch |
+| store | Default-mode replace completes an interrupted replace when fenced on its projected identity and epoch | new (neither copy) | a fenced replace in default mode completes an interrupted replace when attribution matches |
+| store | Default-mode rotate completes an interrupted replace when fenced on its projected identity and epoch | new (neither copy) | a fenced rotate in default mode completes an interrupted replace when attribution matches |
+| store | Strict-mode replace completes an interrupted replace when fenced on its projected identity and epoch | new (neither copy) | a fenced replace in strict mode completes an interrupted replace when attribution matches |
+| store | Strict-mode rotate completes an interrupted replace when fenced on its projected identity and epoch | new (neither copy) | a fenced rotate in strict mode completes an interrupted replace when attribution matches |
+| store | Two same-epoch replacements serialize under real locks and only one writes | new (neither copy) | two replacements attributed to the same epoch race under real locks and only one writes |
+| store | The replacement hook sees both the previous recorded identity and the incoming identity | new (neither copy) | onReplace receives the previous recorded identity beside the incoming identity |
+| store | The replacement hook omits previousIdentity when the row recorded none | new (neither copy) | onReplace omits previousIdentity when the row recorded none |
+| store | The replacement hook sees the identity as read under the row lock, not its pre-lock snapshot | new (neither copy) | onReplace sees an identity recorded while replace waited for its row lock |
 | store | Replace without onReplace clears the provider state by default | new (neither copy) | replace without onReplace clears the provider state unless one is given with it |
 | store | A failing or rejected onReplace leaves the row unchanged | new (neither copy) | an onReplace that throws or returns a rejected value leaves the row as it was |
 | store | A 0.5.0 pool without provider state loads and writes byte for byte as before | new (neither copy) | a 0.5.0 pool without provider state loads and writes byte for byte as 0.5.0 did |

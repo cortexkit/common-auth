@@ -84,16 +84,17 @@ export interface RowOperationOptions {
   extraLocks?: readonly PoolLockSpec[]
 }
 
-/** Options of `replace` and `rotate`; an unfenced call keeps its usual behavior. */
+/** Options of `replace` and `rotate`. Without `attribution` a call behaves as before. */
 export interface RowWriteOptions extends RowOperationOptions {
   /**
-   * The credential epoch and recorded identity the caller's evidence for the
-   * write was obtained under (as `recordQuota`'s attribution: an identity left
-   * out means the row had none). Compared under the row and store locks before
-   * any write or replacement hook, including completion of an interrupted
-   * replace. The call is refused (`attribution`, retryable, nothing written)
-   * once the row holds another epoch or identity, so a late write never
-   * overwrites the credential of its successor.
+   * The credential epoch and recorded identity the caller read the row at
+   * when it decided on this write; an identity left out means the row had
+   * none. Compared exactly, under the row and store locks, before any write
+   * or replacement hook, including the completion of an interrupted replace.
+   * The call is refused (`attribution`, retryable, nothing written) once the
+   * row holds another epoch or identity, so a write decided on an older
+   * credential never overwrites the one that replaced it. `disable`, `enable`,
+   * `recordQuota` and `updateProviderState` take the same fence.
    */
   attribution?: Attribution
 }
@@ -478,7 +479,7 @@ function assertRowAttribution(
   fence: Attribution,
 ): void {
   if (!row) throw unknownRow(operation, id)
-  // An invalid entry has no epoch to compare the fence with.
+  // A row that failed validation has no usable credential epoch to compare.
   if (row.invalid)
     throw refusal(operation, id, 'invalid-row', `row ${id} failed validation`)
   if (
@@ -756,9 +757,11 @@ export async function replaceRow(
         { operation: 'replace', rowId: id },
         async (tx) => {
           if (options.attribution !== undefined) {
-            // Readers project a torn replacement's epoch and identity. Check
-            // that row before completing it on disk: stale work must not even
-            // repair the successor it was never issued for.
+            // A replace interrupted between its two file writes is read as
+            // already done: tx.row shows its new epoch and identity. Compare
+            // the fence with that row before finishing the interrupted write
+            // on disk, so a stale caller does not even complete a replacement
+            // it was never issued for.
             assertRowAttribution('replace', id, tx.row(id), options.attribution)
             await tx.completeTorn()
           }
