@@ -1,11 +1,11 @@
-# Mutation proofs replayed by the pinned ck-mutate runner (see README.md,
+# Mutation proofs replayed by the pinned ckdev-mutate runner (see README.md,
 # "Mutation catalogue"). Each row deliberately breaks one production guard
 # and names the Bun test(s) that must fail because of it.
 #
 # Every row is a `command` row: `{test}` is a Bun `-t` filter, which Bun reads
 # as a regular expression over the full test name (describe names and the
 # test name joined by single spaces). The ids are anchored (^...$) and escaped,
-# with `\s` standing for each space because ck-mutate refuses whitespace in an
+# with `\s` standing for each space because ckdev-mutate refuses whitespace in an
 # id. `Ran {count} test` matches Bun's summary line ("Ran 1 test across 1
 # file."), which proves the filter selected a test on both the clean and the
 # mutated tree. Test fixtures import the built package through dist/, so the

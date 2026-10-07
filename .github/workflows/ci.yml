@@ -13,7 +13,7 @@ permissions:
   contents: read
 env:
   # The reviewed cortexkit/commons revision the mutation runner is built from.
-  CK_MUTATE_REV: 7d08e73722fa3e79bbcc2607753978ab768f1c6b
+  CKDEV_MUTATE_REV: 46cc166b0df2edcfd14b3eb54ed6eeac588fed69
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -84,18 +84,18 @@ jobs:
       - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         id: mutate-cache
         with:
-          path: ~/.cargo/bin/ck-mutate
-          key: ${{ runner.os }}-${{ runner.arch }}-ck-mutate-${{ env.CK_MUTATE_REV }}
+          path: ~/.cargo/bin/ckdev-mutate
+          key: ${{ runner.os }}-${{ runner.arch }}-ckdev-mutate-${{ env.CKDEV_MUTATE_REV }}
       - name: Install pinned mutation runner
         if: steps.mutate-cache.outputs.cache-hit != 'true'
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-          cargo install --locked --git https://github.com/cortexkit/commons --rev "$CK_MUTATE_REV" cortexkit-mutate
+          cargo install --locked --git https://github.com/cortexkit/commons --rev "$CKDEV_MUTATE_REV" cortexkit-mutate
       - name: Validate the catalogue
-        run: ck-mutate check
+        run: ckdev-mutate check
       - name: Replay proofs selected by the PR diff
-        run: ck-mutate run --diff origin/main --report "$RUNNER_TEMP/mutations-diff.json"
+        run: ckdev-mutate run --diff origin/main --report "$RUNNER_TEMP/mutations-diff.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
@@ -128,16 +128,16 @@ jobs:
       - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         id: mutate-cache
         with:
-          path: ~/.cargo/bin/ck-mutate
-          key: ${{ runner.os }}-${{ runner.arch }}-ck-mutate-${{ env.CK_MUTATE_REV }}
+          path: ~/.cargo/bin/ckdev-mutate
+          key: ${{ runner.os }}-${{ runner.arch }}-ckdev-mutate-${{ env.CKDEV_MUTATE_REV }}
       - name: Install pinned mutation runner
         if: steps.mutate-cache.outputs.cache-hit != 'true'
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-          cargo install --locked --git https://github.com/cortexkit/commons --rev "$CK_MUTATE_REV" cortexkit-mutate
+          cargo install --locked --git https://github.com/cortexkit/commons --rev "$CKDEV_MUTATE_REV" cortexkit-mutate
       - name: Replay the full catalogue in an isolated shard
-        run: ck-mutate run --all --shard ${{ matrix.shard }}/4 ${BROAD:+--broad} --report "$RUNNER_TEMP/mutations-all.json"
+        run: ckdev-mutate run --all --shard ${{ matrix.shard }}/4 ${BROAD:+--broad} --report "$RUNNER_TEMP/mutations-all.json"
         env:
           BROAD: ${{ github.event_name != 'push' && 'true' || '' }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
