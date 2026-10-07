@@ -477,6 +477,40 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | store | Two stores in one process adding concurrently lose no write | new (neither copy) | two stores in one process adding concurrently lose no write |
 | store | A deliberately short renewing lease exposes event-loop starvation as an operation failure, not an unreached crash point | new (neither copy) | a deliberately short renewing child lease lapses during an event-loop stall and fails rather than missing the crash step |
 | store | Crash children use production renewing leases; the parent expires only their abandoned records after confirmed exit | new (neither copy) | a crash child uses production leases and renewal, and only the exited child has its records expired |
+| store | Strict matching API replay recovers a crash orphan | anthropic-auth .cortexkit/alfonso/reports/migration-api-orphan-producer-decision-20261007.md (producer validation of crash orphan) | matching API replay recovers a bound readable row after a real crash |
+| store | Strict matching OAuth replay recovers a crash orphan | new (neither copy) | matching OAuth replay recovers a bound readable row after a real crash |
+| store | Strict API recovery retains an omitted stamped identity | new (neither copy) | API recovery preserves the stamped identity when replay omits identity |
+| store | Strict OAuth recovery retains an omitted stamped identity | new (neither copy) | OAuth recovery preserves the stamped identity when replay omits identity |
+| store | Strict API orphan replay refuses a different identity byte for byte | new (neither copy) | API replay refuses a different identity without changing bytes |
+| store | Strict OAuth orphan replay refuses a different identity byte for byte | new (neither copy) | OAuth replay refuses a different identity without changing bytes |
+| store | API recovery crash before config leaves the original orphan | new (neither copy) | API recovery crash at before-config-write leaves only the orphan or completed row |
+| store | API recovery crash after config leaves a bound row | new (neither copy) | API recovery crash at after-config-write leaves only the orphan or completed row |
+| store | OAuth recovery crash before config leaves the original orphan | new (neither copy) | OAuth recovery crash at before-config-write leaves only the orphan or completed row |
+| store | OAuth recovery crash after config leaves a bound row | new (neither copy) | OAuth recovery crash at after-config-write leaves only the orphan or completed row |
+| store | Strict API orphan replay compares its full endpoint | anthropic-auth .cortexkit/alfonso/reports/migration-api-orphan-producer-decision-20261007.md (producer validation of crash orphan) | API replay refuses a different endpoint without changing bytes |
+| store | Strict API orphan replay compares its effective header | anthropic-auth .cortexkit/alfonso/reports/migration-api-orphan-producer-decision-20261007.md (producer validation of crash orphan) | API replay refuses a different header without changing bytes |
+| store | Strict API orphan replay compares its key | new (neither copy) | API replay refuses a different key without changing bytes |
+| store | Strict OAuth orphan replay compares its refresh token | new (neither copy) | OAuth replay refuses different refresh material without changing bytes |
+| store | Strict OAuth orphan replay compares its access token | new (neither copy) | OAuth replay refuses different access material without changing bytes |
+| store | Strict OAuth orphan replay compares its expiry | new (neither copy) | OAuth replay refuses different expires material without changing bytes |
+| store | A malformed API orphan stamp refuses byte for byte | new (neither copy) | API orphan with malformed stamp refuses without changing bytes |
+| store | A missing API orphan stamp refuses byte for byte | new (neither copy) | API orphan with missing stamp refuses without changing bytes |
+| store | A legacy API orphan stamp refuses byte for byte | new (neither copy) | API orphan with legacy stamp refuses without changing bytes |
+| store | An API orphan stamp at the wrong epoch refuses byte for byte | new (neither copy) | API orphan with wrong epoch refuses without changing bytes |
+| store | An incomplete API orphan descriptor refuses byte for byte | new (neither copy) | API orphan with incomplete endpoint binding refuses without changing bytes |
+| store | Strict recovery verifies the on-disk API key against its stamp | new (neither copy) | API orphan with changed on-disk key refuses without changing bytes |
+| store | Strict recovery verifies the stamped endpoint against the dispatch digest | new (neither copy) | API orphan with changed stamped endpoint refuses without changing bytes |
+| store | Strict recovery verifies the on-disk OAuth access token against its stamp | new (neither copy) | OAuth orphan with changed on-disk access refuses without changing bytes |
+| store | Orphan refusal precedes any unrelated torn-row repair | new (neither copy) | refusal does not repair an unrelated torn row before validating the orphan |
+| store | Orphan refusal precedes secret deduplication | new (neither copy) | refusal precedes deduplication onto another row holding the incoming secret |
+| store | Orphan recovery respects prior id retirement | new (neither copy) | matching recovery keeps the epoch stamped after prior id retirement |
+| store | Orphan recovery uses ordinary endpoint trimming and header defaults | new (neither copy) | matching API recovery accepts trimmed endpoints and the default bearer header |
+| store | OAuth recovery retains the original state and coverage | new (neither copy) | matching OAuth recovery retains the state and provider-state binding byte for byte |
+| store | OAuth replay compares supplied credential-bound provider state | new (neither copy) | OAuth replay refuses a different bound provider state without changing bytes |
+| store | OAuth recovery verifies on-disk credential-bound provider state | new (neither copy) | OAuth orphan with changed bound provider state refuses without changing bytes |
+| store | Public remove discards a refused orphan under row, extra and store locks | new (neither copy) | remove discards a refused state-only orphan so new material can be added |
+| store | Non-strict API orphan replay keeps its prior overwrite behavior | new (neither copy) | non-strict replay still overwrites a conflicting orphan as before |
+| store | Non-strict OAuth orphan replay keeps its prior overwrite behavior | new (neither copy) | non-strict OAuth replay still overwrites malformed orphan material as before |
 | store | A crash after the state write of add leaves only a state entry no reader loads and a re-run add adds the row at epoch 1 | new (neither copy) | a crash after the state write of add leaves only a state entry no reader loads and a re-run add adds the row at epoch 1 |
 | store | A crash after the state write of replace leaves a torn row and a survivor pull for the prior epoch fails attribution | new (neither copy) | a crash after the state write of replace leaves a torn row and a survivor pull for the prior epoch fails attribution |
 | store | A crash after the state write of rotate leaves the rotated credential and the next refresh completes the identity write-back | new (neither copy) | a crash after the state write of rotate leaves the rotated credential and the next refresh completes the identity write-back |

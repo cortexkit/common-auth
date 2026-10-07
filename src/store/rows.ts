@@ -38,17 +38,23 @@ import {
 } from './runtime.js'
 import {
   boundProviderStateDigest,
+  buildRawRows,
   CREDENTIAL_STAMP_KEY,
   type CredentialBinding,
+  credentialDigest,
   credentialProblem,
+  dispatchDigest,
   fingerprintOf,
   idProblem,
   isCredentialEpoch,
   isRecord,
   nextAddEpochIn,
+  POOL_KEY,
   type PoolCredential,
   type PoolRow,
   PROVIDER_STATE_KEY,
+  parseStamp,
+  providerStateDigest,
   type RotateCredential,
   rosterRowFor,
   rotationStamp,
@@ -115,7 +121,7 @@ export type RowToggleOptions = Pick<
 export interface RemoveView {
   /**
    * The row as loaded; undefined when the roster no longer holds the id and
-   * only its state-file entry is left (a removal interrupted between writes).
+   * only its state-file entry is left (an add or removal interrupted between writes).
    */
   row: PoolRow | undefined
   /** The config file as read under the store locks. */
@@ -144,7 +150,8 @@ export type RemoveResult = {
   /**
    * `removed`: the roster row was dropped (and its state entry, if any).
    * `completed`: only a state-file entry was left, by a removal interrupted
-   * between its config and state writes, and it is now dropped.
+   * between its config and state writes or an add interrupted before its
+   * config write, and it is now dropped.
    */
   outcome: 'removed' | 'completed'
 }
@@ -528,6 +535,94 @@ function keyChanged(
   )
 }
 
+/**
+ * A strict replay may finish a state-first add, but must not replace what the
+ * interrupted write stamped. Load the orphan against its stamped descriptor
+ * using the ordinary row/stamp machinery, then compare the caller's material.
+ * The roster has no endpoint or identity yet, so neither can be inferred from
+ * the incoming add. Refusal happens before even repairing other torn rows.
+ */
+function matchingInterruptedAdd(
+  rt: StoreRuntime,
+  tx: Transaction,
+  input: AddInput,
+  incoming: unknown,
+): PoolRow | undefined {
+  const { id, credential, identity } = input
+  if (
+    !rt.ctx.requireCredentialStamps ||
+    tx.rosterRow(id) ||
+    !hasStateAccount(tx.state, id)
+  )
+    return undefined
+  const refuse = (): never => {
+    throw refusal(
+      'add',
+      id,
+      'unbound-credential',
+      `orphan ${id} cannot be bound to this add's material; remove it explicitly before adding different material`,
+    )
+  }
+  const account = tx.stateAccount(id)
+  const stamp = parseStamp(account?.[CREDENTIAL_STAMP_KEY])
+  if (!stamp?.binding || stamp.dispatch === undefined || stamp.replace)
+    return refuse()
+  if (
+    credential.type === 'api' &&
+    (stamp.binding.baseURL === undefined ||
+      stamp.binding.authHeader === undefined)
+  )
+    return refuse()
+  const descriptor: PoolCredential =
+    credential.type === 'api'
+      ? {
+          ...credential,
+          baseURL: stamp.binding.baseURL as string,
+          authHeader: stamp.binding.authHeader,
+        }
+      : credential
+  const [orphan] = buildRawRows(
+    {
+      accounts: [
+        rosterRowFor({
+          id,
+          credential: descriptor,
+          identity: stamp.binding.identity,
+          addedAt: 0,
+        }),
+      ],
+      [POOL_KEY]: {
+        rows: { [id]: { credentialEpoch: nextAddEpochIn(tx.config, id) } },
+      },
+    },
+    tx.state,
+    rt.ctx.codec,
+    rt.ctx.providerState,
+  )
+  if (!orphan?.credential || orphan.invalid || orphan.stamp !== 'bound')
+    return refuse()
+  if (identity !== undefined && identity !== orphan.identity) return refuse()
+  if (credentialDigest(credential) !== stamp.digest) return refuse()
+  if (credential.type === 'api') {
+    if (credential.baseURL.trim() !== stamp.binding.baseURL) return refuse()
+    if (
+      (credential.authHeader ?? 'authorization-bearer') !==
+      stamp.binding.authHeader
+    )
+      return refuse()
+  } else if (dispatchDigest(credential) !== stamp.dispatch) return refuse()
+  // Provider-state coverage is separate from credential stamp status. Keep
+  // the interrupted write's value, but never complete a changed bound value.
+  if (stamp.providerState !== undefined && orphan.providerState === undefined)
+    return refuse()
+  if (
+    incoming !== undefined &&
+    providerStateDigest(rt.ctx.providerState, incoming) !== stamp.providerState
+  )
+    return refuse()
+  return orphan
+}
+
 export async function addRow(
   rt: StoreRuntime,
   input: AddInput,
@@ -569,12 +664,16 @@ export async function addRow(
         progress,
         { operation: 'add', rowId: id },
         async (tx): Promise<AddResult> => {
+          const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan) await tx.completeTorn()
           const rows = tx.rows()
           const fingerprint = fingerprintOf(credential)
-          const same = rows.find(
-            (row) =>
-              row.invalid === undefined && row.fingerprint === fingerprint,
-          )
+          const same =
+            !orphan &&
+            rows.find(
+              (row) =>
+                row.invalid === undefined && row.fingerprint === fingerprint,
+            )
           if (same) {
             // Re-adding a secret whose stamp is not proved would rotate it in
             // and keep the identity and quota recorded beside it, making that
@@ -662,11 +761,14 @@ export async function addRow(
               'id-removed',
               `id ${id} has held every credential epoch and is not reused; add the credential under another id`,
             )
+          const addedIdentity = orphan?.identity ?? identity
           tx.roster().push(
             rosterRowFor({
               id,
               credential,
-              ...(identity !== undefined ? { identity } : {}),
+              ...(addedIdentity !== undefined
+                ? { identity: addedIdentity }
+                : {}),
               ...(label !== undefined ? { label } : {}),
               addedAt: ctx.now(),
             }),
@@ -676,19 +778,26 @@ export async function addRow(
             needsFirstReading: credential.type === 'oauth',
           })
           let outcome: AddResult['outcome'] = 'added'
-          if (identity !== undefined && credential.type === 'oauth') {
+          if (addedIdentity !== undefined && credential.type === 'oauth') {
             // Same account, different credential: kept on disk, disabled.
             const holder = rows.find(
               (row) =>
                 row.invalid === undefined &&
                 row.type === 'oauth' &&
                 row.enabled &&
-                row.identity === identity,
+                row.identity === addedIdentity,
             )
             if (holder) {
               disableIn(tx, id, DUPLICATE_IDENTITY_REASON)
               outcome = 'added-disabled'
             }
+          }
+          if (orphan?.credential) {
+            // The state half is already durable and proved. A config-only
+            // completion preserves the credential, stamp and provider state
+            // byte for byte; a crash leaves either this orphan or a whole row.
+            await tx.commitConfig()
+            return { id, outcome, credential: orphan.credential }
           }
           // The credential is written first. A crash before the config write
           // then leaves a state entry no roster row names, which no reader
@@ -704,6 +813,7 @@ export async function addRow(
           await tx.commitConfig()
           return { id, outcome, credential: stored }
         },
+        { completeTorn: false },
       )
     },
   )

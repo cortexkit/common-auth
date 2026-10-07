@@ -29,6 +29,8 @@ type Task = {
   ids?: string[]
   credential?: PoolCredential
   identity?: string
+  /** Strict replay uses the same credential-stamp policy as its parent. */
+  requireCredentialStamps?: boolean
   /**
    * add: the provider state written with the credential. When given, the
    * child's store is opened with `objectStateCodec`.
@@ -72,6 +74,7 @@ const store = openPoolStore({
   configPath: task.configPath,
   statePath: task.statePath,
   quota: listCodec,
+  requireCredentialStamps: task.requireCredentialStamps === true,
   ...(task.providerState !== undefined
     ? { providerState: objectStateCodec }
     : {}),

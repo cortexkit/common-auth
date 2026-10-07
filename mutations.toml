@@ -371,6 +371,49 @@ expect_red = ['^a\sstrict\sstore\sand\sa\storn\sreplace\swhose\sstamp\sno\slonge
 expect_message = '/\+\s+"torn": true/'
 
 [[control]]
+id = 'store-interrupted-add-compares-endpoint'
+guards = 'a strict replay compares the full endpoint stamped by an interrupted API add before completing its roster row'
+file = 'src/store/rows.ts'
+old = '    if (credential.baseURL.trim() !== stamp.binding.baseURL) return refuse()'
+new = '    // NON-VACUITY BREAK: accept a different endpoint.'
+test_file = 'test/store/strict-interrupted-add.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/strict-interrupted-add.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^strict\sinterrupted\sadd\sAPI\sreplay\srefuses\sa\sdifferent\sendpoint\swithout\schanging\sbytes$']
+expect_message = '/error: strict interrupted add refuses conflicting material\s+Expected constructor: \[class PoolOperationError extends Error\]\s+Received value: undefined/'
+
+[[control]]
+id = 'store-interrupted-add-compares-header'
+guards = 'a strict replay compares the effective auth header stamped by an interrupted API add before completing its roster row'
+file = 'src/store/rows.ts'
+old = '''    if (
+      (credential.authHeader ?? 'authorization-bearer') !==
+      stamp.binding.authHeader
+    )
+      return refuse()'''
+new = '    // NON-VACUITY BREAK: accept a different header.'
+test_file = 'test/store/strict-interrupted-add.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/strict-interrupted-add.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^strict\sinterrupted\sadd\sAPI\sreplay\srefuses\sa\sdifferent\sheader\swithout\schanging\sbytes$']
+expect_message = '/error: strict interrupted add refuses conflicting material\s+Expected constructor: \[class PoolOperationError extends Error\]\s+Received value: undefined/'
+
+[[control]]
+id = 'store-interrupted-add-validates-before-recovery'
+guards = 'strict add validates an existing state-only orphan rather than overwriting it with incoming material before a config write'
+file = 'src/store/rows.ts'
+old = '    !rt.ctx.requireCredentialStamps ||'
+new = '    true || // NON-VACUITY BREAK: recover without validating the orphan.'
+test_file = 'test/store/strict-interrupted-add.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/strict-interrupted-add.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^strict\sinterrupted\sadd\sAPI\sreplay\srefuses\sa\sdifferent\skey\swithout\schanging\sbytes$']
+expect_message = '/error: strict interrupted add refuses conflicting material\s+Expected constructor: \[class PoolOperationError extends Error\]\s+Received value: undefined/'
+
+[[control]]
 id = 'store-lock-order-row-then-extra-then-store'
 guards = 'add takes the row lock and provider-wide lock before the extra locks, and those before the store locks'
 file = 'src/store/rows.ts'

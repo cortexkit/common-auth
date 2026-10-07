@@ -91,6 +91,10 @@ export interface OpenPoolStoreOptions {
    * provider call or write, checked again under the locks and at commit.
    * Nothing makes such a row bound except `replace`, which starts a new
    * credential epoch and drops what was observed about the old one.
+   * An interrupted add's state-only orphan is recovered only when its stamp
+   * binds the stored and incoming material, including a supplied identity and
+   * an API key's endpoint/header. Otherwise add refuses `unbound-credential`
+   * without writing; `remove(id)` explicitly discards the orphan.
    */
   requireCredentialStamps?: boolean
   /** Injected clock for leases, refresh stamps and `addedAt`. */
