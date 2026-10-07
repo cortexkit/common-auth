@@ -1040,6 +1040,9 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | claustrum | The placeholder in local mode asks for a login | anthropic-auth/packages/core/src/claustrum.ts | the custody placeholder in local mode asks for a login instead of serving |
 | claustrum | The placeholder is provider-specific and never a credential | anthropic-auth/packages/core/src/claustrum.ts | the placeholder is provider-specific and never mistaken for a credential |
 | claustrum | Cold vault accounts never route (real client) | anthropic-auth/packages/e2e-tests/src/mock-claustrum.ts | a cold vault account is listed but never routed or authorized |
+| claustrum | The served project id is non-secret receipt metadata, not roster metadata (real client) | new (neither copy) | a scoped send receipt carries only the vault-served project id |
+| claustrum | No served project id means no receipt field, even with roster or token metadata (real client) | new (neither copy) | a scoped send receipt omits projectId when the vault serves none |
+| claustrum | Project changes take effect on the next send without discovery or a version bump (real client) | new (neither copy) | successive scoped sends use the project id served for each attempt |
 | claustrum | A warm account goes cold after a served 401 (real client) | anthropic-auth/packages/e2e-tests/src/mock-claustrum.ts | a warm account goes cold after a served 401 and leaves routing |
 | claustrum | A 401 names its own record (real client) | anthropic-auth/packages/e2e-tests/src/mock-claustrum.ts | a 401 is attributed to the record that served it |
 | claustrum | A malformed record is skipped (real client) | new (neither copy) | a malformed vault record is skipped and warned about while the rest of the list is used |

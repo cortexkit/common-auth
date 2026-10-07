@@ -524,6 +524,22 @@ expect_message = 'expected a rejection'
 # --- Claustrum vault consumer ---
 
 [[control]]
+id = 'claustrum-receipt-carries-served-project-id'
+guards = 'the Google Cloud project id served by get_scoped reaches the send receipt instead of being silently dropped'
+file = 'src/claustrum/custody.ts'
+old = '''
+          ...(served.projectId !== undefined && {
+            projectId: served.projectId,
+          }),'''
+new = '          // NON-VACUITY BREAK: omit the served project id from the receipt.'
+test_file = 'test/claustrum/e2e.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/e2e.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sscoped\ssend\sreceipt\scarries\sonly\sthe\svault-served\sproject\sid$']
+expect_message = '/Expected: "vault-project"\s+Received: undefined/'
+
+[[control]]
 id = 'claustrum-reports-only-401'
 guards = 'only a 401 is reported to the vault; 429, 402 and 5xx are never reported as authentication failures'
 file = 'src/claustrum/custody.ts'

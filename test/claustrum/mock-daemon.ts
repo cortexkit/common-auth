@@ -55,6 +55,8 @@ const daemonId = Uint8Array.from({ length: 16 }, (_, index) => 200 + index)
 export interface MockCredential {
   payload: string
   account_id?: string
+  /** Non-secret project metadata served only by get_scoped. */
+  project_id?: string
   record_version: number
   expires_at_ms: number | null
   state?: string
@@ -207,6 +209,9 @@ export async function startMockDaemon(input: {
           payload: Array.from(new TextEncoder().encode(credential.payload)),
           credential_id: id,
           ...(served !== undefined && { account_id: served }),
+          ...(credential.project_id !== undefined && {
+            project_id: credential.project_id,
+          }),
           record_version: credential.record_version,
           expires_at_ms: credential.expires_at_ms,
         },

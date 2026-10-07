@@ -114,6 +114,12 @@ export interface ClaustrumScopedAttempt {
    */
   readonly assertedAccountIdentity?: string
   /**
+   * The non-secret Google Cloud project id the vault served in get_scoped for
+   * this attempt, if any. Never filled in from list_scoped, the roster or a
+   * token parse. A project change in the vault takes effect on the next send.
+   */
+  readonly projectId?: string
+  /**
    * Kept in memory only and hidden from JSON.stringify and object spreads, so
    * logging a receipt never leaks it. Authorize again for every dispatch and retry.
    */
@@ -524,6 +530,9 @@ export class ClaustrumScopedCustody {
           }),
           ...(assertedIdentity !== undefined && {
             assertedAccountIdentity: assertedIdentity,
+          }),
+          ...(served.projectId !== undefined && {
+            projectId: served.projectId,
           }),
           recordVersion: served.recordVersion,
           expiresAtMs,

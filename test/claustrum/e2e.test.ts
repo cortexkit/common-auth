@@ -5,6 +5,7 @@ import {
   ClaustrumConsumer,
   type ClaustrumConsumerOptions,
   ClaustrumEnrollmentManager,
+  type ClaustrumScopedAttempt,
   connectClaustrumEnrollmentClient,
   connectClaustrumScopedClient,
   getClaustrumEnrollmentPaths,
@@ -88,6 +89,74 @@ function routeFor(consumer: ClaustrumConsumer, credentialId: string): string {
 function bearer(token: string) {
   return new Headers({ authorization: `Bearer ${token}` })
 }
+
+test('a scoped send receipt carries only the vault-served project id', async () => {
+  const s = await scenario({
+    'oauth:test:work': credential({
+      payload: 'access-v1',
+      project_id: 'vault-project',
+      wire: { project_id: 'roster-project' },
+    }),
+  })
+  await s.consumer.refresh()
+  const response = await s.consumer.send(
+    routeFor(s.consumer, 'oauth:test:work'),
+    async (attempt) => {
+      expect(attempt.projectId).toBe('vault-project')
+      expect({ ...attempt }.projectId).toBe('vault-project')
+      expect(JSON.parse(JSON.stringify(attempt))).toMatchObject({
+        projectId: 'vault-project',
+      })
+      expect(JSON.stringify(attempt)).not.toContain('access-v1')
+      return new Response('ok')
+    },
+    { site: 'model' },
+  )
+  expect(response.status).toBe(200)
+  expect(s.daemon.gets).toHaveLength(1)
+})
+
+test('a scoped send receipt omits projectId when the vault serves none', async () => {
+  const s = await scenario({
+    'oauth:test:work': credential({
+      payload: JSON.stringify({
+        access_token: 'access-v1',
+        project_id: 'token-project',
+      }),
+      wire: { project_id: 'roster-project' },
+    }),
+  })
+  await s.consumer.refresh()
+  const response = await s.consumer.send(
+    routeFor(s.consumer, 'oauth:test:work'),
+    async (attempt) => {
+      expect(attempt.projectId).toBeUndefined()
+      expect(Object.hasOwn(attempt, 'projectId')).toBe(false)
+      return new Response('ok')
+    },
+    { site: 'model' },
+  )
+  expect(response.status).toBe(200)
+  expect(s.daemon.gets).toHaveLength(1)
+})
+
+test('successive scoped sends use the project id served for each attempt', async () => {
+  const record = credential({ project_id: 'vault-project-first' })
+  const s = await scenario({ 'oauth:test:work': record })
+  await s.consumer.refresh()
+  const work = routeFor(s.consumer, 'oauth:test:work')
+  const projects: Array<string | undefined> = []
+  const dispatch = async (attempt: ClaustrumScopedAttempt) => {
+    projects.push(attempt.projectId)
+    return new Response('ok')
+  }
+  await s.consumer.send(work, dispatch, { site: 'model' })
+  record.project_id = 'vault-project-second'
+  await s.consumer.send(work, dispatch, { site: 'model' })
+  expect(projects).toEqual(['vault-project-first', 'vault-project-second'])
+  expect(s.daemon.gets).toHaveLength(2)
+  expect(s.daemon.lists).toBe(1)
+})
 
 test('a cold vault account is listed but never routed or authorized', async () => {
   const s = await scenario({
