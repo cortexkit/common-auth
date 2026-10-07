@@ -1146,6 +1146,7 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | rpc | Async drain rejection is sanitized and logged | new (neither copy) | pending async rejection is sanitized and logged at warn |
 | rpc | Mutually exclusive drain options | new (neither copy) | RPC server requires exactly one synchronous or asynchronous drain |
 | rpc | Raw non-object JSON reaches custom pending parser before session policy | new (neither copy) | pending custom parser receives non-object bodies before session checks |
+| rpc | Stop closes a peer that sent incomplete headers | new (neither copy) | RPC stop closes a peer that sent incomplete headers |
 | rpc | Prompt shutdown of partial requests on the running Bun (1.3.14 in CI, 1.4.2 locally) | new (neither copy) | RPC stop closes held partial requests under the running Bun |
 | rpc | Prompt shutdown of partial requests on Node 24 | new (neither copy) | RPC stop closes held partial requests under Node 24 |
 | rpc | A pending apply's deadline timer does not hold the process open after stop, on the running Bun | antigravity-auth report against 0.9.3: after stop(), a never-settling apply kept the process alive until applyDeadlineMs | a pending apply does not keep the process alive after stop under the running Bun |

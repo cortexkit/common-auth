@@ -65,7 +65,9 @@ All ten subpaths are ESM, with `dist/<subpath>/index.js` and adjacent `index.d.t
 
 Default pending parsing (0.9.1) rejects present cursors that are not non-negative safe integers and present sessions that are not strings with 400 `invalid params`, while preserving absent cursors as 0, empty-string sessions, and the existing `requireSession` check; plugins can instead supply `parsePending` over the raw parsed JSON value, including non-object bodies and throw `RpcRequestError` for their own 4xx wire response (other parser errors return 400 `invalid params`).
 Exactly one of synchronous `drain` or `drainAsync` is required (0.9.1), with `RpcServerAsyncOptions` describing the async alternative without changing `RpcServerOptions['drain']`; async failures log at warn and return 500 `drain failed` without exposing the exception message.
-Server `stop()` (0.9.1) closes the listener then calls `closeAllConnections` when available and destroys tracked sockets (Bun 1.3.14 and 1.4.2 expose the method but leave partial requests open, while Node 24.16 closes them), so unfinished requests cannot delay shutdown, removing the port file only if its port and token still identify this server so a successor's registration is not deleted.
+Server `stop()` (0.9.1) closes the listener and destroys tracked sockets, so unfinished requests cannot delay shutdown. The port file is removed only if its port and token still identify this server so a successor's registration is not deleted.
+
+Server `stop()` also closes peers that sent incomplete headers: it calls `closeAllConnections` before `close()`, because Bun's `close()` disables `closeAllConnections` and such peers may not have reached the tracked connection set.
 
 Runtime exports:
 - `pushNotification(scope, payload, sessionId?)`, `drainNotifications(scope, lastReceivedId?, sessionId?)`, `isTuiConnected(scope, sessionId)`, `resetNotificationsForTest(scope)`, `isSessionId(value)`, `RpcSessionRequiredError`. Scope is `{ rpcRoot, directoryPrefix, registrationSessionId, requireSession? }`; payload is `{ command, text, knobs }`; wire sessionId remains optional unless the scope is strict.

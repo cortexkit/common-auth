@@ -379,10 +379,10 @@ export async function startRpcServer(
     token,
     async stop() {
       await new Promise<void>((resolve) => {
-        server.close(() => resolve())
-        // Stop accepting connections before ending requests that may never finish.
+        // Bun's close() disables closeAllConnections(), and a peer sending
+        // incomplete headers may not have reached the tracked connection set.
         server.closeAllConnections?.()
-        // Bun exposes closeAllConnections but leaves partial requests open.
+        server.close(() => resolve())
         for (const socket of connections) socket.destroy()
       })
       const portFile = join(options.dir, `port-${process.pid}.json`)

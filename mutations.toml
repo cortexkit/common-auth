@@ -683,6 +683,23 @@ expect_message = 'has a writable ancestor'
 # --- sidebar RPC: port files, proxy bypass, request limits ---
 
 [[control]]
+id = 'rpc-stop-closes-incomplete-headers'
+guards = 'stop closes a peer that sent incomplete headers, including a peer Bun 1.3.14 does not expose through the connection event'
+file = 'src/rpc/rpc-server.ts'
+old = '''
+        server.closeAllConnections?.()
+        server.close(() => resolve())'''
+new = '''
+        server.close(() => resolve())
+        server.closeAllConnections?.()'''
+test_file = 'test/rpc/stop-incomplete-headers.test.ts'
+runner = "command"
+command = ["bun", "test", "test/rpc/stop-incomplete-headers.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^RPC\sstop\scloses\sa\speer\sthat\ssent\sincomplete\sheaders$']
+expect_message = '/error: stop closes the peer that sent incomplete headers[\s\S]*Received: false/'
+
+[[control]]
 id = 'rpc-stop-removes-port-file-only-if-token-matches'
 guards = "stop removes the port file only when it still holds this server's token, so a successor's file survives"
 file = 'src/rpc/rpc-server.ts'
