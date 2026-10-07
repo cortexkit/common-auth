@@ -371,6 +371,23 @@ expect_red = ['^a\sstrict\sstore\sand\sa\storn\sreplace\swhose\sstamp\sno\slonge
 expect_message = '/\+\s+"torn": true/'
 
 [[control]]
+id = 'store-strict-transition-compares-dispatch'
+guards = 'a strict store completes a pending stamped transition only when its dispatch digest still matches the loaded credential, never repairing config before refusing edited material'
+file = 'src/store/torn.ts'
+old = '''      if (
+        options.requireCredentialStamps &&
+        stamp.dispatch !== dispatchDigest(row.credential)
+      )
+        continue'''
+new = '      // NON-VACUITY BREAK: complete transitions without validating dispatch.'
+test_file = 'test/store/strict-torn-transition.test.ts'
+runner = "command"
+command = ["bun", "test", "test/store/strict-torn-transition.test.ts", "-t", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^strict\storn\srefresh\stransition\saccess-only\sedit\srefuses\sa\sreal-crash\stransition\swithout\srepairing\sfile\sbytes$']
+expect_message = '/error: strict transition refusal preserves state and config bytes/'
+
+[[control]]
 id = 'store-interrupted-add-compares-endpoint'
 guards = 'a strict replay compares the full endpoint stamped by an interrupted API add before completing its roster row'
 file = 'src/store/rows.ts'

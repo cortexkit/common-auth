@@ -237,6 +237,14 @@ export function tornStamps(
       stamp.credentialEpoch === epoch &&
       stamp.binding.identity === row.identity
     ) {
+      // The lineage digest alone misses an access-token or expiry edit. A
+      // strict store must not repair the config from a transition whose stamp
+      // no longer describes the credential; the row stays unbound instead.
+      if (
+        options.requireCredentialStamps &&
+        stamp.dispatch !== dispatchDigest(row.credential)
+      )
+        continue
       const transition = stampedTransition(account[CREDENTIAL_STAMP_KEY])
       if (
         transition &&

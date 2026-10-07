@@ -1166,6 +1166,12 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 
 | store | Quarantine a contradicted refresh identity while preserving the successor | new (neither copy) | a contradicted known identity persists the successor bound but disabled without propagating it |
 | store | Preserve ordinary refresh identity controls | new (neither copy) | matching, learnt and absent refresh identities retain ordinary rotation and propagation |
+| store | Strict matching dispatch completes a crash-real contradicted-refresh transition | new (neither copy) | unchanged dispatch completes a real-crash contradicted refresh transition |
+| store | Strict transition recovery refuses an access-only edit before config repair | new (neither copy) | access-only edit refuses a real-crash transition without repairing file bytes |
+| store | Strict transition recovery refuses an expiry-only edit before config repair | new (neither copy) | expires-only edit refuses a real-crash transition without repairing file bytes |
+| store | Non-strict transition recovery retains its behavior after an access-only edit | new (neither copy) | non-strict recovery still completes a real-crash transition after an access-only edit |
+| store | Non-strict transition recovery retains its behavior after an expiry-only edit | new (neither copy) | non-strict recovery still completes a real-crash transition after an expires-only edit |
+| store | Strict transition recovery refuses a missing dispatch digest before config repair | new (neither copy) | missing dispatch refuses a real-crash transition without repairing file bytes |
 | store | Contradicted refresh crash before state write | new (neither copy) | a contradicted refresh crash at before-state-write never exposes rotated enabled credentials |
 | store | Contradicted refresh crash after state write | new (neither copy) | a contradicted refresh crash at after-state-write never exposes rotated enabled credentials |
 | store | Contradicted refresh crash before config write | new (neither copy) | a contradicted refresh crash at before-config-write never exposes rotated enabled credentials |
