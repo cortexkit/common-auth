@@ -1430,7 +1430,7 @@ id = 'tui-prefs-subscribers-share-native-and-probe'
 guards = 'bundled subscriptions to the same canonical preferences path share one native watcher and one metadata poll'
 file = 'src/tui-prefs/watcher.ts'
 old = 'const shared = registry.get(path)'
-new = 'const shared = undefined // NON-VACUITY BREAK: create a watcher per subscriber.'
+new = 'const shared = new Map<string, SharedWatcher>().get(path) // NON-VACUITY BREAK: create a watcher per subscriber.'
 test_file = 'test/tui-prefs/watcher.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/tui-prefs/watcher.test.ts', '-t', '{test}']
