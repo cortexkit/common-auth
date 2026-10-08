@@ -10,6 +10,7 @@ import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 import { phaseClock } from '../fixtures/phase-clock.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+import { TestLifetime } from '../fixtures/test-lifetime.js'
 
 const hooks = lifetimeHooks()
 const { afterEach, it } = hooks
@@ -18,12 +19,27 @@ const acquireRefreshFileLock: typeof acquireRawRefreshFileLock = async (
 ) => {
   const lifetime = hooks.lifetime
   const lock = await lifetime.operation(acquireRawRefreshFileLock(...args))
-  if (lock) {
-    lifetime.finish(() => lock.release())
-    // whenLost() intentionally remains pending after a normal release. Join
-    // release itself, not that subscription, before deleting the directory.
-    return lock
-  }
+  if (lock) return trackLockRelease(lifetime, lock)
+  return lock
+}
+
+function trackLockRelease<T extends { release: () => Promise<void> }>(
+  lifetime: TestLifetime,
+  lock: T,
+): T {
+  let completed = false
+  const release = lock.release.bind(lock)
+  lock.release = () =>
+    lifetime.operation(
+      release().then(() => {
+        completed = true
+      }),
+    )
+  // Explicit calls still reach the real release, including tests of repeated
+  // release. Only automatic cleanup skips a release that completed successfully.
+  lifetime.finish(async () => {
+    if (!completed) await lock.release()
+  })
   return lock
 }
 
@@ -60,6 +76,50 @@ async function readLockOwner(lockPath: string) {
 }
 
 describe('acquireRefreshFileLock', () => {
+  it('lifetime cleanup skips completed releases but preserves explicit repeated release', async () => {
+    const lifetime = new TestLifetime()
+    let releases = 0
+    const lock = trackLockRelease(lifetime, {
+      release: async () => {
+        releases++
+      },
+    })
+    await lock.release()
+    await lock.release()
+    await lifetime.drain(() => {})
+    expect(releases).toBe(2)
+  })
+
+  it('lifetime cleanup joins in-flight releases and cleans unreleased locks after failure', async () => {
+    const lifetime = new TestLifetime()
+    const pending = deferred()
+    let releases = 0
+    let cleaned = false
+    const lock = trackLockRelease(lifetime, {
+      release: async () => {
+        releases++
+        await pending.promise
+      },
+    })
+    trackLockRelease(lifetime, {
+      release: async () => {
+        cleaned = true
+      },
+    })
+    const releasing = lock.release()
+    let drained = false
+    const draining = lifetime.drain(() => {
+      drained = true
+    })
+    await Promise.resolve()
+    expect(drained).toBe(false)
+    pending.resolve()
+    await releasing
+    await draining
+    expect(releases).toBe(1)
+    expect(cleaned).toBe(true)
+    expect(drained).toBe(true)
+  })
   it('observes takeover on the next renewal and stops renewing', async () => {
     const path = join(dir, 'observed.json')
     const lockPath = `${path}.observed.lock`

@@ -1269,3 +1269,25 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | fs | Preserve successor ownership after recreated contender loses its marker | new (neither copy) | post-fence marker loss preserves the successor after stale lock recreation |
 | fs | Remove an owned recreated record after marker loss without leaving an orphan | new (neither copy) | post-fence marker loss removes its own recreated record without an orphan |
 | fs | Recreated control-barrier rejection preserves its lease until expiry and propagates the exact error | new (neither copy) | stale lock recreation hook rejection propagates and leaves one unrenewed lease until takeover |
+
+| tui-prefs | Canonical-path subscriptions across bundled copies share native watcher and probe, isolate callbacks and dispose independently | new (neither copy) | bundled subscribers share one native watcher and one probe until last disposal |
+| tui-prefs | Unchanged metadata performs no asynchronous file reads across at least three seconds | new (neither copy) | unchanged metadata probes perform zero file reads over three seconds |
+| tui-prefs | Safety probe recovers missed native events within the relaxed one-second fallback budget | new (neither copy) | metadata probe recovers a missed native event within 1.5 seconds |
+| tui-prefs | Inode change detects an atomic replacement even with equal size and mtime | new (neither copy) | metadata probe detects atomic rename with unchanged size and mtime |
+| tui-prefs | Missing preferences are created and recreated while native watching is unavailable | new (neither copy) | metadata probe recovers creation and recreation without a native watcher |
+| rpc | Ten stable calls across two clients perform one validated discovery | new (neither copy) | stable pending calls share one validated discovery per selection key |
+| rpc | Replaced port-file identity invalidates selection before the next request | new (neither copy) | replaced port file routes the next pending call to the new server |
+| rpc | Connect failure drops selection and discovers a replacement within the same call | new (neither copy) | connect failure rediscovery succeeds in the same pending call |
+| rpc | Authentication rejection rediscovers a replacement in the same call | new (neither copy) | stale status 401 rediscovery succeeds in the same pending call |
+| rpc | Forbidden response rediscovers a replacement in the same call | new (neither copy) | stale status 403 rediscovery succeeds in the same pending call |
+| rpc | Stale route response rediscovers a replacement in the same call | new (neither copy) | stale status 404 rediscovery succeeds in the same pending call |
+| rpc | Unavailable response rediscovers a replacement in the same call | new (neither copy) | stale status 503 rediscovery succeeds in the same pending call |
+| rpc | Cached non-strict selection cannot route an exact dead PID to a fallback server | new (neither copy) | cached selections never weaken exactPid refusal for a dead PID |
+| fs | Test cleanup skips completed releases without changing deliberate repeated calls | new (neither copy) | lifetime cleanup skips completed releases but preserves explicit repeated release |
+| fs | Test cleanup joins in-flight releases and releases unreleased resources after failure | new (neither copy) | lifetime cleanup joins in-flight releases and cleans unreleased locks after failure |
+| tooling | Load probing creates no workers by default | new (neither copy) | load probe generates zero workers by default |
+| tooling | Explicit load warns with count and kills real idle-substituted worker processes on normal exit | new (neither copy) | explicit load flag warns with worker count and stops the process group on completion |
+| tooling | Interrupt kills the load process group | new (neither copy) | load probe stops its process group on SIGINT |
+| tooling | Termination kills the load process group | new (neither copy) | load probe stops its process group on SIGTERM |
+| tooling | Spawn error kills the load process group | new (neither copy) | load probe stops its process group on error |
+| tooling | Publishing performs its artifact build once through the package lifecycle | new (neither copy) | release publish relies on exactly one prepublishOnly build |

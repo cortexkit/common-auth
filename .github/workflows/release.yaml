@@ -34,7 +34,6 @@ jobs:
           node --input-type=module -e 'import { readFileSync } from "node:fs"; const { version } = JSON.parse(readFileSync("package.json", "utf8")); if (process.env.RELEASE_REF !== `refs/tags/v${version}`) { console.error("Tag does not match package.json version"); process.exit(1); }'
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Build
-        run: bun run build
+      # package.json prepublishOnly: "bun run build" builds the artifact once.
       - name: Publish
         run: npm publish --access public --provenance

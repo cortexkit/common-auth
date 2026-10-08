@@ -1421,3 +1421,46 @@ command = ["bun", "test", "test/tooling/check-sources.test.ts", "-t", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^source\schecker\srejects\sempty\stables\sand\sunmatched\scells$']
 expect_message = '/expect\(empty\.exitCode\)\.toBe\(1\)[\s\S]*Received: 0/'
+
+# --- idle CPU: shared preferences watcher and cached RPC discovery ---
+# CAUGHT on Bun 1.3.14: each break is a named assertion, not a timing benchmark.
+
+[[control]]
+id = 'tui-prefs-subscribers-share-native-and-probe'
+guards = 'bundled subscriptions to the same canonical preferences path share one native watcher and one metadata poll'
+file = 'src/tui-prefs/watcher.ts'
+old = 'const shared = registry.get(path)'
+new = 'const shared = undefined // NON-VACUITY BREAK: create a watcher per subscriber.'
+test_file = 'test/tui-prefs/watcher.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/tui-prefs/watcher.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^bundled\ssubscribers\sshare\sone\snative\swatcher\sand\sone\sprobe\suntil\slast\sdisposal$']
+expect_message = 'one native watcher for bundled subscribers'
+
+[[control]]
+id = 'tui-prefs-unchanged-probe-skips-read'
+guards = 'unchanged metadata probes do not read preferences bytes, even over multiple polling intervals'
+file = 'src/tui-prefs/watcher.ts'
+old = 'if (!native && metadata === lastMetadata) return'
+new = '// NON-VACUITY BREAK: read bytes on unchanged probes.'
+test_file = 'test/tui-prefs/watcher.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/tui-prefs/watcher.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^unchanged\smetadata\sprobes\sperform\szero\sfile\sreads\sover\sthree\sseconds$']
+expect_message = 'unchanged probes must not read file bytes'
+
+[[control]]
+id = 'rpc-client-stable-selection-skips-discovery'
+guards = 'ten stable pending calls, across clients with the same selection key, perform one validated discovery'
+file = 'src/rpc/rpc-client.ts'
+old = '''  if (cached && (await portFileIdentity(dir, cached.entry)) === cached.identity)
+    return cached'''
+new = '  void cached // NON-VACUITY BREAK: rediscover on every call.'
+test_file = 'test/rpc/client-discovery-cache.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/rpc/client-discovery-cache.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^stable\spending\scalls\sshare\sone\svalidated\sdiscovery\sper\sselection\skey$']
+expect_message = 'stable pending calls must discover once'

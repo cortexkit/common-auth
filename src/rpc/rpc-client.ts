@@ -1,4 +1,5 @@
 import { connect, type Socket } from 'node:net'
+import { resolve } from 'node:path'
 import type {
   ApplyRequest,
   ApplyResult,
@@ -8,6 +9,7 @@ import {
   type DiscoverPortFileOptions,
   discoverPortFile,
   type PortFileEntry,
+  portFileIdentity,
 } from './port-file.js'
 
 export interface RpcClient {
@@ -27,33 +29,70 @@ export const DEFAULT_RPC_TIMEOUT_MS = 2_000
  * opening a socket, on every call. Off by default, when a call falls back to
  * the newest live server.
  */
-export type RpcClientOptions = DiscoverPortFileOptions
+export type RpcClientOptions = DiscoverPortFileOptions & {
+  /** Internal discovery-count seam. */
+  discover?: typeof discoverPortFile
+}
 
-async function call<T>(
+interface Selection {
+  entry: PortFileEntry
+  identity: string
+}
+const selections = new Map<string, Selection>()
+const discoveries = new Map<string, Promise<Selection | null>>()
+
+async function select(
+  key: string,
   dir: string,
   expectedPid: number | undefined,
-  discoverOptions: DiscoverPortFileOptions,
-  onSelected: ((entry: PortFileEntry | null) => void) | undefined,
+  options: RpcClientOptions,
+): Promise<Selection | null> {
+  const cached = selections.get(key)
+  if (cached && (await portFileIdentity(dir, cached.entry)) === cached.identity)
+    return cached
+  selections.delete(key)
+  const pending = discoveries.get(key)
+  if (pending) return pending
+  const discovery = (async () => {
+    const entry = await (options.discover ?? discoverPortFile)(
+      dir,
+      expectedPid,
+      options,
+    )
+    if (!entry) return null
+    const identity = await portFileIdentity(dir, entry)
+    if (!identity) return null
+    const selected = { entry, identity }
+    selections.set(key, selected)
+    return selected
+  })()
+  discoveries.set(key, discovery)
+  try {
+    return await discovery
+  } finally {
+    if (discoveries.get(key) === discovery) discoveries.delete(key)
+  }
+}
+
+async function request<T>(
+  entry: PortFileEntry,
   method: string,
   params: Record<string, unknown>,
   timeoutMs = DEFAULT_RPC_TIMEOUT_MS,
-): Promise<T | null> {
-  const entry = await discoverPortFile(dir, expectedPid, discoverOptions)
-  onSelected?.(entry)
-  if (!entry) return null
-
+): Promise<{ value: T | null; stale: boolean }> {
   // A raw loopback socket never consults runtime HTTP proxy settings, which
   // otherwise can expose the bearer token to a configured proxy. timeoutMs is
   // a total deadline for connect, request and the full response, not idle time.
-  return new Promise<T | null>((resolve) => {
+  return new Promise((resolve) => {
     let socket: Socket | undefined
     let settled = false
-    const done = (value: T | null) => {
+    let connected = false
+    const done = (value: T | null, stale = false) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       socket?.destroy()
-      resolve(value)
+      resolve({ value, stale })
     }
     const timer = setTimeout(() => done(null), timeoutMs)
 
@@ -61,6 +100,7 @@ async function call<T>(
       const body = JSON.stringify(params)
       socket = connect({ host: '127.0.0.1', port: entry.port })
       socket.on('connect', () => {
+        connected = true
         // HTTP/1.0 avoids chunked responses; explicitly request connection close
         // because older Bun servers can keep delayed HTTP/1.0 replies open.
         socket?.write(
@@ -104,8 +144,13 @@ async function call<T>(
             const status = /^HTTP\/1\.[01] (\d{3})(?: |$)/.exec(
               headers[0] ?? '',
             )
-            if (!status || Number(status[1]) < 200 || Number(status[1]) >= 300)
-              return done(null)
+            if (!status) return done(null)
+            const code = Number(status[1])
+            if (code < 200 || code >= 300)
+              return done(
+                null,
+                [401, 403, 404, 410, 502, 503, 504].includes(code),
+              )
             for (const header of headers.slice(1)) {
               const colon = header.indexOf(':')
               const name = header.slice(0, colon).toLowerCase()
@@ -142,12 +187,55 @@ async function call<T>(
           return done(null)
         finishBody()
       })
-      socket.on('error', () => done(null))
+      socket.on('error', () => done(null, !connected))
       socket.on('close', () => done(null))
     } catch {
-      done(null)
+      done(null, !connected)
     }
   })
+}
+
+async function call<T>(
+  dir: string,
+  expectedPid: number | undefined,
+  options: RpcClientOptions,
+  onSelected: (entry: PortFileEntry | null) => void,
+  method: string,
+  params: Record<string, unknown>,
+  timeoutMs = DEFAULT_RPC_TIMEOUT_MS,
+): Promise<T | null> {
+  const key = JSON.stringify([
+    resolve(dir),
+    expectedPid ?? null,
+    options.exactPid === true,
+  ])
+  const selected = await select(key, dir, expectedPid, options)
+  onSelected(selected?.entry ?? null)
+  if (!selected) return null
+  const deadline = Date.now() + timeoutMs
+  const out = await request<T>(selected.entry, method, params, timeoutMs)
+  if (!out.stale) return out.value
+  if (selections.get(key) === selected) selections.delete(key)
+  // Retry only definite pre-dispatch/stale-server failures, never an ambiguous
+  // response or timeout that could replay an already executed apply command.
+  const replacement = await select(key, dir, expectedPid, options)
+  if (!replacement || Date.now() >= deadline) return null
+  if (
+    replacement.entry.port === selected.entry.port &&
+    replacement.entry.pid === selected.entry.pid &&
+    replacement.entry.token === selected.entry.token
+  ) {
+    if (selections.get(key) === replacement) selections.delete(key)
+    return null
+  }
+  const retry = await request<T>(
+    replacement.entry,
+    method,
+    params,
+    deadline - Date.now(),
+  )
+  if (retry.stale && selections.get(key) === replacement) selections.delete(key)
+  return retry.value
 }
 
 /**
@@ -158,7 +246,9 @@ async function call<T>(
  * a gate: an observer that throws rejects that call before any request is
  * sent and is asked again on the next call, but nothing stops a later call
  * once an observer has returned. A caller that must never reach another
- * server passes `{ exactPid: true }`.
+ * server passes `{ exactPid: true }`. Validated selections are shared by
+ * directory, expected PID and exactPid until their file identity changes or a
+ * connect/auth/stale-server failure triggers one rediscovery in the same call.
  */
 export function createRpcClient(
   dir: string,
@@ -166,8 +256,9 @@ export function createRpcClient(
   onSelected?: (entry: PortFileEntry | null) => void,
   options: RpcClientOptions = {},
 ): RpcClient {
-  const discoverOptions: DiscoverPortFileOptions = {
+  const discoverOptions: RpcClientOptions = {
     exactPid: options.exactPid,
+    discover: options.discover,
   }
   let reportedSelection = false
   const reportSelected = (entry: PortFileEntry | null) => {

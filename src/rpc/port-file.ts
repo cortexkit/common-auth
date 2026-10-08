@@ -8,6 +8,7 @@ import {
   readFile,
   rename,
   rmdir,
+  stat,
   unlink,
 } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -227,6 +228,21 @@ export interface DiscoverPortFileOptions {
    * falls back to the newest live entry.
    */
   exactPid?: boolean
+}
+
+/** Internal cache validation: probe only the selected file and its PID. */
+export async function portFileIdentity(
+  dir: string,
+  entry: PortFileEntry,
+): Promise<string | null> {
+  if (!pidAlive(entry.pid)) return null
+  const path = join(resolve(dir), `port-${entry.pid}.json`)
+  try {
+    const info = await stat(path)
+    return `${path}:${info.dev}:${info.ino}:${info.mtimeMs}:${info.size}`
+  } catch {
+    return null
+  }
 }
 
 export async function discoverPortFile(
