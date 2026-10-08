@@ -1483,6 +1483,19 @@ expect_red = ['^an\sunreadable\sfile\smade\sreadable\sagain\sis\sread\sby\sthe\s
 expect_message = 'the file is read once it is readable'
 
 [[control]]
+id = 'rpc-client-cache-binds-validated-bytes'
+guards = 'a cached RPC selection is bound to the identity of the port-file bytes that named it, so a file replaced during discovery is never pinned to the old server'
+file = 'src/rpc/rpc-client.ts'
+old = '    const identity = await boundIdentity(dir, entry)'
+new = '    const identity = await portFileIdentity(dir, entry) // NON-VACUITY BREAK: stat the path after discovery.'
+test_file = 'test/rpc/client-discovery-cache.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/rpc/client-discovery-cache.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^a\sport\sfile\sreplaced\sduring\sdiscovery\sis\snot\scached\sfor\sthe\sold\sserver$']
+expect_message = 'only the call that discovered A goes to A'
+
+[[control]]
 id = 'rpc-client-stable-selection-skips-discovery'
 guards = 'ten stable pending calls, across clients with the same selection key, perform one validated discovery'
 file = 'src/rpc/rpc-client.ts'

@@ -1,5 +1,6 @@
+import { open } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import type {
   ApplyRequest,
   ApplyResult,
@@ -41,6 +42,37 @@ interface Selection {
 const selections = new Map<string, Selection>()
 const discoveries = new Map<string, Promise<Selection | null>>()
 
+// The identity a cached selection is checked against must belong to the bytes
+// that named this server. Statting the path after discovery is not enough: the
+// file can be replaced in between, which would pin the old server to the new
+// file's identity. So read and fstat one open descriptor, and bind only when
+// those bytes still name the discovered entry.
+async function boundIdentity(
+  dir: string,
+  entry: PortFileEntry,
+): Promise<string | null> {
+  const path = join(resolve(dir), `port-${entry.pid}.json`)
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    handle = await open(path, 'r')
+    const info = await handle.stat()
+    const current = JSON.parse(
+      await handle.readFile('utf8'),
+    ) as Partial<PortFileEntry>
+    if (
+      current.pid !== entry.pid ||
+      current.port !== entry.port ||
+      current.token !== entry.token
+    )
+      return null
+    return `${path}:${info.dev}:${info.ino}:${info.mtimeMs}:${info.size}`
+  } catch {
+    return null
+  } finally {
+    await handle?.close().catch(() => {})
+  }
+}
+
 async function select(
   key: string,
   dir: string,
@@ -60,8 +92,10 @@ async function select(
       options,
     )
     if (!entry) return null
-    const identity = await portFileIdentity(dir, entry)
-    if (!identity) return null
+    const identity = await boundIdentity(dir, entry)
+    // The file changed under discovery: use what was discovered for this
+    // call, as an uncached selection, so the next call discovers again.
+    if (!identity) return { entry, identity: '' }
     const selected = { entry, identity }
     selections.set(key, selected)
     return selected

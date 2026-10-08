@@ -110,6 +110,30 @@ test('replaced port file routes the next pending call to the new server', async 
   })
 })
 
+// The port file is replaced after discovery read it but before the client
+// cached the choice. The cache must not pin the old, still reachable server to
+// the new file: the next call has to reach the server the file now names.
+test('a port file replaced during discovery is not cached for the old server', async () => {
+  await fixture(async (dir, serve) => {
+    const first = await serve()
+    const replacement = await serve()
+    await writePortFile(dir, first.entry)
+    let discoveries = 0
+    const client = createRpcClient(dir, process.pid, undefined, {
+      discover: async (...args) => {
+        const found = await discoverPortFile(...args)
+        if (++discoveries === 1)
+          await writePortFile(dir, { ...replacement.entry, token: 'b' })
+        return found
+      },
+    })
+    expect(await client.pending(0)).toEqual(messages)
+    expect(await client.pending(0)).toEqual(messages)
+    expect(first.calls(), 'only the call that discovered A goes to A').toBe(1)
+    expect(replacement.calls(), 'the next call reaches B').toBe(1)
+  })
+})
+
 test('connect failure rediscovery succeeds in the same pending call', async () => {
   await fixture(async (dir, serve) => {
     const first = await serve()

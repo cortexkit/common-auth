@@ -1284,6 +1284,7 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | rpc | Forbidden response rediscovers a replacement in the same call | new (neither copy) | stale status 403 rediscovery succeeds in the same pending call |
 | rpc | Stale route response rediscovers a replacement in the same call | new (neither copy) | stale status 404 rediscovery succeeds in the same pending call |
 | rpc | Gone response rediscovers a replacement in the same call | new (neither copy) | stale status 410 rediscovery succeeds in the same pending call |
+| rpc | A port file replaced during discovery is never cached for the old server | new (neither copy) | a port file replaced during discovery is not cached for the old server |
 | rpc | Internal error is not resent to another server | new (neither copy) | status 500 is not resent to another server |
 | rpc | Bad gateway is not resent to another server | new (neither copy) | status 502 is not resent to another server |
 | rpc | Unavailable is not resent to another server | new (neither copy) | status 503 is not resent to another server |
