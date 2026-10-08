@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 async function probe(
-  mode: 'default' | 'exit' | 'SIGINT' | 'SIGTERM' | 'error',
+  mode: 'default' | 'exit' | 'SIGINT' | 'SIGTERM' | 'error' | 'killed',
 ) {
   const dir = await mkdtemp(join(tmpdir(), 'load-probe-'))
   const marker = join(dir, 'workers')
@@ -26,9 +26,15 @@ async function probe(
     };
   `,
   )
+  // The fake test runner is a child of the probe but outside its load group, so
+  // nothing kills it if the probe itself is SIGKILLed. It records its pid for
+  // teardown, and its wait is bounded and stops once the test removes its
+  // directory, so it can never outlive the test as an orphan.
+  const runnerPid = join(dir, 'runner.pid')
+  const wait = `i=0; while [ ! -s "$WORKER_MARKER" ]; do [ -d "${dir}" ] || exit 0; i=$((i+1)); [ "$i" -gt 500 ] && exit 1; sleep 0.01; done`
   await writeFile(
     executable,
-    `#!/bin/sh\n${mode === 'default' ? 'exit 0' : `while [ ! -s "$WORKER_MARKER" ]; do sleep 0.01; done\n${mode === 'SIGINT' || mode === 'SIGTERM' ? 'exec sleep 30' : 'sleep 0.1\nexit 0'}`}\n`,
+    `#!/bin/sh\necho $$ > "${runnerPid}"\n${mode === 'default' ? 'exit 0' : `${wait}\n${mode === 'SIGINT' || mode === 'SIGTERM' ? 'exec sleep 30' : 'sleep 0.1\nexit 0'}`}\n`,
     { mode: 0o700 },
   )
   const child = spawn(
@@ -38,7 +44,7 @@ async function probe(
       'fixture',
       'fixture',
       '1',
-      ...(mode === 'default' ? [] : ['--workers', '2']),
+      ...(mode === 'default' || mode === 'killed' ? [] : ['--workers', '2']),
     ],
     {
       env: {
@@ -63,6 +69,19 @@ async function probe(
     if (!line?.endsWith('}')) return
     groupPid = (JSON.parse(line) as { loadGroupPid: number | null })
       .loadGroupPid
+    // No workers are started, so the runner waits for a marker that never
+    // comes; SIGKILL leaves the probe no chance to stop it.
+    if (!sent && mode === 'killed') {
+      sent = true
+      void (async () => {
+        // Kill only once the runner is up, so the case it guards is real.
+        for (let attempt = 0; attempt < 300; attempt++) {
+          if (await readFile(runnerPid, 'utf8').catch(() => '')) break
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+        child.kill('SIGKILL')
+      })()
+    }
     if (!sent && (mode === 'SIGINT' || mode === 'SIGTERM')) {
       sent = true
       void (async () => {
@@ -106,9 +125,17 @@ async function probe(
       } catch {}
     }
     child.kill('SIGKILL')
+    const runner = Number(await readFile(runnerPid, 'utf8').catch(() => ''))
+    if (runner > 0) {
+      try {
+        process.kill(runner, 'SIGKILL')
+      } catch {}
+    }
     await rm(dir, { recursive: true, force: true })
+    if (runner > 0) lastRunner = runner
   }
 }
+let lastRunner = 0
 
 test('load probe generates zero workers by default', async () => {
   const out = await probe('default')
@@ -135,6 +162,20 @@ for (const mode of ['SIGINT', 'SIGTERM', 'error'] as const) {
     if (mode !== 'error') expect(out.workers.trim().split('\n')).toHaveLength(2)
   })
 }
+
+test('a SIGKILLed probe leaves no fake test runner behind', async () => {
+  lastRunner = 0
+  await probe('killed')
+  expect(lastRunner, 'the fake runner started').toBeGreaterThan(0)
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  const status = spawnSync('ps', ['-o', 'stat=', '-p', String(lastRunner)], {
+    encoding: 'utf8',
+  }).stdout.trim()
+  expect(
+    status === '' || status.startsWith('Z'),
+    'the fake runner did not outlive the test',
+  ).toBe(true)
+})
 
 test('release publish relies on exactly one prepublishOnly build', async () => {
   const workflow = await readFile('.github/workflows/release.yaml', 'utf8')

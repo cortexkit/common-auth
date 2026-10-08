@@ -1297,4 +1297,5 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | tooling | Interrupt kills the load process group | new (neither copy) | load probe stops its process group on SIGINT |
 | tooling | Termination kills the load process group | new (neither copy) | load probe stops its process group on SIGTERM |
 | tooling | Spawn error kills the load process group | new (neither copy) | load probe stops its process group on error |
+| tooling | A SIGKILLed probe leaves no fake test runner running | new (neither copy) | a SIGKILLed probe leaves no fake test runner behind |
 | tooling | Publishing performs its artifact build once through the package lifecycle | new (neither copy) | release publish relies on exactly one prepublishOnly build |
