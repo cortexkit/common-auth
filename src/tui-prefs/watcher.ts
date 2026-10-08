@@ -73,13 +73,16 @@ export function watchTuiPreferences(
   let lastMetadata: string | null = null
   let lastSeen: string | null = null
   // Seed synchronously so an immediate write cannot be absorbed as the baseline.
+  // The metadata is recorded only together with contents that were read, as in
+  // the probe below: if the first read fails, the probe keeps trying.
   try {
-    lastMetadata = identity((options.fs?.statSync ?? statSync)(path))
+    const metadata = identity((options.fs?.statSync ?? statSync)(path))
     lastSeen = (
       options.fs?.readFileSync ?? ((file) => readFileSync(file, 'utf8'))
     )(path)
+    lastMetadata = metadata
   } catch {
-    // Missing files and directories can be created later.
+    // Missing or unreadable files are picked up by the probe later.
   }
   let disposed = false
   const subscribers = new Set<{ notify: () => void }>()

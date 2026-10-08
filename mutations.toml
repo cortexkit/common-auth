@@ -1468,6 +1468,21 @@ expect_red = ['^a\sfailed\sread\safter\sa\smetadata\schange\sis\sretried\sby\sth
 expect_message = 'the failed read was retried'
 
 [[control]]
+id = 'tui-prefs-failed-seed-records-no-metadata'
+guards = 'when the first synchronous read fails, no metadata is recorded, so the probe keeps reading until the file is readable'
+file = 'src/tui-prefs/watcher.ts'
+old = '''    lastMetadata = metadata
+  } catch {'''
+new = '''  } catch {
+    lastMetadata = identity((options.fs?.statSync ?? statSync)(path)) // NON-VACUITY BREAK: record metadata after a failed seed read.'''
+test_file = 'test/tui-prefs/watcher.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/tui-prefs/watcher.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^an\sunreadable\sfile\smade\sreadable\sagain\sis\sread\sby\sthe\sprobe$']
+expect_message = 'the file is read once it is readable'
+
+[[control]]
 id = 'rpc-client-stable-selection-skips-discovery'
 guards = 'ten stable pending calls, across clients with the same selection key, perform one validated discovery'
 file = 'src/rpc/rpc-client.ts'

@@ -347,6 +347,37 @@ test('a failed read after a metadata change is retried by the next probe', async
   expect(fired, 'the retried read notifies').toBe(1)
 })
 
+// If the first read fails, its metadata must not be recorded either:
+// otherwise a file made readable again (chmod moves no tracked metadata) would
+// be skipped by every later probe.
+test('an unreadable file made readable again is read by the probe', async () => {
+  await writeFile(file, '{"a":1}')
+  let seedFailed = false
+  disposers.push(
+    watchTuiPreferences(
+      file,
+      () => {
+        fired++
+      },
+      {
+        watchDirectory: nativeSeam().watchDirectory,
+        fs: {
+          readFileSync: () => {
+            seedFailed = true
+            throw Object.assign(new Error('permission denied'), {
+              code: 'EACCES',
+            })
+          },
+        },
+      },
+    ),
+  )
+  expect(seedFailed).toBe(true)
+  // Unchanged dev, inode, mtime and size: only a probe that retries finds it.
+  await sleep(2_500)
+  expect(fired, 'the file is read once it is readable').toBe(1)
+})
+
 test('metadata probe recovers a missed native event within 1.5 seconds', async () => {
   await writeFile(file, '{}')
   start(nativeSeam().watchDirectory)
