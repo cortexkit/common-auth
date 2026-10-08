@@ -46,12 +46,33 @@ const BUILTIN_IDS = new Set([
   'diagnostics',
 ])
 
+/** The four slots the library can build from a pool store. */
+export type StoreSectionSlot = 'accounts' | 'quota' | 'routing' | 'limits'
+const STORE_SLOTS: readonly StoreSectionSlot[] = [
+  'accounts',
+  'quota',
+  'routing',
+  'limits',
+]
+
 export interface CommandMenuOptions {
   /** The slash command's name without the slash (`openai`, `claude`). */
   command: string
   /** The dialog title. */
   title: string
-  store: PoolStore
+  /**
+   * The pool store the built-in Accounts, Quota, Routing and Limits sections
+   * read and write. Required unless `replace` supplies all four.
+   */
+  store?: PoolStore
+  /**
+   * Plugin sections that take the place of built-in ones, keeping their slot
+   * and the fixed order. For a plugin whose accounts are not pool rows (a
+   * single host login, or rows it must not expose by id), so it renders its
+   * own items and actions without a store. A replaced slot's built-in
+   * options (`accounts`, `quota`, ...) must not be given.
+   */
+  replace?: Partial<Record<StoreSectionSlot, PluginSection>>
   /** The plugin's legacy locks, passed to every store write the menu makes. */
   extraLocks?: readonly PoolLockSpec[]
   accounts?: AccountsSectionOptions
@@ -196,6 +217,19 @@ export function createCommandMenu(options: CommandMenuOptions): CommandMenu {
   const seam: SeamContext = { logger, redact }
   const now = options.now ?? Date.now
   const extras = options.extras ?? []
+  const replaced = options.replace ?? {}
+  const builtSlots = STORE_SLOTS.filter((slot) => !replaced[slot])
+  for (const slot of STORE_SLOTS) {
+    if (replaced[slot] && options[slot] !== undefined)
+      throw new Error(
+        `the ${slot} section is replaced; its built-in options cannot also be given`,
+      )
+  }
+  const store = options.store
+  if (builtSlots.length > 0 && !store)
+    throw new Error(
+      `a store is required for the built-in ${builtSlots.join(', ')} section${builtSlots.length > 1 ? 's' : ''}`,
+    )
   const seen = new Set<string>()
   for (const extra of extras) {
     if (BUILTIN_IDS.has(extra.id) || seen.has(extra.id))
@@ -236,15 +270,30 @@ export function createCommandMenu(options: CommandMenuOptions): CommandMenu {
   async function sections(
     invocation: CommandInvocation,
   ): Promise<ResolvedSection[]> {
-    const out = await builtinSections({
-      store: options.store,
-      now,
-      ...(options.extraLocks ? { extraLocks: options.extraLocks } : {}),
-      ...(options.accounts ? { accounts: options.accounts } : {}),
-      ...(options.quota ? { quota: options.quota } : {}),
-      ...(options.routing ? { routing: options.routing } : {}),
-      ...(options.limits ? { limits: options.limits } : {}),
-    })
+    // Built-in sections read the store once; a fully replaced menu never
+    // touches it.
+    const built =
+      store && builtSlots.length > 0
+        ? await builtinSections({
+            store,
+            now,
+            ...(options.extraLocks ? { extraLocks: options.extraLocks } : {}),
+            ...(options.accounts ? { accounts: options.accounts } : {}),
+            ...(options.quota ? { quota: options.quota } : {}),
+            ...(options.routing ? { routing: options.routing } : {}),
+            ...(options.limits ? { limits: options.limits } : {}),
+          })
+        : []
+    const out: ResolvedSection[] = []
+    for (const slot of STORE_SLOTS) {
+      const replacement = replaced[slot]
+      if (replacement)
+        out.push(await plugin(slot, slot, replacement, invocation))
+      else {
+        const section = built.find((entry) => entry.slot === slot)
+        if (section) out.push(section)
+      }
+    }
     if (options.cache)
       out.push(await plugin('cache', 'cache', options.cache, invocation))
     if (options.diagnostics)

@@ -1549,3 +1549,31 @@ command = ['bun', 'test', 'test/claustrum/roster.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^beforePublish\sruns\safter\sthe\sroster\sis\sstaged,\simmediately\sbefore\sthe\srename$']
 expect_message = 'the new roster is staged when the guard runs'
+
+[[control]]
+id = 'commands-replaced-slot-wins'
+guards = 'a replacement section takes the built-in section place, so a plugin that must not expose pool row ids never has them rendered'
+file = 'src/commands/menu.ts'
+old = '''      if (replacement)
+        out.push(await plugin(slot, slot, replacement, invocation))'''
+new = '''      if (replacement && !built.some((entry) => entry.slot === slot)) // NON-VACUITY BREAK
+        out.push(await plugin(slot, slot, replacement, invocation))'''
+test_file = 'test/commands/replace.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/commands/replace.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^replacing\sthe\sbuilt-in\sstore\ssections\sa\sreplaced\sslot\stakes\sthe\sbuilt-in\sone’s\splace\swhile\sthe\sothers\sstill\sread\sthe\sstore$']
+expect_message = 'no pool row ids'
+
+[[control]]
+id = 'commands-built-in-slot-needs-store'
+guards = 'a menu whose built-in slot has no store is refused at creation instead of failing on first open'
+file = 'src/commands/menu.ts'
+old = '''  if (builtSlots.length > 0 && !store)'''
+new = '''  if (false) // NON-VACUITY BREAK'''
+test_file = 'test/commands/replace.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/commands/replace.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^replacing\sthe\sbuilt-in\sstore\ssections\sa\sbuilt-in\sslot\swithout\sa\sstore\sis\srefused\swhen\sthe\smenu\sis\screated$']
+expect_message = 'toThrow'

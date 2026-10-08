@@ -934,6 +934,10 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | store | The recorded epoch of an id never goes down | new (neither copy) | the recorded epoch of an id never goes down when a later row with that id held a lower one |
 | store | An add of an id that held the last safe epoch is refused before writing | new (neither copy) | an add of an id that held the last safe credential epoch is refused and writes nothing |
 | store | An attribution survives a refresh and a rotate of the same credential | new (neither copy) | an attribution taken before a refresh and a rotate of the same credential is still accepted |
+| commands | All four store sections replaced: no store needed, fixed order kept, actions dispatch | new (neither copy) | a menu with all four slots replaced needs no store and keeps the fixed order |
+| commands | A replaced slot takes the built-in's place; other slots still read the store | new (neither copy) | a replaced slot takes the built-in one’s place while the others still read the store |
+| commands | A built-in slot without a store is refused at creation | new (neither copy) | a built-in slot without a store is refused when the menu is created |
+| commands | A replaced slot refuses its built-in options | new (neither copy) | a replaced slot cannot also take its built-in options |
 | commands | Built-in sections project accounts field by field, so no credential reaches a payload | reference/openai-auth/packages/core/src/commands.ts | no built-in section payload carries a credential field even when the store rows carry one |
 | commands | A credential-shaped field from a plugin section is scrubbed and its name warned | reference/openai-auth/packages/core/src/commands.ts | a plugin section leaking a credential-shaped field is scrubbed and the dropped names are warned, never the values |
 | commands | Apply results pass through the same scrub | reference/openai-auth/packages/core/src/commands.ts | an apply result passes through the same scrub as the dialog payload |
