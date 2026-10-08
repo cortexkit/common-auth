@@ -1281,7 +1281,11 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | rpc | Authentication rejection rediscovers a replacement in the same call | new (neither copy) | stale status 401 rediscovery succeeds in the same pending call |
 | rpc | Forbidden response rediscovers a replacement in the same call | new (neither copy) | stale status 403 rediscovery succeeds in the same pending call |
 | rpc | Stale route response rediscovers a replacement in the same call | new (neither copy) | stale status 404 rediscovery succeeds in the same pending call |
-| rpc | Unavailable response rediscovers a replacement in the same call | new (neither copy) | stale status 503 rediscovery succeeds in the same pending call |
+| rpc | Gone response rediscovers a replacement in the same call | new (neither copy) | stale status 410 rediscovery succeeds in the same pending call |
+| rpc | Internal error is not resent to another server | new (neither copy) | status 500 is not resent to another server |
+| rpc | Bad gateway is not resent to another server | new (neither copy) | status 502 is not resent to another server |
+| rpc | Unavailable is not resent to another server | new (neither copy) | status 503 is not resent to another server |
+| rpc | An apply past its deadline is not resent to another server | new (neither copy) | status 504 is not resent to another server |
 | rpc | Cached non-strict selection cannot route an exact dead PID to a fallback server | new (neither copy) | cached selections never weaken exactPid refusal for a dead PID |
 | fs | Test cleanup skips completed releases without changing deliberate repeated calls | new (neither copy) | lifetime cleanup skips completed releases but preserves explicit repeated release |
 | fs | Test cleanup joins in-flight releases and releases unreleased resources after failure | new (neither copy) | lifetime cleanup joins in-flight releases and cleans unreleased locks after failure |

@@ -130,7 +130,7 @@ test('connect failure rediscovery succeeds in the same pending call', async () =
   })
 })
 
-for (const status of [401, 403, 404, 503]) {
+for (const status of [401, 403, 404, 410]) {
   test(`stale status ${status} rediscovery succeeds in the same pending call`, async () => {
     await fixture(async (dir, serve) => {
       const replacement = await serve()
@@ -145,6 +145,30 @@ for (const status of [401, 403, 404, 503]) {
       expect(stale.calls()).toBe(1)
       expect(replacement.calls()).toBe(1)
       expect(counter.count()).toBe(2)
+    })
+  })
+}
+
+// An apply that hit the server's deadline may still be running there, so the
+// client must not resend it to a newer server in the same directory.
+for (const status of [500, 502, 503, 504]) {
+  test(`status ${status} is not resent to another server`, async () => {
+    await fixture(async (dir, serve) => {
+      const replacement = await serve()
+      const busy = await serve(async (socket) => {
+        await writePortFile(dir, { ...replacement.entry, token: 'new-token' })
+        socket.end(`HTTP/1.0 ${status} Busy\r\n\r\n{}`)
+      })
+      await writePortFile(dir, busy.entry)
+      const client = createRpcClient(
+        dir,
+        process.pid,
+        undefined,
+        discoveryCounter(),
+      )
+      expect(await client.pending(0)).toEqual([])
+      expect(busy.calls()).toBe(1)
+      expect(replacement.calls()).toBe(0)
     })
   })
 }

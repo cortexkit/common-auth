@@ -147,10 +147,11 @@ async function request<T>(
             if (!status) return done(null)
             const code = Number(status[1])
             if (code < 200 || code >= 300)
-              return done(
-                null,
-                [401, 403, 404, 410, 502, 503, 504].includes(code),
-              )
+              // Only statuses meaning "this is not the server you meant" may
+              // rediscover and resend. A 504 is this server's apply deadline:
+              // the handler can still be running, so resending it to another
+              // server could run the command twice. 5xx is never retried.
+              return done(null, [401, 403, 404, 410].includes(code))
             for (const header of headers.slice(1)) {
               const colon = header.indexOf(':')
               const name = header.slice(0, colon).toLowerCase()
