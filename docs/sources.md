@@ -1272,6 +1272,7 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 
 | tui-prefs | Canonical-path subscriptions across bundled copies share native watcher and probe, isolate callbacks and dispose independently | new (neither copy) | bundled subscribers share one native watcher and one probe until last disposal |
 | tui-prefs | Unchanged metadata performs no asynchronous file reads across at least three seconds | new (neither copy) | unchanged metadata probes perform zero file reads over three seconds |
+| tui-prefs | A failed read after a metadata change is retried, not hidden | new (neither copy) | a failed read after a metadata change is retried by the next probe |
 | tui-prefs | Safety probe recovers missed native events within the relaxed one-second fallback budget | new (neither copy) | metadata probe recovers a missed native event within 1.5 seconds |
 | tui-prefs | Inode change detects an atomic replacement even with equal size and mtime | new (neither copy) | metadata probe detects atomic rename with unchanged size and mtime |
 | tui-prefs | Missing preferences are created and recreated while native watching is unavailable | new (neither copy) | metadata probe recovers creation and recreation without a native watcher |

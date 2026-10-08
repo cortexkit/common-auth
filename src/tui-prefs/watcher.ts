@@ -90,10 +90,20 @@ export function watchTuiPreferences(
       if (disposed) return
       const metadata = identity(await probe(path).catch(() => null))
       if (!native && metadata === lastMetadata) return
+      // A missing file has nothing to read; remember that so the probe stays
+      // quiet until it reappears.
+      if (metadata === null) {
+        lastMetadata = null
+        return
+      }
       const text = await read(path).catch(() => null)
       if (disposed) return
+      // Record the metadata only once its contents were read. A failed read
+      // leaves the old value, so the next probe sees a change and retries
+      // instead of skipping a file whose new contents were never observed.
+      if (text === null) return
       lastMetadata = metadata
-      if (text === null || text === lastSeen) return
+      if (text === lastSeen) return
       lastSeen = text
       for (const subscriber of [...subscribers]) {
         if (!subscribers.has(subscriber)) continue

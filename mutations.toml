@@ -1452,6 +1452,22 @@ expect_red = ['^unchanged\smetadata\sprobes\sperform\szero\sfile\sreads\sover\st
 expect_message = 'unchanged probes must not read file bytes'
 
 [[control]]
+id = 'tui-prefs-failed-read-is-retried'
+guards = 'a changed file whose read fails is read again on the next probe, so its new contents are never hidden by a recorded metadata value'
+file = 'src/tui-prefs/watcher.ts'
+old = '''      if (text === null) return
+      lastMetadata = metadata
+      if (text === lastSeen) return'''
+new = '''      lastMetadata = metadata // NON-VACUITY BREAK: record metadata after a failed read.
+      if (text === null || text === lastSeen) return'''
+test_file = 'test/tui-prefs/watcher.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/tui-prefs/watcher.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^a\sfailed\sread\safter\sa\smetadata\schange\sis\sretried\sby\sthe\snext\sprobe$']
+expect_message = 'the failed read was retried'
+
+[[control]]
 id = 'rpc-client-stable-selection-skips-discovery'
 guards = 'ten stable pending calls, across clients with the same selection key, perform one validated discovery'
 file = 'src/rpc/rpc-client.ts'

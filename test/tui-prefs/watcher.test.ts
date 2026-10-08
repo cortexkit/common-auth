@@ -316,6 +316,37 @@ test('unchanged metadata probes perform zero file reads over three seconds', asy
   expect(fired).toBe(0)
 })
 
+// A changed file whose first read fails must be read again on a later probe:
+// the metadata may never change again, so remembering it after a failed read
+// would hide the new contents for good.
+test('a failed read after a metadata change is retried by the next probe', async () => {
+  await writeFile(file, '{}')
+  let reads = 0
+  disposers.push(
+    watchTuiPreferences(
+      file,
+      () => {
+        fired++
+      },
+      {
+        watchDirectory: nativeSeam().watchDirectory,
+        fs: {
+          readFile: async (path) => {
+            reads++
+            if (reads === 1) throw new Error('transient read failure')
+            return readFile(path, 'utf8')
+          },
+        },
+      },
+    ),
+  )
+  await writeFile(file, '{"changed":true}')
+  // Two probe intervals: the first read fails, the next probe must retry.
+  await sleep(2_500)
+  expect(reads, 'the failed read was retried').toBeGreaterThanOrEqual(2)
+  expect(fired, 'the retried read notifies').toBe(1)
+})
+
 test('metadata probe recovers a missed native event within 1.5 seconds', async () => {
   await writeFile(file, '{}')
   start(nativeSeam().watchDirectory)
