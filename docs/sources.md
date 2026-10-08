@@ -84,6 +84,9 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | logger | A type picked from the file options keeps `file` required | openai-auth packages/core/src/logger.ts InitLoggerOptions (Pick of file and level), broken by the 0.8.0 union | a type picked from the file options still requires the file |
 | claustrum | Caller can publish a runtime-only sibling file after asserting ownership without changing the roster | new (neither copy) | publishes a runtime-only sibling file after asserting roster lock ownership |
 | claustrum | A competing roster mutation enters only after the current callback returns | new (neither copy) | serializes competing roster mutations until the first callback returns |
+| claustrum | beforePublish runs with the roster staged, just before the rename | new (neither copy) | beforePublish runs after the roster is staged, immediately before the rename |
+| claustrum | A rejecting beforePublish publishes nothing and removes the staged file | new (neither copy) | a rejecting beforePublish leaves the roster unchanged and removes the staged file |
+| claustrum | Roster lock lost while staging prevents publication | new (neither copy) | losing the roster lock while staging prevents publication |
 | claustrum | Lost ownership rejects before caller rename and leaves roster unchanged | new (neither copy) | lost roster ownership rejects and skips a caller rename and roster write |
 | claustrum | The library's own roster write rechecks ownership before persisting next | new (neither copy) | the roster pre-write ownership check rejects a lost lease without writing |
 | claustrum | Existing one-argument roster callbacks remain supported | new (neither copy) | one-argument roster mutation callbacks remain supported |

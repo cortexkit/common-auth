@@ -83,6 +83,7 @@ export {
   acceptVaultRoute,
   DEFAULT_ROUTE_PREFIX,
   declineVaultRoute,
+  type MutateVaultRosterOptions,
   mutateVaultRoster,
   type ProjectionOptions,
   projectVaultRoster,

@@ -481,6 +481,17 @@ export interface VaultRosterLockContext {
   assertOwned: () => Promise<void>
 }
 
+export interface MutateVaultRosterOptions {
+  /**
+   * Runs when the new roster is fully staged on disk, immediately before the
+   * rename that publishes it, so a caller can confirm a lease of its own at
+   * the moment of publication rather than when `change` returned. If it
+   * throws, nothing is published and the staged file is removed. The
+   * roster's own write lock is reasserted right after it.
+   */
+  beforePublish?: () => Promise<void>
+}
+
 /**
  * Read, change and write the roster under its write lock. `change` returns
  * undefined to leave the file as it is. Call `assertOwned()` immediately
@@ -494,6 +505,7 @@ export async function mutateVaultRoster<T>(
   ) =>
     | Promise<{ next?: VaultRosterFile; result: T }>
     | { next?: VaultRosterFile; result: T },
+  options: MutateVaultRosterOptions = {},
 ): Promise<T> {
   return withLock(path, WRITE_LOCK, async (lock) => {
     const current = await readVaultRoster(path)
@@ -502,7 +514,14 @@ export async function mutateVaultRoster<T>(
     })
     if (next) {
       await lock.assertOwned()
-      await writeJsonAtomic(path, next)
+      // Staging the file takes several awaited steps; check both the caller's
+      // lease and this lock again at the last moment before the rename.
+      await writeJsonAtomic(path, next, {
+        beforeRename: async () => {
+          await options.beforePublish?.()
+          await lock.assertOwned()
+        },
+      })
     }
     return result
   })

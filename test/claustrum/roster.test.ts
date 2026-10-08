@@ -212,6 +212,90 @@ test('the roster pre-write ownership check rejects a lost lease without writing'
   expect(await readFile(path, 'utf8')).toBe(before)
 })
 
+async function stagedFiles(path: string) {
+  const { readdir } = await import('node:fs/promises')
+  const { basename, dirname } = await import('node:path')
+  return (await readdir(dirname(path))).filter(
+    (name) => name.startsWith(`${basename(path)}.`) && name.endsWith('.tmp'),
+  )
+}
+
+test('beforePublish runs after the roster is staged, immediately before the rename', async () => {
+  const { path } = await fixture()
+  await refreshVaultRoster({ path, custody: inventory([work]) })
+  let staged: string[] = []
+  let published: string | undefined
+  await mutateVaultRoster(
+    path,
+    async (current) => {
+      if (!current) throw new Error('expected a roster')
+      return { next: { ...current, view: 'published' }, result: undefined }
+    },
+    {
+      beforePublish: async () => {
+        staged = await stagedFiles(path)
+        published = (await readVaultRoster(path))?.view
+      },
+    },
+  )
+  expect(staged, 'the new roster is staged when the guard runs').toHaveLength(1)
+  expect(published, 'the old roster is still in place then').not.toBe(
+    'published',
+  )
+  expect((await readVaultRoster(path))?.view).toBe('published')
+  expect(await stagedFiles(path)).toEqual([])
+})
+
+test('a rejecting beforePublish leaves the roster unchanged and removes the staged file', async () => {
+  const { path } = await fixture()
+  await refreshVaultRoster({ path, custody: inventory([work]) })
+  const before = await readFile(path, 'utf8')
+  const refusal = new Error('caller lease lost')
+  let caught: unknown
+  try {
+    await mutateVaultRoster(
+      path,
+      async (current) => {
+        if (!current) throw new Error('expected a roster')
+        return { next: { ...current, view: 'must-not-publish' }, result: 0 }
+      },
+      {
+        beforePublish: async () => {
+          throw refusal
+        },
+      },
+    )
+  } catch (error) {
+    caught = error
+  }
+  expect(caught).toBe(refusal)
+  expect(await readFile(path, 'utf8'), 'roster bytes unchanged').toBe(before)
+  expect(await stagedFiles(path), 'staged file removed').toEqual([])
+})
+
+test('losing the roster lock while staging prevents publication', async () => {
+  const { path } = await fixture()
+  await refreshVaultRoster({ path, custody: inventory([work]) })
+  const before = await readFile(path, 'utf8')
+  let caught: unknown
+  try {
+    await mutateVaultRoster(
+      path,
+      async (current) => {
+        if (!current) throw new Error('expected a roster')
+        return { next: { ...current, view: 'must-not-publish' }, result: 0 }
+      },
+      // The caller's own guard passes; the roster lock is gone by now.
+      { beforePublish: () => stealRosterWriteLock(path) },
+    )
+  } catch (error) {
+    caught = error
+  }
+  expect(caught).toBeInstanceOf(LockOwnershipError)
+  expect(await readFile(path, 'utf8'), 'roster bytes unchanged').toBe(before)
+  expect(await stagedFiles(path), 'staged file removed').toEqual([])
+})
+
 test('one-argument roster mutation callbacks remain supported', async () => {
   const { path } = await fixture()
   const result = await mutateVaultRoster(path, (current) => ({
