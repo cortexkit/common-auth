@@ -1258,7 +1258,9 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | opencode2 | A code login writes into the pool and the host receives only a placeholder | new (neither copy) | a code login writes into the pool and leaves the host a placeholder |
 | opencode2 | An automatic login resolves to the placeholder only after the pool write | new (neither copy) | an automatic login resolves to a placeholder only after the pool write |
 | opencode2 | A failed pool write fails the host login | new (neither copy) | a failed pool write fails the host login |
-| opencode2 | Host-driven refresh returns a placeholder and never calls the pool | new (neither copy) | host refresh hands back a placeholder and never calls the pool |
+| opencode2 | Host refresh renews only this integration's placeholder | new (neither copy) | host refresh renews only this integration's placeholder |
+| opencode2 | Host refresh refuses a real OAuth credential with the same method ID | new (neither copy) | host refresh refuses a real OAuth credential with the same method ID |
+| opencode2 | Host refresh refuses another integration's placeholder | new (neither copy) | host refresh refuses another integration's placeholder |
 | opencode2 | Placeholder credentials are recognised per integration and carry no routable secret | new (neither copy) | placeholder credentials are recognised and carry no routable secret |
 | opencode2 | The server-sent event watcher forwards bytes unchanged and reassembles events split across chunks | new (neither copy) | passes the body through unchanged and reports events split across chunks |
 | rpc | Split HTTP/1.0 headers and UTF-8 JSON bodies, with and without length | new (neither copy) | raw RPC transport reads split headers and UTF-8 bodies with or without Content-Length |
