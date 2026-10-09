@@ -3279,7 +3279,7 @@ expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\sdisable\s
 expect_message = 'error: expect('
 
 [[control]]
-id = 'store-final-snapshot-recordIdentity'
+id = 'store-final-snapshot-record-identity'
 guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
 file = 'src/store/mutate.ts'
 old = '''file: 'config',
@@ -3313,7 +3313,7 @@ expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\sremove\sl
 expect_message = 'error: expect('
 
 [[control]]
-id = 'store-final-snapshot-publishRoster'
+id = 'store-final-snapshot-publish-roster'
 guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
 file = 'src/store/mutate.ts'
 old = '''file: 'config',
@@ -3614,7 +3614,7 @@ id = 'store-final-torn-target-enable-transition'
 guards = 'provider-state planning preserves the genuine credential epoch while completing a pending target transition'
 file = 'src/store/provider-state.ts'
 old = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest }'''
-new = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest, credentialEpoch: epoch + 1 } /* NON-VACUITY BREAK */'''
+new = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest, credentialEpoch: row.torn ? epoch + 1 : epoch } /* NON-VACUITY BREAK */'''
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -3642,7 +3642,7 @@ id = 'store-final-torn-target-disable-transition'
 guards = 'provider-state planning preserves the genuine credential epoch while completing a pending target transition'
 file = 'src/store/provider-state.ts'
 old = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest }'''
-new = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest, credentialEpoch: epoch + 1 } /* NON-VACUITY BREAK */'''
+new = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest, credentialEpoch: row.torn ? epoch + 1 : epoch } /* NON-VACUITY BREAK */'''
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
