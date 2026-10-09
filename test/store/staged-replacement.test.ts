@@ -13,6 +13,7 @@ import { parseStamp } from '../../src/store/schema.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
+import { expireChildLeases } from './helpers.js'
 
 const hooks = lifetimeHooks()
 const { test, afterEach } = hooks
@@ -462,6 +463,13 @@ test('staged replacement enabled shaped reserved rows never route or pull', asyn
   expect(polled).toBe(0)
   expect(await row('new')).toMatchObject({
     candidate: false,
+    staged: { reservation: 'reservation' },
+  })
+  config.accounts[0].type = 'invalid'
+  await write(configPath, config)
+  expect(await row('new')).toMatchObject({
+    candidate: false,
+    invalid: 'roster',
     staged: { reservation: 'reservation' },
   })
 })
@@ -988,8 +996,10 @@ async function crashChild(
   const errors = new Response(child.stderr).text()
   const exitCode = await hooks.lifetime.operation(child.exited)
   const stderr = await errors
+  const stdout = await output
   expect(exitCode, stderr).toBe(17)
-  expect(await output).toContain(
+  await expireChildLeases(stdout)
+  expect(stdout).toContain(
     operation === 'add'
       ? 'crash:after-state-write'
       : 'crash:after-config-write',

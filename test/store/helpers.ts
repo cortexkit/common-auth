@@ -211,12 +211,12 @@ export function childLeases(output: string): ChildLease[] {
 }
 
 /**
- * Called only after a crash child's close event: it cannot renew any more.
+ * Called only after confirmed child exit and drained output: it cannot renew any more.
  * Write the same newline-terminated owner/expiry JSON as lease renewal, with
  * an expired timestamp, so normal acquisition reaps the abandoned record.
  * Ownership matching avoids expiring a survivor that has already taken over.
  */
-async function expireChildLeases(output: string): Promise<void> {
+export async function expireChildLeases(output: string): Promise<void> {
   for (const lease of childLeases(output)) {
     const handle = await open(lease.path, 'r+')
     try {

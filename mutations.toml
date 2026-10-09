@@ -814,6 +814,23 @@ expect_message = 'attribution'
 # --- fs locks ---
 
 [[control]]
+id = 'store-stage-invalid-row-projection'
+guards = 'a reserved config marker remains visible even when its roster row is invalid'
+file = 'src/store/schema.ts'
+old = '''invalid: 'roster',
+          stamp: 'none',
+          ...(staged ? { staged } : {}),'''
+new = '''invalid: 'roster',
+          stamp: 'none',
+          /* NON-VACUITY BREAK: reserved marker hidden */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\senabled\sshaped\sreserved\srows\snever\sroute\sor\spull$']
+expect_message = 'error: expect('
+
+[[control]]
 id = 'store-stage-no-rotate-mode'
 guards = 'a stage marker cannot reach the ordinary old-holder rotation branch'
 file = 'src/store/rows.ts'

@@ -961,6 +961,9 @@ export function buildRawRows(
   for (const raw of rosterOf(config)) {
     const problem = rosterRowProblem(raw)
     const id = isRecord(raw) && typeof raw.id === 'string' ? raw.id : undefined
+    const rawEntry = id === undefined ? undefined : entries[id]
+    const reserved = isRecord(rawEntry) && Object.hasOwn(rawEntry, 'staged')
+    const staged = reserved ? parseReservation(rawEntry.staged) : undefined
     if (problem || !isRecord(raw) || id === undefined || seen.has(id)) {
       if (id !== undefined && !seen.has(id)) seen.add(id)
       if (id !== undefined)
@@ -973,6 +976,7 @@ export function buildRawRows(
           candidate: false,
           invalid: 'roster',
           stamp: 'none',
+          ...(staged ? { staged } : {}),
         })
       continue
     }
@@ -980,9 +984,6 @@ export function buildRawRows(
     const type = raw.type === 'api' ? 'api' : 'oauth'
     const hasEntry = Object.hasOwn(entries, id)
     const entry = hasEntry ? parseEntry(entries[id], codec) : undefined
-    const rawEntry = entries[id]
-    const reserved = isRecord(rawEntry) && Object.hasOwn(rawEntry, 'staged')
-    const staged = reserved ? parseReservation(rawEntry.staged) : undefined
     const credential = credentialFor(raw, stateAccounts[id])
     const enabled = raw.enabled !== false
     // A row without a per-row entry is at credential epoch 1 (the epoch the
