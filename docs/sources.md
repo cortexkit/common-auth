@@ -11,6 +11,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | component | behaviour | origin | test |
 | --- | --- | --- | --- |
 | store | Staged refuse and duplicate prerequisites | new (neither copy) | staged replacement refuse preserves holder and duplicate requires both staging fields |
+| store | Preparing a reserved account requires explicit refuse or stage-duplicate mode so an old account cannot be rotated accidentally | new (neither copy) | staged replacement stage with rotate refuses before locks and preserves holder |
 | store | State-only replay retains stored epoch | new (neither copy) | staged replacement orphan replay preserves genuine epoch and stored state |
 | store | Foreign orphan reservation | new (neither copy) | staged replacement foreign orphan different reservation refuses unchanged |
 | store | Missing orphan reservation | new (neither copy) | staged replacement foreign orphan missing reservation refuses unchanged |

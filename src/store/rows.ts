@@ -879,6 +879,13 @@ export async function addRow(
     async (locks, progress) => {
       checkInput('add', id, credential)
       const mode = options.onExisting ?? 'rotate'
+      if (input.stage !== undefined && mode === 'rotate')
+        throw refusal(
+          'add',
+          id,
+          'invalid-input',
+          "a staged add needs onExisting: 'refuse' or 'stage-duplicate'",
+        )
       if (
         !['rotate', 'refuse', 'stage-duplicate'].includes(mode) ||
         (input.stage !== undefined &&

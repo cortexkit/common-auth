@@ -159,6 +159,26 @@ test('staged replacement refuse preserves holder and duplicate requires both sta
   )
 })
 
+test('staged replacement stage with rotate refuses before locks and preserves holder', async () => {
+  await store.add({ id: 'old', credential: oauth(), identity: 'wire' })
+  let acquired = 0
+  const caller = open({
+    onLockEvent: (event) => {
+      if (event.type === 'acquired') acquired++
+    },
+  })
+  const input = { ...stage(), credential: oauth() }
+  await unchanged(() => caller.add(input), 'invalid-input')
+  await unchanged(
+    () => caller.add(input, { onExisting: 'rotate' }),
+    'invalid-input',
+  )
+  expect(acquired).toBe(0)
+  await expect(caller.add(input)).rejects.toMatchObject({
+    message: "a staged add needs onExisting: 'refuse' or 'stage-duplicate'",
+  })
+})
+
 async function interruptAdd(input: AddInput = stage()) {
   const interrupted = open({
     onStep: (step, info) => {
@@ -386,7 +406,18 @@ for (const operation of [
   'add',
 ] as const) {
   test(`staged replacement reserved ${operation} refuses unchanged`, async () => {
-    await store.add(stage(), { onExisting: 'stage-duplicate' })
+    await store.add(
+      {
+        ...stage(),
+        ...(operation === 'recordIdentity' ? { identity: undefined } : {}),
+      },
+      { onExisting: 'stage-duplicate' },
+    )
+    if (operation === 'refresh') {
+      const config = await json(configPath)
+      config.accounts[0].enabled = true
+      await write(configPath, config)
+    }
     const captured = await fence('new')
     const writers = {
       enable: () => store.enable('new'),
@@ -402,7 +433,10 @@ for (const operation of [
       recordIdentity: () => store.recordIdentity('new', 'wire', captured),
       recordQuota: () => store.recordQuota('new', captured, {}),
       updateProviderState: () =>
-        store.updateProviderState('new', captured, () => ({})),
+        store.updateProviderState('new', captured, () => ({
+          bound: 'updated-project',
+          metadata: { cursor: 2 },
+        })),
       add: () => store.add({ id: 'new', credential: stage().credential }),
     }
     await unchanged(writers[operation], 'row-staged')
