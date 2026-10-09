@@ -1765,8 +1765,12 @@ expect_message = 'expect(received).toEqual(expected)'
 id = 'opencode2-owned-legacy-default'
 guards = 'omitting the option preserves 0.11.7 model selection and wire bytes'
 file = 'src/opencode2/install.ts'
-old = 'if (ownership) return'
-new = 'return // NON-VACUITY BREAK: disable legacy model selection'
+old = '''      'model.request',
+      (draft) => {
+        if (ownership) return'''
+new = '''      'model.request',
+      (draft) => {
+        return // NON-VACUITY BREAK: disable legacy model selection'''
 test_file = 'test/opencode2/ownership.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
