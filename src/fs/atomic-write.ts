@@ -64,3 +64,19 @@ export async function writeJsonAtomicTracked(
     if (created) await rm(tempPath, { force: true }).catch(() => {})
   }
 }
+
+/** Make an already renamed file and its directory durable without rewriting bytes. */
+export async function syncJsonFile(path: string): Promise<void> {
+  const file = await open(path, 'r')
+  try {
+    await file.sync()
+  } finally {
+    await file.close()
+  }
+  const directory = await open(dirname(path), 'r')
+  try {
+    await directory.sync()
+  } finally {
+    await directory.close()
+  }
+}

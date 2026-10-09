@@ -1,6 +1,6 @@
 import { beforeEach, expect, spyOn } from 'bun:test'
 import * as fs from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   type AddInput,
   type OpenPoolStoreOptions,
@@ -156,7 +156,7 @@ test('staged replacement refuse preserves holder and duplicate requires both sta
         { id: 'other', credential: stage('orphan').credential },
         { onExisting: 'refuse' },
       ),
-    'credential-exists',
+    'row-staged',
   )
 })
 
@@ -908,7 +908,7 @@ test('staged replacement durable publication and receipt sync file and directory
   )
   try {
     await store.publishRoster(publication)
-    expect(synced.filter((path) => path === dir)).toHaveLength(2)
+    expect(synced.filter((path) => path === dir)).toHaveLength(4)
     expect(
       synced.filter(
         (path) => path.startsWith(`${configPath}.`) && path.endsWith('.tmp'),
@@ -916,7 +916,8 @@ test('staged replacement durable publication and receipt sync file and directory
     ).toHaveLength(2)
     expect(
       synced.filter((path) => path.startsWith(`${statePath}.`)),
-    ).toHaveLength(0)
+    ).toHaveLength(1)
+    expect(synced.filter((path) => path === statePath)).toHaveLength(1)
     synced.length = 0
     await store.disable('new', 'ordinary')
     expect(synced).toEqual([])
@@ -929,12 +930,15 @@ test('staged replacement directory sync failure still records the irreversible r
   await seed()
   const publication = await plan()
   const originalOpen = fs.open
+  let directories = 0
   const spy = spyOn(fs, 'open').mockImplementation(
     async (...args: Parameters<typeof fs.open>) => {
       const handle = await originalOpen(...args)
+      const sync = handle.sync.bind(handle)
       if (String(args[0]) === dir)
         handle.sync = async () => {
-          throw new Error('directory sync failed')
+          if (++directories === 2) throw new Error('directory sync failed')
+          await sync()
         }
       return handle
     },
@@ -958,7 +962,7 @@ test('staged replacement directory sync failure still records the irreversible r
   })
 })
 
-test('staged replacement keeps every committed receipt and eight recent cleaned receipts', async () => {
+test('staged replacement keeps every committed and cleaned receipt permanently', async () => {
   for (let i = 0; i < 10; i++)
     await store.publishRoster({
       operationId: String(10 - i),
@@ -966,12 +970,12 @@ test('staged replacement keeps every committed receipt and eight recent cleaned 
       finalize: [],
       order: [],
     })
-  expect(await store.publication('10')).toBeUndefined()
-  expect(await store.publication('9')).toBeUndefined()
+  expect(await store.publication('10')).toMatchObject({ phase: 'cleaned' })
+  expect(await store.publication('9')).toMatchObject({ phase: 'cleaned' })
   expect(await store.publication('1')).toMatchObject({ phase: 'cleaned' })
   expect(
     Object.keys((await json(configPath)).commonAuthPool.publications),
-  ).toHaveLength(8)
+  ).toHaveLength(10)
 })
 
 async function crashChild(
@@ -1039,3 +1043,552 @@ test('staged replacement child crash after publication resumes with attributed o
   expect((await row('new')).stamp).toBe('bound')
   expect((await json(statePath)).accounts.old).toBeUndefined()
 })
+
+test('staged revision rotating add fences the exact valid holder behind an invalid holder', async () => {
+  await store.add({
+    id: 'invalid',
+    credential: oauth(),
+    identity: 'first-wire',
+  })
+  await store.add(
+    { ...stage(), credential: oauth() },
+    { onExisting: 'stage-duplicate' },
+  )
+  const config = await json(configPath)
+  config.commonAuthPool.rows.invalid.credentialEpoch = 0
+  await write(configPath, config)
+  await unchanged(
+    () => store.add({ id: 'other', credential: oauth() }),
+    'row-staged',
+  )
+})
+
+for (const mode of ['rotate', 'refuse', 'stage-duplicate'] as const) {
+  test(`staged revision ${mode} add cannot duplicate a staged orphan under another id`, async () => {
+    await interruptAdd(stage())
+    const input =
+      mode === 'stage-duplicate'
+        ? { ...stage('other'), credential: stage().credential }
+        : { id: 'other', credential: stage().credential }
+    await unchanged(() => store.add(input, { onExisting: mode }), 'row-staged')
+    expect(
+      await store.add(stage(), { onExisting: 'stage-duplicate' }),
+    ).toMatchObject({ outcome: 'completed' })
+  })
+}
+
+for (const combination of [
+  'survivor and finalized',
+  'two finalized',
+  'two survivors',
+] as const) {
+  test(`staged revision publication rejects shared secret across different identities for ${combination}`, async () => {
+    if (combination !== 'two finalized')
+      await store.add({ id: 'one', credential: oauth(), identity: 'one-wire' })
+    if (combination !== 'two survivors')
+      await store.add(
+        { ...stage('two', 'two-wire'), credential: oauth() },
+        { onExisting: 'stage-duplicate' },
+      )
+    if (combination === 'two finalized')
+      await store.add(
+        { ...stage('one', 'one-wire'), credential: oauth() },
+        { onExisting: 'stage-duplicate' },
+      )
+    if (combination === 'two survivors') {
+      await store.add({
+        id: 'two',
+        credential: oauth('other'),
+        identity: 'two-wire',
+      })
+      await store.rotate('two', oauth())
+    }
+    const finalize =
+      combination === 'two survivors'
+        ? []
+        : [
+            {
+              id: 'two',
+              attribution: await fence('two'),
+              reservation: 'reservation',
+              enabled: true,
+            },
+          ]
+    if (combination === 'two finalized')
+      finalize.push({
+        id: 'one',
+        attribution: await fence('one'),
+        reservation: 'reservation',
+        enabled: true,
+      })
+    await unchanged(
+      () =>
+        store.publishRoster({
+          operationId: 'same-secret',
+          remove: [],
+          finalize,
+          order: ['one', 'two'],
+        }),
+      'attribution',
+    )
+  })
+}
+
+async function tornSibling(kind: 'replace' | 'transition') {
+  await store.add({
+    id: 'sibling',
+    credential: oauth('sibling'),
+    identity: 'sibling-wire',
+    providerState: { bound: 'original' },
+  })
+  const interrupted = open({
+    onStep: (step) => {
+      if (step === 'after-state-write') throw new Error('interrupt sibling')
+    },
+  })
+  if (kind === 'replace')
+    await expect(
+      interrupted.replace('sibling', oauth('new-sibling'), {
+        identity: 'new-sibling-wire',
+      }),
+    ).rejects.toMatchObject({ phase: 'after-first-write' })
+  else
+    await expect(
+      interrupted.disable('sibling', 'off', {
+        attribution: await fence('sibling'),
+        providerState: () => ({ bound: 'new-state' }),
+      }),
+    ).rejects.toMatchObject({ phase: 'after-first-write' })
+  expect((await row('sibling')).torn).toBe(true)
+}
+
+for (const kind of ['replace', 'transition'] as const) {
+  test(`staged revision publication refuses a surviving torn ${kind} without repair`, async () => {
+    await seed()
+    await tornSibling(kind)
+    const publication = await plan()
+    publication.order.push('sibling')
+    await unchanged(() => store.publishRoster(publication), 'attribution')
+    await store.disable('sibling', 'completed')
+    expect((await row('sibling')).torn).toBeUndefined()
+    expect(await store.publishRoster(publication)).toMatchObject({
+      outcome: 'published',
+    })
+  })
+}
+
+test('staged revision publication rejects duplicate raw roster ids instead of writing null accounts', async () => {
+  await seed()
+  const config = await json(configPath)
+  config.accounts.push({ ...config.accounts[1] })
+  await write(configPath, config)
+  const publication = await plan()
+  publication.order.push('ghost')
+  await unchanged(() => store.publishRoster(publication), 'invalid-input')
+})
+
+for (const reason of ['identity-contradicted', 'duplicate-identity'] as const) {
+  test(`staged revision enable ${reason} refusal does not repair a torn sibling`, async () => {
+    await store.add({ id: 'target', credential: oauth(), identity: 'wire' })
+    if (reason === 'identity-contradicted') {
+      await store.refresh('target', async () => ({
+        refresh: 'new',
+        access: 'new',
+        expires: 2000,
+        identity: 'contradiction',
+      }))
+    } else {
+      await store.disable('target', 'off')
+      await store.add({
+        id: 'holder',
+        credential: oauth('holder'),
+        identity: 'wire',
+      })
+    }
+    await tornSibling('replace')
+    const before = await bytes()
+    await expect(
+      store.enable('target', { attribution: await fence('target') }),
+    ).rejects.toMatchObject({ kind: reason, phase: 'before-first-write' })
+    expect(await bytes()).toEqual(before)
+    expect((await row('sibling')).torn).toBe(true)
+  })
+}
+
+for (const operation of ['enable', 'disable'] as const) {
+  test(`staged revision ${operation} provider mutator refusal precedes any torn repair`, async () => {
+    await store.add({
+      id: 'target',
+      credential: oauth(),
+      providerState: { bound: 'project' },
+    })
+    await tornSibling('replace')
+    const callOptions = {
+      attribution: await fence('target'),
+      providerState: () => {
+        throw new Error('mutator refuses')
+      },
+    }
+    await unchanged(
+      () =>
+        operation === 'enable'
+          ? store.enable('target', callOptions)
+          : store.disable('target', 'off', callOptions),
+      'unexpected',
+    )
+    expect((await row('sibling')).torn).toBe(true)
+  })
+}
+
+test('staged revision every publication receipt remains a permanent replay fence', async () => {
+  const plans = Array.from({ length: 10 }, (_, i) => ({
+    operationId: `forever-${i}`,
+    remove: [],
+    finalize: [],
+    order: [],
+  }))
+  for (const publication of plans) await store.publishRoster(publication)
+  for (const publication of plans)
+    expect(await store.publication(publication.operationId)).toMatchObject({
+      operationId: publication.operationId,
+      phase: 'cleaned',
+      removed: [],
+      finalized: [],
+    })
+  const before = await bytes()
+  expect(await store.publishRoster(plans[0]!)).toMatchObject({
+    outcome: 'already-cleaned',
+  })
+  expect(await bytes()).toEqual(before)
+  await unchanged(
+    () => store.publishRoster({ ...plans[0]!, order: ['other'] }),
+    'publication-mismatch',
+  )
+})
+
+test('staged revision config read before publication and state read after cleanup retries lock free', async () => {
+  await seed()
+  const publication = await plan()
+  const captured = deferred()
+  const resume = deferred()
+  hooks.lifetime.unpark(resume.resolve)
+  const originalRead = fs.readFile
+  let arm = true
+  let readerLocks = 0
+  const reader = open({
+    onLockEvent: () => {
+      readerLocks++
+    },
+  })
+  const spy = spyOn(fs, 'readFile').mockImplementation((async (
+    ...args: Parameters<typeof fs.readFile>
+  ) => {
+    const value = await originalRead(...args)
+    if (arm && String(args[0]) === configPath) {
+      arm = false
+      captured.resolve()
+      await resume.promise
+    }
+    return value
+  }) as typeof fs.readFile)
+  try {
+    const read = hooks.lifetime.operation(reader.read())
+    await observed(hooks.lifetime, captured.promise)
+    await store.publishRoster(publication)
+    resume.resolve()
+    const result = await read
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error(result.status)
+    expect(
+      result.rows.filter((row) => row.candidate).map((row) => row.id),
+    ).toEqual(['new'])
+    expect(readerLocks).toBe(0)
+  } finally {
+    spy.mockRestore()
+  }
+})
+
+test('staged revision reserved pull capture and quota recording write nothing even beside a torn sibling', async () => {
+  await store.add(stage(), { onExisting: 'stage-duplicate' })
+  await tornSibling('replace')
+  const config = await json(configPath)
+  config.accounts.find((raw: { id: string }) => raw.id === 'new').enabled = true
+  await write(configPath, config)
+  let polled = 0
+  const reader = open({
+    pull: async () => {
+      polled++
+      return {}
+    },
+  })
+  const before = await bytes()
+  reader.requestReading('new')
+  await reader.pullsSettled()
+  expect(polled).toBe(0)
+  expect(await bytes()).toEqual(before)
+  await unchanged(
+    () =>
+      reader.recordQuota('new', { credentialEpoch: 1, identity: 'wire' }, {}),
+    'row-staged',
+  )
+})
+
+for (const field of ['providerState', 'label', 'disabledReason'] as const) {
+  test(`staged revision finalize rejects changed full staged ${field} material`, async () => {
+    await seed()
+    const publication = await plan()
+    if (field === 'providerState') {
+      const state = await json(statePath)
+      state.accounts.new.commonAuthProviderState.metadata.cursor = 9
+      await write(statePath, state)
+    } else {
+      const config = await json(configPath)
+      if (field === 'label')
+        config.accounts.find((raw: { id: string }) => raw.id === 'new').label =
+          'changed'
+      else config.commonAuthPool.rows.new.disabledReason = 'changed'
+      await write(configPath, config)
+    }
+    await unchanged(() => store.publishRoster(publication), 'row-staged')
+  })
+}
+
+async function syncRecorder() {
+  const events: string[] = []
+  const originalOpen = fs.open
+  const originalRename = fs.rename
+  const which = (path: string) =>
+    path.startsWith(statePath) || path === dirname(statePath)
+      ? 'state'
+      : 'config'
+  const opens = spyOn(fs, 'open').mockImplementation(
+    async (...args: Parameters<typeof fs.open>) => {
+      const handle = await originalOpen(...args)
+      const sync = handle.sync.bind(handle)
+      const path = String(args[0])
+      handle.sync = async () => {
+        const kind = path.endsWith('.tmp')
+          ? 'temp'
+          : path === dirname(configPath) || path === dirname(statePath)
+            ? 'directory'
+            : 'file'
+        events.push(`${which(path)}:${kind}:sync`)
+        await sync()
+      }
+      return handle
+    },
+  )
+  const renames = spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+    events.push(`${which(String(to))}:rename`)
+    await originalRename(from, to)
+  })
+  return {
+    events,
+    restore: () => {
+      opens.mockRestore()
+      renames.mockRestore()
+    },
+  }
+}
+
+async function separateStateDir() {
+  statePath = join(dir, 'state', 'state.json')
+  store = open()
+  await seed()
+}
+
+test('staged revision publication syncs staged state before the durable roster decision', async () => {
+  await separateStateDir()
+  const publication = await plan()
+  const recorder = await syncRecorder()
+  try {
+    await store.publishRoster(publication)
+    expect(recorder.events.slice(0, 5)).toEqual([
+      'state:file:sync',
+      'state:directory:sync',
+      'config:temp:sync',
+      'config:rename',
+      'config:directory:sync',
+    ])
+  } finally {
+    recorder.restore()
+  }
+})
+
+test('staged revision committed receipt replay resyncs config before any cleanup write', async () => {
+  await separateStateDir()
+  const publication = await plan()
+  const publisher = open({
+    onStep: (step, info) => {
+      if (info.operation === 'publishRoster' && step === 'after-config-write')
+        throw new Error('stop after commit')
+    },
+  })
+  await expect(publisher.publishRoster(publication)).rejects.toMatchObject({
+    phase: 'after-first-write',
+  })
+  const recorder = await syncRecorder()
+  try {
+    expect(await store.publishRoster(publication)).toMatchObject({
+      outcome: 'cleaned',
+    })
+    expect(recorder.events.slice(0, 2)).toEqual([
+      'config:file:sync',
+      'config:directory:sync',
+    ])
+    expect(recorder.events.indexOf('state:rename')).toBeGreaterThan(1)
+  } finally {
+    recorder.restore()
+  }
+})
+
+test('staged revision cleanup state file and directory are durable before cleaned receipt', async () => {
+  await separateStateDir()
+  const publication = await plan()
+  const recorder = await syncRecorder()
+  try {
+    await store.publishRoster(publication)
+    expect(recorder.events.slice(-6)).toEqual([
+      'state:temp:sync',
+      'state:rename',
+      'state:directory:sync',
+      'config:temp:sync',
+      'config:rename',
+      'config:directory:sync',
+    ])
+  } finally {
+    recorder.restore()
+  }
+})
+
+test('staged revision committed receipts survive every later cleaned publication', async () => {
+  await seed()
+  const publication = await plan('pending-forever')
+  const publisher = open({
+    onStep: (step, info) => {
+      if (info.operation === 'publishRoster' && step === 'after-config-write')
+        throw new Error('stop after commit')
+    },
+  })
+  await expect(publisher.publishRoster(publication)).rejects.toMatchObject({
+    phase: 'after-first-write',
+  })
+  const committed = await store.publication(publication.operationId)
+  for (let i = 0; i < 10; i++)
+    await store.publishRoster({
+      operationId: `later-${i}`,
+      remove: [],
+      finalize: [],
+      order: ['new'],
+    })
+  expect(await store.publication(publication.operationId)).toEqual(committed)
+  expect(await store.publishRoster(publication)).toMatchObject({
+    outcome: 'cleaned',
+  })
+})
+
+test('staged revision publication rejects duplicate removed roster ids too', async () => {
+  await seed()
+  const publication = await plan()
+  const config = await json(configPath)
+  config.accounts.push({ ...config.accounts[0] })
+  await write(configPath, config)
+  await unchanged(() => store.publishRoster(publication), 'invalid-input')
+})
+
+test('staged revision snapshot validation refuses after three changing config reads without locks', async () => {
+  await seed()
+  const originalRead = fs.readFile
+  let configReads = 0
+  let locks = 0
+  const reader = open({
+    onLockEvent: () => {
+      locks++
+    },
+  })
+  const spy = spyOn(fs, 'readFile').mockImplementation((async (
+    ...args: Parameters<typeof fs.readFile>
+  ) => {
+    const value = await originalRead(...args)
+    if (String(args[0]) === configPath && ++configReads % 2 === 1) {
+      const config = JSON.parse(String(value))
+      config.readGeneration = configReads
+      await write(configPath, config)
+    }
+    return value
+  }) as typeof fs.readFile)
+  try {
+    expect(await reader.read()).toMatchObject({
+      status: 'error',
+      file: 'config',
+      reason:
+        'the config changed during three consecutive snapshot reads; retry the read',
+    })
+    expect(configReads).toBe(6)
+    expect(locks).toBe(0)
+  } finally {
+    spy.mockRestore()
+  }
+})
+
+for (const barrier of [
+  'prepublication-state',
+  'committed-config',
+  'cleanup-state',
+] as const) {
+  test(`staged revision ${barrier} sync rejection prevents the next irreversible write`, async () => {
+    await separateStateDir()
+    const publication = await plan()
+    if (barrier === 'committed-config') {
+      const publisher = open({
+        onStep: (step, info) => {
+          if (
+            info.operation === 'publishRoster' &&
+            step === 'after-config-write'
+          )
+            throw new Error('stop after commit')
+        },
+      })
+      await expect(publisher.publishRoster(publication)).rejects.toMatchObject({
+        phase: 'after-first-write',
+      })
+    }
+    const before = await bytes()
+    const originalOpen = fs.open
+    const spy = spyOn(fs, 'open').mockImplementation(
+      async (...args: Parameters<typeof fs.open>) => {
+        const handle = await originalOpen(...args)
+        const path = String(args[0])
+        const rejects =
+          barrier === 'prepublication-state'
+            ? path === statePath
+            : barrier === 'committed-config'
+              ? path === configPath
+              : path.startsWith(`${statePath}.`) && path.endsWith('.tmp')
+        if (rejects)
+          handle.sync = async () => {
+            throw new Error('sync refuses')
+          }
+        return handle
+      },
+    )
+    try {
+      await expect(store.publishRoster(publication)).rejects.toMatchObject({
+        phase:
+          barrier === 'cleanup-state'
+            ? 'after-first-write'
+            : 'before-first-write',
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    if (barrier !== 'cleanup-state') expect(await bytes()).toEqual(before)
+    else expect(await fs.readFile(statePath, 'utf8')).toBe(before[1]!)
+    if (barrier === 'prepublication-state')
+      expect(await store.publication('publication')).toBeUndefined()
+    else
+      expect(await store.publication('publication')).toMatchObject({
+        phase: 'committed',
+      })
+  })
+}

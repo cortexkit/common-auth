@@ -928,6 +928,33 @@ export async function addRow(
         { operation: 'add', rowId: id },
         async (tx): Promise<AddResult> => {
           await protectIn(tx, id, options.protect)
+          const stateAccounts = isRecord(tx.state.accounts)
+            ? tx.state.accounts
+            : {}
+          const stagedOrphan = Object.entries(stateAccounts).find(
+            ([orphanId, account]) => {
+              if (
+                orphanId === id ||
+                tx.rosterRow(orphanId) ||
+                !isRecord(account)
+              )
+                return false
+              const stamp = account[CREDENTIAL_STAMP_KEY]
+              if (!isRecord(stamp) || !Object.hasOwn(stamp, 'staged'))
+                return false
+              return credential.type === 'oauth'
+                ? account.refresh === credential.refresh
+                : typeof account.apiKey === 'string' &&
+                    account.apiKey.trim() === credential.apiKey.trim()
+            },
+          )
+          if (stagedOrphan)
+            throw refusal(
+              'add',
+              stagedOrphan[0],
+              'row-staged',
+              `orphan ${stagedOrphan[0]} reserves this secret until its staged add is replayed or removed`,
+            )
           if (ctx.removedIds.has(id))
             throw refusal(
               'add',
@@ -987,7 +1014,6 @@ export async function addRow(
           )
             throw refusal('add', id, 'id-exists', `row ${id} already exists`)
           const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
-          if (!orphan && mode === 'rotate') await tx.completeTorn()
           const rows = tx.rows()
           const fingerprint = fingerprintOf(credential)
           const same =
@@ -998,6 +1024,7 @@ export async function addRow(
                 row.invalid === undefined && row.fingerprint === fingerprint,
             )
           if (same) {
+            tx.assertNotStaged(same.id)
             // Re-adding a secret whose stamp is not proved would rotate it in
             // and keep the identity and quota recorded beside it, making that
             // unproved record look bound. The add is refused instead, and the
@@ -1013,6 +1040,8 @@ export async function addRow(
               identity !== same.identity
             )
               throw identityMismatch('add', same.id)
+            await tx.completeTorn()
+            tx.assertNotStaged(same.id)
             const stored = await rotateIn(rt, tx, same.id, credential, {
               ...(incoming !== undefined
                 ? {
@@ -1033,6 +1062,7 @@ export async function addRow(
               credentialEpoch: same.credentialEpoch ?? 1,
             }
           }
+          if (!orphan && mode === 'rotate') await tx.completeTorn()
           const existing = rows.find((row) => row.id === id)
           if (existing) {
             if (existing.invalid)
@@ -1509,7 +1539,6 @@ async function transitionRow(
         async (tx): Promise<RowTransitionResult> => {
           await protectIn(tx, id, options.protect)
           tx.assertNotStaged(id)
-          if (fence === undefined) await tx.completeTorn()
           const loaded = tx.row(id)
           const row = flag.enabled
             ? requireUsableRow('enable', id, loaded)
@@ -1519,7 +1548,6 @@ async function transitionRow(
             throw keyChanged(operation, id)
           if (fence !== undefined) {
             assertRowAttribution(operation, id, row, fence)
-            await tx.completeTorn()
           }
           if (
             flag.enabled &&
@@ -1558,6 +1586,7 @@ async function transitionRow(
               )
           }
           if (mutator === undefined || codec === undefined) {
+            await tx.completeTorn()
             if (!writesConfig) return { id }
             if (flag.enabled) enableIn(tx, id)
             else disableIn(tx, id, flag.reason)
@@ -1585,6 +1614,7 @@ async function transitionRow(
             true,
           )
           if (plan.kind === 'declined') return { id, declined: true }
+          await tx.completeTorn()
           const result: RowTransitionResult = {
             id,
             providerStateOutcome:

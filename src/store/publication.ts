@@ -25,7 +25,9 @@ import {
   isRecord,
   POOL_KEY,
   type PoolRow,
+  PROVIDER_STATE_KEY,
   parseStamp,
+  rosterOf,
   rowLockKey,
 } from './schema.js'
 
@@ -193,23 +195,41 @@ function saveReceipt(tx: Transaction, receipt: PublicationReceipt): void {
     configurable: true,
   })
   pool.publications = receipts
-  if (receipt.phase !== 'cleaned') return
-  // An explicit completion order also works for numeric operation ids, whose
-  // object keys JSON would otherwise enumerate in numeric rather than time order.
-  const prior = Array.isArray(pool.publicationOrder)
-    ? pool.publicationOrder.filter((id): id is string => typeof id === 'string')
-    : Object.keys(receipts).filter(
-        (id) => isRecord(receipts[id]) && receipts[id].phase === 'cleaned',
+  // Never forget which plan used an operation id or the actual row epochs it
+  // changed: otherwise an old replay could publish again against another pool.
+  delete pool.publicationOrder
+}
+
+function publicationSurvivors(
+  tx: Transaction,
+  plan: PublishPlan,
+  rows: PoolRow[],
+): PoolRow[] {
+  const rosterIds = new Set<string>()
+  for (const raw of rosterOf(tx.config)) {
+    if (!isRecord(raw) || typeof raw.id !== 'string' || rosterIds.has(raw.id))
+      throw refusal(
+        'publishRoster',
+        plan.operationId,
+        'invalid-input',
+        'publication needs a roster of unique named rows',
       )
-  const order = [
-    ...prior.filter((id) => id !== receipt.operationId),
-    receipt.operationId,
-  ]
-  for (const id of order.slice(0, -8)) {
-    const old = receipts[id]
-    if (isRecord(old) && old.phase === 'cleaned') delete receipts[id]
+    rosterIds.add(raw.id)
   }
-  pool.publicationOrder = order.slice(-8)
+  const removedIds = new Set(plan.remove.map((ref) => ref.id))
+  const survivors = rows.filter((row) => !removedIds.has(row.id))
+  if (
+    survivors.length !== plan.order.length ||
+    plan.order.some((id) => !survivors.some((row) => row.id === id)) ||
+    survivors.some((row) => !plan.order.includes(row.id))
+  )
+    throw refusal(
+      'publishRoster',
+      plan.operationId,
+      'invalid-input',
+      'order must name exactly the surviving roster',
+    )
+  return survivors
 }
 
 async function cleanup(
@@ -238,7 +258,7 @@ async function cleanup(
       tx.setStateAccount(ref.id, { ...account, [CREDENTIAL_STAMP_KEY]: next })
     }
   }
-  await tx.commitState()
+  await tx.commitState(undefined, { durable: true })
   const cleaned: PublicationReceipt = { ...receipt, phase: 'cleaned' }
   saveReceipt(tx, cleaned)
   await tx.commitConfig({ durable: true })
@@ -316,9 +336,11 @@ export async function publishRoster(
                 )
               if (prior.phase === 'cleaned')
                 return { outcome: 'already-cleaned', receipt: prior }
+              await tx.syncConfig()
               return { outcome: 'cleaned', receipt: await cleanup(tx, prior) }
             }
             validatePlan(rt, plan)
+            const survivors = publicationSurvivors(tx, plan, rows)
             const removed: PoolRow[] = []
             for (const ref of plan.remove) {
               tx.assertNotStaged(ref.id)
@@ -367,6 +389,25 @@ export async function publishRoster(
                   'row-staged',
                   'the finalized row is not disabled under this reservation',
                 )
+              const account = tx.stateAccount(ref.id)
+              const raw = tx.rosterRow(ref.id)
+              const storedProviderState = account?.[PROVIDER_STATE_KEY]
+              const fullProviderDigest =
+                storedProviderState === undefined
+                  ? undefined
+                  : canonicalDigest(storedProviderState)
+              if (
+                !stamp?.staged ||
+                stamp.staged.label !== raw?.label ||
+                stamp.staged.disabledReason !== row.disabledReason ||
+                stamp.staged.providerState !== fullProviderDigest
+              )
+                throw refusal(
+                  'publishRoster',
+                  ref.id,
+                  'row-staged',
+                  'the staged label, disabled reason or full provider state no longer matches its stamp',
+                )
               assertBoundRowAttribution(
                 ref.id,
                 row,
@@ -375,17 +416,13 @@ export async function publishRoster(
               )
               finalized.push(row)
             }
-            const removedIds = new Set(plan.remove.map((ref) => ref.id))
-            const survivors = rows.filter((row) => !removedIds.has(row.id))
-            if (
-              survivors.length !== plan.order.length ||
-              survivors.some((row) => !plan.order.includes(row.id))
-            )
+            if (survivors.some((row) => row.torn))
               throw refusal(
                 'publishRoster',
                 plan.operationId,
-                'invalid-input',
-                'order must name exactly the surviving roster',
+                'attribution',
+                'a surviving row has an interrupted write; complete it before publication',
+                true,
               )
             const identities = new Set<string>()
             for (const row of survivors) {
@@ -406,6 +443,25 @@ export async function publishRoster(
                   'the final enabled roster repeats a known identity',
                 )
               identities.add(row.identity)
+            }
+            for (const row of survivors) {
+              if (
+                row.identity !== undefined &&
+                row.fingerprint !== undefined &&
+                survivors.some(
+                  (other) =>
+                    other.id !== row.id &&
+                    other.identity !== undefined &&
+                    other.identity !== row.identity &&
+                    other.fingerprint === row.fingerprint,
+                )
+              )
+                throw refusal(
+                  'publishRoster',
+                  row.id,
+                  'attribution',
+                  'the resulting pool gives the same secret different known identities',
+                )
             }
             for (const row of finalized)
               if (
@@ -453,6 +509,7 @@ export async function publishRoster(
             saveReceipt(tx, receipt)
             // This durable rename is the irreversible roster decision. Everything
             // after it follows only the receipt, including after a process restart.
+            await tx.syncState()
             await tx.commitConfig({ durable: true })
             return { outcome: 'published', receipt: await cleanup(tx, receipt) }
           },

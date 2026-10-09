@@ -66,7 +66,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | store | An already committed roster change finishes cleanup from its saved plan hash, even when a newly opened store demands token fingerprints from new plans | new (neither copy) | staged replacement receipt replay never revalidates a committed plan |
 | store | Opt-in durable config writes fsync file and directory | new (neither copy) | staged replacement durable publication and receipt sync file and directory only |
 | store | A failed directory sync after rename leaves a committed receipt and remembers the removed ids | new (neither copy) | staged replacement directory sync failure still records the irreversible rename |
-| store | Bounded cleaned receipt retention | new (neither copy) | staged replacement keeps every committed receipt and eight recent cleaned receipts |
+| store | Permanent committed and cleaned receipt retention | new (neither copy) | staged replacement keeps every committed and cleaned receipt permanently |
 | store | Child process crash before staged config completion | new (neither copy) | staged replacement child crash after add state resumes exact replay at genuine epoch |
 | store | Child process crash after roster decision and attributed orphan cleanup | new (neither copy) | staged replacement child crash after publication resumes with attributed orphan removal |
 | tooling | Source checker excludes skipped, failed and errored synthetic cases | new (neither copy) | source checker excludes skipped, failed and errored synthetic cases |
@@ -725,6 +725,35 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 
 | component | behaviour | origin | test |
 | --- | --- | --- | --- |
+| store | Re-adding a secret never updates a reserved account merely because an earlier account with that secret has an invalid entry | new (neither copy) | staged revision rotating add fences the exact valid holder behind an invalid holder |
+| store | Plain rotating add cannot duplicate a reserved state-only orphan | new (neither copy) | staged revision rotate add cannot duplicate a staged orphan under another id |
+| store | Refuse-mode add observes a state-only reservation | new (neither copy) | staged revision refuse add cannot duplicate a staged orphan under another id |
+| store | Duplicate staging cannot adopt another staged orphan's secret | new (neither copy) | staged revision stage-duplicate add cannot duplicate a staged orphan under another id |
+| store | Surviving and finalized accounts cannot give one secret different known identities | new (neither copy) | staged revision publication rejects shared secret across different identities for survivor and finalized |
+| store | Two finalized accounts cannot give one secret different known identities | new (neither copy) | staged revision publication rejects shared secret across different identities for two finalized |
+| store | Two untouched survivors cannot give one secret different known identities | new (neither copy) | staged revision publication rejects shared secret across different identities for two survivors |
+| store | Publication does not commit raw config paired with a surviving projected replacement | new (neither copy) | staged revision publication refuses a surviving torn replace without repair |
+| store | Publication does not commit raw config paired with a surviving pending transition | new (neither copy) | staged revision publication refuses a surviving torn transition without repair |
+| store | Duplicate surviving ids cannot let an unknown ordered id become a null account | new (neither copy) | staged revision publication rejects duplicate raw roster ids instead of writing null accounts |
+| store | Duplicate ids are refused even when both copies would be removed | new (neither copy) | staged revision publication rejects duplicate removed roster ids too |
+| store | Quarantine refusal leaves unrelated interrupted writes untouched | new (neither copy) | staged revision enable identity-contradicted refusal does not repair a torn sibling |
+| store | Duplicate identity refusal leaves unrelated interrupted writes untouched | new (neither copy) | staged revision enable duplicate-identity refusal does not repair a torn sibling |
+| store | Enable mutator refusal precedes repair | new (neither copy) | staged revision enable provider mutator refusal precedes any torn repair |
+| store | Disable mutator refusal precedes repair | new (neither copy) | staged revision disable provider mutator refusal precedes any torn repair |
+| store | Old operation ids remain fenced after ten more user-driven publications | new (neither copy) | staged revision every publication receipt remains a permanent replay fence |
+| store | Reader retries the exact old-config and post-cleanup-state interleaving without taking locks | new (neither copy) | staged revision config read before publication and state read after cleanup retries lock free |
+| store | Continued config churn terminates after three lock-free snapshot attempts | new (neither copy) | staged revision snapshot validation refuses after three changing config reads without locks |
+| store | Reserved pull capture and quota recording neither poll nor repair nor write | new (neither copy) | staged revision reserved pull capture and quota recording write nothing even beside a torn sibling |
+| store | Finalize rechecks full provider metadata against the staging hash | new (neither copy) | staged revision finalize rejects changed full staged providerState material |
+| store | Finalize rechecks staging label | new (neither copy) | staged revision finalize rejects changed full staged label material |
+| store | Finalize rechecks staging disabled reason | new (neither copy) | staged revision finalize rejects changed full staged disabledReason material |
+| store | State file and directory are synced before the roster's config rename | new (neither copy) | staged revision publication syncs staged state before the durable roster decision |
+| store | Committed receipt recovery re-syncs config and directory before state cleanup | new (neither copy) | staged revision committed receipt replay resyncs config before any cleanup write |
+| store | Durable state cleanup precedes the durable cleaned receipt | new (neither copy) | staged revision cleanup state file and directory are durable before cleaned receipt |
+| store | Committed receipts are never compacted or dropped by later cleanup | new (neither copy) | staged revision committed receipts survive every later cleaned publication |
+| store | Failed prepublication state sync leaves the old pool unchanged | new (neither copy) | staged revision prepublication-state sync rejection prevents the next irreversible write |
+| store | Failed committed config resync leaves cleanup untouched | new (neither copy) | staged revision committed-config sync rejection prevents the next irreversible write |
+| store | Failed cleanup state sync cannot advance the cleaned receipt | new (neither copy) | staged revision cleanup-state sync rejection prevents the next irreversible write |
 | cachekeep | A capture stores the session, account, idle clock, TTL and byte size | openai cachekeep | stores a target with correct fields |
 | cachekeep | A capture expires one TTL after the request | openai cachekeep | sets cacheExpiresAt to now + TTL_MS |
 | cachekeep | Retracking a session keeps one target and replays the freshest body | openai cachekeep | replace-on-retrack: freshest body wins |

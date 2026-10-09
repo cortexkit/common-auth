@@ -1,5 +1,9 @@
 import { readFile } from 'node:fs/promises'
-import { writeJsonAtomic, writeJsonAtomicTracked } from '../fs/atomic-write.js'
+import {
+  syncJsonFile,
+  writeJsonAtomic,
+  writeJsonAtomicTracked,
+} from '../fs/atomic-write.js'
 import { LockContentionError, LockOwnershipError } from '../fs/with-lock.js'
 import {
   type PoolFailurePhase,
@@ -88,15 +92,17 @@ export type ReadResult =
   | { status: 'pending-migration'; config: Record<string, unknown> }
   | { status: 'error'; file: 'config' | 'state'; reason: string }
 
-async function readJson(path: string): Promise<FileRead> {
-  let text: string
+async function readText(path: string): Promise<string | undefined> {
   try {
-    text = await readFile(path, 'utf8')
+    return await readFile(path, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      return { exists: false }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   }
+}
+
+function parseFile(text: string | undefined): FileRead {
+  if (text === undefined) return { exists: false }
   try {
     return { exists: true, value: JSON.parse(text) }
   } catch (parseError) {
@@ -104,26 +110,42 @@ async function readJson(path: string): Promise<FileRead> {
   }
 }
 
-/** Reads and classifies both files. Never writes. */
+/**
+ * Validate config/state/config bytes without locks. Roster replacement writes
+ * config before deleting old state credentials. Re-read a changed config so an
+ * old roster cannot be paired with state from which its accounts were removed.
+ */
 export async function readPool(ctx: StoreContext): Promise<ReadResult> {
-  const config = classifyConfig(await readJson(ctx.configPath))
-  if (config.status === 'error')
-    return { status: 'error', file: 'config', reason: config.reason }
-  const state = classifyState(await readJson(ctx.statePath))
-  if (state.status === 'error')
-    return { status: 'error', file: 'state', reason: state.reason }
-  if (config.status === 'pending-migration')
-    return { status: 'pending-migration', config: config.config }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const configText = await readText(ctx.configPath)
+    const stateText = await readText(ctx.statePath)
+    const checkedConfigText = await readText(ctx.configPath)
+    if (configText !== checkedConfigText) continue
+    const config = classifyConfig(parseFile(configText))
+    if (config.status === 'error')
+      return { status: 'error', file: 'config', reason: config.reason }
+    const state = classifyState(parseFile(stateText))
+    if (state.status === 'error')
+      return { status: 'error', file: 'state', reason: state.reason }
+    if (config.status === 'pending-migration')
+      return { status: 'pending-migration', config: config.config }
+    return {
+      status: 'ready',
+      configExists: config.exists,
+      stateExists: state.exists,
+      config: config.config,
+      state: state.state,
+      rows: loadRows(config.config, state.state, ctx.codec, {
+        requireCredentialStamps: ctx.requireCredentialStamps === true,
+        ...(ctx.providerState ? { providerState: ctx.providerState } : {}),
+      }),
+    }
+  }
   return {
-    status: 'ready',
-    configExists: config.exists,
-    stateExists: state.exists,
-    config: config.config,
-    state: state.state,
-    rows: loadRows(config.config, state.state, ctx.codec, {
-      requireCredentialStamps: ctx.requireCredentialStamps === true,
-      ...(ctx.providerState ? { providerState: ctx.providerState } : {}),
-    }),
+    status: 'error',
+    file: 'config',
+    reason:
+      'the config changed during three consecutive snapshot reads; retry the read',
   }
 }
 
@@ -355,19 +377,38 @@ export class Transaction {
   }
 
   /** Writes the state: every unrecognised top-level and per-row key kept. */
-  async commitState(committed?: StoredCredential): Promise<void> {
+  async commitState(
+    committed?: StoredCredential,
+    options: { durable?: boolean } = {},
+  ): Promise<void> {
     const next: Record<string, unknown> = {
       ...this.state,
       version: LEGACY_STORE_VERSION,
       accounts: isRecord(this.state.accounts) ? this.state.accounts : {},
     }
-    await this.write(this.ctx.statePath, next, 'state')
+    await this.write(
+      this.ctx.statePath,
+      next,
+      'state',
+      true,
+      options.durable ?? false,
+    )
     this.state = next
     if (committed) this.progress.committed = committed
   }
 
   async assertAll(): Promise<void> {
     await this.locks.assertAll()
+  }
+
+  async syncState(): Promise<void> {
+    await this.assertAll()
+    if (this.snapshot.stateExists) await syncJsonFile(this.ctx.statePath)
+  }
+
+  async syncConfig(): Promise<void> {
+    await this.assertAll()
+    await syncJsonFile(this.ctx.configPath)
   }
 
   private async write(
