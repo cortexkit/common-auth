@@ -616,8 +616,12 @@ expect_message = 'error: expect('
 id = 'store-publish-file-sync'
 guards = 'durable publication syncs the staged file before rename'
 file = 'src/fs/atomic-write.ts'
-old = 'if (options.durable) await handle.sync()'
-new = '/* NON-VACUITY BREAK: file sync omitted */'
+old = '''if (options.durable) {
+      try {
+        await handle.sync()'''
+new = '''if (options.durable) {
+      try {
+        /* NON-VACUITY BREAK: file sync omitted */'''
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -1088,12 +1092,8 @@ expect_message = 'Received promise that resolved'
 id = 'atomic-write-stage-is-0600-before-rename'
 guards = 'writeJsonAtomic chmods its stage to 0600 before the rename, whatever the umask'
 file = 'src/fs/atomic-write.ts'
-old = '''
-    await handle.chmod(0o600)
-    if (options.durable) await handle.sync()
-    await handle.close()'''
-new = '''    if (options.durable) await handle.sync()
-    await handle.close()'''
+old = 'await handle.chmod(0o600)'
+new = '/* NON-VACUITY BREAK: private mode restoration omitted */'
 test_file = 'test/fs/atomic-write.test.ts'
 runner = "command"
 command = ["bun", "test", "test/fs/atomic-write.test.ts", "-t", "{test}"]
@@ -2846,8 +2846,8 @@ expect_message = 'error: expect('
 id = 'store-revision-surviving-torn-replace'
 guards = 'publication refuses surviving state-ahead replacements instead of committing their raw old roster bytes'
 file = 'src/store/publication.ts'
-old = 'if (survivors.some((row) => row.torn))'
-new = 'if (false /* NON-VACUITY BREAK */)'
+old = 'if (tornSurvivor)'
+new = "if (tornSurvivor && tornSurvivor.id === '' /* NON-VACUITY BREAK */)"
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -2859,8 +2859,8 @@ expect_message = 'error: expect('
 id = 'store-revision-surviving-torn-transition'
 guards = 'publication refuses pending transitions in the resulting roster without repairing them'
 file = 'src/store/publication.ts'
-old = 'if (survivors.some((row) => row.torn))'
-new = 'if (false /* NON-VACUITY BREAK */)'
+old = 'if (tornSurvivor)'
+new = "if (tornSurvivor && tornSurvivor.id === '' /* NON-VACUITY BREAK */)"
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -2983,8 +2983,8 @@ expect_message = 'error: expect('
 id = 'store-revision-config-before-state-after'
 guards = 'lock-free snapshots cannot pair pre-publication config with post-cleanup state'
 file = 'src/store/mutate.ts'
-old = 'if (configText !== checkedConfigText) continue'
-new = 'if (false /* NON-VACUITY BREAK */) continue'
+old = 'if (configText !== checkedConfigText) {'
+new = 'if (false /* NON-VACUITY BREAK */) {'
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -3190,3 +3190,475 @@ command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^staged\srevision\scleanup-state\ssync\srejection\sprevents\sthe\snext\sirreversible\swrite$']
 expect_message = 'error: expect('
+
+# --- changing snapshots can be retried; invalid accounts survive; rejected adds write nothing ---
+
+[[control]]
+id = 'store-final-snapshot-read'
+guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
+file = 'src/store/mutate.ts'
+old = '''file: 'config',
+    kind: 'snapshot-contended',
+    retryable: true,'''
+new = '''file: 'config',
+    /* NON-VACUITY BREAK: busy kind omitted */
+    retryable: true,'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\sread\slock\skey\spre-read$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-snapshot-replace'
+guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
+file = 'src/store/mutate.ts'
+old = '''file: 'config',
+    kind: 'snapshot-contended',
+    retryable: true,'''
+new = '''file: 'config',
+    /* NON-VACUITY BREAK: busy kind omitted */
+    retryable: true,'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\sreplace\slock\skey\spre-read$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-snapshot-rotate'
+guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
+file = 'src/store/mutate.ts'
+old = '''file: 'config',
+    kind: 'snapshot-contended',
+    retryable: true,'''
+new = '''file: 'config',
+    /* NON-VACUITY BREAK: busy kind omitted */
+    retryable: true,'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\srotate\slock\skey\spre-read$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-snapshot-enable'
+guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
+file = 'src/store/mutate.ts'
+old = '''file: 'config',
+    kind: 'snapshot-contended',
+    retryable: true,'''
+new = '''file: 'config',
+    /* NON-VACUITY BREAK: busy kind omitted */
+    retryable: true,'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\senable\slock\skey\spre-read$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-snapshot-disable'
+guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
+file = 'src/store/mutate.ts'
+old = '''file: 'config',
+    kind: 'snapshot-contended',
+    retryable: true,'''
+new = '''file: 'config',
+    /* NON-VACUITY BREAK: busy kind omitted */
+    retryable: true,'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\sdisable\slock\skey\spre-read$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-snapshot-recordIdentity'
+guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
+file = 'src/store/mutate.ts'
+old = '''file: 'config',
+    kind: 'snapshot-contended',
+    retryable: true,'''
+new = '''file: 'config',
+    /* NON-VACUITY BREAK: busy kind omitted */
+    retryable: true,'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\srecordIdentity\slock\skey\spre-read$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-snapshot-remove'
+guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
+file = 'src/store/mutate.ts'
+old = '''file: 'config',
+    kind: 'snapshot-contended',
+    retryable: true,'''
+new = '''file: 'config',
+    /* NON-VACUITY BREAK: busy kind omitted */
+    retryable: true,'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\sremove\slock\skey\spre-read$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-snapshot-publishRoster'
+guards = 'snapshot exhaustion remains a distinct retryable outcome at this read boundary'
+file = 'src/store/mutate.ts'
+old = '''file: 'config',
+    kind: 'snapshot-contended',
+    retryable: true,'''
+new = '''file: 'config',
+    /* NON-VACUITY BREAK: busy kind omitted */
+    retryable: true,'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\scontention\sis\sretryable\sat\spublishRoster\slock\skey\spre-read$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-snapshot-jitter'
+guards = 'snapshot attempts yield with bounded jitter before retrying without locks'
+file = 'src/store/mutate.ts'
+old = '''if (attempt < 2) await snapshotDelay(2 + Math.floor(Math.random() * 4))'''
+new = '''/* NON-VACUITY BREAK: snapshot backoff omitted */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssnapshot\sretries\swait\swith\sbounded\sjitter\swithout\staking\slocks$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-pre-decision-state-retry'
+guards = 'a failed state barrier before the decision is retryable with nothing written'
+file = 'src/store/mutate.ts'
+old = '''kind: 'publication-sync',
+        retryable: true,'''
+new = '''kind: 'publication-sync',
+        retryable: false, /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\spre-decision-state\ssync\sfailure\sis\sa\styped\sretryable\spublication\srefusal$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-pre-decision-config-retry'
+guards = 'a failed decision temp-file sync is retryable before its rename'
+file = 'src/store/mutate.ts'
+old = '''operation === 'publishRoster' && error instanceof AtomicSyncError'''
+new = '''false /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\spre-decision-config\ssync\sfailure\sis\sa\styped\sretryable\spublication\srefusal$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-sync-decision-directory'
+guards = 'post-decision failures require replaying the same plan rather than treating the operation as uncommitted'
+file = 'src/store/mutate.ts'
+old = '''operation === 'publishRoster' && progress.publicationDecided'''
+new = '''false /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sdecision-directory\ssync\sfailure\sis\sa\styped\sretryable\spublication\srefusal$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-sync-replay-config'
+guards = 'post-decision failures require replaying the same plan rather than treating the operation as uncommitted'
+file = 'src/store/mutate.ts'
+old = '''operation === 'publishRoster' && progress.publicationDecided'''
+new = '''false /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sreplay-config\ssync\sfailure\sis\sa\styped\sretryable\spublication\srefusal$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-sync-cleanup-state'
+guards = 'post-decision failures require replaying the same plan rather than treating the operation as uncommitted'
+file = 'src/store/mutate.ts'
+old = '''operation === 'publishRoster' && progress.publicationDecided'''
+new = '''false /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\scleanup-state\ssync\sfailure\sis\sa\styped\sretryable\spublication\srefusal$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-sync-cleaned-config'
+guards = 'post-decision failures require replaying the same plan rather than treating the operation as uncommitted'
+file = 'src/store/mutate.ts'
+old = '''operation === 'publishRoster' && progress.publicationDecided'''
+new = '''false /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\scleaned-config\ssync\sfailure\sis\sa\styped\sretryable\spublication\srefusal$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-torn-survivor-manual'
+guards = 'a torn surviving row requires an explicit normal-operation completion before publication'
+file = 'src/store/publication.ts'
+old = '''`Row ${tornSurvivor.id} has an interrupted write; complete it with a normal store operation before publishing.`,
+                false,'''
+new = '''`Row ${tornSurvivor.id} has an interrupted write; complete it with a normal store operation before publishing.`,
+                true, /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\ssurviving\storn\srow\srequires\sexplicit\scompletion\sinstead\sof\sblind\sretry$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-carry-invalid-roster'
+guards = 'publication retains unnamed and invalid raw roster rows after its ordered valid survivors'
+file = 'src/store/publication.ts'
+old = '''...preserved,'''
+new = '''/* NON-VACUITY BREAK: carried raw rows omitted */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\spublication\scarries\sunnamed\sand\sinvalid\sroster\srows\sverbatim\safter\sordered\ssurvivors$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-endpoint-mismatch'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\sendpoint-mismatch\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-merge-rejection'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\smerge-rejection\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-bound-projection-rejection'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\sbound-projection-rejection\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-id-exists'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\sid-exists\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-invalid-row'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\sinvalid-row\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-unbound-credential'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\sunbound-credential\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-type-mismatch'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\stype-mismatch\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-identity-mismatch'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\sidentity-mismatch\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-add-before-repair-epoch-exhausted'
+guards = 'add decides this refusal before repairing any interrupted row'
+file = 'src/store/rows.ts'
+old = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          const rows = tx.rows()'''
+new = '''const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
+          if (!orphan && mode === 'rotate') await tx.completeTorn() // NON-VACUITY BREAK
+          const rows = tx.rows()'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sadd\sepoch-exhausted\srefusal\sleaves\storn\ssiblings\sand\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-torn-target-enable-replace'
+guards = 'provider-state planning uses the projected replacement epoch rather than the raw old entry epoch'
+file = 'src/store/provider-state.ts'
+old = '''const epoch = row.credentialEpoch ?? 1
+  const account = tx.stateAccount(id)'''
+new = '''const epoch = tx.entry(id)?.credentialEpoch ?? 1 /* NON-VACUITY BREAK */
+  const account = tx.stateAccount(id)'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sfenced\senable\splans\sthe\ssame\saccount\sand\sstamp\sfor\sa\storn\starget\sreplace$']
+expect_message = 'unbound-credential'
+
+[[control]]
+id = 'store-final-torn-target-enable-transition'
+guards = 'provider-state planning preserves the genuine credential epoch while completing a pending target transition'
+file = 'src/store/provider-state.ts'
+old = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest }'''
+new = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest, credentialEpoch: epoch + 1 } /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sfenced\senable\splans\sthe\ssame\saccount\sand\sstamp\sfor\sa\storn\starget\stransition$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-torn-target-disable-replace'
+guards = 'provider-state planning uses the projected replacement epoch rather than the raw old entry epoch'
+file = 'src/store/provider-state.ts'
+old = '''const epoch = row.credentialEpoch ?? 1
+  const account = tx.stateAccount(id)'''
+new = '''const epoch = tx.entry(id)?.credentialEpoch ?? 1 /* NON-VACUITY BREAK */
+  const account = tx.stateAccount(id)'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sfenced\sdisable\splans\sthe\ssame\saccount\sand\sstamp\sfor\sa\storn\starget\sreplace$']
+expect_message = 'unbound-credential'
+
+[[control]]
+id = 'store-final-torn-target-disable-transition'
+guards = 'provider-state planning preserves the genuine credential epoch while completing a pending target transition'
+file = 'src/store/provider-state.ts'
+old = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest }'''
+new = '''nextAccount[CREDENTIAL_STAMP_KEY] = { ...rawStamp, providerState: digest, credentialEpoch: epoch + 1 } /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\sfenced\sdisable\splans\sthe\ssame\saccount\sand\sstamp\sfor\sa\storn\starget\stransition$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-final-projected-api-endpoint'
+guards = 'an accepted API re-add plans against the completed endpoint before repairing raw config'
+file = 'src/store/rows.ts'
+old = "projected?.type === 'api'"
+new = "projected?.type === 'api' && projected.baseURL === '' /* NON-VACUITY BREAK */"
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^final\saudit\saccepted\sAPI\sre-add\splans\sthe\sprojected\storn\sendpoint\sand\sepoch$']
+expect_message = 'endpoint-mismatch'

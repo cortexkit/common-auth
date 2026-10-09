@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises'
+import { setTimeout as snapshotDelay } from 'node:timers/promises'
 import {
+  AtomicSyncError,
   syncJsonFile,
   writeJsonAtomic,
   writeJsonAtomicTracked,
@@ -90,7 +92,13 @@ export interface Snapshot {
 export type ReadResult =
   | ({ status: 'ready' } & Snapshot)
   | { status: 'pending-migration'; config: Record<string, unknown> }
-  | { status: 'error'; file: 'config' | 'state'; reason: string }
+  | {
+      status: 'error'
+      file: 'config' | 'state'
+      reason: string
+      kind?: 'snapshot-contended'
+      retryable?: true
+    }
 
 async function readText(path: string): Promise<string | undefined> {
   try {
@@ -120,7 +128,10 @@ export async function readPool(ctx: StoreContext): Promise<ReadResult> {
     const configText = await readText(ctx.configPath)
     const stateText = await readText(ctx.statePath)
     const checkedConfigText = await readText(ctx.configPath)
-    if (configText !== checkedConfigText) continue
+    if (configText !== checkedConfigText) {
+      if (attempt < 2) await snapshotDelay(2 + Math.floor(Math.random() * 4))
+      continue
+    }
     const config = classifyConfig(parseFile(configText))
     if (config.status === 'error')
       return { status: 'error', file: 'config', reason: config.reason }
@@ -144,8 +155,9 @@ export async function readPool(ctx: StoreContext): Promise<ReadResult> {
   return {
     status: 'error',
     file: 'config',
-    reason:
-      'the config changed during three consecutive snapshot reads; retry the read',
+    kind: 'snapshot-contended',
+    retryable: true,
+    reason: 'The store was changing; retry the operation once writes settle.',
   }
 }
 
@@ -156,6 +168,15 @@ export function notReadyError(
   rowId: string | undefined,
   phase: PoolFailurePhase = 'before-first-write',
 ): PoolOperationError {
+  if (result.status === 'error' && result.kind === 'snapshot-contended')
+    return new PoolOperationError({
+      operation,
+      ...(rowId !== undefined ? { rowId } : {}),
+      phase,
+      kind: 'snapshot-contended',
+      retryable: true,
+      message: result.reason,
+    })
   return new PoolOperationError({
     operation,
     ...(rowId !== undefined ? { rowId } : {}),
@@ -175,6 +196,8 @@ export function notReadyError(
 /** What an operation has written so far; decides the failure phase. */
 export interface Progress {
   writes: number
+  /** The roster config was renamed into place, or its committed receipt was found. */
+  publicationDecided?: true
   /** The credential the operation's state write put on disk, once it has. */
   committed?: StoredCredential
 }
@@ -326,7 +349,11 @@ export class Transaction {
    * process, past every epoch an attribution could name.
    */
   async commitConfig(
-    options: { counted?: boolean; durable?: boolean } = {},
+    options: {
+      counted?: boolean
+      durable?: boolean
+      publicationDecision?: boolean
+    } = {},
   ): Promise<void> {
     const roster = this.roster()
     const rosterIds = new Set<string>()
@@ -369,6 +396,7 @@ export class Transaction {
       options.counted ?? true,
       options.durable ?? false,
       () => {
+        if (options.publicationDecision) this.markPublicationDecision()
         for (const id of dropped) this.ctx.removedIds.add(id)
         this.config = next
       },
@@ -403,7 +431,24 @@ export class Transaction {
 
   async syncState(): Promise<void> {
     await this.assertAll()
-    if (this.snapshot.stateExists) await syncJsonFile(this.ctx.statePath)
+    try {
+      if (this.snapshot.stateExists) await syncJsonFile(this.ctx.statePath)
+    } catch (cause) {
+      throw new PoolOperationError({
+        operation: this.info.operation,
+        rowId: this.info.rowId,
+        phase: 'before-first-write',
+        kind: 'publication-sync',
+        retryable: true,
+        message:
+          'Publication sync failed before the decision; nothing was written. Retry the same plan.',
+        cause,
+      })
+    }
+  }
+
+  markPublicationDecision(): void {
+    this.progress.publicationDecided = true
   }
 
   async syncConfig(): Promise<void> {
@@ -542,6 +587,28 @@ export function toFailure(
         : 'before-first-write'
   const committed =
     phase === 'after-first-write' ? progress.committed : undefined
+  if (operation === 'publishRoster' && progress.publicationDecided)
+    return new PoolOperationError({
+      operation,
+      ...(rowId !== undefined ? { rowId } : {}),
+      phase,
+      kind: 'publication-incomplete',
+      retryable: true,
+      message:
+        'The publication may already be decided. Replay the same plan or check publication(operationId).',
+      cause: error,
+    })
+  if (operation === 'publishRoster' && error instanceof AtomicSyncError)
+    return new PoolOperationError({
+      operation,
+      ...(rowId !== undefined ? { rowId } : {}),
+      phase,
+      kind: 'publication-sync',
+      retryable: true,
+      message:
+        'Publication sync failed before the decision; nothing was written. Retry the same plan.',
+      cause: error,
+    })
   if (error instanceof PoolOperationError) {
     if (
       error.phase === phase &&

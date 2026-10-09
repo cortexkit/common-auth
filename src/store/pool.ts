@@ -140,7 +140,13 @@ export interface OpenPoolStoreOptions {
 export type PoolLoad =
   | { status: 'ready'; schemaVersion: number; rows: PoolRow[] }
   | { status: 'pending-migration'; roster: unknown[] }
-  | { status: 'error'; file: 'config' | 'state'; reason: string }
+  | {
+      status: 'error'
+      file: 'config' | 'state'
+      reason: string
+      kind?: 'snapshot-contended'
+      retryable?: true
+    }
 
 export interface PoolStore {
   /** Reads the pool and fires first-reading pulls; never writes a file itself. */

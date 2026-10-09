@@ -365,7 +365,14 @@ function onRowEndpoint(
       )
     return { ...credential, baseURL: credential.baseURL }
   }
-  const endpoint = rowEndpoint(raw)
+  const projected = tx.row(id)?.credential
+  const endpoint =
+    projected?.type === 'api'
+      ? {
+          baseURL: projected.baseURL.trim(),
+          authHeader: projected.authHeader ?? 'authorization-bearer',
+        }
+      : rowEndpoint(raw)
   const baseURL = credential.baseURL?.trim() ?? endpoint.baseURL
   const authHeader = credential.authHeader ?? endpoint.authHeader
   if (baseURL !== endpoint.baseURL || authHeader !== endpoint.authHeader)
@@ -396,11 +403,14 @@ function bindingInTx(
   learnt?: string,
 ): CredentialBinding {
   const raw = tx.rosterRow(id)
+  const projected = tx.row(id)
   const identity =
     learnt ??
-    (isRecord(raw) && typeof raw.accountId === 'string' && raw.accountId
-      ? raw.accountId
-      : undefined)
+    (projected
+      ? projected.identity
+      : isRecord(raw) && typeof raw.accountId === 'string' && raw.accountId
+        ? raw.accountId
+        : undefined)
   return {
     ...(identity !== undefined ? { identity } : {}),
     ...(stored.type === 'api'
@@ -413,16 +423,14 @@ function bindingInTx(
 }
 
 /**
- * Writes a credential into the state file (one write), stamped with the
- * credential epoch the row's entry holds in `tx` (1 without an entry) and a
- * binding: for a replace, the one the config is about to get (and the stamp
- * is marked as a replace's); for every other write, the row's config as it
- * stands in `tx` with the identity the operation is about to record
- * (`identity`, see `bindingInTx`). A rotation is the same lineage: no epoch
- * bump, no identity or quota change. An API key must belong to the endpoint
- * the row holds in `tx` (see `onRowEndpoint`).
+ * Build the credential and its state entry without writing. The stamp records
+ * the credential's epoch, identity and API endpoint so readers can verify that
+ * they belong together. A replacement records the new epoch and account; a
+ * rotation keeps the current epoch, account and quota. Pending writes are read
+ * as completed when choosing those fields, even while disk config is behind.
+ * Endpoint checks and provider-state encoding finish here, before any repair.
  */
-export async function rotateIn(
+function planRotationIn(
   rt: StoreRuntime,
   tx: Transaction,
   id: string,
@@ -437,11 +445,11 @@ export async function rotateIn(
     transition?: StampedTransition
     staged?: StagedStamp
   } = {},
-): Promise<StoredCredential> {
+): { stored: StoredCredential; account: Record<string, unknown> } {
   const credential = onRowEndpoint(tx, id, given)
   const prior = tx.stateAccount(id)
   const stateWrite = extra.providerState ?? { kind: 'keep' }
-  const epoch = tx.entry(id)?.credentialEpoch
+  const epoch = tx.row(id)?.credentialEpoch ?? tx.entry(id)?.credentialEpoch
   const credentialEpoch = typeof epoch === 'number' ? epoch : 1
   // The provider state goes in the same state write as the credential and
   // its stamp, so no reader ever sees one without the other. A kept value is
@@ -473,7 +481,7 @@ export async function rotateIn(
   else if (stateWrite.kind === 'set')
     kept[PROVIDER_STATE_KEY] = stateWrite.value
   const stored = storedCredential(credential, stamp)
-  tx.setStateAccount(id, {
+  const account = {
     ...kept,
     ...stateFieldsFor(credential, stamp),
     [CREDENTIAL_STAMP_KEY]: {
@@ -493,9 +501,29 @@ export async function rotateIn(
         },
       ),
     },
-  })
-  await tx.commitState(stored)
-  return stored
+  }
+  return { stored, account }
+}
+
+async function persistRotationIn(
+  tx: Transaction,
+  id: string,
+  plan: ReturnType<typeof planRotationIn>,
+): Promise<StoredCredential> {
+  tx.setStateAccount(id, plan.account)
+  await tx.commitState(plan.stored)
+  return plan.stored
+}
+
+/** Validate the endpoint and encode provider state and its stamp before committing state. */
+export async function rotateIn(
+  rt: StoreRuntime,
+  tx: Transaction,
+  id: string,
+  given: RotateCredential,
+  extra: Parameters<typeof planRotationIn>[4] = {},
+): Promise<StoredCredential> {
+  return persistRotationIn(tx, id, planRotationIn(rt, tx, id, given, extra))
 }
 
 /**
@@ -1040,9 +1068,7 @@ export async function addRow(
               identity !== same.identity
             )
               throw identityMismatch('add', same.id)
-            await tx.completeTorn()
-            tx.assertNotStaged(same.id)
-            const stored = await rotateIn(rt, tx, same.id, credential, {
+            const prepared = planRotationIn(rt, tx, same.id, credential, {
               ...(incoming !== undefined
                 ? {
                     providerState: mergedProviderState(
@@ -1055,6 +1081,9 @@ export async function addRow(
                   }
                 : {}),
             })
+            await tx.completeTorn()
+            tx.assertNotStaged(same.id)
+            const stored = await persistRotationIn(tx, same.id, prepared)
             return {
               id: same.id,
               outcome: 'rotated',
@@ -1062,7 +1091,6 @@ export async function addRow(
               credentialEpoch: same.credentialEpoch ?? 1,
             }
           }
-          if (!orphan && mode === 'rotate') await tx.completeTorn()
           const existing = rows.find((row) => row.id === id)
           if (existing) {
             if (existing.invalid)
@@ -1099,12 +1127,14 @@ export async function addRow(
                 credentialEpoch: 1,
                 needsFirstReading: credential.type === 'oauth',
               })
-            const stored = await rotateIn(rt, tx, id, credential, {
+            const prepared = planRotationIn(rt, tx, id, credential, {
               clearErrors: true,
               ...(incoming !== undefined
                 ? { providerState: { kind: 'set', value: incoming } }
                 : {}),
             })
+            await tx.completeTorn()
+            const stored = await persistRotationIn(tx, id, prepared)
             if (!existing.hasEntry) await tx.commitConfig()
             return {
               id,
@@ -1184,7 +1214,7 @@ export async function addRow(
           // roster row could load beside a credential left under its id by an
           // interrupted removal. Nothing of such a leftover entry is kept.
           tx.dropStateAccount(id)
-          const stored = await rotateIn(rt, tx, id, credential, {
+          const prepared = planRotationIn(rt, tx, id, credential, {
             ...(input.stage && input.disabled
               ? {
                   staged: {
@@ -1201,6 +1231,8 @@ export async function addRow(
               ? { providerState: { kind: 'set', value: incoming } }
               : {}),
           })
+          if (mode === 'rotate') await tx.completeTorn()
+          const stored = await persistRotationIn(tx, id, prepared)
           await tx.commitConfig()
           return { id, outcome, credential: stored, credentialEpoch }
         },

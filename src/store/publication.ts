@@ -207,7 +207,8 @@ function publicationSurvivors(
 ): PoolRow[] {
   const rosterIds = new Set<string>()
   for (const raw of rosterOf(tx.config)) {
-    if (!isRecord(raw) || typeof raw.id !== 'string' || rosterIds.has(raw.id))
+    if (!isRecord(raw) || typeof raw.id !== 'string') continue
+    if (rosterIds.has(raw.id))
       throw refusal(
         'publishRoster',
         plan.operationId,
@@ -217,7 +218,9 @@ function publicationSurvivors(
     rosterIds.add(raw.id)
   }
   const removedIds = new Set(plan.remove.map((ref) => ref.id))
-  const survivors = rows.filter((row) => !removedIds.has(row.id))
+  const survivors = rows.filter(
+    (row) => row.invalid !== 'roster' && !removedIds.has(row.id),
+  )
   if (
     survivors.length !== plan.order.length ||
     plan.order.some((id) => !survivors.some((row) => row.id === id)) ||
@@ -336,6 +339,7 @@ export async function publishRoster(
                 )
               if (prior.phase === 'cleaned')
                 return { outcome: 'already-cleaned', receipt: prior }
+              tx.markPublicationDecision()
               await tx.syncConfig()
               return { outcome: 'cleaned', receipt: await cleanup(tx, prior) }
             }
@@ -416,13 +420,14 @@ export async function publishRoster(
               )
               finalized.push(row)
             }
-            if (survivors.some((row) => row.torn))
+            const tornSurvivor = survivors.find((row) => row.torn)
+            if (tornSurvivor)
               throw refusal(
                 'publishRoster',
                 plan.operationId,
                 'attribution',
-                'a surviving row has an interrupted write; complete it before publication',
-                true,
+                `Row ${tornSurvivor.id} has an interrupted write; complete it with a normal store operation before publishing.`,
+                false,
               )
             const identities = new Set<string>()
             for (const row of survivors) {
@@ -505,12 +510,23 @@ export async function publishRoster(
               else entry.disabledReason = ref.disabledReason
               tx.setEntry(ref.id, entry)
             }
-            tx.config.accounts = plan.order.map((id) => tx.rosterRow(id))
+            const preserved = tx
+              .roster()
+              .filter(
+                (raw) =>
+                  !isRecord(raw) ||
+                  typeof raw.id !== 'string' ||
+                  rows.find((row) => row.id === raw.id)?.invalid === 'roster',
+              )
+            tx.config.accounts = [
+              ...plan.order.map((id) => tx.rosterRow(id)),
+              ...preserved,
+            ]
             saveReceipt(tx, receipt)
             // This durable rename is the irreversible roster decision. Everything
             // after it follows only the receipt, including after a process restart.
             await tx.syncState()
-            await tx.commitConfig({ durable: true })
+            await tx.commitConfig({ durable: true, publicationDecision: true })
             return { outcome: 'published', receipt: await cleanup(tx, receipt) }
           },
           { completeTorn: false },

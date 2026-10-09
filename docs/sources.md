@@ -1414,3 +1414,39 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | opencode2 | Omitting the ownership option pins 0.11.7 model selection and wire bytes | new (neither copy) | omitting the option preserves legacy model selection and wire bytes |
 | opencode2 | The adapter can extract a prepared Anthropic x-api-key instead of an OpenAI bearer | new (neither copy) | an adapter can gate on the Anthropic API key header |
 | opencode2 | Owned placeholders are always refused on HTTP and WebSocket even with a customized forbidden list | new (neither copy) | owned placeholders cannot leave even with a customized wire guard |
+
+## Final store failure and planning controls
+
+| component | behaviour | origin | test |
+| --- | --- | --- | --- |
+| store | changing config across all three snapshot attempts is a retryable read outcome rather than corrupt-file failure | new (neither copy) | final audit snapshot contention is retryable at read lock key pre-read |
+| store | changing config across all three snapshot attempts is a retryable read outcome rather than corrupt-file failure | new (neither copy) | final audit snapshot contention is retryable at replace lock key pre-read |
+| store | changing config across all three snapshot attempts is a retryable read outcome rather than corrupt-file failure | new (neither copy) | final audit snapshot contention is retryable at rotate lock key pre-read |
+| store | changing config across all three snapshot attempts is a retryable read outcome rather than corrupt-file failure | new (neither copy) | final audit snapshot contention is retryable at enable lock key pre-read |
+| store | changing config across all three snapshot attempts is a retryable read outcome rather than corrupt-file failure | new (neither copy) | final audit snapshot contention is retryable at disable lock key pre-read |
+| store | changing config across all three snapshot attempts is a retryable read outcome rather than corrupt-file failure | new (neither copy) | final audit snapshot contention is retryable at recordIdentity lock key pre-read |
+| store | changing config across all three snapshot attempts is a retryable read outcome rather than corrupt-file failure | new (neither copy) | final audit snapshot contention is retryable at remove lock key pre-read |
+| store | changing config across all three snapshot attempts is a retryable read outcome rather than corrupt-file failure | new (neither copy) | final audit snapshot contention is retryable at publishRoster lock key pre-read |
+| store | snapshot attempts yield with bounded jitter before retrying without locks | new (neither copy) | final audit snapshot retries wait with bounded jitter without taking locks |
+| store | a failed state barrier before the decision is retryable with nothing written | new (neither copy) | final audit pre-decision-state sync failure is a typed retryable publication refusal |
+| store | a failed decision temp-file sync is retryable before its rename | new (neither copy) | final audit pre-decision-config sync failure is a typed retryable publication refusal |
+| store | post-decision failures require replaying the same plan rather than treating the operation as uncommitted | new (neither copy) | final audit decision-directory sync failure is a typed retryable publication refusal |
+| store | post-decision failures require replaying the same plan rather than treating the operation as uncommitted | new (neither copy) | final audit replay-config sync failure is a typed retryable publication refusal |
+| store | post-decision failures require replaying the same plan rather than treating the operation as uncommitted | new (neither copy) | final audit cleanup-state sync failure is a typed retryable publication refusal |
+| store | post-decision failures require replaying the same plan rather than treating the operation as uncommitted | new (neither copy) | final audit cleaned-config sync failure is a typed retryable publication refusal |
+| store | a torn surviving row requires an explicit normal-operation completion before publication | new (neither copy) | final audit surviving torn row requires explicit completion instead of blind retry |
+| store | publication retains unnamed and invalid raw roster rows after its ordered valid survivors | new (neither copy) | final audit publication carries unnamed and invalid roster rows verbatim after ordered survivors |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add endpoint-mismatch refusal leaves torn siblings and both files unchanged |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add merge-rejection refusal leaves torn siblings and both files unchanged |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add bound-projection-rejection refusal leaves torn siblings and both files unchanged |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add id-exists refusal leaves torn siblings and both files unchanged |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add invalid-row refusal leaves torn siblings and both files unchanged |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add unbound-credential refusal leaves torn siblings and both files unchanged |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add type-mismatch refusal leaves torn siblings and both files unchanged |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add identity-mismatch refusal leaves torn siblings and both files unchanged |
+| store | add decides this refusal before repairing any interrupted row | new (neither copy) | final audit add epoch-exhausted refusal leaves torn siblings and both files unchanged |
+| store | provider-state planning uses the projected replacement epoch rather than the raw old entry epoch | new (neither copy) | final audit fenced enable plans the same account and stamp for a torn target replace |
+| store | provider-state planning preserves the genuine credential epoch while completing a pending target transition | new (neither copy) | final audit fenced enable plans the same account and stamp for a torn target transition |
+| store | provider-state planning uses the projected replacement epoch rather than the raw old entry epoch | new (neither copy) | final audit fenced disable plans the same account and stamp for a torn target replace |
+| store | provider-state planning preserves the genuine credential epoch while completing a pending target transition | new (neither copy) | final audit fenced disable plans the same account and stamp for a torn target transition |
+| store | an accepted API re-add checks the new endpoint and genuine replacement epoch before raw config is completed | new (neither copy) | final audit accepted API re-add plans the projected torn endpoint and epoch |

@@ -11,6 +11,14 @@ export interface AtomicWriteOptions {
   durable?: boolean
 }
 
+/** Internal classification of fsync failures, including a failure after rename. */
+export class AtomicSyncError extends Error {
+  constructor(cause: unknown) {
+    super('file or directory sync failed', { cause })
+    this.name = 'AtomicSyncError'
+  }
+}
+
 export async function writeJsonAtomic(
   path: string,
   value: unknown,
@@ -43,7 +51,13 @@ export async function writeJsonAtomicTracked(
       'utf8',
     )
     await handle.chmod(0o600)
-    if (options.durable) await handle.sync()
+    if (options.durable) {
+      try {
+        await handle.sync()
+      } catch (cause) {
+        throw new AtomicSyncError(cause)
+      }
+    }
     await handle.close()
     handle = undefined
     await options.beforeRename?.()
@@ -54,6 +68,8 @@ export async function writeJsonAtomicTracked(
       const directory = await open(dirname(path), 'r')
       try {
         await directory.sync()
+      } catch (cause) {
+        throw new AtomicSyncError(cause)
       } finally {
         await directory.close()
       }

@@ -1,6 +1,8 @@
 import { beforeEach, expect, spyOn } from 'bun:test'
+import * as crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import * as timers from 'node:timers/promises'
 import {
   type AddInput,
   type OpenPoolStoreOptions,
@@ -10,6 +12,7 @@ import {
   type PublishPlan,
 } from '../../src/store/index.js'
 import { parseStamp } from '../../src/store/schema.js'
+import { completeTornRows } from '../../src/store/torn.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
@@ -1532,8 +1535,9 @@ test('staged revision snapshot validation refuses after three changing config re
     expect(await reader.read()).toMatchObject({
       status: 'error',
       file: 'config',
-      reason:
-        'the config changed during three consecutive snapshot reads; retry the read',
+      reason: 'The store was changing; retry the operation once writes settle.',
+      kind: 'snapshot-contended',
+      retryable: true,
     })
     expect(configReads).toBe(6)
     expect(locks).toBe(0)
@@ -1603,3 +1607,499 @@ for (const barrier of [
       })
   })
 }
+
+for (const operation of [
+  'read',
+  'replace',
+  'rotate',
+  'enable',
+  'disable',
+  'recordIdentity',
+  'remove',
+  'publishRoster',
+] as const) {
+  test(`final audit snapshot contention is retryable at ${operation} lock key pre-read`, async () => {
+    await seed()
+    const publication = await plan()
+    let locks = 0
+    const caller = open({
+      onLockEvent: () => {
+        locks++
+      },
+    })
+    const originalRead = fs.readFile
+    let configReads = 0
+    const spy = spyOn(fs, 'readFile').mockImplementation((async (
+      ...args: Parameters<typeof fs.readFile>
+    ) => {
+      const value = await originalRead(...args)
+      if (String(args[0]) === configPath && ++configReads % 2 === 1) {
+        const config = JSON.parse(String(value))
+        config.churn = configReads
+        await write(configPath, config)
+      }
+      return value
+    }) as typeof fs.readFile)
+    try {
+      if (operation === 'read') {
+        expect(await caller.read()).toMatchObject({
+          status: 'error',
+          kind: 'snapshot-contended',
+          retryable: true,
+          reason:
+            'The store was changing; retry the operation once writes settle.',
+        })
+      } else {
+        const calls = {
+          replace: () => caller.replace('old', oauth('replacement')),
+          rotate: () => caller.rotate('old', oauth('rotation')),
+          enable: () => caller.enable('old'),
+          disable: () => caller.disable('old', 'off'),
+          recordIdentity: () =>
+            caller.recordIdentity('old', 'wire', { credentialEpoch: 1 }),
+          remove: () => caller.remove('old'),
+          publishRoster: () => caller.publishRoster(publication),
+        }
+        await expect(calls[operation]()).rejects.toMatchObject({
+          kind: 'snapshot-contended',
+          retryable: true,
+          phase: 'before-first-write',
+          message:
+            'The store was changing; retry the operation once writes settle.',
+        })
+      }
+      expect(configReads).toBe(6)
+      expect(locks).toBe(0)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+}
+
+for (const barrier of [
+  'pre-decision-state',
+  'pre-decision-config',
+  'decision-directory',
+  'replay-config',
+  'cleanup-state',
+  'cleaned-config',
+] as const) {
+  test(`final audit ${barrier} sync failure is a typed retryable publication refusal`, async () => {
+    await separateStateDir()
+    const publication = await plan()
+    if (barrier === 'replay-config') {
+      const interrupted = open({
+        onStep: (step, info) => {
+          if (
+            step === 'after-config-write' &&
+            info.operation === 'publishRoster'
+          )
+            throw new Error('interrupt')
+        },
+      })
+      await expect(
+        interrupted.publishRoster(publication),
+      ).rejects.toMatchObject({ phase: 'after-first-write' })
+    }
+    const before = await bytes()
+    const originalOpen = fs.open
+    let configTemps = 0
+    const spy = spyOn(fs, 'open').mockImplementation(
+      async (...args: Parameters<typeof fs.open>) => {
+        const handle = await originalOpen(...args)
+        const path = String(args[0])
+        if (path.startsWith(`${configPath}.`) && path.endsWith('.tmp'))
+          configTemps++
+        const reject =
+          barrier === 'pre-decision-state'
+            ? path === statePath
+            : barrier === 'pre-decision-config'
+              ? path.startsWith(`${configPath}.`) &&
+                path.endsWith('.tmp') &&
+                configTemps === 1
+              : barrier === 'decision-directory'
+                ? path === dirname(configPath)
+                : barrier === 'replay-config'
+                  ? path === configPath
+                  : barrier === 'cleanup-state'
+                    ? path.startsWith(`${statePath}.`) && path.endsWith('.tmp')
+                    : path.startsWith(`${configPath}.`) &&
+                      path.endsWith('.tmp') &&
+                      configTemps === 2
+        if (reject)
+          handle.sync = async () => {
+            throw new Error('injected sync failure')
+          }
+        return handle
+      },
+    )
+    try {
+      await expect(store.publishRoster(publication)).rejects.toMatchObject({
+        kind: barrier.startsWith('pre-decision')
+          ? 'publication-sync'
+          : 'publication-incomplete',
+        retryable: true,
+        message: barrier.startsWith('pre-decision')
+          ? 'Publication sync failed before the decision; nothing was written. Retry the same plan.'
+          : 'The publication may already be decided. Replay the same plan or check publication(operationId).',
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    if (barrier.startsWith('pre-decision')) {
+      expect(await bytes()).toEqual(before)
+      expect(await store.publication(publication.operationId)).toBeUndefined()
+    } else
+      expect(await store.publication(publication.operationId)).toMatchObject({
+        phase: 'committed',
+      })
+    expect(await store.publishRoster(publication)).toMatchObject({
+      outcome: barrier.startsWith('pre-decision') ? 'published' : 'cleaned',
+      receipt: { phase: 'cleaned' },
+    })
+  })
+}
+
+test('final audit surviving torn row requires explicit completion instead of blind retry', async () => {
+  await seed()
+  await tornSibling('replace')
+  const publication = await plan()
+  publication.order.push('sibling')
+  const before = await bytes()
+  await expect(store.publishRoster(publication)).rejects.toMatchObject({
+    kind: 'attribution',
+    retryable: false,
+    message:
+      'Row sibling has an interrupted write; complete it with a normal store operation before publishing.',
+  })
+  expect(await bytes()).toEqual(before)
+})
+
+test('final audit publication carries unnamed and invalid roster rows verbatim after ordered survivors', async () => {
+  await seed()
+  const publication = await plan()
+  const config = await json(configPath)
+  const preserved = [
+    null,
+    { metadata: { untouched: true } },
+    17,
+    { id: 'broken', type: 'unsupported', enabled: true, extra: ['keep', 2] },
+  ]
+  config.accounts = [
+    preserved[0],
+    config.accounts[0],
+    preserved[1],
+    config.accounts[1],
+    ...preserved.slice(2),
+  ]
+  config.commonAuthPool.rows.broken = { credentialEpoch: 4, unknown: 'keep' }
+  await write(configPath, config)
+  await store.publishRoster(publication)
+  const after = await json(configPath)
+  expect(after.accounts[0].id).toBe('new')
+  expect(JSON.stringify(after.accounts.slice(1))).toBe(
+    JSON.stringify(preserved),
+  )
+  expect(after.commonAuthPool.rows.broken).toEqual(
+    config.commonAuthPool.rows.broken,
+  )
+  const result = await store.read()
+  if (result.status !== 'ready') throw new Error(result.status)
+  expect(
+    result.rows.filter((row) => row.candidate).map((row) => row.id),
+  ).toEqual(['new'])
+})
+
+for (const reason of [
+  'endpoint-mismatch',
+  'merge-rejection',
+  'bound-projection-rejection',
+  'id-exists',
+  'invalid-row',
+  'unbound-credential',
+  'type-mismatch',
+  'identity-mismatch',
+  'epoch-exhausted',
+] as const) {
+  test(`final audit add ${reason} refusal leaves torn siblings and both files unchanged`, async () => {
+    const api = {
+      type: 'api' as const,
+      apiKey: 'key',
+      baseURL: 'https://original.example/',
+    }
+    if (reason === 'endpoint-mismatch')
+      await store.add({ id: 'target', credential: api })
+    else
+      await store.add({
+        id: 'target',
+        credential: oauth(),
+        identity: 'wire',
+        providerState: { bound: 'project' },
+      })
+    await tornSibling('replace')
+    let input: AddInput = { id: 'other', credential: oauth() }
+    const kind =
+      reason === 'merge-rejection' || reason === 'bound-projection-rejection'
+        ? 'unexpected'
+        : reason === 'epoch-exhausted'
+          ? 'id-removed'
+          : reason
+    if (reason === 'endpoint-mismatch')
+      input = {
+        id: 'other',
+        credential: { ...api, baseURL: 'https://different.example/' },
+      }
+    if (
+      reason === 'merge-rejection' ||
+      reason === 'bound-projection-rejection'
+    ) {
+      input.providerState = { bound: 'next', reject: true }
+      store = open({
+        providerState: {
+          validate: () => true,
+          ...(reason === 'merge-rejection'
+            ? {
+                merge: () => {
+                  throw new Error('merge refuses')
+                },
+              }
+            : {}),
+          credentialBound: (value) => {
+            if (
+              reason === 'bound-projection-rejection' &&
+              (value as { reject?: boolean }).reject
+            )
+              throw new Error('projection refuses')
+            return (value as { bound: string }).bound
+          },
+        },
+      })
+    }
+    if (
+      reason === 'id-exists' ||
+      reason === 'invalid-row' ||
+      reason === 'unbound-credential' ||
+      reason === 'type-mismatch' ||
+      reason === 'identity-mismatch'
+    ) {
+      input = { id: 'target', credential: oauth('different') }
+      const config = await json(configPath)
+      const state = await json(statePath)
+      if (reason === 'invalid-row')
+        config.commonAuthPool.rows.target.credentialEpoch = 0
+      if (
+        reason === 'unbound-credential' ||
+        reason === 'type-mismatch' ||
+        reason === 'identity-mismatch'
+      )
+        delete state.accounts.target
+      if (reason === 'type-mismatch') {
+        config.accounts.find(
+          (raw: { id: string }) => raw.id === 'target',
+        ).type = 'api'
+        config.accounts.find(
+          (raw: { id: string }) => raw.id === 'target',
+        ).baseURL = 'https://original.example/'
+        store = open({ requireCredentialStamps: false })
+      }
+      if (reason === 'identity-mismatch') {
+        input.identity = 'another-wire'
+        store = open({ requireCredentialStamps: false })
+      }
+      await write(configPath, config)
+      await write(statePath, state)
+    }
+    if (reason === 'epoch-exhausted') {
+      input = { id: 'spent', credential: oauth('fresh') }
+      const config = await json(configPath)
+      config.commonAuthPool.retiredEpochs = { spent: Number.MAX_SAFE_INTEGER }
+      await write(configPath, config)
+    }
+    await unchanged(() => store.add(input), kind)
+    expect((await row('sibling')).torn).toBe(true)
+  })
+}
+
+test('final audit snapshot retries wait with bounded jitter without taking locks', async () => {
+  await seed()
+  const originalRead = fs.readFile
+  let configReads = 0
+  let locks = 0
+  const reader = open({
+    onLockEvent: () => {
+      locks++
+    },
+  })
+  const delays: number[] = []
+  const random = spyOn(Math, 'random')
+    .mockReturnValueOnce(0)
+    .mockReturnValueOnce(0.99)
+  const timer = spyOn(timers, 'setTimeout').mockImplementation((async (
+    delay?: number,
+  ) => {
+    delays.push(delay ?? 0)
+  }) as typeof timers.setTimeout)
+  const spy = spyOn(fs, 'readFile').mockImplementation((async (
+    ...args: Parameters<typeof fs.readFile>
+  ) => {
+    const value = await originalRead(...args)
+    if (String(args[0]) === configPath && ++configReads % 2 === 1) {
+      const config = JSON.parse(String(value))
+      config.churn = configReads
+      await write(configPath, config)
+    }
+    return value
+  }) as typeof fs.readFile)
+  try {
+    await reader.read()
+    expect(delays).toEqual([2, 5])
+    expect(locks).toBe(0)
+  } finally {
+    spy.mockRestore()
+    timer.mockRestore()
+    random.mockRestore()
+  }
+})
+
+for (const torn of ['replace', 'transition'] as const) {
+  for (const operation of ['enable', 'disable'] as const) {
+    test(`final audit fenced ${operation} plans the same account and stamp for a torn target ${torn}`, async () => {
+      await store.add({
+        id: 'target',
+        credential: oauth(),
+        identity: 'wire',
+        providerState: { bound: 'initial', metadata: 1 },
+      })
+      const interrupted = open({
+        onStep: (step) => {
+          if (step === 'after-state-write') throw new Error('interrupt target')
+        },
+      })
+      if (torn === 'replace')
+        await expect(
+          interrupted.replace('target', oauth('new-target'), {
+            identity: 'new-wire',
+            providerState: { bound: 'replacement', metadata: 2 },
+          }),
+        ).rejects.toMatchObject({ phase: 'after-first-write' })
+      else
+        await expect(
+          interrupted.disable('target', 'pending', {
+            attribution: await fence('target'),
+            providerState: () => ({ bound: 'transition', metadata: 2 }),
+          }),
+        ).rejects.toMatchObject({ phase: 'after-first-write' })
+      const captured = await fence('target')
+      const config = await json(configPath)
+      const state = await json(statePath)
+      const controlConfig = join(dir, 'completed-config.json')
+      const controlState = join(dir, 'completed-state.json')
+      const completed = completeTornRows(config, state, options().quota, {
+        requireCredentialStamps: true,
+      })
+      await write(controlConfig, completed.config)
+      await write(controlState, state)
+      const control = openPoolStore({
+        ...options(),
+        configPath: controlConfig,
+        statePath: controlState,
+      })
+      const expectedEpoch = torn === 'replace' ? 2 : 1
+      const expectedIdentity = torn === 'replace' ? 'new-wire' : 'wire'
+      const uuid = spyOn(crypto, 'randomUUID').mockReturnValue(
+        '11111111-1111-4111-8111-111111111111',
+      )
+      const callOptions = {
+        attribution: captured,
+        providerState: () => ({ bound: 'final', metadata: 3 }),
+      }
+      try {
+        if (operation === 'enable') {
+          await store.enable('target', callOptions)
+          await control.enable('target', callOptions)
+        } else {
+          await store.disable('target', 'final reason', callOptions)
+          await control.disable('target', 'final reason', callOptions)
+        }
+      } finally {
+        uuid.mockRestore()
+      }
+      const account = (await json(statePath)).accounts.target
+      expect(account).toEqual((await json(controlState)).accounts.target)
+      expect(account.commonAuthProviderState).toEqual({
+        bound: 'final',
+        metadata: 3,
+      })
+      expect(account.commonAuthPool).toMatchObject({
+        credentialEpoch: expectedEpoch,
+        binding: { identity: expectedIdentity },
+      })
+      expect((await json(configPath)).commonAuthPool.rows.target).toEqual(
+        (await json(controlConfig)).commonAuthPool.rows.target,
+      )
+      expect(await row('target')).toMatchObject({
+        credentialEpoch: expectedEpoch,
+        identity: expectedIdentity,
+        stamp: 'bound',
+        enabled: operation === 'enable',
+      })
+      expect((await row('target')).torn).toBeUndefined()
+    })
+  }
+}
+
+test('final audit accepted API re-add plans the projected torn endpoint and epoch', async () => {
+  await store.add({
+    id: 'target',
+    credential: {
+      type: 'api',
+      apiKey: 'old-key',
+      baseURL: 'https://old.example/',
+    },
+    identity: 'old-wire',
+  })
+  const interrupted = open({
+    onStep: (step) => {
+      if (step === 'after-state-write')
+        throw new Error('interrupt API replacement')
+    },
+  })
+  const credential = {
+    type: 'api' as const,
+    apiKey: 'new-key',
+    baseURL: 'https://new.example/',
+    authHeader: 'x-api-key' as const,
+  }
+  await expect(
+    interrupted.replace('target', credential, {
+      identity: 'new-wire',
+      providerState: { bound: 'replacement' },
+    }),
+  ).rejects.toMatchObject({ phase: 'after-first-write' })
+  const added = await store.add({
+    id: 'other',
+    credential,
+    identity: 'new-wire',
+  })
+  expect(added).toMatchObject({
+    id: 'target',
+    outcome: 'rotated',
+    credentialEpoch: 2,
+    credential,
+  })
+  expect((await json(statePath)).accounts.target.commonAuthPool).toMatchObject({
+    credentialEpoch: 2,
+    binding: {
+      identity: 'new-wire',
+      baseURL: 'https://new.example/',
+      authHeader: 'x-api-key',
+    },
+  })
+  expect(await row('target')).toMatchObject({
+    credentialEpoch: 2,
+    stamp: 'bound',
+    credential,
+    identity: 'new-wire',
+  })
+  expect((await row('target')).torn).toBeUndefined()
+})
