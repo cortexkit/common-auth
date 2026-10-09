@@ -63,6 +63,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | store | Forward cleanup never revalidates committed plan | new (neither copy) | staged replacement after publication rename resumes only receipt cleanup |
 | store | Operation id digest fence | new (neither copy) | staged replacement reused operation id refuses a different plan digest |
 | store | Opt-in durable config writes fsync file and directory | new (neither copy) | staged replacement durable publication and receipt sync file and directory only |
+| store | A failed directory sync after rename leaves a committed receipt and remembers the removed ids | new (neither copy) | staged replacement directory sync failure still records the irreversible rename |
 | store | Bounded cleaned receipt retention | new (neither copy) | staged replacement keeps every committed receipt and eight recent cleaned receipts |
 | store | Child process crash before staged config completion | new (neither copy) | staged replacement child crash after add state resumes exact replay at genuine epoch |
 | store | Child process crash after roster decision and attributed orphan cleanup | new (neither copy) | staged replacement child crash after publication resumes with attributed orphan removal |

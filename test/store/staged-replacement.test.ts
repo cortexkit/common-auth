@@ -256,6 +256,25 @@ for (const field of [
       () => store.add(changed, { onExisting: 'stage-duplicate' }),
       'id-exists',
     )
+    if (field === 'label' || field === 'identity absence') {
+      const absent: AddInput = {
+        ...stage('absent'),
+        identity: undefined,
+        label: undefined,
+      }
+      await store.add(absent, { onExisting: 'stage-duplicate' })
+      const config = await json(configPath)
+      const raw = config.accounts.find(
+        (raw: { id: string }) => raw.id === 'absent',
+      )
+      if (field === 'label') raw.label = null
+      else raw.accountId = null
+      await write(configPath, config)
+      await unchanged(
+        () => store.add(absent, { onExisting: 'stage-duplicate' }),
+        'id-exists',
+      )
+    }
   })
 }
 
@@ -806,6 +825,39 @@ test('staged replacement durable publication and receipt sync file and directory
   } finally {
     spy.mockRestore()
   }
+})
+
+test('staged replacement directory sync failure still records the irreversible rename', async () => {
+  await seed()
+  const publication = await plan()
+  const originalOpen = fs.open
+  const spy = spyOn(fs, 'open').mockImplementation(
+    async (...args: Parameters<typeof fs.open>) => {
+      const handle = await originalOpen(...args)
+      if (String(args[0]) === dir)
+        handle.sync = async () => {
+          throw new Error('directory sync failed')
+        }
+      return handle
+    },
+  )
+  try {
+    await expect(store.publishRoster(publication)).rejects.toMatchObject({
+      phase: 'after-first-write',
+    })
+  } finally {
+    spy.mockRestore()
+  }
+  expect(await store.publication('publication')).toMatchObject({
+    phase: 'committed',
+  })
+  await expect(
+    store.add({ id: 'old', credential: oauth('different') }),
+  ).rejects.toMatchObject({ kind: 'id-removed' })
+  expect(await store.publishRoster(publication)).toMatchObject({
+    outcome: 'cleaned',
+    receipt: { phase: 'cleaned' },
+  })
 })
 
 test('staged replacement keeps every committed receipt and eight recent cleaned receipts', async () => {

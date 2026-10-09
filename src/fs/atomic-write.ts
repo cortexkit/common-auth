@@ -16,6 +16,19 @@ export async function writeJsonAtomic(
   value: unknown,
   options: AtomicWriteOptions = {},
 ): Promise<void> {
+  await writeJsonAtomicTracked(path, value, options)
+}
+
+/**
+ * Notify internal callers at the rename. The store records committed writes
+ * and removed ids here, because a later directory sync cannot undo the rename.
+ */
+export async function writeJsonAtomicTracked(
+  path: string,
+  value: unknown,
+  options: AtomicWriteOptions,
+  onRenamed?: () => void,
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   const tempPath = `${path}.${(options.stageName ?? randomUUID)()}.tmp`
   let handle: Awaited<ReturnType<typeof open>> | undefined
@@ -36,6 +49,7 @@ export async function writeJsonAtomic(
     await options.beforeRename?.()
     await rename(tempPath, path)
     created = false
+    onRenamed?.()
     if (options.durable) {
       const directory = await open(dirname(path), 'r')
       try {

@@ -563,7 +563,7 @@ id = 'store-publish-before-lease'
 guards = 'a lost lease refuses the irreversible config rename'
 file = 'src/store/mutate.ts'
 old = '''// Ownership is proved immediately before the rename, on every lease.
-        await this.locks.assertAll()'''
+          await this.locks.assertAll()'''
 new = '// NON-VACUITY BREAK: pre-rename lease assertion omitted'
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
@@ -812,6 +812,45 @@ expect_red = ['^staged\sreplacement\safter\spublication\srename\sresumes\sonly\s
 expect_message = 'attribution'
 
 # --- fs locks ---
+
+[[control]]
+id = 'store-publish-rename-bookkeeping'
+guards = 'post-rename directory sync failure cannot masquerade as a before-write failure'
+file = 'src/fs/atomic-write.ts'
+old = 'onRenamed?.()'
+new = '/* NON-VACUITY BREAK: rename bookkeeping omitted */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sdirectory\ssync\sfailure\sstill\srecords\sthe\sirreversible\srename$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-raw-label-absence'
+guards = 'a malformed present config label cannot count as the staged label being absent'
+file = 'src/store/rows.ts'
+old = 'raw.label !== label ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\slabel$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-raw-identity-absence'
+guards = 'a malformed present config identity cannot count as the staged identity being absent'
+file = 'src/store/rows.ts'
+old = 'raw.accountId !== identity'
+new = 'false /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sidentity\sabsence$']
+expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-attributed-toggle-repair'

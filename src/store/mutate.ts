@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { writeJsonAtomic } from '../fs/atomic-write.js'
+import { writeJsonAtomic, writeJsonAtomicTracked } from '../fs/atomic-write.js'
 import { LockContentionError, LockOwnershipError } from '../fs/with-lock.js'
 import {
   type PoolFailurePhase,
@@ -378,16 +378,22 @@ export class Transaction {
     durable = false,
     onRenamed?: () => void,
   ): Promise<void> {
-    await writeJsonAtomic(path, value, {
-      durable,
-      beforeRename: async () => {
-        await this.ctx.onStep?.(`before-${file}-write`, this.info)
-        // Ownership is proved immediately before the rename, on every lease.
-        await this.locks.assertAll()
+    await writeJsonAtomicTracked(
+      path,
+      value,
+      {
+        durable,
+        beforeRename: async () => {
+          await this.ctx.onStep?.(`before-${file}-write`, this.info)
+          // Ownership is proved immediately before the rename, on every lease.
+          await this.locks.assertAll()
+        },
       },
-    })
-    if (counted) this.progress.writes++
-    onRenamed?.()
+      () => {
+        if (counted) this.progress.writes++
+        onRenamed?.()
+      },
+    )
     await this.ctx.onStep?.(`after-${file}-write`, this.info)
   }
 }

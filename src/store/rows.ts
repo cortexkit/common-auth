@@ -758,6 +758,13 @@ function replayStagedAdd(
   )
     return fail()
   if (
+    raw &&
+    (raw.type !== credential.type ||
+      raw.label !== label ||
+      raw.accountId !== identity)
+  )
+    return fail()
+  if (
     staged.reservation !== input.stage?.reservation ||
     staged.label !== label ||
     staged.disabledReason !== input.disabled?.reason ||
