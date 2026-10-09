@@ -177,9 +177,35 @@ test('staged replacement orphan replay preserves genuine epoch and stored state'
     accounts: [],
     commonAuthPool: { schemaVersion: 1, rows: {}, retiredEpochs: { new: 6 } },
   })
+  await store.add({ id: 'old', credential: oauth(), identity: 'old-wire' })
+  const interrupted = open({
+    onStep: (step) => {
+      if (step === 'after-state-write') throw new Error('stop replace')
+    },
+  })
+  await expect(
+    interrupted.replace('old', oauth('replacement'), { identity: 'new-wire' }),
+  ).rejects.toMatchObject({ phase: 'after-first-write' })
+  const prior = await json(configPath)
+  let polled = 0
+  store = open({
+    pull: async () => {
+      polled++
+      return {}
+    },
+  })
   await interruptAdd()
   const stateBefore = await fs.readFile(statePath, 'utf8')
   const result = await store.add(stage(), { onExisting: 'stage-duplicate' })
+  await store.pullsSettled()
+  const completed = await json(configPath)
+  expect(
+    completed.accounts.find((raw: { id: string }) => raw.id === 'old'),
+  ).toEqual(prior.accounts[0])
+  expect(completed.commonAuthPool.rows.old).toEqual(
+    prior.commonAuthPool.rows.old,
+  )
+  expect(polled).toBe(0)
   expect(result).toMatchObject({ outcome: 'completed', credentialEpoch: 7 })
   expect(await fs.readFile(statePath, 'utf8')).toBe(stateBefore)
   const completeBefore = await bytes()

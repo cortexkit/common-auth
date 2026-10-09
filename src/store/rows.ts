@@ -870,6 +870,7 @@ export async function addRow(
   assertNotInsideHook('add')
   const { ctx } = rt
   const { id, credential, identity, label } = input
+  const preparing = input.stage !== undefined || input.disabled !== undefined
   const result = await runOperation(
     ctx,
     'add',
@@ -1170,7 +1171,10 @@ export async function addRow(
       )
     },
   )
+  // Even a pull that skips its disabled row can repair other interrupted rows.
+  // A disabled or staged add must leave those other rows untouched.
   if (
+    !preparing &&
     credential.type === 'oauth' &&
     (result.outcome === 'added' || result.outcome === 'completed')
   )
