@@ -209,7 +209,16 @@ test('staged replacement orphan replay preserves genuine epoch and stored state'
   ).rejects.toMatchObject({ phase: 'after-first-write' })
   const prior = await json(configPath)
   let polled = 0
+  let addCommitted = false
+  let captureLocks = 0
   store = open({
+    onStep: (step, info) => {
+      if (info.operation === 'add' && step === 'after-config-write')
+        addCommitted = true
+    },
+    onLockEvent: (event) => {
+      if (addCommitted && event.type === 'acquired') captureLocks++
+    },
     pull: async () => {
       polled++
       return {}
@@ -219,6 +228,8 @@ test('staged replacement orphan replay preserves genuine epoch and stored state'
   const stateBefore = await fs.readFile(statePath, 'utf8')
   const result = await store.add(stage(), { onExisting: 'stage-duplicate' })
   await store.pullsSettled()
+  expect(captureLocks).toBe(0)
+  addCommitted = false
   const completed = await json(configPath)
   expect(
     completed.accounts.find((raw: { id: string }) => raw.id === 'old'),

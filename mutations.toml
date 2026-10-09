@@ -629,8 +629,14 @@ expect_message = 'error: expect('
 id = 'store-publish-directory-sync'
 guards = 'durable publication syncs the parent directory after rename'
 file = 'src/fs/atomic-write.ts'
-old = 'await directory.sync()'
-new = '/* NON-VACUITY BREAK: directory sync omitted */'
+old = '''if (options.durable) {
+      const directory = await open(dirname(path), 'r')
+      try {
+        await directory.sync()'''
+new = '''if (options.durable) {
+      const directory = await open(dirname(path), 'r')
+      try {
+        /* NON-VACUITY BREAK: directory sync omitted */'''
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -2724,7 +2730,7 @@ id = 'store-revision-rotate-orphan-secret'
 guards = 'rotating add scans other state-only staging reservations before creating a duplicate secret holder'
 file = 'src/store/rows.ts'
 old = 'if (stagedOrphan)'
-new = 'if (false /* NON-VACUITY BREAK */)'
+new = 'if (stagedOrphan && stagedOrphan[0] === id /* NON-VACUITY BREAK */)'
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -2737,7 +2743,7 @@ id = 'store-revision-refuse-orphan-secret'
 guards = 'refuse-mode add reports a same-secret state-only reservation before ordinary duplicate handling'
 file = 'src/store/rows.ts'
 old = 'if (stagedOrphan)'
-new = 'if (false /* NON-VACUITY BREAK */)'
+new = 'if (stagedOrphan && stagedOrphan[0] === id /* NON-VACUITY BREAK */)'
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -2750,7 +2756,7 @@ id = 'store-revision-duplicate-orphan-secret'
 guards = 'duplicate staging cannot claim a state-only orphan secret owned by another id'
 file = 'src/store/rows.ts'
 old = 'if (stagedOrphan)'
-new = 'if (false /* NON-VACUITY BREAK */)'
+new = 'if (stagedOrphan && stagedOrphan[0] === id /* NON-VACUITY BREAK */)'
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
