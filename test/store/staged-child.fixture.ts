@@ -17,7 +17,7 @@ const store = openPoolStore({
     credentialBound: (value) => (value as { bound: unknown }).bound,
   },
   requireCredentialStamps: true,
-  lockOptions: { renew: false, ttlMs: 25, retryMs: 1 },
+  lockOptions: { renew: true, ttlMs: 1000, renewIntervalMs: 100, retryMs: 1 },
   onStep: (step, info) => {
     if (
       (operation === 'add' &&

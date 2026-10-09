@@ -401,6 +401,31 @@ test('staged replacement remove fence deletes reserved rows but never published 
   expect((await row('new')).candidate).toBe(true)
 })
 
+test('staged replacement attributed toggle still completes a proved torn replacement', async () => {
+  await store.add({ id: 'old', credential: oauth(), identity: 'wire' })
+  const interrupted = open({
+    onStep: (step) => {
+      if (step === 'after-state-write') throw new Error('stop replace')
+    },
+  })
+  await expect(
+    interrupted.replace('old', oauth('new-secret'), { identity: 'new-wire' }),
+  ).rejects.toMatchObject({ phase: 'after-first-write' })
+  expect((await row('old')).torn).toBe(true)
+  await store.disable('old', 'off', {
+    attribution: await fence('old'),
+    protect: () => undefined,
+  })
+  expect(await row('old')).toMatchObject({
+    credentialEpoch: 2,
+    identity: 'new-wire',
+    stamp: 'bound',
+    disabledReason: 'off',
+    enabled: false,
+  })
+  expect((await row('old')).torn).toBeUndefined()
+})
+
 for (const clause of [
   'attribution',
   'fingerprint',
@@ -819,13 +844,15 @@ async function crashChild(
   })
   const output = new Response(child.stdout).text()
   const errors = new Response(child.stderr).text()
-  expect(await hooks.lifetime.operation(child.exited)).toBe(17)
+  const exitCode = await hooks.lifetime.operation(child.exited)
+  const stderr = await errors
+  expect(exitCode, stderr).toBe(17)
   expect(await output).toContain(
     operation === 'add'
       ? 'crash:after-state-write'
       : 'crash:after-config-write',
   )
-  expect(await errors).toBe('')
+  expect(stderr).toBe('')
 }
 
 test('staged replacement child crash after add state resumes exact replay at genuine epoch', async () => {

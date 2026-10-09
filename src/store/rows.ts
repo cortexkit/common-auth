@@ -1499,8 +1499,10 @@ async function transitionRow(
           if (!row || !tx.rosterRow(id)) throw unknownRow(operation, id)
           if (rowLockKey(row) !== rowLockKey(seen))
             throw keyChanged(operation, id)
-          if (fence !== undefined)
+          if (fence !== undefined) {
             assertRowAttribution(operation, id, row, fence)
+            await tx.completeTorn()
+          }
           if (
             flag.enabled &&
             row.disabledReason?.startsWith(IDENTITY_CONTRADICTED_REASON_PREFIX)

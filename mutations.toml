@@ -30,7 +30,7 @@ id = 'store-stage-refuse'
 guards = 'refuse never rotates or writes an existing secret holder'
 file = 'src/store/rows.ts'
 old = "if (mode === 'refuse') {"
-new = "if (false /* NON-VACUITY BREAK */) {"
+new = "if (mode === 'stage-duplicate' /* NON-VACUITY BREAK */) {"
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
@@ -814,6 +814,21 @@ expect_message = 'attribution'
 # --- fs locks ---
 
 [[control]]
+id = 'store-stage-attributed-toggle-repair'
+guards = 'after protect and a matching fence, attributed toggles still finish proved torn replacements'
+file = 'src/store/rows.ts'
+old = '''assertRowAttribution(operation, id, row, fence)
+            await tx.completeTorn()'''
+new = '''assertRowAttribution(operation, id, row, fence)
+            /* NON-VACUITY BREAK: matching replacement repair omitted */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sattributed\stoggle\sstill\scompletes\sa\sproved\storn\sreplacement$']
+expect_message = 'error: expect('
+
+[[control]]
 id = 'fs-lock-live-holder-excludes-second-acquirer'
 guards = 'a live lock refuses a second acquirer: a holder whose lease has not expired is never treated as stale and evicted'
 file = 'src/fs/refresh-file-lock.ts'
@@ -973,8 +988,10 @@ guards = 'writeJsonAtomic chmods its stage to 0600 before the rename, whatever t
 file = 'src/fs/atomic-write.ts'
 old = '''
     await handle.chmod(0o600)
+    if (options.durable) await handle.sync()
     await handle.close()'''
-new = '    await handle.close()'
+new = '''    if (options.durable) await handle.sync()
+    await handle.close()'''
 test_file = 'test/fs/atomic-write.test.ts'
 runner = "command"
 command = ["bun", "test", "test/fs/atomic-write.test.ts", "-t", "{test}"]
@@ -2402,8 +2419,12 @@ expect_message = 'expected a rejection'
 id = 'store-remove-attribution-live-row'
 guards = 'an attributed remove refuses a live row of another epoch or identity'
 file = 'src/store/rows.ts'
-old = '''  assertRowAttribution('remove', id, row, fence)'''
-new = '''  void assertRowAttribution // NON-VACUITY BREAK: live row not fenced.'''
+old = '''  operation: PoolOperationError['operation'] = 'remove',
+): void {
+  assertRowAttribution(operation, id, row, fence)'''
+new = '''  operation: PoolOperationError['operation'] = 'remove',
+): void {
+  void assertRowAttribution // NON-VACUITY BREAK: live row not fenced.'''
 test_file = 'test/store/remove-attribution.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/store/remove-attribution.test.ts', '-t', '{test}']
@@ -2415,8 +2436,12 @@ expect_message = 'expected a rejection'
 id = 'store-remove-attribution-no-torn-repair'
 guards = 'a refused attributed remove leaves every other torn row as on disk'
 file = 'src/store/rows.ts'
-old = '''        { completeTorn: fence === undefined },'''
-new = '''        { completeTorn: true }, // NON-VACUITY BREAK: torn rows repaired before the fence.'''
+old = '''// An attributed removal is refused, when it is, with nothing written:
+        // completing another row's interrupted write first would be a write.
+        { completeTorn: false },'''
+new = '''// An attributed removal is refused, when it is, with nothing written:
+        // completing another row's interrupted write first would be a write.
+        { completeTorn: true }, // NON-VACUITY BREAK: torn rows repaired before the fence.'''
 test_file = 'test/store/remove-attribution.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/store/remove-attribution.test.ts', '-t', '{test}']

@@ -37,6 +37,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | store | Reserved ordinary add fence | new (neither copy) | staged replacement reserved add refuses unchanged |
 | store | Reserved candidacy and pull exclusion | new (neither copy) | staged replacement enabled shaped reserved rows never route or pull |
 | store | Staged removal fence expires at publication | new (neither copy) | staged replacement remove fence deletes reserved rows but never published rows |
+| store | After protect accepts, a disable naming the replacement epoch and identity completes a replacement interrupted after its stamped state write | new (neither copy) | staged replacement attributed toggle still completes a proved torn replacement |
 | store | Publication attribution validation | new (neither copy) | staged replacement publication rejects attribution unchanged |
 | store | Publication fingerprint validation | new (neither copy) | staged replacement publication rejects fingerprint unchanged |
 | store | Publication missing config reservation | new (neither copy) | staged replacement publication rejects missing reservation unchanged |
