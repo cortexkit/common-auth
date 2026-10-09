@@ -792,6 +792,36 @@ test('staged replacement reused operation id refuses a different plan digest', a
   )
 })
 
+test('staged replacement receipt replay never revalidates a committed plan', async () => {
+  await seed()
+  const publication = await plan()
+  delete publication.remove[0]!.fingerprint
+  const publisher = open({
+    onStep: (step, info) => {
+      if (info.operation === 'publishRoster' && step === 'after-config-write')
+        throw new Error('stop after commit')
+    },
+  })
+  await expect(publisher.publishRoster(publication)).rejects.toMatchObject({
+    phase: 'after-first-write',
+  })
+  const stricter = open({ requireRemovedFingerprint: true })
+  expect(await stricter.publishRoster(publication)).toMatchObject({
+    outcome: 'cleaned',
+    receipt: { phase: 'cleaned' },
+  })
+  await unchanged(
+    () =>
+      stricter.publishRoster({
+        ...publication,
+        finalize: [
+          { ...publication.finalize[0]!, disabledReason: 'forbidden' },
+        ],
+      }),
+    'publication-mismatch',
+  )
+})
+
 test('staged replacement durable publication and receipt sync file and directory only', async () => {
   await seed()
   const publication = await plan()

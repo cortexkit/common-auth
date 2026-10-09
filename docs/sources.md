@@ -62,6 +62,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | store | Removed-id memory advances only after rename | new (neither copy) | staged replacement removal refused before rename does not retire id in memory |
 | store | Forward cleanup never revalidates committed plan | new (neither copy) | staged replacement after publication rename resumes only receipt cleanup |
 | store | Operation id digest fence | new (neither copy) | staged replacement reused operation id refuses a different plan digest |
+| store | An already committed roster change finishes cleanup from its saved plan hash, even when a newly opened store demands token fingerprints from new plans | new (neither copy) | staged replacement receipt replay never revalidates a committed plan |
 | store | Opt-in durable config writes fsync file and directory | new (neither copy) | staged replacement durable publication and receipt sync file and directory only |
 | store | A failed directory sync after rename leaves a committed receipt and remembers the removed ids | new (neither copy) | staged replacement directory sync failure still records the irreversible rename |
 | store | Bounded cleaned receipt retention | new (neither copy) | staged replacement keeps every committed receipt and eight recent cleaned receipts |

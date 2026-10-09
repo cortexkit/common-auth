@@ -814,6 +814,19 @@ expect_message = 'attribution'
 # --- fs locks ---
 
 [[control]]
+id = 'store-publish-replay-no-validation'
+guards = 'a committed receipt resumes even when a later store requires removal fingerprints'
+file = 'src/store/publication.ts'
+old = 'const prior = receiptIn(tx.config, plan.operationId)'
+new = 'validatePlan(rt, plan); const prior = receiptIn(tx.config, plan.operationId) /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreceipt\sreplay\snever\srevalidates\sa\scommitted\splan$']
+expect_message = 'invalid-input'
+
+[[control]]
 id = 'store-publish-rename-bookkeeping'
 guards = 'post-rename directory sync failure cannot masquerade as a before-write failure'
 file = 'src/fs/atomic-write.ts'

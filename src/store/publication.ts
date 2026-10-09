@@ -254,13 +254,26 @@ export async function publishRoster(
   return runOperation(
     rt.ctx,
     'publishRoster',
-    plan.operationId,
+    plan?.operationId ?? '',
     options.onFailure,
     async (locks, progress): Promise<PublishResult> => {
-      validatePlan(rt, plan)
+      if (
+        !isRecord(plan) ||
+        typeof plan.operationId !== 'string' ||
+        !plan.operationId
+      )
+        throw refusal(
+          'publishRoster',
+          plan?.operationId ?? '',
+          'invalid-input',
+          'the publication needs an operation id',
+        )
       plan = structuredClone(plan)
       const planDigest = canonicalDigest(plan)
-      const named = [...plan.remove, ...plan.finalize]
+      const named = [
+        ...(Array.isArray(plan.remove) ? plan.remove : []),
+        ...(Array.isArray(plan.finalize) ? plan.finalize : []),
+      ].filter((ref) => isRecord(ref) && typeof ref.id === 'string')
       for (let attempt = 0; ; attempt++) {
         const seen = await readPool(rt.ctx)
         if (seen.status !== 'ready')
@@ -305,6 +318,7 @@ export async function publishRoster(
                 return { outcome: 'already-cleaned', receipt: prior }
               return { outcome: 'cleaned', receipt: await cleanup(tx, prior) }
             }
+            validatePlan(rt, plan)
             const removed: PoolRow[] = []
             for (const ref of plan.remove) {
               tx.assertNotStaged(ref.id)
