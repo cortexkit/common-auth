@@ -1167,15 +1167,15 @@ expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nRecei
 id = 'opencode2-http-handoff-checks-revocation'
 guards = 'http.request rechecks revocation after awaiting its attempt binding before preparing an authenticated request'
 file = 'src/opencode2/install.ts'
-old = '''            'http',
-            mark,
-            assertActive,
-          )
+old = '''                'http',
+                mark,
+                assertActive,
+              )
           assertActive()'''
-new = '''            'http',
-            mark,
-            assertActive,
-          )
+new = '''                'http',
+                mark,
+                assertActive,
+              )
           // NON-VACUITY BREAK: prepare the revoked HTTP selection.'''
 test_file = 'test/opencode2/revocation.test.ts'
 runner = "command"
@@ -1203,15 +1203,15 @@ expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nRecei
 id = 'opencode2-ws-handoff-checks-revocation'
 guards = 'the WebSocket handshake rechecks revocation after awaiting its attempt binding before publishing auth'
 file = 'src/opencode2/install.ts'
-old = '''            'ws',
-            mark,
-            assertActive,
-          )
+old = '''                'ws',
+                mark,
+                assertActive,
+              )
           assertActive()'''
-new = '''            'ws',
-            mark,
-            assertActive,
-          )
+new = '''                'ws',
+                mark,
+                assertActive,
+              )
           // NON-VACUITY BREAK: publish the revoked WebSocket selection.'''
 test_file = 'test/opencode2/revocation.test.ts'
 runner = "command"

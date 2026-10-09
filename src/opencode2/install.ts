@@ -1019,11 +1019,11 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   )
 
   const forgetSession = (sessionID: string) => {
+    revokeSelections(sessionID)
     latestTransportOwned.delete(sessionID)
     for (const key of ownedSockets) {
       if (JSON.parse(key)[0] === sessionID) ownedSockets.delete(key)
     }
-    revokeSelections(sessionID)
     for (const rec of [...attempts.values()]) {
       if (rec.scope.sessionID !== sessionID) continue
       abandon(rec, 'its session was forgotten')
