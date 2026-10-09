@@ -23,6 +23,12 @@ export type {
   UpdateProviderStateResult,
 } from './provider-state.js'
 export { DECLINE_TRANSITION } from './provider-state.js'
+export type {
+  PublicationReceipt,
+  PublishOptions,
+  PublishPlan,
+  PublishResult,
+} from './publication.js'
 export type { PullHook, PullRequest } from './pull.js'
 export type {
   ProviderRefresh,
@@ -38,15 +44,19 @@ export type {
 export { POOL_LOCK_DEFAULTS } from './refresh-lock.js'
 export type {
   AddInput,
+  AddOptions,
   AddResult,
   CredentialWriteInput,
   FailureHook,
+  ProtectFn,
+  ProtectView,
   RemoveOptions,
   RemoveResult,
   RemoveView,
   ReorderOptions,
   ReorderResult,
   RowOperationOptions,
+  RowProjection,
   RowToggleOptions,
   RowTransitionOptions,
   RowTransitionResult,

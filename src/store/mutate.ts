@@ -13,7 +13,9 @@ import {
   type PoolLockOptions,
   type PoolLockSpec,
 } from './refresh-lock.js'
+import { assertNotReserved } from './reserved.js'
 import {
+  CREDENTIAL_STAMP_KEY,
   classifyConfig,
   classifyState,
   ensureEntries,
@@ -70,6 +72,7 @@ export interface StoreContext {
    * `OpenPoolStoreOptions.requireCredentialStamps`).
    */
   requireCredentialStamps?: boolean
+  requireRemovedFingerprint?: boolean
 }
 
 export interface Snapshot {
@@ -196,6 +199,22 @@ export class Transaction {
     return this.rows().find((row) => row.id === id)
   }
 
+  /** Read the config marker, or an orphan's stamp; never use a caller's reservation. */
+  reservation(id: string): unknown {
+    if (this.rosterRow(id)) {
+      const entry = this.entry(id)
+      return entry && Object.hasOwn(entry, 'staged') ? entry.staged : undefined
+    }
+    const stamp = this.stateAccount(id)?.[CREDENTIAL_STAMP_KEY]
+    return isRecord(stamp) && Object.hasOwn(stamp, 'staged')
+      ? stamp.staged
+      : undefined
+  }
+
+  assertNotStaged(id: string): void {
+    assertNotReserved(this.info.operation, id, this.reservation(id))
+  }
+
   roster(): unknown[] {
     if (!Array.isArray(this.config.accounts)) this.config.accounts = []
     return this.config.accounts as unknown[]
@@ -284,7 +303,9 @@ export class Transaction {
    * `retireEpochsIn`), which is what keeps a later `add` of the id, from any
    * process, past every epoch an attribution could name.
    */
-  async commitConfig(options: { counted?: boolean } = {}): Promise<void> {
+  async commitConfig(
+    options: { counted?: boolean; durable?: boolean } = {},
+  ): Promise<void> {
     const roster = this.roster()
     const rosterIds = new Set<string>()
     for (const raw of roster)
@@ -306,8 +327,6 @@ export class Transaction {
           writable: true,
           configurable: true,
         })
-      } else {
-        this.ctx.removedIds.add(id)
       }
     }
     const pool = this.config[POOL_KEY] as Record<string, unknown>
@@ -326,6 +345,11 @@ export class Transaction {
       next,
       'config',
       options.counted ?? true,
+      options.durable ?? false,
+      () => {
+        for (const id of dropped) this.ctx.removedIds.add(id)
+        this.config = next
+      },
     )
     this.config = next
   }
@@ -342,13 +366,20 @@ export class Transaction {
     if (committed) this.progress.committed = committed
   }
 
+  async assertAll(): Promise<void> {
+    await this.locks.assertAll()
+  }
+
   private async write(
     path: string,
     value: unknown,
     file: 'config' | 'state',
     counted = true,
+    durable = false,
+    onRenamed?: () => void,
   ): Promise<void> {
     await writeJsonAtomic(path, value, {
+      durable,
       beforeRename: async () => {
         await this.ctx.onStep?.(`before-${file}-write`, this.info)
         // Ownership is proved immediately before the rename, on every lease.
@@ -356,6 +387,7 @@ export class Transaction {
       },
     })
     if (counted) this.progress.writes++
+    onRenamed?.()
     await this.ctx.onStep?.(`after-${file}-write`, this.info)
   }
 }
@@ -434,6 +466,13 @@ export async function withTransaction<T>(
         progress.writes > 0 ? 'after-first-write' : 'before-first-write',
       )
     const tx = new Transaction(ctx, result, locks, progress, info)
+    if (
+      info.rowId !== undefined &&
+      !['add', 'remove', 'pull', 'publishRoster', 'enable', 'disable'].includes(
+        info.operation,
+      )
+    )
+      tx.assertNotStaged(info.rowId)
     if (options.completeTorn ?? true) await tx.completeTorn()
     return await fn(tx)
   } finally {

@@ -13,6 +13,14 @@ import {
   type UpdateProviderStateResult,
   updateProviderStateRow,
 } from './provider-state.js'
+import {
+  type PublicationReceipt,
+  type PublishOptions,
+  type PublishPlan,
+  type PublishResult,
+  publication,
+  publishRoster,
+} from './publication.js'
 import { type PullHook, PullScheduler } from './pull.js'
 import {
   type ProviderRefresh,
@@ -28,6 +36,7 @@ import {
 } from './refresh-lock.js'
 import {
   type AddInput,
+  type AddOptions,
   type AddResult,
   addRow,
   type CredentialWriteInput,
@@ -97,6 +106,8 @@ export interface OpenPoolStoreOptions {
    * without writing; `remove(id)` explicitly discards the orphan.
    */
   requireCredentialStamps?: boolean
+  /** Require an exact secret fingerprint for every roster-publication removal. */
+  requireRemovedFingerprint?: boolean
   /** Injected clock for leases, refresh stamps and `addedAt`. */
   now?: () => number
   /**
@@ -152,7 +163,12 @@ export interface PoolStore {
    * held (see `Attribution`), and an id that held `Number.MAX_SAFE_INTEGER`
    * refuses (`id-removed`) before writing.
    */
-  add(input: AddInput, options?: RowOperationOptions): Promise<AddResult>
+  add(input: AddInput, options?: AddOptions): Promise<AddResult>
+  publishRoster(
+    plan: PublishPlan,
+    options?: PublishOptions,
+  ): Promise<PublishResult>
+  publication(operationId: string): Promise<PublicationReceipt | undefined>
   /**
    * Gives a row a new credential and a new credential epoch. Since 0.6.0 the
    * row's provider state is whatever `ProviderStateCodec.onReplace` returns;
@@ -336,6 +352,7 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     },
     removedIds: memory.removedIds,
     requireCredentialStamps: options.requireCredentialStamps === true,
+    requireRemovedFingerprint: options.requireRemovedFingerprint === true,
     ...(options.logger ? { logger: options.logger } : {}),
     ...(options.onStep ? { onStep: options.onStep } : {}),
     ...(options.hold ? { hold: options.hold } : {}),
@@ -381,6 +398,8 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
       return { status: await initializePool(ctx, input.dropKeys ?? []) }
     },
     add: (input, callOptions) => addRow(rt, input, callOptions),
+    publishRoster: (plan, callOptions) => publishRoster(rt, plan, callOptions),
+    publication: (operationId) => publication(rt, operationId),
     replace: (id, credential, input, callOptions) =>
       replaceRow(rt, id, credential, input, callOptions),
     rotate: (id, credential, input, callOptions) =>

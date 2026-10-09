@@ -212,6 +212,8 @@ function addedText(name: string, result: AddResult): string {
       return `Finished adding ${name}.`
     case 'rotated':
       return `${name} was already in the pool; its credential was updated.`
+    case 'exists':
+      return `${name} was already in the pool; its credential is unchanged.`
   }
 }
 

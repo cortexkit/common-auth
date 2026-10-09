@@ -19,6 +19,798 @@ prebuild = [
   { name = "build", command = ["bun", "run", "build"], timeout_s = 600 },
 ]
 
+# --- staged roster publication (0.12.0) ---
+# The runner first proves a named test passes with its guard intact, then
+# deliberately removes that guard and requires the same test to fail. The
+# command prints the source diff in each run to show when the break is present.
+# Each filter selects one named test; unrelated failures cannot count as catches.
+
+[[control]]
+id = 'store-stage-refuse'
+guards = 'refuse never rotates or writes an existing secret holder'
+file = 'src/store/rows.ts'
+old = "if (mode === 'refuse') {"
+new = "if (false /* NON-VACUITY BREAK */) {"
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\srefuse\spreserves\sholder\sand\sduplicate\srequires\sboth\sstaging\sfields$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-crash-marker'
+guards = 'the first state write persists staging ownership before any config exists'
+file = 'src/store/rows.ts'
+old = '...(extra.staged ? { staged: extra.staged } : {}),'
+new = '...(false ? { staged: extra.staged } : {}), /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\schild\scrash\safter\sadd\sstate\sresumes\sexact\sreplay\sat\sgenuine\sepoch$']
+expect_message = 'unbound-credential'
+
+[[control]]
+id = 'store-stage-orphan-foreign'
+guards = 'a different stored reservation cannot be replayed by the caller'
+file = 'src/store/rows.ts'
+old = 'staged.reservation !== input.stage?.reservation ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sforeign\sorphan\sdifferent\sreservation\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-orphan-missing'
+guards = 'staging ownership is never synthesized from caller wishes'
+file = 'src/store/rows.ts'
+old = 'const staged = stamp?.staged'
+new = "const staged = stamp?.staged ?? { reservation: input.stage!.reservation, label: input.label, disabledReason: input.disabled!.reason, providerState: incoming === undefined ? undefined : canonicalDigest(incoming) } /* NON-VACUITY BREAK */"
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sforeign\sorphan\smissing\sreservation\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-replay-metadata'
+guards = 'replay compares all provider metadata, not only credentialBound'
+file = 'src/store/rows.ts'
+old = 'staged.providerState !== incomingDigest ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sprovider\smetadata$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-replay-label'
+guards = 'replay compares label including absence'
+file = 'src/store/rows.ts'
+old = 'staged.label !== label ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\slabel$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-replay-identity'
+guards = 'replay requires exact identity absence as well as presence'
+file = 'src/store/rows.ts'
+old = 'stamp.binding.identity !== identity'
+new = 'false /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sidentity\sabsence$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-replay-access'
+guards = 'replay compares the OAuth access token via full dispatch digest'
+file = 'src/store/rows.ts'
+old = '''credentialDigest(credential) !== stamp.digest ||
+    dispatchDigest(credential) !== stamp.dispatch'''
+new = '''credentialDigest(credential) !== stamp.digest ||
+    false /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\saccess\stoken$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-replay-expiry'
+guards = 'replay compares OAuth expiry via full dispatch digest'
+file = 'src/store/rows.ts'
+old = '''credentialDigest(credential) !== stamp.digest ||
+    dispatchDigest(credential) !== stamp.dispatch'''
+new = '''credentialDigest(credential) !== stamp.digest ||
+    false /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sexpiry$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-replay-endpoint'
+guards = 'replay compares trimmed API endpoint and effective header'
+file = 'src/store/rows.ts'
+old = '''credentialDigest(credential) !== stamp.digest ||
+    dispatchDigest(credential) !== stamp.dispatch'''
+new = '''credentialDigest(credential) !== stamp.digest ||
+    false /* NON-VACUITY BREAK */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sendpoint$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-replay-enabled'
+guards = 'an enabled complete row is not a staged replay'
+file = 'src/store/rows.ts'
+old = '''row.type !== credential.type ||
+    row.enabled ||'''
+new = '''row.type !== credential.type ||
+    false /* NON-VACUITY BREAK */ ||'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\senabled\sshape$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-protect-add'
+guards = 'add protect is evaluated on locked successor management before writes'
+file = 'src/store/rows.ts'
+old = '''async (tx): Promise<AddResult> => {
+          await protectIn(tx, id, options.protect)'''
+new = '''async (tx): Promise<AddResult> => {
+          /* NON-VACUITY BREAK: protect omitted */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sprotect\sadd\sobserves\ssuccessor\smanagement\sunder\slocks$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-protect-enable'
+guards = 'enable protect is evaluated on locked successor management before writes'
+file = 'src/store/rows.ts'
+old = '''async (tx): Promise<RowTransitionResult> => {
+          await protectIn(tx, id, options.protect)'''
+new = '''async (tx): Promise<RowTransitionResult> => {
+          /* NON-VACUITY BREAK: protect omitted */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sprotect\senable\sobserves\ssuccessor\smanagement\sunder\slocks$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-protect-disable'
+guards = 'disable protect is evaluated on locked successor management before writes'
+file = 'src/store/rows.ts'
+old = '''async (tx): Promise<RowTransitionResult> => {
+          await protectIn(tx, id, options.protect)'''
+new = '''async (tx): Promise<RowTransitionResult> => {
+          /* NON-VACUITY BREAK: protect omitted */'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sprotect\sdisable\sobserves\ssuccessor\smanagement\sunder\slocks$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-enable'
+guards = 'reserved enable refuses before either file changes'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\senable\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-disable'
+guards = 'reserved disable refuses before either file changes'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\sdisable\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-refresh'
+guards = 'reserved refresh refuses before provider dispatch'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\srefresh\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-replace'
+guards = 'reserved replace refuses before either file changes'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\sreplace\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-rotate'
+guards = 'reserved rotate refuses before either file changes'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\srotate\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-identity'
+guards = 'reserved identity observation refuses before either file changes'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\srecordIdentity\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-quota'
+guards = 'reserved quota observation refuses before either file changes'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\srecordQuota\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-provider-state'
+guards = 'reserved provider state refuses before either file changes'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\supdateProviderState\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-reserved-add'
+guards = 'reserved ordinary re-add never rotates or completes it'
+file = 'src/store/reserved.ts'
+old = 'if (reservation !== undefined)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreserved\sadd\srefuses\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-never-candidate'
+guards = 'an enabled-shaped reservation is never a candidate or polled'
+file = 'src/store/schema.ts'
+old = 'row.candidate = enabled && credential !== undefined && !reserved'
+new = 'row.candidate = enabled && credential !== undefined /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\senabled\sshaped\sreserved\srows\snever\sroute\sor\spull$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-remove-fence'
+guards = 'stale staged cleanup cannot remove a published row'
+file = 'src/store/rows.ts'
+old = '} else if (options.staged)'
+new = '} else if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sremove\sfence\sdeletes\sreserved\srows\sbut\snever\spublished\srows$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-attribution'
+guards = 'publication removal requires exact credential epoch and identity'
+file = 'src/store/publication.ts'
+old = '''assertBoundRowAttribution(
+                ref.id,
+                row,
+                ref.attribution,
+                'publishRoster',
+              )
+              if (
+                !row.credential ||'''
+new = '''/* NON-VACUITY BREAK: attribution omitted */
+              if (
+                !row.credential ||'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sattribution\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-fingerprint'
+guards = 'publication refuses a removed secret that changed during preparation'
+file = 'src/store/publication.ts'
+old = 'fingerprintOf(row.credential) !== ref.fingerprint'
+new = 'false /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sfingerprint\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-config-reservation'
+guards = 'finalization requires the exact config reservation'
+file = 'src/store/publication.ts'
+old = 'row.staged?.reservation !== ref.reservation ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sdifferent\sreservation\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-stamp-reservation'
+guards = 'config alone cannot claim staged ownership without the exact stamp marker'
+file = 'src/store/publication.ts'
+old = 'stamp?.staged?.reservation !== ref.reservation ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sstamp\sreservation\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-order'
+guards = 'publication order names exactly all survivors'
+file = 'src/store/publication.ts'
+old = '''survivors.length !== plan.order.length ||
+              survivors.some((row) => !plan.order.includes(row.id))'''
+new = 'false /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sorder\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-enabled-identity'
+guards = 'the final enabled roster has no duplicate known OAuth identity'
+file = 'src/store/publication.ts'
+old = 'if (identities.has(row.identity))'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\senabled\sidentity\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-secret-identity'
+guards = 'a staged secret cannot claim a different removed known identity'
+file = 'src/store/publication.ts'
+old = 'old.fingerprint === row.fingerprint,'
+new = 'false /* NON-VACUITY BREAK */,'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\ssecret\sidentity\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-protect'
+guards = 'publication protect vetoes the irreversible write'
+file = 'src/store/publication.ts'
+old = 'await protectIn(tx, plan.operationId, options.protect)'
+new = '/* NON-VACUITY BREAK: protect omitted */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sprotect\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-required-fingerprint'
+guards = 'a required removal fingerprint cannot be omitted'
+file = 'src/store/publication.ts'
+old = '(rt.ctx.requireRemovedFingerprint && !ref.fingerprint)'
+new = '(false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\srequired\sfingerprint\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-disabled-final'
+guards = 'disabled finalization persists the requested reason and does not enable'
+file = 'src/store/publication.ts'
+old = 'raw.enabled = ref.enabled'
+new = 'raw.enabled = true /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sdisabled\sfinalization\sreleases\sreservation\sand\slater\sattributed\senable\sworks$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-lock-dedupe'
+guards = 'same-wire old and staged rows take one row lock without self-deadlock'
+file = 'src/store/publication.ts'
+old = '[...new Set(keys.values())].sort()'
+new = '[...keys.values()].sort() /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sdeduplicates\ssame\swire\slock\sand\sleaves\soutside\srows\suntouched$']
+expect_message = 'lock-contention'
+
+[[control]]
+id = 'store-publish-refresh-fingerprint'
+guards = 'a middle-row wait sees the refresh spending the planned old token'
+file = 'src/store/publication.ts'
+old = 'fingerprintOf(row.credential) !== ref.fingerprint'
+new = 'false /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\swaits\sbehind\smiddle\srow\srefresh\sand\schecks\spost\srefresh\sfingerprint$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-key-recheck'
+guards = 'named keys are recomputed under store locks before publication'
+file = 'src/store/publication.ts'
+old = '''if (
+              named.some('''
+new = '''if (
+              false && /* NON-VACUITY BREAK */ named.some('''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\schanged\srow\skeys\sretry\sonce\sthen\srefuse\swithout\spublication$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-before-observer'
+guards = 'before-config-write observer rejects before the config rename'
+file = 'src/store/mutate.ts'
+old = 'await this.ctx.onStep?.(`before-${file}-write`, this.info)'
+new = '/* NON-VACUITY BREAK: before-write observer omitted */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sbefore\spublication\srename\sobserver\sleaves\sold\spool\susable$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-before-lease'
+guards = 'a lost lease refuses the irreversible config rename'
+file = 'src/store/mutate.ts'
+old = '''// Ownership is proved immediately before the rename, on every lease.
+        await this.locks.assertAll()'''
+new = '// NON-VACUITY BREAK: pre-rename lease assertion omitted'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sbefore\spublication\srename\slease\sleaves\sold\spool\susable$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-committed-receipt'
+guards = 'the irreversible config rename includes its forward-cleanup receipt'
+file = 'src/store/publication.ts'
+old = 'saveReceipt(tx, receipt)'
+new = '/* NON-VACUITY BREAK: decision receipt omitted */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\safter\spublication\srename\sresumes\sonly\sreceipt\scleanup$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-child-recovery'
+guards = 'a durable committed receipt resumes cleanup after a process crash'
+file = 'src/store/publication.ts'
+old = "return { outcome: 'cleaned', receipt: await cleanup(tx, prior) }"
+new = "return { outcome: 'cleaned', receipt: prior } /* NON-VACUITY BREAK */"
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\schild\scrash\safter\spublication\sresumes\swith\sattributed\sorphan\sremoval$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-digest'
+guards = 'reusing an operation id for a different digest cannot adopt its receipt'
+file = 'src/store/publication.ts'
+old = 'if (prior.planDigest !== planDigest)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sreused\soperation\sid\srefuses\sa\sdifferent\splan\sdigest$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-file-sync'
+guards = 'durable publication syncs the staged file before rename'
+file = 'src/fs/atomic-write.ts'
+old = 'if (options.durable) await handle.sync()'
+new = '/* NON-VACUITY BREAK: file sync omitted */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sdurable\spublication\sand\sreceipt\ssync\sfile\sand\sdirectory\sonly$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-directory-sync'
+guards = 'durable publication syncs the parent directory after rename'
+file = 'src/fs/atomic-write.ts'
+old = 'await directory.sync()'
+new = '/* NON-VACUITY BREAK: directory sync omitted */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sdurable\spublication\sand\sreceipt\ssync\sfile\sand\sdirectory\sonly$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-outside-state'
+guards = 'cleanup never drops state belonging to rows outside the plan'
+file = 'src/store/publication.ts'
+old = 'await tx.commitState()'
+new = 'tx.state.accounts = {}; await tx.commitState() /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sdeduplicates\ssame\swire\slock\sand\sleaves\soutside\srows\suntouched$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-remove-id-memory'
+guards = 'a refused-before-rename removal never records the id as removed in memory'
+file = 'src/store/mutate.ts'
+old = 'retireEpochsIn(this.config, dropped)'
+new = 'for (const id of dropped) this.ctx.removedIds.add(id); retireEpochsIn(this.config, dropped) /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sremoval\srefused\sbefore\srename\sdoes\snot\sretire\sid\sin\smemory$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-duplicate-prerequisites'
+guards = 'stage-duplicate requires an explicit disabled reservation'
+file = 'src/store/rows.ts'
+old = "(mode === 'stage-duplicate' && (!input.disabled || !input.stage))"
+new = '(false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\srefuse\spreserves\sholder\sand\sduplicate\srequires\sboth\sstaging\sfields$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-replay-reason'
+guards = 'staged replay requires the exact original disabled reason'
+file = 'src/store/rows.ts'
+old = 'staged.disabledReason !== input.disabled?.reason ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sdisabled\sreason$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-stage-stamp-parse'
+guards = 'malformed staged records never become valid credential stamps'
+file = 'src/store/schema.ts'
+old = "if ('staged' in raw && !staged) return undefined"
+new = 'if (false /* NON-VACUITY BREAK */) return undefined'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\sstamp\sparser\srejects\smalformed\sreservation\srecords$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-missing-reservation'
+guards = 'finalization cannot adopt a row whose config marker is absent'
+file = 'src/store/publication.ts'
+old = 'row.staged?.reservation !== ref.reservation ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\smissing\sreservation\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-disabled-reason-required'
+guards = 'a disabled finalization must carry its reason'
+file = 'src/store/publication.ts'
+old = ": typeof ref.disabledReason !== 'string')"
+new = ': false /* NON-VACUITY BREAK */)'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sdisabled\sreason\srequired\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-enabled-reason-forbidden'
+guards = 'an enabled finalization must not carry a disabled reason'
+file = 'src/store/publication.ts'
+old = '? ref.disabledReason !== undefined'
+new = '? false /* NON-VACUITY BREAK */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\senabled\sreason\sforbidden\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-removed-reserved'
+guards = 'publication removal never consumes another reserved row'
+file = 'src/store/publication.ts'
+old = 'tx.assertNotStaged(ref.id)'
+new = '/* NON-VACUITY BREAK: reserved-removal guard omitted */'
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sremoved\sreserved\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-removed-unbound'
+guards = 'publication removal requires a bindable credential stamp'
+file = 'src/store/publication.ts'
+old = '''assertBoundRowAttribution(
+                ref.id,
+                row,
+                ref.attribution,
+                'publishRoster',
+              )
+              if (
+                !row.credential ||'''
+new = '''/* NON-VACUITY BREAK: bound removal attribution omitted */
+              if (
+                !row.credential ||'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sremoved\sunbound\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-removed-torn'
+guards = 'publication removal cannot settle a torn credential by deleting it'
+file = 'src/store/publication.ts'
+old = '''assertBoundRowAttribution(
+                ref.id,
+                row,
+                ref.attribution,
+                'publishRoster',
+              )
+              if (
+                !row.credential ||'''
+new = '''/* NON-VACUITY BREAK: bound removal attribution omitted */
+              if (
+                !row.credential ||'''
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\spublication\srejects\sremoved\storn\sunchanged$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'store-publish-forward-cleanup'
+guards = 'a committed receipt resumes cleanup instead of revalidating its spent plan'
+file = 'src/store/publication.ts'
+old = 'if (prior) {'
+new = "if (prior && prior.phase === 'cleaned') { /* NON-VACUITY BREAK */"
+test_file = 'test/store/staged-replacement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^staged\sreplacement\safter\spublication\srename\sresumes\sonly\sreceipt\scleanup$']
+expect_message = 'attribution'
+
 # --- fs locks ---
 
 [[control]]

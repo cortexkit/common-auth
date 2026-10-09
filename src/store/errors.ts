@@ -15,6 +15,7 @@ export type PoolOperation =
   | 'updateProviderState'
   | 'refresh'
   | 'pull'
+  | 'publishRoster'
 
 /**
  * How far an operation got before it failed.
@@ -52,6 +53,9 @@ export type PoolFailureKind =
   | 'no-credential'
   | 'row-disabled'
   | 'row-protected'
+  | 'row-staged'
+  | 'credential-exists'
+  | 'publication-mismatch'
   | 'duplicate-identity'
   | 'identity-mismatch'
   | 'identity-contradicted'

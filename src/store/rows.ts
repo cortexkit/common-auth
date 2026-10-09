@@ -41,6 +41,7 @@ import {
   buildRawRows,
   CREDENTIAL_STAMP_KEY,
   type CredentialBinding,
+  canonicalDigest,
   credentialDigest,
   credentialProblem,
   dispatchDigest,
@@ -59,6 +60,7 @@ import {
   rosterRowFor,
   rotationStamp,
   rowLockKey,
+  type StagedStamp,
   type StoredCredential,
   stampFor,
   stateFieldsFor,
@@ -88,6 +90,82 @@ export interface RowOperationOptions {
    * refresh of that row acquire them in one order and cannot deadlock.
    */
   extraLocks?: readonly PoolLockSpec[]
+}
+
+export interface RowProjection {
+  id: string
+  type: 'oauth' | 'api'
+  label?: string
+  enabled: boolean
+  disabledReason?: string
+  identity?: string
+  credentialEpoch?: number
+  stamp?: PoolRow['stamp']
+  staged?: { reservation: string }
+  torn?: true
+  invalid?: 'roster' | 'entry'
+}
+
+export interface ProtectView {
+  id: string
+  row?: RowProjection
+  rows: RowProjection[]
+  config: Readonly<Record<string, unknown>>
+}
+
+export type ProtectFn = (
+  view: ProtectView,
+) => string | undefined | Promise<string | undefined>
+
+export interface AddOptions extends RowOperationOptions {
+  onExisting?: 'rotate' | 'refuse' | 'stage-duplicate'
+  protect?: ProtectFn
+}
+
+export async function protectIn(
+  tx: Transaction,
+  id: string,
+  protect?: ProtectFn,
+): Promise<void> {
+  if (!protect) return
+  const rows = tx.rows().map((row): RowProjection => {
+    const {
+      id,
+      type,
+      label,
+      enabled,
+      disabledReason,
+      identity,
+      credentialEpoch,
+      stamp,
+      staged,
+      torn,
+      invalid,
+    } = row
+    return {
+      id,
+      type,
+      label,
+      enabled,
+      disabledReason,
+      identity,
+      credentialEpoch,
+      stamp,
+      staged,
+      torn,
+      invalid,
+    }
+  })
+  const reason = await runInsideHook(tx.info.operation, () =>
+    protect({
+      id,
+      row: rows.find((row) => row.id === id),
+      rows,
+      config: structuredClone(tx.snapshot.config),
+    }),
+  )
+  if (reason !== undefined)
+    throw refusal(tx.info.operation, id, 'row-protected', reason)
 }
 
 /** Options of `replace` and `rotate`. Without `attribution` a call behaves as before. */
@@ -131,6 +209,8 @@ export interface RemoveView {
 }
 
 export interface RemoveOptions extends RowToggleOptions {
+  /** Exact reservation required to remove a row that is still staged. */
+  staged?: { reservation: string }
   /**
    * The credential the removal was decided for (since 0.11.7). Checked under
    * every lock, before `protect` and before anything is written or repaired:
@@ -202,6 +282,8 @@ export interface AddInput {
   credential: PoolCredential
   identity?: string
   label?: string
+  disabled?: { reason: string }
+  stage?: { reservation: string }
   /**
    * Provider state for the credential, written in the same state write as
    * the credential (needs the store's provider-state codec). On an `add`
@@ -226,8 +308,9 @@ export interface CredentialWriteInput {
 export type AddResult = {
   /** The row holding the credential; an existing row's id on a re-add. */
   id: string
-  outcome: 'added' | 'added-disabled' | 'completed' | 'rotated'
+  outcome: 'added' | 'added-disabled' | 'completed' | 'rotated' | 'exists'
   credential: StoredCredential
+  credentialEpoch: number
 }
 
 /** Fields of a state entry that belong to the credential it replaces. */
@@ -352,6 +435,7 @@ export async function rotateIn(
     providerState?: ProviderStateWrite
     /** Config transition persisted with the successor credential for crash recovery. */
     transition?: StampedTransition
+    staged?: StagedStamp
   } = {},
 ): Promise<StoredCredential> {
   const credential = onRowEndpoint(tx, id, given)
@@ -393,6 +477,7 @@ export async function rotateIn(
     ...kept,
     ...stateFieldsFor(credential, stamp),
     [CREDENTIAL_STAMP_KEY]: {
+      ...(extra.staged ? { staged: extra.staged } : {}),
       ...(extra.transition !== undefined
         ? { [TRANSITION_STAMP_KEY]: extra.transition }
         : {}),
@@ -483,7 +568,7 @@ function requireUsableRow(
   return row
 }
 
-function validateAttribution(
+export function validateAttribution(
   operation: PoolOperationError['operation'],
   id: string,
   fence: Attribution | undefined,
@@ -501,7 +586,7 @@ function validateAttribution(
 }
 
 /** Exact recorded identity, including absence, is part of a credential fence. */
-function assertRowAttribution(
+export function assertRowAttribution(
   operation: PoolOperationError['operation'],
   id: string,
   row: PoolRow | undefined,
@@ -645,10 +730,135 @@ function matchingInterruptedAdd(
   return orphan
 }
 
+/** Complete an interrupted staged add only when its stamp and stored credential match. */
+function replayStagedAdd(
+  rt: StoreRuntime,
+  tx: Transaction,
+  input: AddInput,
+  incoming: unknown,
+): AddResult | Promise<AddResult> {
+  const { id, credential, identity, label } = input
+  const raw = tx.rosterRow(id)
+  const fail = (): never => {
+    throw refusal(
+      'add',
+      id,
+      raw ? 'id-exists' : 'unbound-credential',
+      `row ${id} does not match this staged add`,
+    )
+  }
+  const account = tx.stateAccount(id)
+  const stamp = parseStamp(account?.[CREDENTIAL_STAMP_KEY])
+  const staged = stamp?.staged
+  if (
+    !stamp?.binding ||
+    !staged ||
+    stamp.replace ||
+    stamp.dispatch === undefined
+  )
+    return fail()
+  if (
+    staged.reservation !== input.stage?.reservation ||
+    staged.label !== label ||
+    staged.disabledReason !== input.disabled?.reason ||
+    stamp.binding.identity !== identity
+  )
+    return fail()
+  const incomingDigest =
+    incoming === undefined ? undefined : canonicalDigest(incoming)
+  const storedValue = account?.[PROVIDER_STATE_KEY]
+  const storedDigest =
+    storedValue === undefined ? undefined : canonicalDigest(storedValue)
+  if (
+    staged.providerState !== incomingDigest ||
+    staged.providerState !== storedDigest
+  )
+    return fail()
+  if (
+    credentialDigest(credential) !== stamp.digest ||
+    dispatchDigest(credential) !== stamp.dispatch
+  )
+    return fail()
+  const config = raw
+    ? tx.config
+    : {
+        accounts: [
+          {
+            ...rosterRowFor({
+              id,
+              credential:
+                credential.type === 'api'
+                  ? {
+                      ...credential,
+                      baseURL: stamp.binding.baseURL ?? '',
+                      authHeader: stamp.binding.authHeader,
+                    }
+                  : credential,
+              identity: stamp.binding.identity,
+              label: staged.label,
+              addedAt: 0,
+            }),
+            enabled: false,
+          },
+        ],
+        [POOL_KEY]: {
+          rows: {
+            [id]: {
+              credentialEpoch: stamp.credentialEpoch,
+              disabledReason: staged.disabledReason,
+              staged: { reservation: staged.reservation },
+            },
+          },
+        },
+      }
+  const row = buildRawRows(
+    config,
+    tx.state,
+    rt.ctx.codec,
+    rt.ctx.providerState,
+  ).find((row) => row.id === id)
+  if (
+    !row?.credential ||
+    row.invalid ||
+    row.stamp !== 'bound' ||
+    row.type !== credential.type ||
+    row.enabled ||
+    row.label !== staged.label ||
+    row.identity !== stamp.binding.identity ||
+    row.disabledReason !== staged.disabledReason ||
+    row.staged?.reservation !== staged.reservation
+  )
+    return fail()
+  if (raw)
+    return {
+      id,
+      outcome: 'exists',
+      credential: row.credential,
+      credentialEpoch: stamp.credentialEpoch,
+    }
+  if (nextAddEpochIn(tx.config, id) !== stamp.credentialEpoch) return fail()
+  tx.roster().push({
+    ...rosterRowFor({ id, credential, identity, label, addedAt: rt.ctx.now() }),
+    enabled: false,
+  })
+  tx.setEntry(id, {
+    credentialEpoch: stamp.credentialEpoch,
+    needsFirstReading: credential.type === 'oauth',
+    disabledReason: staged.disabledReason,
+    staged: { reservation: staged.reservation },
+  })
+  return tx.commitConfig().then(() => ({
+    id,
+    outcome: 'completed',
+    credential: row.credential as StoredCredential,
+    credentialEpoch: stamp.credentialEpoch,
+  }))
+}
+
 export async function addRow(
   rt: StoreRuntime,
   input: AddInput,
-  options: RowOperationOptions = {},
+  options: AddOptions = {},
 ): Promise<AddResult> {
   assertNotInsideHook('add')
   const { ctx } = rt
@@ -660,6 +870,29 @@ export async function addRow(
     options.onFailure,
     async (locks, progress) => {
       checkInput('add', id, credential)
+      const mode = options.onExisting ?? 'rotate'
+      if (
+        !['rotate', 'refuse', 'stage-duplicate'].includes(mode) ||
+        (input.stage !== undefined &&
+          ((label !== undefined && typeof label !== 'string') ||
+            (identity !== undefined &&
+              (typeof identity !== 'string' || !identity)))) ||
+        (input.disabled !== undefined &&
+          (!isRecord(input.disabled) ||
+            typeof input.disabled.reason !== 'string')) ||
+        (input.stage !== undefined &&
+          (!isRecord(input.stage) ||
+            typeof input.stage.reservation !== 'string' ||
+            !input.stage.reservation ||
+            !input.disabled)) ||
+        (mode === 'stage-duplicate' && (!input.disabled || !input.stage))
+      )
+        throw refusal(
+          'add',
+          id,
+          'invalid-input',
+          'staging requires a reservation and a disabled reason',
+        )
       const incoming =
         input.providerState === undefined
           ? undefined
@@ -669,13 +902,6 @@ export async function addRow(
               id,
               input.providerState,
             )
-      if (ctx.removedIds.has(id))
-        throw refusal(
-          'add',
-          id,
-          'id-removed',
-          `id ${id} was removed from the roster in this process and is not reused`,
-        )
       await locks.acquire(rowLockSpec(rt, { id, identity }))
       if (credential.type === 'oauth')
         await locks.acquire(options.providerLock ?? rt.providerLock)
@@ -686,11 +912,71 @@ export async function addRow(
         progress,
         { operation: 'add', rowId: id },
         async (tx): Promise<AddResult> => {
+          await protectIn(tx, id, options.protect)
+          if (ctx.removedIds.has(id))
+            throw refusal(
+              'add',
+              id,
+              'id-removed',
+              `id ${id} was removed from the roster in this process and is not reused`,
+            )
+          if (
+            input.stage &&
+            mode !== 'rotate' &&
+            (tx.rosterRow(id) || hasStateAccount(tx.state, id))
+          )
+            return replayStagedAdd(rt, tx, input, incoming)
+          if (mode === 'rotate') {
+            tx.assertNotStaged(id)
+            const holder = tx
+              .rows()
+              .find((row) => row.fingerprint === fingerprintOf(credential))
+            if (holder) tx.assertNotStaged(holder.id)
+          }
+          if (mode === 'refuse') {
+            const holder = tx
+              .rows()
+              .find(
+                (row) =>
+                  row.fingerprint === fingerprintOf(credential) ||
+                  (row.id === id && row.credential),
+              )
+            const accounts = isRecord(tx.state.accounts)
+              ? tx.state.accounts
+              : {}
+            const stateHolder = Object.entries(accounts).find(([, account]) => {
+              if (!isRecord(account)) return false
+              if (credential.type === 'oauth')
+                return account.refresh === credential.refresh
+              return (
+                typeof account.apiKey === 'string' &&
+                account.apiKey.trim() === credential.apiKey.trim()
+              )
+            })?.[0]
+            const holdingId = holder?.id ?? stateHolder ?? id
+            if (
+              holder ||
+              stateHolder !== undefined ||
+              hasStateAccount(tx.state, id)
+            )
+              throw refusal(
+                'add',
+                holdingId,
+                'credential-exists',
+                `row ${holdingId} already holds this secret or id`,
+              )
+          }
+          if (
+            mode === 'stage-duplicate' &&
+            (tx.rosterRow(id) || hasStateAccount(tx.state, id))
+          )
+            throw refusal('add', id, 'id-exists', `row ${id} already exists`)
           const orphan = matchingInterruptedAdd(rt, tx, input, incoming)
-          if (!orphan) await tx.completeTorn()
+          if (!orphan && mode === 'rotate') await tx.completeTorn()
           const rows = tx.rows()
           const fingerprint = fingerprintOf(credential)
           const same =
+            mode === 'rotate' &&
             !orphan &&
             rows.find(
               (row) =>
@@ -725,7 +1011,12 @@ export async function addRow(
                   }
                 : {}),
             })
-            return { id: same.id, outcome: 'rotated', credential: stored }
+            return {
+              id: same.id,
+              outcome: 'rotated',
+              credential: stored,
+              credentialEpoch: same.credentialEpoch ?? 1,
+            }
           }
           const existing = rows.find((row) => row.id === id)
           if (existing) {
@@ -770,7 +1061,12 @@ export async function addRow(
                 : {}),
             })
             if (!existing.hasEntry) await tx.commitConfig()
-            return { id, outcome: 'completed', credential: stored }
+            return {
+              id,
+              outcome: 'completed',
+              credential: stored,
+              credentialEpoch: existing.credentialEpoch ?? 1,
+            }
           }
           // An id the pool held before starts past every epoch it held, so
           // work attributed to the earlier row's credential, from this
@@ -798,9 +1094,20 @@ export async function addRow(
           tx.setEntry(id, {
             credentialEpoch,
             needsFirstReading: credential.type === 'oauth',
+            ...(input.stage
+              ? { staged: { reservation: input.stage.reservation } }
+              : {}),
           })
           let outcome: AddResult['outcome'] = 'added'
-          if (addedIdentity !== undefined && credential.type === 'oauth') {
+          if (input.disabled) {
+            disableIn(tx, id, input.disabled.reason)
+            outcome = 'added-disabled'
+          }
+          if (
+            !input.disabled &&
+            addedIdentity !== undefined &&
+            credential.type === 'oauth'
+          ) {
             // Same account, different credential: kept on disk, disabled.
             const holder = rows.find(
               (row) =>
@@ -819,7 +1126,12 @@ export async function addRow(
             // completion preserves the credential, stamp and provider state
             // byte for byte; a crash leaves either this orphan or a whole row.
             await tx.commitConfig()
-            return { id, outcome, credential: orphan.credential }
+            return {
+              id,
+              outcome,
+              credential: orphan.credential,
+              credentialEpoch: orphan.credentialEpoch ?? credentialEpoch,
+            }
           }
           // The credential is written first. A crash before the config write
           // then leaves a state entry no roster row names, which no reader
@@ -828,12 +1140,24 @@ export async function addRow(
           // interrupted removal. Nothing of such a leftover entry is kept.
           tx.dropStateAccount(id)
           const stored = await rotateIn(rt, tx, id, credential, {
+            ...(input.stage && input.disabled
+              ? {
+                  staged: {
+                    reservation: input.stage.reservation,
+                    disabledReason: input.disabled.reason,
+                    ...(label !== undefined ? { label } : {}),
+                    ...(incoming !== undefined
+                      ? { providerState: canonicalDigest(incoming) }
+                      : {}),
+                  },
+                }
+              : {}),
             ...(incoming !== undefined
               ? { providerState: { kind: 'set', value: incoming } }
               : {}),
           })
           await tx.commitConfig()
-          return { id, outcome, credential: stored }
+          return { id, outcome, credential: stored, credentialEpoch }
         },
         { completeTorn: false },
       )
@@ -1058,6 +1382,7 @@ export async function rotateRow(
  * `attribution` nor `providerState` behaves exactly as it did before 0.7.0.
  */
 export interface RowTransitionOptions extends RowToggleOptions {
+  protect?: ProtectFn
   /**
    * The credential epoch and recorded identity the caller's evidence for the
    * transition was obtained under (as `recordQuota`'s attribution: an
@@ -1164,6 +1489,9 @@ async function transitionRow(
         progress,
         { operation, rowId: id },
         async (tx): Promise<RowTransitionResult> => {
+          await protectIn(tx, id, options.protect)
+          tx.assertNotStaged(id)
+          if (fence === undefined) await tx.completeTorn()
           const loaded = tx.row(id)
           const row = flag.enabled
             ? requireUsableRow('enable', id, loaded)
@@ -1279,6 +1607,7 @@ async function transitionRow(
           await tx.commitConfig()
           return result
         },
+        { completeTorn: false },
       )
     },
   )
@@ -1345,6 +1674,18 @@ export async function removeRow(
         throw refusal('remove', id, 'invalid-input', 'id must be non-empty')
       const fence = options.attribution
       validateAttribution('remove', id, fence)
+      if (
+        options.staged !== undefined &&
+        (!isRecord(options.staged) ||
+          typeof options.staged.reservation !== 'string' ||
+          !options.staged.reservation)
+      )
+        throw refusal(
+          'remove',
+          id,
+          'invalid-input',
+          'a staged removal needs a reservation',
+        )
       const result = await readPool(ctx)
       if (result.status !== 'ready') throw notReadyError(result, 'remove', id)
       const seen = result.rows.find((row) => row.id === id)
@@ -1359,6 +1700,26 @@ export async function removeRow(
         progress,
         { operation: 'remove', rowId: id },
         async (tx): Promise<RemoveResult> => {
+          const reservation = tx.reservation(id)
+          if (reservation !== undefined) {
+            if (
+              !isRecord(reservation) ||
+              !options.staged ||
+              reservation.reservation !== options.staged.reservation
+            )
+              throw refusal(
+                'remove',
+                id,
+                'row-staged',
+                `row ${id} is reserved for roster publication`,
+              )
+          } else if (options.staged)
+            throw refusal(
+              'remove',
+              id,
+              'attribution',
+              `row ${id} is no longer reserved`,
+            )
           const row = tx.row(id)
           const orphan = hasStateAccount(tx.state, id)
           if (!row && !orphan) throw unknownRow('remove', id)
@@ -1382,6 +1743,7 @@ export async function removeRow(
               throw refusal('remove', id, 'row-protected', reason)
           }
           if (row) {
+            if (fence === undefined) await tx.completeTorn()
             tx.dropRosterRows(id)
             await tx.commitConfig()
           }
@@ -1393,24 +1755,25 @@ export async function removeRow(
         },
         // An attributed removal is refused, when it is, with nothing written:
         // completing another row's interrupted write first would be a write.
-        { completeTorn: fence === undefined },
+        { completeTorn: false },
       )
     },
   )
 }
 
 /** An attributed removal of a roster row: bound, not torn, same epoch and identity. */
-function assertBoundRowAttribution(
+export function assertBoundRowAttribution(
   id: string,
   row: PoolRow,
   fence: Attribution,
+  operation: PoolOperationError['operation'] = 'remove',
 ): void {
-  assertRowAttribution('remove', id, row, fence)
+  assertRowAttribution(operation, id, row, fence)
   // A torn row is between the two writes of another operation; which
   // credential it holds is not settled, so no attribution can match it.
   if (row.torn)
     throw refusal(
-      'remove',
+      operation,
       id,
       'attribution',
       `row ${id} is between the writes of another operation; retry once it completes`,
@@ -1418,7 +1781,7 @@ function assertBoundRowAttribution(
     )
   if (row.stamp !== 'bound')
     throw refusal(
-      'remove',
+      operation,
       id,
       'unbound-credential',
       `row ${id}'s credential is not bound to its stamp, so the removal cannot be attributed to it`,

@@ -25,6 +25,7 @@ export function countUnknownIdentityRows(rows: readonly PoolRow[]): number {
   return rows.filter(
     (row) =>
       row.invalid === undefined &&
+      !row.staged &&
       row.type === 'oauth' &&
       row.enabled &&
       row.credential !== undefined &&
@@ -82,6 +83,7 @@ export function disableIdentityDuplicates(
     .filter(
       (row) =>
         row.invalid === undefined &&
+        !row.staged &&
         row.type === 'oauth' &&
         row.enabled &&
         row.identity === identity,

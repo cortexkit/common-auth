@@ -59,6 +59,7 @@ export async function recordQuota(
       progress,
       { operation: 'pull', rowId: id },
       async (tx) => {
+        tx.assertNotStaged(id)
         const row = tx.row(id)
         if (!row) throw unknownRow('pull', id)
         if (row.invalid)

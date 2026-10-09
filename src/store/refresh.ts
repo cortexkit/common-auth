@@ -8,6 +8,7 @@ import {
 import { type Progress, runOperation, withTransaction } from './mutate.js'
 import { acceptProviderState, mergedProviderState } from './provider-state.js'
 import type { PoolLockSpec } from './refresh-lock.js'
+import { assertNotReserved } from './reserved.js'
 import { type FailureHook, rotateIn } from './rows.js'
 import {
   readRow,
@@ -101,6 +102,7 @@ type Captured = {
 }
 
 function requireRefreshable(id: string, row: PoolRow | undefined): PoolRow {
+  assertNotReserved('refresh', id, row?.staged)
   if (!row)
     throw refusal('refresh', id, 'unknown-row', `no row ${id} in the pool`)
   if (row.invalid)

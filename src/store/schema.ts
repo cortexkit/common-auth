@@ -176,6 +176,8 @@ export interface PoolRow {
   credentialEpoch?: number
   needsFirstReading: boolean
   disabledReason?: string
+  /** Store-owned reservation; only `publishRoster` releases it for ordinary use. */
+  staged?: { reservation: string }
   /** The opaque quota map, as validated by the codec. */
   quota?: unknown
   /**
@@ -274,6 +276,74 @@ export interface CredentialStamp {
   binding?: CredentialBinding
   replace?: true
   providerState?: string
+  staged?: StagedStamp
+}
+
+/** Original staged-add metadata, persisted with the credential before config exists. */
+export interface StagedStamp {
+  reservation: string
+  label?: string
+  disabledReason: string
+  providerState?: string
+}
+
+/** Canonical JSON: recursively sorted object keys, preserved array order. */
+export function canonicalJson(value: unknown): string {
+  const normalized: unknown = JSON.parse(JSON.stringify(value))
+  const encode = (item: unknown): string => {
+    if (Array.isArray(item)) return `[${item.map(encode).join(',')}]`
+    if (isRecord(item))
+      return `{${Object.keys(item)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${encode(item[key])}`)
+        .join(',')}}`
+    return JSON.stringify(item)
+  }
+  return encode(normalized)
+}
+
+export function canonicalDigest(value: unknown): string {
+  return createHash('sha256').update(canonicalJson(value)).digest('hex')
+}
+
+export function parseReservation(
+  raw: unknown,
+): { reservation: string } | undefined {
+  if (
+    !isRecord(raw) ||
+    Object.keys(raw).length !== 1 ||
+    typeof raw.reservation !== 'string' ||
+    !raw.reservation
+  )
+    return undefined
+  return { reservation: raw.reservation }
+}
+
+function parseStagedStamp(raw: unknown): StagedStamp | undefined {
+  if (
+    !isRecord(raw) ||
+    typeof raw.reservation !== 'string' ||
+    !raw.reservation ||
+    typeof raw.disabledReason !== 'string'
+  )
+    return undefined
+  if (
+    Object.keys(raw).some(
+      (key) =>
+        !['reservation', 'label', 'disabledReason', 'providerState'].includes(
+          key,
+        ),
+    )
+  )
+    return undefined
+  if ('label' in raw && typeof raw.label !== 'string') return undefined
+  if (
+    'providerState' in raw &&
+    (typeof raw.providerState !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(raw.providerState))
+  )
+    return undefined
+  return raw as unknown as StagedStamp
 }
 
 /**
@@ -476,7 +546,10 @@ export function parseStamp(raw: unknown): CredentialStamp | undefined {
   if ('replace' in raw && raw.replace !== true) return undefined
   if ('providerState' in raw && typeof raw.providerState !== 'string')
     return undefined
+  const staged = 'staged' in raw ? parseStagedStamp(raw.staged) : undefined
+  if ('staged' in raw && !staged) return undefined
   const marks = {
+    ...(staged ? { staged } : {}),
     ...(typeof raw.dispatch === 'string' ? { dispatch: raw.dispatch } : {}),
     ...(raw.replace === true ? { replace: true as const } : {}),
     ...(typeof raw.providerState === 'string'
@@ -487,7 +560,10 @@ export function parseStamp(raw: unknown): CredentialStamp | undefined {
   // written with a binding; one without is not a stamp this store writes,
   // and it would leave the row's identity unchecked.
   if (!('binding' in raw))
-    return 'dispatch' in raw || 'replace' in raw || 'providerState' in raw
+    return 'dispatch' in raw ||
+      'replace' in raw ||
+      'providerState' in raw ||
+      'staged' in raw
       ? undefined
       : { credentialEpoch: epoch, digest: raw.digest }
   const binding = raw.binding
@@ -682,6 +758,7 @@ function parseEntry(raw: unknown, codec: QuotaCodec): ParsedEntry | undefined {
   if ('disabledReason' in raw && typeof raw.disabledReason !== 'string')
     return undefined
   if ('quota' in raw && !codec.validate(raw.quota)) return undefined
+  if ('staged' in raw && !parseReservation(raw.staged)) return undefined
   return {
     credentialEpoch: epoch,
     needsFirstReading: raw.needsFirstReading === true,
@@ -903,6 +980,9 @@ export function buildRawRows(
     const type = raw.type === 'api' ? 'api' : 'oauth'
     const hasEntry = Object.hasOwn(entries, id)
     const entry = hasEntry ? parseEntry(entries[id], codec) : undefined
+    const rawEntry = entries[id]
+    const reserved = isRecord(rawEntry) && Object.hasOwn(rawEntry, 'staged')
+    const staged = reserved ? parseReservation(rawEntry.staged) : undefined
     const credential = credentialFor(raw, stateAccounts[id])
     const enabled = raw.enabled !== false
     // A row without a per-row entry is at credential epoch 1 (the epoch the
@@ -926,6 +1006,7 @@ export function buildRawRows(
         ? { credential, fingerprint: fingerprintOf(credential) }
         : {}),
       ...(entry ? { credentialEpoch: entry.credentialEpoch } : {}),
+      ...(staged ? { staged } : {}),
       ...(entry?.disabledReason !== undefined
         ? { disabledReason: entry.disabledReason }
         : {}),
@@ -942,7 +1023,7 @@ export function buildRawRows(
     if (hasEntry && !entry) {
       row.invalid = 'entry'
     } else {
-      row.candidate = enabled && credential !== undefined
+      row.candidate = enabled && credential !== undefined && !reserved
     }
     rows.push(row)
   }

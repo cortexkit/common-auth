@@ -10,6 +10,61 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 
 | component | behaviour | origin | test |
 | --- | --- | --- | --- |
+| store | Staged refuse and duplicate prerequisites | new (neither copy) | staged replacement refuse preserves holder and duplicate requires both staging fields |
+| store | State-only replay retains stored epoch | new (neither copy) | staged replacement orphan replay preserves genuine epoch and stored state |
+| store | Foreign orphan reservation | new (neither copy) | staged replacement foreign orphan different reservation refuses unchanged |
+| store | Missing orphan reservation | new (neither copy) | staged replacement foreign orphan missing reservation refuses unchanged |
+| store | Full provider metadata replay fence | new (neither copy) | staged replacement exact replay rejects changed provider metadata |
+| store | Label replay fence | new (neither copy) | staged replacement exact replay rejects changed label |
+| store | Exact identity absence replay fence | new (neither copy) | staged replacement exact replay rejects changed identity absence |
+| store | Access token replay fence | new (neither copy) | staged replacement exact replay rejects changed access token |
+| store | Expiry replay fence | new (neither copy) | staged replacement exact replay rejects changed expiry |
+| store | API endpoint replay fence | new (neither copy) | staged replacement exact replay rejects changed endpoint |
+| store | Enabled complete replay refusal | new (neither copy) | staged replacement exact replay rejects changed enabled shape |
+| store | Exact disabled reason replay fence | new (neither copy) | staged replacement exact replay rejects changed disabled reason |
+| store | Strict staged record parsing | new (neither copy) | staged replacement stamp parser rejects malformed reservation records |
+| store | Add protect sees locked successor management | new (neither copy) | staged replacement protect add observes successor management under locks |
+| store | Enable protect sees locked successor management | new (neither copy) | staged replacement protect enable observes successor management under locks |
+| store | Disable protect sees locked successor management | new (neither copy) | staged replacement protect disable observes successor management under locks |
+| store | Reserved enable fence | new (neither copy) | staged replacement reserved enable refuses unchanged |
+| store | Reserved disable fence | new (neither copy) | staged replacement reserved disable refuses unchanged |
+| store | Reserved refresh fence | new (neither copy) | staged replacement reserved refresh refuses unchanged |
+| store | Reserved replace fence | new (neither copy) | staged replacement reserved replace refuses unchanged |
+| store | Reserved rotate fence | new (neither copy) | staged replacement reserved rotate refuses unchanged |
+| store | Reserved identity fence | new (neither copy) | staged replacement reserved recordIdentity refuses unchanged |
+| store | Reserved quota fence | new (neither copy) | staged replacement reserved recordQuota refuses unchanged |
+| store | Reserved provider state fence | new (neither copy) | staged replacement reserved updateProviderState refuses unchanged |
+| store | Reserved ordinary add fence | new (neither copy) | staged replacement reserved add refuses unchanged |
+| store | Reserved candidacy and pull exclusion | new (neither copy) | staged replacement enabled shaped reserved rows never route or pull |
+| store | Staged removal fence expires at publication | new (neither copy) | staged replacement remove fence deletes reserved rows but never published rows |
+| store | Publication attribution validation | new (neither copy) | staged replacement publication rejects attribution unchanged |
+| store | Publication fingerprint validation | new (neither copy) | staged replacement publication rejects fingerprint unchanged |
+| store | Publication missing config reservation | new (neither copy) | staged replacement publication rejects missing reservation unchanged |
+| store | Publication differing config reservation | new (neither copy) | staged replacement publication rejects different reservation unchanged |
+| store | Publication stamp reservation validation | new (neither copy) | staged replacement publication rejects stamp reservation unchanged |
+| store | Complete survivor order validation | new (neither copy) | staged replacement publication rejects order unchanged |
+| store | Final enabled identity collision | new (neither copy) | staged replacement publication rejects enabled identity unchanged |
+| store | Same secret cannot claim another identity | new (neither copy) | staged replacement publication rejects secret identity unchanged |
+| store | Publication protect veto | new (neither copy) | staged replacement publication rejects protect unchanged |
+| store | Required removed fingerprint | new (neither copy) | staged replacement publication rejects required fingerprint unchanged |
+| store | Disabled final reason required | new (neither copy) | staged replacement publication rejects disabled reason required unchanged |
+| store | Enabled final reason forbidden | new (neither copy) | staged replacement publication rejects enabled reason forbidden unchanged |
+| store | Removed row cannot be reserved | new (neither copy) | staged replacement publication rejects removed reserved unchanged |
+| store | Removed row must be bound | new (neither copy) | staged replacement publication rejects removed unbound unchanged |
+| store | Removed row cannot be torn | new (neither copy) | staged replacement publication rejects removed torn unchanged |
+| store | Disabled finalization and later enable | new (neither copy) | staged replacement disabled finalization releases reservation and later attributed enable works |
+| store | Deduplicated identity lock and outside row preservation | new (neither copy) | staged replacement deduplicates same wire lock and leaves outside rows untouched |
+| store | Middle lock wait sees refresh spending old secret | new (neither copy) | staged replacement waits behind middle row refresh and checks post refresh fingerprint |
+| store | Key change bounded retry | new (neither copy) | staged replacement changed row keys retry once then refuse without publication |
+| store | Before rename observer rejection | new (neither copy) | staged replacement before publication rename observer leaves old pool usable |
+| store | Before rename lease loss | new (neither copy) | staged replacement before publication rename lease leaves old pool usable |
+| store | Removed-id memory advances only after rename | new (neither copy) | staged replacement removal refused before rename does not retire id in memory |
+| store | Forward cleanup never revalidates committed plan | new (neither copy) | staged replacement after publication rename resumes only receipt cleanup |
+| store | Operation id digest fence | new (neither copy) | staged replacement reused operation id refuses a different plan digest |
+| store | Opt-in durable config writes fsync file and directory | new (neither copy) | staged replacement durable publication and receipt sync file and directory only |
+| store | Bounded cleaned receipt retention | new (neither copy) | staged replacement keeps every committed receipt and eight recent cleaned receipts |
+| store | Child process crash before staged config completion | new (neither copy) | staged replacement child crash after add state resumes exact replay at genuine epoch |
+| store | Child process crash after roster decision and attributed orphan cleanup | new (neither copy) | staged replacement child crash after publication resumes with attributed orphan removal |
 | tooling | Source checker excludes skipped, failed and errored synthetic cases | new (neither copy) | source checker excludes skipped, failed and errored synthetic cases |
 | tooling | Source checker decodes XML titles and strips describe prefixes | new (neither copy) | source checker decodes XML titles and strips describe prefixes |
 | tooling | Source checker rejects empty tables and unmatched cells | new (neither copy) | source checker rejects empty tables and unmatched cells |

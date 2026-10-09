@@ -1,0 +1,460 @@
+import type { Attribution } from './attribution.js'
+import { assertNotInsideHook } from './hooks.js'
+import {
+  notReadyError,
+  readPool,
+  runOperation,
+  type Transaction,
+  withTransaction,
+} from './mutate.js'
+import type { PoolLockSpec } from './refresh-lock.js'
+import {
+  assertBoundRowAttribution,
+  type FailureHook,
+  type ProtectFn,
+  protectIn,
+  validateAttribution,
+} from './rows.js'
+import { refusal, rowLockSpec, type StoreRuntime } from './runtime.js'
+import {
+  CREDENTIAL_STAMP_KEY,
+  canonicalDigest,
+  fingerprintOf,
+  idProblem,
+  isCredentialEpoch,
+  isRecord,
+  POOL_KEY,
+  type PoolRow,
+  parseStamp,
+  rowLockKey,
+} from './schema.js'
+
+export interface PublishPlan {
+  operationId: string
+  remove: Array<{ id: string; attribution: Attribution; fingerprint?: string }>
+  finalize: Array<{
+    id: string
+    attribution: Attribution
+    reservation: string
+    enabled: boolean
+    disabledReason?: string
+  }>
+  order: string[]
+}
+
+export interface PublicationReceipt {
+  operationId: string
+  planDigest: string
+  phase: 'committed' | 'cleaned'
+  removed: Array<{ id: string; credentialEpoch: number }>
+  finalized: Array<{
+    id: string
+    credentialEpoch: number
+    reservation: string
+    enabled: boolean
+  }>
+}
+
+export interface PublishOptions {
+  protect?: ProtectFn
+  extraLocks?: PoolLockSpec[]
+  providerLock?: PoolLockSpec
+  onFailure?: FailureHook
+}
+
+export interface PublishResult {
+  outcome: 'published' | 'cleaned' | 'already-cleaned'
+  receipt: PublicationReceipt
+}
+
+function receiptsIn(config: Record<string, unknown>): Record<string, unknown> {
+  const pool = config[POOL_KEY]
+  return isRecord(pool) && isRecord(pool.publications) ? pool.publications : {}
+}
+
+function receiptIn(
+  config: Record<string, unknown>,
+  operationId: string,
+): PublicationReceipt | undefined {
+  const receipts = receiptsIn(config)
+  if (!Object.hasOwn(receipts, operationId)) return undefined
+  const raw = receipts[operationId]
+  if (
+    !isRecord(raw) ||
+    raw.operationId !== operationId ||
+    typeof raw.planDigest !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(raw.planDigest) ||
+    !['committed', 'cleaned'].includes(String(raw.phase)) ||
+    !Array.isArray(raw.removed) ||
+    !Array.isArray(raw.finalized) ||
+    raw.removed.some(
+      (ref) =>
+        !isRecord(ref) ||
+        typeof ref.id !== 'string' ||
+        !isCredentialEpoch(ref.credentialEpoch),
+    ) ||
+    raw.finalized.some(
+      (ref) =>
+        !isRecord(ref) ||
+        typeof ref.id !== 'string' ||
+        !isCredentialEpoch(ref.credentialEpoch) ||
+        typeof ref.reservation !== 'string' ||
+        !ref.reservation ||
+        typeof ref.enabled !== 'boolean',
+    )
+  )
+    throw refusal(
+      'publishRoster',
+      operationId,
+      'invalid-input',
+      'the stored publication receipt is malformed',
+    )
+  return structuredClone(raw) as unknown as PublicationReceipt
+}
+
+export async function publication(
+  rt: StoreRuntime,
+  operationId: string,
+): Promise<PublicationReceipt | undefined> {
+  const result = await readPool(rt.ctx)
+  if (result.status !== 'ready')
+    throw notReadyError(result, 'publishRoster', operationId)
+  return receiptIn(result.config, operationId)
+}
+
+function validatePlan(rt: StoreRuntime, plan: PublishPlan): void {
+  const fail = (): never => {
+    throw refusal(
+      'publishRoster',
+      plan?.operationId ?? '',
+      'invalid-input',
+      'the publication plan is invalid',
+    )
+  }
+  if (
+    !isRecord(plan) ||
+    typeof plan.operationId !== 'string' ||
+    !plan.operationId ||
+    !Array.isArray(plan.remove) ||
+    !Array.isArray(plan.finalize) ||
+    !Array.isArray(plan.order)
+  )
+    fail()
+  const ids = new Set<string>()
+  for (const ref of [...plan.remove, ...plan.finalize]) {
+    if (
+      !isRecord(ref) ||
+      typeof ref.id !== 'string' ||
+      idProblem(ref.id) ||
+      ids.has(ref.id) ||
+      !ref.attribution
+    )
+      fail()
+    ids.add(ref.id)
+    validateAttribution('publishRoster', ref.id, ref.attribution)
+    if (
+      ref.attribution.identity !== undefined &&
+      (typeof ref.attribution.identity !== 'string' ||
+        !ref.attribution.identity)
+    )
+      fail()
+  }
+  for (const ref of plan.remove)
+    if (
+      (rt.ctx.requireRemovedFingerprint && !ref.fingerprint) ||
+      (ref.fingerprint !== undefined && typeof ref.fingerprint !== 'string')
+    )
+      fail()
+  for (const ref of plan.finalize)
+    if (
+      typeof ref.reservation !== 'string' ||
+      !ref.reservation ||
+      typeof ref.enabled !== 'boolean' ||
+      (ref.enabled
+        ? ref.disabledReason !== undefined
+        : typeof ref.disabledReason !== 'string')
+    )
+      fail()
+  if (
+    plan.order.some((id) => typeof id !== 'string' || idProblem(id)) ||
+    new Set(plan.order).size !== plan.order.length
+  )
+    fail()
+}
+
+function saveReceipt(tx: Transaction, receipt: PublicationReceipt): void {
+  tx.entries()
+  const pool = tx.config[POOL_KEY] as Record<string, unknown>
+  const receipts = { ...receiptsIn(tx.config) }
+  Object.defineProperty(receipts, receipt.operationId, {
+    value: receipt,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  })
+  pool.publications = receipts
+  if (receipt.phase !== 'cleaned') return
+  // An explicit completion order also works for numeric operation ids, whose
+  // object keys JSON would otherwise enumerate in numeric rather than time order.
+  const prior = Array.isArray(pool.publicationOrder)
+    ? pool.publicationOrder.filter((id): id is string => typeof id === 'string')
+    : Object.keys(receipts).filter(
+        (id) => isRecord(receipts[id]) && receipts[id].phase === 'cleaned',
+      )
+  const order = [
+    ...prior.filter((id) => id !== receipt.operationId),
+    receipt.operationId,
+  ]
+  for (const id of order.slice(0, -8)) {
+    const old = receipts[id]
+    if (isRecord(old) && old.phase === 'cleaned') delete receipts[id]
+  }
+  pool.publicationOrder = order.slice(-8)
+}
+
+async function cleanup(
+  tx: Transaction,
+  receipt: PublicationReceipt,
+): Promise<PublicationReceipt> {
+  await tx.assertAll()
+  for (const ref of receipt.removed) {
+    const stamp = parseStamp(tx.stateAccount(ref.id)?.[CREDENTIAL_STAMP_KEY])
+    // A later add uses a later epoch. Cleanup never deletes that successor.
+    if (stamp?.credentialEpoch === ref.credentialEpoch && !tx.rosterRow(ref.id))
+      tx.dropStateAccount(ref.id)
+  }
+  for (const ref of receipt.finalized) {
+    const account = tx.stateAccount(ref.id)
+    const stamp = parseStamp(account?.[CREDENTIAL_STAMP_KEY])
+    if (
+      account &&
+      stamp?.credentialEpoch === ref.credentialEpoch &&
+      stamp.staged?.reservation === ref.reservation
+    ) {
+      const next = {
+        ...(account[CREDENTIAL_STAMP_KEY] as Record<string, unknown>),
+      }
+      delete next.staged
+      tx.setStateAccount(ref.id, { ...account, [CREDENTIAL_STAMP_KEY]: next })
+    }
+  }
+  await tx.commitState()
+  const cleaned: PublicationReceipt = { ...receipt, phase: 'cleaned' }
+  saveReceipt(tx, cleaned)
+  await tx.commitConfig({ durable: true })
+  return cleaned
+}
+
+export async function publishRoster(
+  rt: StoreRuntime,
+  plan: PublishPlan,
+  options: PublishOptions = {},
+): Promise<PublishResult> {
+  assertNotInsideHook('publishRoster')
+  return runOperation(
+    rt.ctx,
+    'publishRoster',
+    plan.operationId,
+    options.onFailure,
+    async (locks, progress): Promise<PublishResult> => {
+      validatePlan(rt, plan)
+      plan = structuredClone(plan)
+      const planDigest = canonicalDigest(plan)
+      const named = [...plan.remove, ...plan.finalize]
+      for (let attempt = 0; ; attempt++) {
+        const seen = await readPool(rt.ctx)
+        if (seen.status !== 'ready')
+          throw notReadyError(seen, 'publishRoster', plan.operationId)
+        const keys = new Map(
+          named.map(({ id }) => [
+            id,
+            rowLockKey(seen.rows.find((row) => row.id === id) ?? { id }),
+          ]),
+        )
+        // All row keys precede the provider lock. A refresh owns just one row
+        // before that lock, so it cannot wait for a second row this call holds.
+        for (const key of [...new Set(keys.values())].sort())
+          await locks.acquire(rowLockSpec(rt, { id: key }))
+        await locks.acquire(options.providerLock ?? rt.providerLock)
+        for (const extra of options.extraLocks ?? []) await locks.acquire(extra)
+        const result = await withTransaction(
+          rt.ctx,
+          locks,
+          progress,
+          { operation: 'publishRoster', rowId: plan.operationId },
+          async (tx): Promise<PublishResult | undefined> => {
+            const rows = tx.rows()
+            if (
+              named.some(
+                ({ id }) =>
+                  rowLockKey(rows.find((row) => row.id === id) ?? { id }) !==
+                  keys.get(id),
+              )
+            )
+              return undefined
+            const prior = receiptIn(tx.config, plan.operationId)
+            if (prior) {
+              if (prior.planDigest !== planDigest)
+                throw refusal(
+                  'publishRoster',
+                  plan.operationId,
+                  'publication-mismatch',
+                  'the operation id belongs to a different publication plan',
+                )
+              if (prior.phase === 'cleaned')
+                return { outcome: 'already-cleaned', receipt: prior }
+              return { outcome: 'cleaned', receipt: await cleanup(tx, prior) }
+            }
+            const removed: PoolRow[] = []
+            for (const ref of plan.remove) {
+              tx.assertNotStaged(ref.id)
+              const row = rows.find((row) => row.id === ref.id)
+              if (!row)
+                throw refusal(
+                  'publishRoster',
+                  ref.id,
+                  'attribution',
+                  'the removed row no longer exists',
+                )
+              assertBoundRowAttribution(
+                ref.id,
+                row,
+                ref.attribution,
+                'publishRoster',
+              )
+              if (
+                !row.credential ||
+                (ref.fingerprint !== undefined &&
+                  fingerprintOf(row.credential) !== ref.fingerprint)
+              )
+                throw refusal(
+                  'publishRoster',
+                  ref.id,
+                  'attribution',
+                  'the removed secret no longer matches',
+                )
+              removed.push(row)
+            }
+            const finalized: PoolRow[] = []
+            for (const ref of plan.finalize) {
+              const row = rows.find((row) => row.id === ref.id)
+              const stamp = parseStamp(
+                tx.stateAccount(ref.id)?.[CREDENTIAL_STAMP_KEY],
+              )
+              if (
+                !row ||
+                row.staged?.reservation !== ref.reservation ||
+                stamp?.staged?.reservation !== ref.reservation ||
+                row.enabled
+              )
+                throw refusal(
+                  'publishRoster',
+                  ref.id,
+                  'row-staged',
+                  'the finalized row is not disabled under this reservation',
+                )
+              assertBoundRowAttribution(
+                ref.id,
+                row,
+                ref.attribution,
+                'publishRoster',
+              )
+              finalized.push(row)
+            }
+            const removedIds = new Set(plan.remove.map((ref) => ref.id))
+            const survivors = rows.filter((row) => !removedIds.has(row.id))
+            if (
+              survivors.length !== plan.order.length ||
+              survivors.some((row) => !plan.order.includes(row.id))
+            )
+              throw refusal(
+                'publishRoster',
+                plan.operationId,
+                'invalid-input',
+                'order must name exactly the surviving roster',
+              )
+            const identities = new Set<string>()
+            for (const row of survivors) {
+              const enabled =
+                plan.finalize.find((ref) => ref.id === row.id)?.enabled ??
+                row.enabled
+              if (
+                !enabled ||
+                row.type !== 'oauth' ||
+                row.identity === undefined
+              )
+                continue
+              if (identities.has(row.identity))
+                throw refusal(
+                  'publishRoster',
+                  row.id,
+                  'invalid-input',
+                  'the final enabled roster repeats a known identity',
+                )
+              identities.add(row.identity)
+            }
+            for (const row of finalized)
+              if (
+                row.identity !== undefined &&
+                removed.some(
+                  (old) =>
+                    old.identity !== undefined &&
+                    old.identity !== row.identity &&
+                    old.fingerprint === row.fingerprint,
+                )
+              )
+                throw refusal(
+                  'publishRoster',
+                  row.id,
+                  'attribution',
+                  'the staged secret belonged to a different known identity',
+                )
+            await protectIn(tx, plan.operationId, options.protect)
+            const receipt: PublicationReceipt = {
+              operationId: plan.operationId,
+              planDigest,
+              phase: 'committed',
+              removed: removed.map((row) => ({
+                id: row.id,
+                credentialEpoch: row.credentialEpoch ?? 1,
+              })),
+              finalized: plan.finalize.map((ref, index) => ({
+                id: ref.id,
+                credentialEpoch: finalized[index]?.credentialEpoch ?? 1,
+                reservation: ref.reservation,
+                enabled: ref.enabled,
+              })),
+            }
+            for (const ref of plan.remove) tx.dropRosterRows(ref.id)
+            for (const ref of plan.finalize) {
+              const raw = tx.rosterRow(ref.id) as Record<string, unknown>
+              raw.enabled = ref.enabled
+              const entry = { ...tx.entry(ref.id) }
+              delete entry.staged
+              if (ref.enabled) delete entry.disabledReason
+              else entry.disabledReason = ref.disabledReason
+              tx.setEntry(ref.id, entry)
+            }
+            tx.config.accounts = plan.order.map((id) => tx.rosterRow(id))
+            saveReceipt(tx, receipt)
+            // This durable rename is the irreversible roster decision. Everything
+            // after it follows only the receipt, including after a process restart.
+            await tx.commitConfig({ durable: true })
+            return { outcome: 'published', receipt: await cleanup(tx, receipt) }
+          },
+          { completeTorn: false },
+        )
+        if (result) return result
+        await locks.releaseAll()
+        if (attempt >= 1)
+          throw refusal(
+            'publishRoster',
+            plan.operationId,
+            'row-key-changed',
+            'a named row changed lock key twice during publication',
+            true,
+          )
+      }
+    },
+  )
+}

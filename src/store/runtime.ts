@@ -6,7 +6,14 @@ import {
   type StoreContext,
 } from './mutate.js'
 import type { PoolLockOptions, PoolLockSpec } from './refresh-lock.js'
-import { type PoolRow, rowLockKey } from './schema.js'
+import { assertNotReserved } from './reserved.js'
+import {
+  CREDENTIAL_STAMP_KEY,
+  entryIn,
+  isRecord,
+  type PoolRow,
+  rowLockKey,
+} from './schema.js'
 
 /** Where a pull was fired from; `load` fires at most once per process per row. */
 export type PullReason = 'load' | 'add' | 'replace' | 'admission'
@@ -44,6 +51,20 @@ export async function readRow(
   const result = await readPool(rt.ctx)
   if (result.status !== 'ready') throw notReadyError(result, operation, id)
   const row = result.rows.find((candidate) => candidate.id === id)
+  const entry = entryIn(result.config, id)
+  const accounts = result.state.accounts
+  const account =
+    isRecord(accounts) && Object.hasOwn(accounts, id) ? accounts[id] : undefined
+  const stamp = isRecord(account) ? account[CREDENTIAL_STAMP_KEY] : undefined
+  if (
+    row &&
+    !['enable', 'disable'].includes(operation) &&
+    entry &&
+    Object.hasOwn(entry, 'staged')
+  )
+    assertNotReserved(operation, id, entry.staged)
+  if (!row && isRecord(stamp) && Object.hasOwn(stamp, 'staged'))
+    assertNotReserved(operation, id, stamp.staged)
   if (!row) throw unknownRow(operation, id)
   return { result, row }
 }

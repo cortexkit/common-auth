@@ -7,6 +7,8 @@ export interface AtomicWriteOptions {
   beforeRename?: () => Promise<void>
   /** Test seam for forcing staging-name collisions; defaults to randomUUID. */
   stageName?: () => string
+  /** Sync the staged file and, after rename, its parent directory. Opt-in. */
+  durable?: boolean
 }
 
 export async function writeJsonAtomic(
@@ -28,11 +30,20 @@ export async function writeJsonAtomic(
       'utf8',
     )
     await handle.chmod(0o600)
+    if (options.durable) await handle.sync()
     await handle.close()
     handle = undefined
     await options.beforeRename?.()
     await rename(tempPath, path)
     created = false
+    if (options.durable) {
+      const directory = await open(dirname(path), 'r')
+      try {
+        await directory.sync()
+      } finally {
+        await directory.close()
+      }
+    }
   } finally {
     await handle?.close().catch(() => {})
     // A failed write can leave partial bytes, but a collision is not ours to remove.
