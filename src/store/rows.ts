@@ -132,6 +132,28 @@ export interface RemoveView {
 
 export interface RemoveOptions extends RowToggleOptions {
   /**
+   * The credential the removal was decided for (since 0.11.7). Checked under
+   * every lock, before `protect` and before anything is written or repaired:
+   * - a roster row must be bound to its credential stamp, not torn, and hold
+   *   exactly this epoch and recorded identity (absence included);
+   * - an orphan (only a state-file entry left, by a removal or add
+   *   interrupted between its writes) must carry a stamp this store can bind
+   *   to the credential beside it, and that stamp must name exactly this
+   *   epoch and identity.
+   * Epochs only grow per id (a removal records the dropped epoch, and a later
+   * add of the id starts past it), so an orphan an interrupted later add
+   * left under the same id never matches the epoch of the row the caller
+   * meant to remove. A mismatch refuses with kind `attribution`, an orphan
+   * or row with no bindable stamp with kind `unbound-credential`; both leave
+   * the files byte for byte unchanged. Without it, `remove` drops whatever
+   * the id holds, as before.
+   *
+   * The epoch survives a refresh or `rotate`, so it names a credential
+   * lineage, not one token: a caller that must remove only an exact token
+   * still checks the loaded credential in `protect`.
+   */
+  attribution?: Attribution
+  /**
    * Awaited under every lock before anything is written; a reason refuses
    * the removal (kind `row-protected`) with both files unchanged. The store
    * keeps no record of a plugin's in-flight work, so this is where a plugin
@@ -1321,6 +1343,8 @@ export async function removeRow(
       // older readers would trim is invalid, and removing it is a repair.
       if (typeof id !== 'string' || id.length === 0)
         throw refusal('remove', id, 'invalid-input', 'id must be non-empty')
+      const fence = options.attribution
+      validateAttribution('remove', id, fence)
       const result = await readPool(ctx)
       if (result.status !== 'ready') throw notReadyError(result, 'remove', id)
       const seen = result.rows.find((row) => row.id === id)
@@ -1340,6 +1364,10 @@ export async function removeRow(
           if (!row && !orphan) throw unknownRow('remove', id)
           if (rowLockKey(row ?? { id }) !== seenKey)
             throw keyChanged('remove', id)
+          if (fence !== undefined) {
+            if (row) assertBoundRowAttribution(id, row, fence)
+            else assertOrphanAttribution(rt, tx, id, fence)
+          }
           const protect = options.protect
           if (protect) {
             const view: RemoveView = {
@@ -1363,9 +1391,118 @@ export async function removeRow(
           }
           return { id, outcome: row ? 'removed' : 'completed' }
         },
+        // An attributed removal is refused, when it is, with nothing written:
+        // completing another row's interrupted write first would be a write.
+        { completeTorn: fence === undefined },
       )
     },
   )
+}
+
+/** An attributed removal of a roster row: bound, not torn, same epoch and identity. */
+function assertBoundRowAttribution(
+  id: string,
+  row: PoolRow,
+  fence: Attribution,
+): void {
+  assertRowAttribution('remove', id, row, fence)
+  // A torn row is between the two writes of another operation; which
+  // credential it holds is not settled, so no attribution can match it.
+  if (row.torn)
+    throw refusal(
+      'remove',
+      id,
+      'attribution',
+      `row ${id} is between the writes of another operation; retry once it completes`,
+      true,
+    )
+  if (row.stamp !== 'bound')
+    throw refusal(
+      'remove',
+      id,
+      'unbound-credential',
+      `row ${id}'s credential is not bound to its stamp, so the removal cannot be attributed to it`,
+    )
+}
+
+/**
+ * An attributed removal of an orphan. The orphan is loaded the way an
+ * interrupted add's replay loads it (`matchingInterruptedAdd`): its stamp
+ * supplies the identity and endpoint the missing roster row would have held,
+ * and the credential beside it must be the one that stamp names (status
+ * `bound`). Only then does the stamp's epoch and identity mean anything.
+ */
+function assertOrphanAttribution(
+  rt: StoreRuntime,
+  tx: Transaction,
+  id: string,
+  fence: Attribution,
+): void {
+  const unbound = () =>
+    refusal(
+      'remove',
+      id,
+      'unbound-credential',
+      `orphan ${id} has no credential stamp this store can bind, so the removal cannot be attributed to it`,
+    )
+  const account = tx.stateAccount(id)
+  const stamp = parseStamp(account?.[CREDENTIAL_STAMP_KEY])
+  // A replace's stamp only ever sits beside a roster row; one left without
+  // a row is not a state this store writes.
+  if (
+    !account ||
+    !stamp?.binding ||
+    stamp.dispatch === undefined ||
+    stamp.replace
+  )
+    throw unbound()
+  let descriptor: PoolCredential
+  if (typeof account.apiKey === 'string') {
+    if (
+      stamp.binding.baseURL === undefined ||
+      stamp.binding.authHeader === undefined
+    )
+      throw unbound()
+    descriptor = {
+      type: 'api',
+      apiKey: account.apiKey,
+      baseURL: stamp.binding.baseURL,
+      authHeader: stamp.binding.authHeader,
+    }
+  } else if (typeof account.refresh === 'string') {
+    descriptor = { type: 'oauth', refresh: account.refresh }
+  } else throw unbound()
+  const [orphan] = buildRawRows(
+    {
+      accounts: [
+        rosterRowFor({
+          id,
+          credential: descriptor,
+          identity: stamp.binding.identity,
+          addedAt: 0,
+        }),
+      ],
+      [POOL_KEY]: {
+        rows: { [id]: { credentialEpoch: stamp.credentialEpoch } },
+      },
+    },
+    tx.state,
+    rt.ctx.codec,
+    rt.ctx.providerState,
+  )
+  if (!orphan?.credential || orphan.invalid || orphan.stamp !== 'bound')
+    throw unbound()
+  if (
+    stamp.credentialEpoch !== fence.credentialEpoch ||
+    stamp.binding.identity !== fence.identity
+  )
+    throw refusal(
+      'remove',
+      id,
+      'attribution',
+      `orphan ${id} was written for a credential or account other than the one this removal was decided for`,
+      true,
+    )
 }
 
 function hasStateAccount(state: Record<string, unknown>, id: string): boolean {

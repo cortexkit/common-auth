@@ -646,6 +646,13 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | store | A crash after the config write of remove leaves the removed pool and a re-run remove drops the orphaned credential | new (neither copy) | a crash at after-config-write of remove leaves either the old pool or the removed one and a re-run remove finishes it |
 | store | A crash before the state write of remove leaves the removed pool and a re-run remove drops the orphaned credential | new (neither copy) | a crash at before-state-write of remove leaves either the old pool or the removed one and a re-run remove finishes it |
 | store | A crash after the state write of remove leaves the removed pool | new (neither copy) | a crash at after-state-write of remove leaves either the old pool or the removed one and a re-run remove finishes it |
+| store | An attributed remove completes its own interrupted removal | new (neither copy) | an attributed remove completes its own interrupted removal |
+| store | An attributed remove refuses an orphan a later interrupted add of the id left, files unchanged | new (neither copy) | an attributed remove refuses a foreign higher-epoch orphan with both files unchanged |
+| store | An attributed remove refuses a live row of another epoch or identity, files unchanged | new (neither copy) | an attributed remove refuses a live row of another epoch or identity with both files unchanged |
+| store | An attributed remove refuses an unstamped, malformed or foreign-secret orphan, files unchanged | new (neither copy) | an attributed remove refuses an orphan without a bindable stamp with both files unchanged |
+| store | A malformed remove attribution is refused before any write | new (neither copy) | an attributed remove refuses a malformed attribution before reading the pool |
+| store | A refused attributed remove completes no other torn row | new (neither copy) | an attributed remove completes no other row before refusing |
+| store | Remove without attribution still drops any orphan under the id | new (neither copy) | remove without attribution still drops whatever orphan the id holds |
 | store | A refresh holding the row lock makes remove wait and writes no credential for the removed row | new (neither copy) | a refresh holding the row lock across its provider call makes remove wait and cannot write a credential for the removed row |
 | store | Enable clears enabled false and the disabled reason | new (neither copy) | enable clears enabled false and the disabled reason |
 | store | Enable refuses a duplicate identity, writing nothing | new (neither copy) | enable refuses a row whose identity another enabled row holds, with both files unchanged |

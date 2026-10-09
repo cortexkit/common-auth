@@ -1577,3 +1577,57 @@ command = ['bun', 'test', 'test/commands/replace.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^replacing\sthe\sbuilt-in\sstore\ssections\sa\sbuilt-in\sslot\swithout\sa\sstore\sis\srefused\swhen\sthe\smenu\sis\screated$']
 expect_message = 'toThrow'
+
+[[control]]
+id = 'store-remove-attribution-orphan-epoch'
+guards = 'an attributed remove refuses an orphan whose stamp names another credential epoch, so it never deletes an orphan a later interrupted add of the id left'
+file = 'src/store/rows.ts'
+old = '''    stamp.credentialEpoch !== fence.credentialEpoch ||'''
+new = '''    false || // NON-VACUITY BREAK: orphan epoch not compared.'''
+test_file = 'test/store/remove-attribution.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/store/remove-attribution.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^remove\sattribution\san\sattributed\sremove\srefuses\sa\sforeign\shigher-epoch\sorphan\swith\sboth\sfiles\sunchanged$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-remove-attribution-orphan-bound'
+guards = 'an attributed remove refuses an orphan whose credential is not the one its stamp names'
+file = 'src/store/rows.ts'
+old = '''  if (!orphan?.credential || orphan.invalid || orphan.stamp !== 'bound')
+    throw unbound()'''
+new = '''  if (!orphan?.credential || orphan.invalid) // NON-VACUITY BREAK: stamp binding not required.
+    throw unbound()'''
+test_file = 'test/store/remove-attribution.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/store/remove-attribution.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^remove\sattribution\san\sattributed\sremove\srefuses\san\sorphan\swithout\sa\sbindable\sstamp\swith\sboth\sfiles\sunchanged$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-remove-attribution-live-row'
+guards = 'an attributed remove refuses a live row of another epoch or identity'
+file = 'src/store/rows.ts'
+old = '''  assertRowAttribution('remove', id, row, fence)'''
+new = '''  void assertRowAttribution // NON-VACUITY BREAK: live row not fenced.'''
+test_file = 'test/store/remove-attribution.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/store/remove-attribution.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^remove\sattribution\san\sattributed\sremove\srefuses\sa\slive\srow\sof\sanother\sepoch\sor\sidentity\swith\sboth\sfiles\sunchanged$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'store-remove-attribution-no-torn-repair'
+guards = 'a refused attributed remove leaves every other torn row as on disk'
+file = 'src/store/rows.ts'
+old = '''        { completeTorn: fence === undefined },'''
+new = '''        { completeTorn: true }, // NON-VACUITY BREAK: torn rows repaired before the fence.'''
+test_file = 'test/store/remove-attribution.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/store/remove-attribution.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^remove\sattribution\san\sattributed\sremove\scompletes\sno\sother\srow\sbefore\srefusing$']
+expect_message = 'the torn row is not completed'
