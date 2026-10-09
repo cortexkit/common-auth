@@ -1313,3 +1313,14 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | tooling | Spawn error kills the load process group | new (neither copy) | load probe stops its process group on error |
 | tooling | A SIGKILLed probe leaves no fake test runner running | new (neither copy) | a SIGKILLed probe leaves no fake test runner behind |
 | tooling | Publishing performs its artifact build once through the package lifecycle | new (neither copy) | release publish relies on exactly one prepublishOnly build |
+| opencode2 | An API key is passed through byte-identical without adapter calls or attempts | new (neither copy) | an API key passes through byte identical with no adapter calls or attempts |
+| opencode2 | A host login bearer is passed through byte-identical without adapter calls or attempts | new (neither copy) | a host login bearer passes through byte identical with no adapter calls or attempts |
+| opencode2 | The ownership discriminator requires exact placeholder equality | new (neither copy) | ownership requires exact placeholder equality |
+| opencode2 | An owned placeholder selects and rewrites at transport, attributes quota, and reroutes a refusal | new (neither copy) | an owned placeholder is served attributed and retried at transport |
+| opencode2 | An owned placeholder without an account is refused locally with zero dispatch | new (neither copy) | an owned placeholder with no account is refused locally before dispatch |
+| opencode2 | Login switches apply on the next request and non-owned retries leave the host decision untouched | new (neither copy) | switching placeholder to API key and back changes the next request and retry |
+| opencode2 | A non-owned socket remains untouched even with an older owned attempt held | new (neither copy) | a non owned socket handshake and frames are untouched and unattributed |
+| opencode2 | Concurrent owned sends of the same session and kind have separate response and retry attribution | new (neither copy) | concurrent owned attempts of one session and kind keep their own attribution |
+| opencode2 | Omitting the ownership option pins 0.11.7 model selection and wire bytes | new (neither copy) | omitting the option preserves legacy model selection and wire bytes |
+| opencode2 | The adapter can extract a prepared Anthropic x-api-key instead of an OpenAI bearer | new (neither copy) | an adapter can gate on the Anthropic API key header |
+| opencode2 | Owned placeholders are always refused on HTTP and WebSocket even with a customized forbidden list | new (neither copy) | owned placeholders cannot leave even with a customized wire guard |

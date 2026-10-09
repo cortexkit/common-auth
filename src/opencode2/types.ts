@@ -196,7 +196,9 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
    * The credential and per-account headers for an account, applied in
    * `model.request`, `http.request` and `experimental.ws.handshake`. The last
    * two run after the host has applied its own credential, so these headers
-   * win on the wire.
+   * win on the wire. With `gateOnPlaceholder`, only the transport hook applies
+   * them, and only to owned requests. Put per-account and session headers here
+   * rather than in a separate `model.request` hook.
    *
    * Called once per attempt, when the account is chosen. Returning
    * `{headers, attempt}` instead of the bare edits stores `attempt` as the
@@ -210,7 +212,9 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
     | AccountHeadersResult<A>
   /**
    * Optional request rewrite (URL, body) before the account headers are
-   * applied. Return `undefined` to keep the request.
+   * applied. Return `undefined` to keep the request. With `gateOnPlaceholder`,
+   * runs only for owned requests; move endpoint and body edits here rather
+   * than changing `model.request`.
    */
   rewriteRequest?(
     input: AccountRequest & {
@@ -249,7 +253,11 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
     readonly response: Response
     readonly attempt: Attempt<A>
   }): Promise<ResponseAccount<A> | undefined> | ResponseAccount<A> | undefined
-  /** Optional WebSocket URL rewrite. Return `undefined` to keep the URL. */
+  /**
+   * Optional WebSocket URL rewrite. With `gateOnPlaceholder`, runs only for
+   * handshakes whose prepared credential belongs to this plugin's login.
+   * Return `undefined` to keep the URL.
+   */
   rewriteHandshakeURL?(
     input: AccountRequest & {
       readonly url: string
@@ -289,7 +297,8 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
    *
    * It runs for every frame, including one no attempt can be tied to
    * (`attempt` is then `undefined`), so the rewrite never depends on
-   * attribution.
+   * attribution. With `gateOnPlaceholder`, it runs only after an owned
+   * handshake, including frames after that socket's attempt has ended.
    */
   rewriteWebSocketFrame?(
     input: RequestScope & {
@@ -354,9 +363,20 @@ export interface OpenCode2AuthLogger {
 
 export interface InstallOpenCode2AuthOptions {
   /**
+   * Opt in to acting only on this plugin's login. Extract the request-bound
+   * prepared secret from the host's transport headers (not global connection
+   * state). The installer compares it byte for byte with
+   * `placeholderSecret(adapter.providerID)`; any other value passes untouched.
+   * `model.request` becomes a no-op; selection and rewrites happen at transport.
+   */
+  readonly gateOnPlaceholder?: {
+    readonly credential: (headers: Headers) => string | undefined
+  }
+  /**
    * Values that must never reach the wire, normally the placeholder the host
    * holds as its credential. Defaults to the placeholder secret for the
-   * adapter's provider.
+   * adapter's provider. With `gateOnPlaceholder`, that placeholder is always
+   * forbidden, even if this list is customized.
    */
   readonly hostCredentials?: readonly string[]
   /** Most attempts kept before the oldest is abandoned and dropped. */

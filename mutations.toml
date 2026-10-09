@@ -1631,3 +1631,158 @@ command = ['bun', 'test', 'test/store/remove-attribution.test.ts', '-t', '{test}
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^remove\sattribution\san\sattributed\sremove\scompletes\sno\sother\srow\sbefore\srefusing$']
 expect_message = 'the torn row is not completed'
+
+# --- OpenCode 2 opt-in placeholder ownership ---
+# Each command prints git's unstaged diff before running the selected test.
+# A diff on the mutated run records that the test sees the deliberate source
+# change; the baseline run and the restored source have no unstaged diff.
+
+[[control]]
+id = 'opencode2-owned-api-key-pass-through'
+guards = 'an API key on the same provider is untouched with zero adapter calls and attempts'
+file = 'src/opencode2/install.ts'
+old = 'ownership.credential(headers) === placeholderSecret(providerID)'
+new = 'true // NON-VACUITY BREAK: remove exact ownership equality'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\san\sAPI\skey\spasses\sthrough\sbyte\sidentical\swith\sno\sadapter\scalls\sor\sattempts$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'opencode2-owned-host-login-pass-through'
+guards = 'a host OAuth bearer is untouched with zero adapter calls and attempts'
+file = 'src/opencode2/install.ts'
+old = 'ownership.credential(headers) === placeholderSecret(providerID)'
+new = 'true // NON-VACUITY BREAK: remove exact ownership equality'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\sa\shost\slogin\sbearer\spasses\sthrough\sbyte\sidentical\swith\sno\sadapter\scalls\sor\sattempts$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'opencode2-owned-exact-equality-control'
+guards = 'a placeholder prefix is not ownership; remove equality as a red control'
+file = 'src/opencode2/install.ts'
+old = 'ownership.credential(headers) === placeholderSecret(providerID)'
+new = 'true // NON-VACUITY BREAK: remove exact ownership equality'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\sownership\srequires\sexact\splaceholder\sequality$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'opencode2-owned-placeholder-retry'
+guards = 'owned placeholders retain immediate retry after an attributed refusal'
+file = 'src/opencode2/install.ts'
+old = '''        if (ownership && latestTransportOwned.get(draft.sessionID) !== true)
+          return'''
+new = '        if (ownership) return // NON-VACUITY BREAK: suppress owned retry'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\san\sowned\splaceholder\sis\sserved\sattributed\sand\sretried\sat\stransport$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'opencode2-owned-local-refusal'
+guards = 'no account means local refusal before dispatch, never fabricated credentials'
+file = 'src/opencode2/install.ts'
+old = 'const accountId = await adapter.chooseAccount(input)'
+new = "const accountId = (await adapter.chooseAccount(input)) ?? 'A' // NON-VACUITY BREAK: bypass refusal"
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\san\sowned\splaceholder\swith\sno\saccount\sis\srefused\slocally\sbefore\sdispatch$']
+expect_message = 'Expected constructor:'
+
+[[control]]
+id = 'opencode2-owned-switch-retry'
+guards = 'after switching to an API key, retry leaves the host decision untouched despite older owned refusals'
+file = 'src/opencode2/install.ts'
+old = '''        if (ownership && latestTransportOwned.get(draft.sessionID) !== true)
+          return'''
+new = '        // NON-VACUITY BREAK: let non-owned retries judge older owned attempts'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\sswitching\splaceholder\sto\sAPI\skey\sand\sback\schanges\sthe\snext\srequest\sand\sretry$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'opencode2-owned-socket-send'
+guards = 'a non-owned socket frame is not rewritten even with an older owned attempt'
+file = 'src/opencode2/install.ts'
+old = '''          if (
+            ownership &&
+            !ownedSockets.has(keyOf(scope.sessionID, scope.kind))
+          )
+            return'''
+new = '          // NON-VACUITY BREAK: rewrite frames on non-owned sockets'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\sa\snon\sowned\ssocket\shandshake\sand\sframes\sare\suntouched\sand\sunattributed$']
+expect_message = 'Received: "stock rewritten"'
+
+[[control]]
+id = 'opencode2-owned-socket-receive'
+guards = 'a non-owned socket frame is not attributed even with an older owned attempt'
+file = 'src/opencode2/install.ts'
+old = '''        if (ownership && !ownedSockets.has(keyOf(draft.sessionID, draft.kind)))
+          return'''
+new = '        // NON-VACUITY BREAK: attribute frames on non-owned sockets'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\sa\snon\sowned\ssocket\shandshake\sand\sframes\sare\suntouched\sand\sunattributed$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'opencode2-owned-concurrent-attribution'
+guards = 'concurrent owned HTTP responses belong to their request objects, not the newest attempt'
+file = 'src/opencode2/install.ts'
+old = 'const rec = byRequest.get(draft.request)'
+new = 'const rec = newestOf(keyOf(draft.sessionID, draft.kind)) // NON-VACUITY BREAK: guess response by recency'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\sconcurrent\sowned\sattempts\sof\sone\ssession\sand\skind\skeep\stheir\sown\sattribution$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'opencode2-owned-legacy-default'
+guards = 'omitting the option preserves 0.11.7 model selection and wire bytes'
+file = 'src/opencode2/install.ts'
+old = 'if (ownership) return'
+new = 'return // NON-VACUITY BREAK: disable legacy model selection'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\somitting\sthe\soption\spreserves\slegacy\smodel\sselection\sand\swire\sbytes$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'opencode2-owned-placeholder-wire-guard'
+guards = 'an owned placeholder never leaves even with a customized hostCredentials list'
+file = 'src/opencode2/install.ts'
+old = '...(ownership ? [placeholderSecret(providerID)] : []),'
+new = '...[], // NON-VACUITY BREAK: omit the mandatory owned placeholder guard'
+test_file = 'test/opencode2/ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\splaceholder\sownership\sowned\splaceholders\scannot\sleave\seven\swith\sa\scustomized\swire\sguard$']
+expect_message = 'Expected constructor:'

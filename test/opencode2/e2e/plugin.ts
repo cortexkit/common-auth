@@ -181,7 +181,21 @@ export default {
             }
           : {}),
       },
-      { logger: { warn: (message, data) => log('warn', { message, data }) } },
+      {
+        logger: { warn: (message, data) => log('warn', { message, data }) },
+        ...(process.env.COMMON_AUTH_E2E_GATE_PLACEHOLDER === '1'
+          ? {
+              gateOnPlaceholder: {
+                credential(headers: Headers) {
+                  const value = headers.get('authorization')
+                  return value?.startsWith('Bearer ')
+                    ? value.slice(7)
+                    : undefined
+                },
+              },
+            }
+          : {}),
+      },
     )
     installation.on('select', (event) =>
       log('select', {

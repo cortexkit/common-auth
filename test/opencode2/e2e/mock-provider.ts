@@ -30,6 +30,8 @@ export interface WireRecord {
   readonly connection?: number
   readonly kind?: 'primary' | 'title'
   readonly identity: Identity
+  /** The loopback test credential as received, never a production secret. */
+  readonly authorization?: string
   /** Any header carried a value the host should never send. */
   readonly forbiddenSeen: boolean
   readonly previousResponseID?: string
@@ -265,6 +267,7 @@ export function startMockProvider(forbidden: readonly string[]): MockProvider {
         kind,
         identity,
         forbiddenSeen,
+        authorization: request.headers.get('authorization') ?? undefined,
         ...(rejected ? { rejected } : {}),
         ...receiptOf(request.headers),
       })

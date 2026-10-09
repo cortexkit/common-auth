@@ -209,6 +209,14 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
  * WebSocket: the host runs one exchange at a time on a session's socket.
  * Anything else is attributed to no attempt and reaches no adapter callback
  * or listener.
+ *
+ * With `gateOnPlaceholder`, `model.request` is a no-op. Each transport hook
+ * compares the host-prepared secret exactly, then selects a fresh attempt only
+ * for an owned send. Request-object attribution therefore needs no attempt
+ * header. Frames are owned by the latest handshake of their session and kind;
+ * retry runs only when the session's latest transport was owned. The host's
+ * retry hook has no request identity, so concurrent mixed-ownership calls
+ * cannot be distinguished there; owned retries retain the heuristic above.
  */
 export async function installOpenCode2Auth<Q, A = unknown>(
   ctx: OpenCode2HookContext,
@@ -216,16 +224,27 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   options: InstallOpenCode2AuthOptions = {},
 ): Promise<OpenCode2AuthInstallation<Q, A>> {
   const { providerID } = adapter
+  const ownership = options.gateOnPlaceholder
+  const owns = (headers: Headers) =>
+    ownership === undefined ||
+    ownership.credential(headers) === placeholderSecret(providerID)
   const logger = options.logger
   const maxRecords = Math.max(1, options.maxRecords ?? DEFAULT_MAX_RECORDS)
-  const forbidden = (
-    options.hostCredentials ?? [placeholderSecret(providerID)]
-  ).filter((value) => value !== '')
+  const forbidden = [
+    ...(options.hostCredentials ?? [placeholderSecret(providerID)]),
+    // An owned request must replace its placeholder even if a caller customizes
+    // the list of other host credentials forbidden on the wire.
+    ...(ownership ? [placeholderSecret(providerID)] : []),
+  ].filter((value) => value !== '')
   /** Every attempt still held, oldest first. */
   const attempts = new Map<string, AttemptRecord<A>>()
   const byRequest = new WeakMap<Request, AttemptRecord<A>>()
   /** Retries the retry hook asked for, by `sessionID:kind`. */
   const pendingRetries = new Map<string, PendingRetry>()
+  // The host names only session/kind for frames and only session for retry.
+  // A transport's prepared credential, never global login state, owns these.
+  const ownedSockets = new Set<string>()
+  const latestTransportOwned = new Map<string, boolean>()
   let warnedUnprovenResponse = false
   let warnedUnmarkedSend = false
   const listeners = new Map<
@@ -645,8 +664,9 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   registrations.push(
     await ctx.session.hook(
       'model.request',
-      (draft) =>
-        withSelection(scopeOf(draft), async (assertActive) => {
+      (draft) => {
+        if (ownership) return
+        return withSelection(scopeOf(draft), async (assertActive) => {
           const rec = await select(
             scopeOf(draft),
             'model.request',
@@ -658,23 +678,33 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             ...rec.headers,
             [ATTEMPT_HEADER]: rec.id,
           })
-        }),
+        })
+      },
       scoped,
     ),
   )
   registrations.push(
     await ctx.session.hook(
       'http.request',
-      (draft) =>
-        withSelection(scopeOf(draft), async (assertActive) => {
+      (draft) => {
+        if (ownership) {
+          const owned = owns(draft.request.headers)
+          latestTransportOwned.set(draft.sessionID, owned)
+          if (!owned) return
+        }
+        return withSelection(scopeOf(draft), async (assertActive) => {
           const mark = draft.request.headers.get(ATTEMPT_HEADER) ?? undefined
-          const rec = await bind(
-            scopeOf(draft),
-            'http.request',
-            'http',
-            mark,
-            assertActive,
-          )
+          // With gateOnPlaceholder, each owned transport call creates its own
+          // attempt. No ATTEMPT_HEADER is needed to link it to model.request.
+          const rec = ownership
+            ? await select(scopeOf(draft), 'http.request', assertActive, 'http')
+            : await bind(
+                scopeOf(draft),
+                'http.request',
+                'http',
+                mark,
+                assertActive,
+              )
           assertActive()
           const account = accountOf(rec)
           const attempt = rec.attempt
@@ -705,7 +735,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             byRequest.set(final, rec)
             draft.request = final
           })
-        }),
+        })
+      },
       scoped,
     ),
   )
@@ -715,6 +746,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       async (draft) => {
         const rec = byRequest.get(draft.request)
         if (!rec) {
+          if (ownership) return
           if (!warnedUnprovenResponse) {
             warnedUnprovenResponse = true
             warn(
@@ -799,21 +831,37 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   registrations.push(
     await ctx.session.hook(
       'experimental.ws.handshake',
-      (draft) =>
-        withSelection(scopeOf(draft), async (assertActive) => {
+      (draft) => {
+        if (ownership) {
+          const owned = owns(new Headers(draft.headers))
+          const key = keyOf(draft.sessionID, draft.kind)
+          latestTransportOwned.set(draft.sessionID, owned)
+          // Clear the previous handshake's ownership before selecting: if no
+          // account can serve, subsequent frames must not use the old attempt.
+          ownedSockets.delete(key)
+          if (!owned) return
+        }
+        return withSelection(scopeOf(draft), async (assertActive) => {
           let mark: string | undefined
           for (const name of Object.keys(draft.headers)) {
             if (name.toLowerCase() !== ATTEMPT_HEADER) continue
             mark ??= draft.headers[name]
             delete draft.headers[name]
           }
-          const rec = await bind(
-            scopeOf(draft),
-            'experimental.ws.handshake',
-            'ws',
-            mark,
-            assertActive,
-          )
+          const rec = ownership
+            ? await select(
+                scopeOf(draft),
+                'experimental.ws.handshake',
+                assertActive,
+                'ws',
+              )
+            : await bind(
+                scopeOf(draft),
+                'experimental.ws.handshake',
+                'ws',
+                mark,
+                assertActive,
+              )
           assertActive()
           const account = accountOf(rec)
           const attempt = rec.attempt
@@ -827,8 +875,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             })
             if (url !== undefined) draft.url = url
             guard(rec.scope, Object.entries(draft.headers))
+            if (ownership) ownedSockets.add(rec.key)
           })
-        }),
+        })
+      },
       scoped,
     ),
   )
@@ -839,6 +889,11 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         'experimental.ws.send',
         async (draft) => {
           const scope = scopeOf(draft)
+          if (
+            ownership &&
+            !ownedSockets.has(keyOf(scope.sessionID, scope.kind))
+          )
+            return
           const rec = liveOnSocket(scope.sessionID, scope.kind)
           const frame = await rewriteFrame({
             ...scope,
@@ -855,6 +910,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     await ctx.session.hook(
       'experimental.ws.receive',
       (draft) => {
+        if (ownership && !ownedSockets.has(keyOf(draft.sessionID, draft.kind)))
+          return
         const rec = liveOnSocket(draft.sessionID, draft.kind)
         if (!rec) return
         try {
@@ -872,6 +929,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     await ctx.session.hook(
       'retry',
       async (draft) => {
+        if (ownership && latestTransportOwned.get(draft.sessionID) !== true)
+          return
         const picked = pickForRetry(draft.sessionID)
         if (!picked) return
         const hostDecision = draft.decision
@@ -960,6 +1019,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   )
 
   const forgetSession = (sessionID: string) => {
+    latestTransportOwned.delete(sessionID)
+    for (const key of ownedSockets) {
+      if (JSON.parse(key)[0] === sessionID) ownedSockets.delete(key)
+    }
     revokeSelections(sessionID)
     for (const rec of [...attempts.values()]) {
       if (rec.scope.sessionID !== sessionID) continue
@@ -1019,6 +1082,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         abandon(rec, 'the installation was disposed')
       attempts.clear()
       pendingRetries.clear()
+      ownedSockets.clear()
+      latestTransportOwned.clear()
       listeners.clear()
       await Promise.all(
         registrations.map(async (registration) => {

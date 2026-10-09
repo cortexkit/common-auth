@@ -120,7 +120,12 @@ async function collect(
 async function runScenario(
   transport: Transport,
   turns: Turn[],
-  options: { markFrames?: boolean; receiptOnWire?: boolean } = {},
+  options: {
+    markFrames?: boolean
+    receiptOnWire?: boolean
+    apiKey?: string
+    gateOnPlaceholder?: boolean
+  } = {},
 ): Promise<ScenarioResult> {
   const root = await mkdtemp(join(tmpdir(), 'common-auth-oc2-e2e-'))
   const project = join(root, 'project')
@@ -135,14 +140,21 @@ async function runScenario(
     COMMON_AUTH_E2E_CONTROL: control,
     ...(options.markFrames ? { COMMON_AUTH_E2E_MARK_FRAMES: '1' } : {}),
     ...(options.receiptOnWire ? { COMMON_AUTH_E2E_RECEIPT_ON_WIRE: '1' } : {}),
+    ...(options.gateOnPlaceholder
+      ? { COMMON_AUTH_E2E_GATE_PLACEHOLDER: '1' }
+      : {}),
   })
   const config = {
     plugins: [pluginDir],
     providers: {
       [PROVIDER]: {
-        // The host's own credential for the provider is the placeholder, as it
-        // is after a login through registerOpenCode2AuthMethods.
-        settings: { baseURL: `${mock.url}/v1`, apiKey: PLACEHOLDER, transport },
+        // Normally use the placeholder returned by the plugin's login; the
+        // pass-through scenario supplies a stock host API key instead.
+        settings: {
+          baseURL: `${mock.url}/v1`,
+          apiKey: options.apiKey ?? PLACEHOLDER,
+          transport,
+        },
         models: { 'mock-model': { name: 'Mock model' } },
       },
     },
@@ -296,6 +308,46 @@ function expectRecipeFired(result: ScenarioResult) {
 }
 
 describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
+  test('a real host API key bypasses placeholder gated auth', async () => {
+    const result = await runScenario('http', [{ account: 'A' }], {
+      apiKey: 'sk-loopback-host-key',
+      gateOnPlaceholder: true,
+    })
+    verify(result, () => {
+      expect(result.exits).toEqual([0])
+      expect(primaries(result.wire).length).toBeGreaterThan(0)
+      expect(
+        result.wire.every(
+          (record) => record.authorization === 'Bearer sk-loopback-host-key',
+        ),
+      ).toBe(true)
+      expect(
+        result.wire.every(
+          (record) =>
+            record.identity === 'none' &&
+            !record.forbiddenSeen &&
+            !record.attemptMark &&
+            !record.receipt,
+        ),
+      ).toBe(true)
+      expect(events(result.plugin, 'setup')).toHaveLength(1)
+      for (const name of [
+        'choose',
+        'select',
+        'quota',
+        'limit',
+        'retry',
+        'end',
+        'rewrite',
+        'warn',
+      ])
+        expect(events(result.plugin, name)).toEqual([])
+      expect(
+        events(result.plugin, 'mark').every((event) => event.mark === null),
+      ).toBe(true)
+    })
+  }, 120_000)
+
   beforeAll(async () => {
     scratch = await mkdtemp(join(tmpdir(), 'common-auth-oc2-cli-'))
     const cliDir = REUSE_CLI_DIR ?? join(scratch, 'cli')
