@@ -105,14 +105,13 @@ export interface RegisterOpenCode2AuthMethodsOptions<T> {
 }
 
 /**
- * Registers the plugin's login methods with the host so that a login lands in
- * the plugin's pool and the host keeps only a placeholder credential.
+ * Registers the plugin's own login methods with the host so that a login lands
+ * in the plugin's pool and the host keeps only a placeholder credential.
  *
- * Host-driven refresh never reaches the pool: it hands back a fresh
- * placeholder whatever it is given. A real credential stored by an earlier
- * login under one of these method IDs is therefore replaced by a placeholder
- * at its first refresh; a plugin that wants to import such a login must read
- * it (`ctx.integration.connection`) before that happens.
+ * Host-driven refresh never reaches the pool: it renews only this integration's
+ * placeholder and refuses every other credential without replacing it. Plugins
+ * must register under their own method IDs; a plugin importing an existing
+ * host login should read it through `ctx.integration.connection` instead.
  */
 export async function registerOpenCode2AuthMethods<T>(
   ctx: {
@@ -160,7 +159,14 @@ export async function registerOpenCode2AuthMethods<T>(
         integrationID,
         method: login.method,
         authorize: authorizeWith(login),
-        refresh: async (credential) => placeholderFor(credential.methodID),
+        refresh: async (credential) => {
+          if (!isPlaceholderCredential(credential, integrationID)) {
+            throw new Error(
+              "This login method refreshes only its pool placeholder; sign in again with the plugin's login method.",
+            )
+          }
+          return placeholderFor(credential.methodID)
+        },
         ...(options.label === undefined ? {} : { label: () => options.label }),
       })
     }

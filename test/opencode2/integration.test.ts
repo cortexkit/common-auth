@@ -152,21 +152,20 @@ describe('registerOpenCode2AuthMethods', () => {
     await expect(pending.callback('1234')).rejects.toThrow('pool locked')
   })
 
-  test('host refresh hands back a placeholder and never calls the pool', async () => {
+  test("host refresh renews only this integration's placeholder", async () => {
     let poolCalls = 0
     const { host, registration } = setup(() => {
       poolCalls += 1
     })
     await observed(hooks.lifetime, registration)
-    const realLooking: Credential.OAuth = {
-      type: 'oauth',
-      methodID: 'acme-code' as Credential.OAuth['methodID'],
-      access: 'real-access',
-      refresh: 'real-refresh',
-      expires: NOW - 1,
-    }
-    const refreshed = await host.registered[0]!.refresh!(realLooking)
+    const expired = placeholderCredential({
+      integrationID: 'acme',
+      methodID: 'acme-code',
+      now: NOW - 1,
+    })
+    const refreshed = await host.registered[0]!.refresh!(expired)
     expect(poolCalls).toBe(0)
+    expect(refreshed).not.toBe(expired)
     expect(refreshed).toEqual(
       placeholderCredential({
         integrationID: 'acme',
@@ -175,6 +174,46 @@ describe('registerOpenCode2AuthMethods', () => {
       }),
     )
     expect(refreshed.expires).toBe(NOW + PLACEHOLDER_LIFETIME_MS)
+  })
+
+  test('host refresh refuses a real OAuth credential with the same method ID', async () => {
+    let poolCalls = 0
+    const { host, registration } = setup(() => {
+      poolCalls += 1
+    })
+    await observed(hooks.lifetime, registration)
+    const realCredential: Credential.OAuth = {
+      type: 'oauth',
+      methodID: 'acme-code' as Credential.OAuth['methodID'],
+      access: 'real-access',
+      refresh: 'real-refresh',
+      expires: NOW - 1,
+    }
+
+    await expect(host.registered[0]!.refresh!(realCredential)).rejects.toThrow(
+      "This login method refreshes only its pool placeholder; sign in again with the plugin's login method.",
+    )
+    expect(poolCalls).toBe(0)
+  })
+
+  test("host refresh refuses another integration's placeholder", async () => {
+    let poolCalls = 0
+    const { host, registration } = setup(() => {
+      poolCalls += 1
+    })
+    await observed(hooks.lifetime, registration)
+    const otherPlaceholder = placeholderCredential({
+      integrationID: 'other',
+      methodID: 'acme-code',
+      now: NOW - 1,
+    })
+
+    await expect(
+      host.registered[0]!.refresh!(otherPlaceholder),
+    ).rejects.toThrow(
+      "This login method refreshes only its pool placeholder; sign in again with the plugin's login method.",
+    )
+    expect(poolCalls).toBe(0)
   })
 
   test('placeholder credentials are recognised and carry no routable secret', () => {

@@ -1704,6 +1704,45 @@ expect_red = ['^OpenCode\s2\splaceholder\sownership\san\sowned\splaceholder\swit
 expect_message = 'Expected constructor:'
 
 [[control]]
+id = 'opencode2-refresh-issues-fresh-placeholder'
+guards = 'an owned placeholder refresh receives a new expiry without consulting the pool'
+file = 'src/opencode2/integration.ts'
+old = 'return placeholderFor(credential.methodID)'
+new = 'return credential // NON-VACUITY BREAK: keep the expired placeholder'
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^host refresh renews only this integration.* placeholder$']
+expect_message = 'expect(received).not.toBe(expected)'
+
+[[control]]
+id = 'opencode2-refresh-refuses-real-login'
+guards = 'a real OAuth login under the registered method ID is not replaced'
+file = 'src/opencode2/integration.ts'
+old = '''          if (!isPlaceholderCredential(credential, integrationID)) {'''
+new = '''          if (!isPlaceholderCredential(credential, integrationID) && credential.access.startsWith(PLACEHOLDER_PREFIX)) { // NON-VACUITY BREAK: allow real OAuth credentials'''
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^host refresh refuses a real OAuth credential with the same method ID$']
+expect_message = 'expected a rejection'
+
+[[control]]
+id = 'opencode2-refresh-refuses-other-integration'
+guards = 'a placeholder belonging to another integration is not refreshed'
+file = 'src/opencode2/integration.ts'
+old = 'isPlaceholderCredential(credential, integrationID)'
+new = 'isPlaceholderCredential(credential) // NON-VACUITY BREAK: accept any integration placeholder'
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^host refresh refuses another integration.* placeholder$']
+expect_message = 'expected a rejection'
+
+[[control]]
 id = 'opencode2-owned-switch-retry'
 guards = 'after switching to an API key, retry leaves the host decision untouched despite older owned refusals'
 file = 'src/opencode2/install.ts'
