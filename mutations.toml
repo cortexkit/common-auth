@@ -3,8 +3,12 @@
 # and names the Bun test(s) that must fail because of it.
 #
 # Command-row `{test}` values are passed to Bun as `-t` regexes over full test
-# names. Rows with JUnit breadth audits use literal leaf names so `broad_id =
-# '{name}'` maps the same testcase. `Ran {count} test` verifies one named test
+# names (describe names and the test name joined by single spaces). Most ids are
+# anchored (^...$) and escaped, with `\s` for each space, because ckdev-mutate
+# refuses whitespace in an id. Rows with a JUnit breadth audit (`broad_command`)
+# use the literal leaf name instead, so `broad_id = '{name}'` maps the same
+# testcase in the report; without those fields a `--broad` run cannot tell the
+# named failure from collateral failures in the same file. `Ran {count} test` verifies one named test
 # executes on both clean and mutated trees. Fixtures import from `dist/`, so the
 # prebuild steps install and build before the baseline and each mutant. Replay
 # with the Bun version CI pins (1.3.14): `rpc-declared-oversize-413-half-closes`
