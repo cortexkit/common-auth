@@ -1037,7 +1037,7 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | commands | A credential-shaped field from a plugin section is scrubbed and its name warned | reference/openai-auth/packages/core/src/commands.ts | a plugin section leaking a credential-shaped field is scrubbed and the dropped names are warned, never the values |
 | commands | Apply results pass through the same scrub | reference/openai-auth/packages/core/src/commands.ts | an apply result passes through the same scrub as the dialog payload |
 | commands | Sections come in the fixed order | new (neither copy) | sections come in the fixed order whatever order the plugin supplies them in |
-| commands | Accounts lists the roster with state, identity and quota summary | new (neither copy) | accounts lists the roster in order with enabled state, identity and quota summary |
+| commands | Accounts lists the roster with state as status and type and identity as detail | new (neither copy) | accounts lists the roster in order with enabled state as status and type and identity as detail |
 | commands | Add goes through the plugin's login into the store | new (neither copy) | add through a ready login adds the account to the store |
 | commands | Remove needs confirmation and honours protect | new (neither copy) | remove deletes the account from the store only once confirmed, and protect refuses an id |
 | commands | Disable and enable reach the store | new (neither copy) | disable and enable toggle the account in the store |
