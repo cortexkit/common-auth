@@ -27,9 +27,19 @@ export class PiSlotError extends Error {
 export interface PiSlotOptions {
   authPath: string
   provider: string
-  /** A dedicated private directory is recommended; do not share this file between slots. */
+  /**
+   * Where the provider's original Pi login is kept while the vault serves.
+   * Put it in a private directory, and give each provider its own file: one
+   * stash holds one provider's original login, and a second provider writing
+   * to it would overwrite the first one's backup.
+   */
   stashPath: string
-  /** A non-secret, deliberately unusable literal key: no leading ! and no $ anywhere. */
+  /**
+   * The api_key Pi stores in the slot while the vault serves. It is a fixed,
+   * non-secret string that no provider accepts. Pi runs a key starting with
+   * `!` as a shell command and expands `$NAME` from the environment, so the
+   * placeholder may contain neither.
+   */
   placeholderKey: string
   lockTimeoutMs?: number
 }
@@ -250,7 +260,11 @@ async function atomicWrite(
   })
 }
 
-/** Production entry point; callers refresh Pi's model registry after a successful transition. */
+/**
+ * Production entry point. Pi caches which models are usable; after a
+ * successful transition the extension calls `ctx.modelRegistry.refresh()` so
+ * Pi re-reads the slot it just changed.
+ */
 export function openPiSlot(options: PiSlotOptions): PiSlot {
   return createPiSlot(options)
 }
