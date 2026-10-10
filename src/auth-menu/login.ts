@@ -50,10 +50,26 @@ export function openBrowserForMenu(
 ): boolean {
   try {
     if (platform === 'win32') {
-      execFileSync('cmd', ['/c', 'start', '', url], {
-        stdio: 'ignore',
-        timeout: 3000,
-      })
+      // Start-Process opens the URL with its associated app. Base64 UTF-16LE
+      // keeps cmd from parsing the URL; Microsoft documents both options:
+      // https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-7.5
+      // https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1#-encodedcommand-base64encodedcommand
+      const command = `Start-Process '${url.replaceAll("'", "''")}'`
+      execFileSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-WindowStyle',
+          'Hidden',
+          '-EncodedCommand',
+          Buffer.from(command, 'utf16le').toString('base64'),
+        ],
+        {
+          stdio: 'ignore',
+          timeout: 3000,
+        },
+      )
     } else {
       execFileSync(platform === 'darwin' ? 'open' : 'xdg-open', [url], {
         stdio: 'ignore',

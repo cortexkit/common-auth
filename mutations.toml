@@ -4683,3 +4683,18 @@ command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t 
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^pi\sslot\sraces\sexpired\sexit\scleanup\sleaves\smatching\sdirectory\suntouched$']
 expect_message = 'ENOENT'
+
+# Both Bun versions use this stable label for a failed command-string equality;
+# the assertion diff may vary without changing which test caught the mutation.
+[[control]]
+id = 'auth-menu-windows-oauth-url'
+guards = 'Windows opener preserves every OAuth URL character in its encoded PowerShell command'
+file = 'src/auth-menu/login.ts'
+old = '''const command = `Start-Process '${url.replaceAll("'", "''")}'`'''
+new = '''const command = `Start-Process '${url}'` /* NON-VACUITY BREAK */'''
+test_file = 'test/auth-menu/login.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/auth-menu/login.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^auth\smenu\sbrowser\sopener\sWindows\sencodes\san\sOAuth\sURL\sintact\swithout\sa\sshell$']
+expect_message = 'expect(received).toBe(expected)'
