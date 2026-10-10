@@ -21,6 +21,7 @@ import {
   type ClaustrumEnrollmentClient,
   ClaustrumEnrollmentManager,
   classifyEnrollmentError,
+  disconnectClaustrumEnrollment,
   enrollmentAuthority,
   enrollmentName,
   getClaustrumEnrollmentPaths,
@@ -28,6 +29,7 @@ import {
   readClaustrumEnrollmentStatus,
   readClaustrumEnrollmentToken,
 } from '../../src/claustrum/index.ts'
+import { acquireRefreshFileLock } from '../../src/fs/index.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 
@@ -256,6 +258,176 @@ describe('enrollmentAuthority', () => {
         ),
       ),
     ).toEqual(mtimesBefore)
+  })
+})
+
+/** An approved ceremony with its token on disk, as a completed Connect leaves it. */
+async function seedApproved(
+  paths: Awaited<ReturnType<typeof fixture>>,
+  proposedName = CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+) {
+  await writeFile(
+    paths.statePath,
+    JSON.stringify({
+      version: 1,
+      phase: 'approved',
+      proposedName,
+      tokenGeneration: 1,
+      updatedAt: 1,
+    }),
+    { mode: 0o600 },
+  )
+  await writeFile(
+    paths.tokenPath,
+    JSON.stringify({ token: secret, token_generation: 1 }),
+    { mode: 0o600 },
+  )
+}
+
+async function exists(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
+    () => false,
+  )
+}
+
+describe('disconnectClaustrumEnrollment', () => {
+  test('removes the token and the state so enrollmentAuthority reports local', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+
+    expect(
+      await disconnectClaustrumEnrollment(
+        paths,
+        CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      ),
+    ).toBe('disconnected')
+
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('local')
+    expect(await exists(paths.tokenPath)).toBe(false)
+    expect(await exists(paths.statePath)).toBe(false)
+  })
+
+  test('returns idle when neither file exists', async () => {
+    const paths = await fixture()
+
+    expect(
+      await disconnectClaustrumEnrollment(
+        paths,
+        CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      ),
+    ).toBe('idle')
+  })
+
+  test('a crash after the token deletion stays vault and a repeat call reaches local', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    // What a crash between the two deletions leaves: the token gone, the
+    // approved state still there.
+    await rm(paths.tokenPath)
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+
+    expect(
+      await disconnectClaustrumEnrollment(
+        paths,
+        CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      ),
+    ).toBe('disconnected')
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('local')
+  })
+
+  test('keeps the state when the token cannot be removed', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    // A non-empty directory at the token path makes its deletion fail, which
+    // stands in for a crash before the token is gone.
+    await rm(paths.tokenPath)
+    await mkdir(paths.tokenPath)
+    await writeFile(join(paths.tokenPath, 'keep'), 'x')
+    const stateBefore = await readFile(paths.statePath, 'utf8')
+
+    await expect(
+      disconnectClaustrumEnrollment(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).rejects.toThrow()
+
+    expect(await readFile(paths.statePath, 'utf8')).toBe(stateBefore)
+  })
+
+  test('refuses state for another consumer and leaves both files unchanged', async () => {
+    const paths = await fixture()
+    await seedApproved(paths, CLAUSTRUM_PI_ENROLLMENT_NAME)
+    const stateBefore = await readFile(paths.statePath, 'utf8')
+    const tokenBefore = await readFile(paths.tokenPath, 'utf8')
+
+    await expect(
+      disconnectClaustrumEnrollment(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).rejects.toThrow('different consumer')
+
+    expect(await readFile(paths.statePath, 'utf8')).toBe(stateBefore)
+    expect(await readFile(paths.tokenPath, 'utf8')).toBe(tokenBefore)
+  })
+
+  test('returns busy while the ceremony lock is held and deletes nothing', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    const stateBefore = await readFile(paths.statePath, 'utf8')
+    const tokenBefore = await readFile(paths.tokenPath, 'utf8')
+    const held = await acquireRefreshFileLock({
+      name: 'ceremony',
+      path: paths.statePath,
+      ttlMs: 30_000,
+    })
+    if (!held) throw new Error('fixture could not take the ceremony lock')
+    try {
+      expect(
+        await disconnectClaustrumEnrollment(
+          paths,
+          CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        ),
+      ).toBe('busy')
+    } finally {
+      await held.release()
+    }
+
+    expect(await readFile(paths.statePath, 'utf8')).toBe(stateBefore)
+    expect(await readFile(paths.tokenPath, 'utf8')).toBe(tokenBefore)
+  })
+
+  test('removes only the token and state files from their directory', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    const directory = dirname(paths.statePath)
+    const others = [
+      'accounts.json',
+      'opencode-enrollment.json.bak',
+      'pi-enrollment.json',
+      'pi-enrollment-state.json',
+    ]
+    for (const name of others)
+      await writeFile(join(directory, name), name, { mode: 0o600 })
+    await mkdir(join(directory, 'nested'))
+
+    expect(
+      await disconnectClaustrumEnrollment(
+        paths,
+        CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      ),
+    ).toBe('disconnected')
+
+    expect((await readdir(directory)).sort()).toEqual(
+      [...others, 'nested'].sort(),
+    )
+    for (const name of others)
+      expect(await readFile(join(directory, name), 'utf8')).toBe(name)
   })
 })
 

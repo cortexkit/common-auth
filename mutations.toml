@@ -4025,6 +4025,40 @@ test_count_pattern = 'Ran {count} test'
 expect_red = ['^enrollmentAuthority\streats\sa\scorrupt\sstate\sfile\swithout\sa\stoken\sas\sunreadable$']
 expect_message = '/Expected: "unreadable"\s+Received: "local"/'
 
+# --- Claustrum disconnect (0.13.0) ---
+# Disconnect removes the token and then the ceremony state under the ceremony
+# lock. Keeping the state leaves the host in vault mode with no token, which
+# refuses every request; skipping the shared lock lets a disconnect race a
+# reconcile() that is writing a token.
+
+[[control]]
+id = 'claustrum-disconnect-removes-state'
+guards = 'disconnect removes the approved ceremony state as well as the token, so the host leaves vault mode instead of staying approved-but-broken'
+file = 'src/claustrum/enrollment.ts'
+old = 'const removedState = await removeIfPresent(paths.statePath)'
+new = 'const removedState = false // NON-VACUITY BREAK'
+test_file = 'test/claustrum/enrollment.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^disconnectClaustrumEnrollment\sremoves\sthe\stoken\sand\sthe\sstate\sso\senrollmentAuthority\sreports\slocal$']
+expect_message = '/Expected: "local"\s+Received: "vault"/'
+
+[[control]]
+id = 'claustrum-disconnect-takes-ceremony-lock'
+guards = 'disconnect takes the same ceremony lock as reconcile() and deletes nothing while another process holds it'
+file = 'src/claustrum/enrollment.ts'
+old = '''    // reconcile() can never land after this removes the files.
+    name: 'ceremony','''
+new = '''    // reconcile() can never land after this removes the files.
+    name: 'disconnect', // NON-VACUITY BREAK'''
+test_file = 'test/claustrum/enrollment.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^disconnectClaustrumEnrollment\sreturns\sbusy\swhile\sthe\sceremony\slock\sis\sheld\sand\sdeletes\snothing$']
+expect_message = '/Expected: "busy"\s+Received: "disconnected"/'
+
 # --- OpenCode 2 vault activation method (0.13.0) ---
 # The vault method must call the plugin's activation, never its pool login,
 # hand the host only this integration's placeholder, fail the host login when

@@ -956,3 +956,68 @@ export async function resetClaustrumEnrollmentState(
     await lock.release()
   }
 }
+
+export type ClaustrumEnrollmentDisconnectResult =
+  | 'disconnected'
+  | 'idle'
+  | 'busy'
+
+/** Remove one file, reporting whether it existed; a missing file is not an error. */
+async function removeIfPresent(path: string): Promise<boolean> {
+  try {
+    await unlink(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
+/**
+ * Disconnect this host from the vault on disk: remove its enrollment token,
+ * then its ceremony state, so `enrollmentAuthority` reports `local` again.
+ * This is the disconnect every plugin uses. Removing only the token is not
+ * enough: an approved state without a token is still vault mode and refuses,
+ * by design. It never contacts the credential daemon, so the enrollment stays
+ * approved in the vault until the operator revokes it there; a later Connect
+ * starts a new ceremony. A pending request is abandoned the same way.
+ *
+ * Takes the ceremony lock `reconcile()` and `resetClaustrumEnrollmentState`
+ * take, and returns `busy` without deleting anything while another process
+ * holds it. State naming another consumer refuses with `wrong-consumer` and
+ * both files stay. The token goes first: a crash between the two deletions
+ * leaves an approved state without a token, which is still vault mode (it
+ * refuses rather than falls back to local accounts), and calling this again
+ * finishes the job. Returns `idle` when neither file exists. Nothing else in
+ * the directory is touched. The token is removed without being parsed, so a
+ * corrupt token does not stand in the way; an unreadable or malformed state
+ * file refuses, because its owner cannot be checked.
+ */
+export async function disconnectClaustrumEnrollment(
+  paths: ClaustrumEnrollmentPaths,
+  proposedName: string,
+): Promise<ClaustrumEnrollmentDisconnectResult> {
+  await ensurePrivateDirectory(dirname(paths.statePath))
+  const lock = await acquireRefreshFileLock({
+    // The same lock as the ceremony, so a token written by a concurrent
+    // reconcile() can never land after this removes the files.
+    name: 'ceremony',
+    path: paths.statePath,
+    ttlMs: ENROLLMENT_LOCK_TTL_MS,
+    renew: true,
+  })
+  if (!lock) return 'busy'
+  try {
+    const value = await readBoundedJson(paths.statePath)
+    if (value !== undefined) {
+      const state = decodeEnrollmentState(value)
+      if (state.proposedName !== proposedName) throw wrongConsumer()
+    }
+    await lock.assertOwned()
+    const removedToken = await removeIfPresent(paths.tokenPath)
+    const removedState = await removeIfPresent(paths.statePath)
+    return removedToken || removedState ? 'disconnected' : 'idle'
+  } finally {
+    await lock.release()
+  }
+}
