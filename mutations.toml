@@ -4178,3 +4178,19 @@ command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integratio
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^registerOpenCode2AuthMethods\svault\sactivation\svault\srefresh\srenews\sonly\sthe\svault\smethod.s\sown\splaceholder$']
 expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-disconnect-rechecks-lease'
+guards = 'disconnect rechecks ceremony-lock ownership after removing the token and before deleting state written by a successor'
+file = 'src/claustrum/enrollment.ts'
+old = '''    const removedToken = await removeIfPresent(paths.tokenPath)
+    await lock.assertOwned()
+    const removedState = await removeIfPresent(paths.statePath)'''
+new = '''    const removedToken = await removeIfPresent(paths.tokenPath)
+    const removedState = await removeIfPresent(paths.statePath) // NON-VACUITY BREAK'''
+test_file = 'test/claustrum/enrollment.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^disconnectClaustrumEnrollment\srejects\sa\slost\sceremony\slease\swithout\sdeleting\ssuccessor\sstate$']
+expect_message = 'error:'

@@ -1,5 +1,6 @@
-import { describe, expect } from 'bun:test'
+import { describe, expect, spyOn } from 'bun:test'
 import { createHash } from 'node:crypto'
+import * as fs from 'node:fs/promises'
 import {
   chmod,
   mkdir,
@@ -29,7 +30,11 @@ import {
   readClaustrumEnrollmentStatus,
   readClaustrumEnrollmentToken,
 } from '../../src/claustrum/index.ts'
-import { acquireRefreshFileLock } from '../../src/fs/index.ts'
+import {
+  acquireRefreshFileLock,
+  LockOwnershipError,
+  lockPathFor,
+} from '../../src/fs/index.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 
@@ -443,6 +448,50 @@ describe('disconnectClaustrumEnrollment', () => {
 
     expect(await readFile(paths.statePath, 'utf8')).toBe(stateBefore)
     expect(await readFile(paths.tokenPath, 'utf8')).toBe(tokenBefore)
+  })
+
+  test('rejects a lost ceremony lease without deleting successor state', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    const successorState = `${JSON.stringify({
+      version: 1,
+      phase: 'pending',
+      proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      requestSecret: secret,
+      requestId: 'successor-request',
+      createdAt: 2,
+      updatedAt: 2,
+    })}\n`
+    const successorLockPath = lockPathFor(paths.statePath, 'ceremony')
+    const originalUnlink = fs.unlink
+    const unlinkSpy = spyOn(fs, 'unlink').mockImplementation(
+      async (...args: Parameters<typeof fs.unlink>) => {
+        await originalUnlink(...args)
+        if (args[0] !== paths.tokenPath) return
+
+        // Publish the successor's state and lease after the token is removed.
+        await writeFile(paths.statePath, successorState, { mode: 0o600 })
+        await writeFile(
+          successorLockPath,
+          `${JSON.stringify({
+            ownerId: 'successor',
+            expiresAt: Date.now() + 30_000,
+          })}\n`,
+          { mode: 0o600 },
+        )
+      },
+    )
+    try {
+      await expect(
+        disconnectClaustrumEnrollment(
+          paths,
+          CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        ),
+      ).rejects.toBeInstanceOf(LockOwnershipError)
+      expect(await readFile(paths.statePath, 'utf8')).toBe(successorState)
+    } finally {
+      unlinkSpy.mockRestore()
+    }
   })
 
   test('removes only the token and state files from their directory', async () => {

@@ -1029,6 +1029,7 @@ export async function disconnectClaustrumEnrollment(
     if (state && state.proposedName !== proposedName) throw wrongConsumer()
     await lock.assertOwned()
     const removedToken = await removeIfPresent(paths.tokenPath)
+    await lock.assertOwned()
     const removedState = await removeIfPresent(paths.statePath)
     return removedToken || removedState ? 'disconnected' : 'idle'
   } finally {
