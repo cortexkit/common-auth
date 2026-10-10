@@ -4639,7 +4639,9 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^pi\sslot\sraces\sexpired\slease\srefuses\sauth\srename\swith\smatching\sdirectory$']
-expect_message = 'Expected promise that rejects'
+# The write goes through, so release later finds the lease expired and the
+# refusal still arrives; the unchanged-bytes check is what catches the break.
+expect_message = 'expect(await readFile(f.authPath)).toEqual(auth)'
 
 [[control]]
 id = 'pi-slot-expired-stash-rename'
@@ -4652,7 +4654,9 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^pi\sslot\sraces\sexpired\slease\srefuses\sstash\srename\swith\smatching\sdirectory$']
-expect_message = 'Expected promise that rejects'
+# The write goes through, so release later finds the lease expired and the
+# refusal still arrives; the unchanged-bytes check is what catches the break.
+expect_message = 'expect(await readFile(f.authPath)).toEqual(auth)'
 
 [[control]]
 id = 'pi-slot-expired-release'
