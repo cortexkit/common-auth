@@ -4697,4 +4697,4 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/auth-menu/login.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^auth\smenu\sbrowser\sopener\sWindows\sencodes\san\sOAuth\sURL\sintact\swithout\sa\sshell$']
-expect_message = 'expect(received).toBe(expected)'
+expect_message = 'expect(received).toEqual(expected)'
