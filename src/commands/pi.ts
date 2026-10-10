@@ -55,11 +55,35 @@ function withLines(title: string, lines: readonly string[]): string {
   return lines.length > 0 ? `${title}\n${lines.join('\n')}` : title
 }
 
+/** A row as one line of text: its label, then its status when it has one. */
+function rowText(item: MenuItem): string {
+  return item.status ? `${item.label} · ${item.status}` : item.label
+}
+
+/**
+ * The read-only part of a section's select title: its lines, then each item
+ * that has no actions, under its group's header. Such an item does nothing
+ * when chosen, so it is shown as text rather than offered as an option. Pi's
+ * `select` cannot put text between options, so the headers of groups whose
+ * rows are all selectable are not shown.
+ */
+function sectionText(section: MenuSection): string[] {
+  const text = [...section.lines]
+  let header: string | undefined
+  for (const item of section.items) {
+    if (item.actions.length > 0) continue
+    if (item.group !== undefined && item.group !== header) text.push(item.group)
+    header = item.group
+    text.push(item.group !== undefined ? `  ${rowText(item)}` : rowText(item))
+  }
+  return text
+}
+
 function itemTitle(item: MenuItem): string {
   const lines = item.detail ? [item.detail] : []
   for (const [name, value] of Object.entries(item.facts ?? {}))
     lines.push(`${name}: ${String(value)}`)
-  return withLines(item.label, lines)
+  return withLines(rowText(item), lines)
 }
 
 /** One knob's value, or undefined when the user backed out or typed nonsense. */
@@ -142,11 +166,13 @@ async function askValues(
 type SectionChoice =
   | { kind: 'item'; item: MenuItem }
   | { kind: 'action'; action: MenuAction }
+  | { kind: 'back' }
 
 /**
  * Runs one invocation of the slash command on Pi: sections, then an item or
  * a section action, then the action's inputs and confirmation; after each
- * apply the user is back in the same section with the refreshed menu. Backing
+ * apply the user is back in the same section with the refreshed menu. Each
+ * section's list ends with Back, which returns to the section list; backing
  * out of the section list ends the invocation.
  */
 export async function runPiCommandMenu(
@@ -178,34 +204,33 @@ export async function runPiCommandMenu(
         (entry) => entry.id === chosen,
       )
       if (!section) break
+      // Only rows that do something are options; the rest is title text.
       const entries: Array<{ label: string; value: SectionChoice }> = [
-        ...section.items.map((item) => ({
-          label: item.detail ? `${item.label}: ${item.detail}` : item.label,
-          value: { kind: 'item' as const, item },
-        })),
+        ...section.items
+          .filter((item) => item.actions.length > 0)
+          .map((item) => ({
+            label: rowText(item),
+            value: { kind: 'item' as const, item },
+          })),
         ...section.actions.map((action) => ({
           label: action.label,
           value: { kind: 'action' as const, action },
         })),
       ]
-      if (entries.length === 0) {
-        ui.notify(section.lines.join('\n') || 'Nothing to do here.')
+      const text = sectionText(section)
+      if (entries.length === 0 && text.length === 0) {
+        ui.notify('Nothing to do here.')
         break
       }
-      const choice = await pick(
-        ui,
-        withLines(section.title, section.lines),
-        entries,
-      )
-      if (!choice) break
+      const choice = await pick(ui, withLines(section.title, text), [
+        ...entries,
+        { label: 'Back', value: { kind: 'back' as const } },
+      ])
+      if (!choice || choice.kind === 'back') break
       let action: MenuAction | undefined
       let item: MenuItem | undefined
       if (choice.kind === 'item') {
         item = choice.item
-        if (item.actions.length === 0) {
-          ui.notify(itemTitle(item))
-          continue
-        }
         action = await pick(
           ui,
           itemTitle(item),

@@ -71,6 +71,11 @@ export interface MenuAction {
   id: string
   label: string
   description?: string
+  /**
+   * The header a section-level action is listed under (`Actions`). See
+   * `MenuSection` for how renderers draw groups.
+   */
+  group?: string
   knobs: MenuKnob[]
   /** Present when the action must be confirmed before it is applied. */
   confirm?: MenuConfirmation
@@ -94,6 +99,13 @@ export interface MenuItem {
   id: string
   label: string
   detail?: string
+  /** The header the item is listed under (`Accounts`); see `MenuSection`. */
+  group?: string
+  /**
+   * A short value shown right-aligned beside the label (`enabled`,
+   * `5h 58% left`): an OpenCode dialog option's `footer`.
+   */
+  status?: string
   account?: MenuAccount
   /**
    * Extra name/value pairs a drawer may list under the item. Plugin data
@@ -103,11 +115,26 @@ export interface MenuItem {
   actions: MenuAction[]
 }
 
+/**
+ * One section of the menu. How every renderer draws it:
+ *
+ * - `lines` are read-only text shown above the rows. They are never drawn
+ *   as options a user can select: a line does nothing when pressed.
+ * - The rows are the items, then the section-level actions, in that order.
+ *   When a row's `group` differs from the previous row's, a header naming
+ *   the group is drawn first. A header is never selectable (on OpenCode it
+ *   is the option's `category`).
+ * - An item with no actions does nothing, so it is drawn as text, never as
+ *   a selectable option (on OpenCode, `disabled`).
+ * - An item's `status` is drawn right-aligned beside its label (on
+ *   OpenCode, `footer`); its `detail` and an action's `description` are
+ *   the secondary text (`description`).
+ */
 export interface MenuSection {
   id: string
   slot: SectionSlot
   title: string
-  /** Read-only lines shown above the items. */
+  /** Read-only text shown above the rows; never a selectable option. */
   lines: string[]
   items: MenuItem[]
   actions: MenuAction[]
@@ -190,6 +217,8 @@ type ActionBase = {
   id: string
   label: string
   description?: string
+  /** The header a section-level action is listed under; see `MenuSection`. */
+  group?: string
   knobs?: MenuKnob[]
   run(input: ActionInput): Promise<string | ActionOutcome>
 }
@@ -208,11 +237,16 @@ export interface ItemDefinition {
   id: string
   label: string
   detail?: string
+  /** The header the item is listed under; see `MenuSection`. */
+  group?: string
+  /** A short value shown right-aligned beside the label. */
+  status?: string
   facts?: Record<string, unknown>
   actions?: ActionDefinition[]
 }
 
 export interface SectionContent {
+  /** Read-only text; renderers never make a line selectable. */
   lines?: string[]
   items?: ItemDefinition[]
   actions?: ActionDefinition[]

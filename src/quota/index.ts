@@ -1,5 +1,14 @@
 export type { QuotaCodec } from './codec.js'
 export { quotaCodec } from './codec.js'
+export type { QuotaTextForm, QuotaTextOptions } from './format.js'
+export {
+  formatQuota,
+  NO_LIMITS_REPORTED,
+  NO_QUOTA_READING,
+  QUOTA_STALE_AFTER_MS,
+  quotaTextParts,
+  quotaWindowName,
+} from './format.js'
 export type {
   CreditBudgetCleared,
   CreditBudgetEntry,

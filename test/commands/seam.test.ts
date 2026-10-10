@@ -121,4 +121,54 @@ describe('command payload seam', () => {
       fields: ['payload.menu.sections[4].facts.sessionToken'],
     })
   })
+
+  it('a plugin section’s groups and statuses cross the seam, and nothing else rides along', async () => {
+    const menu = m.menu({
+      extras: [
+        {
+          id: 'fast',
+          title: 'Fast mode',
+          build: () => ({
+            items: [
+              {
+                id: 'opus',
+                label: 'Opus',
+                group: 'Models',
+                status: 'on',
+                stray: 'dropped',
+              } as never,
+            ],
+            actions: [
+              {
+                id: 'toggle',
+                label: 'Turn fast mode off',
+                group: 'Actions',
+                run: async () => 'Off.',
+              },
+            ],
+          }),
+        },
+      ],
+    })
+    const payload = await menu.open(notes().invocation)
+    const fast = payload.menu.sections.find((s) => s.id === 'fast')
+    expect(fast?.items).toEqual([
+      { id: 'opus', label: 'Opus', group: 'Models', status: 'on', actions: [] },
+    ])
+    expect(fast?.actions).toEqual([
+      {
+        id: 'toggle',
+        label: 'Turn fast mode off',
+        group: 'Actions',
+        knobs: [],
+      },
+    ])
+    const result = await apply(menu, notes().invocation, {
+      sectionId: 'fast',
+      actionId: 'toggle',
+    })
+    expect(
+      result.menu.sections.find((s) => s.id === 'fast')?.items[0],
+    ).toMatchObject({ group: 'Models', status: 'on' })
+  })
 })

@@ -61,24 +61,25 @@ describe('command menu sections', () => {
     )
   })
 
-  it('accounts lists the roster in order with enabled state, identity and quota summary', async () => {
+  it('accounts lists the roster in order with enabled state as status and type and identity as detail', async () => {
     await populate(m.store)
     await m.store.disable('b', 'manual')
     const accounts = section(
       await m.menu().open(notes().invocation),
       'accounts',
     )
-    expect(accounts.lines).toEqual(['3 account(s), 2 enabled.'])
+    expect(accounts.lines).toEqual(['3 accounts, 2 enabled'])
     expect(
-      accounts.items.map((item) => [item.id, item.label, item.detail]),
+      accounts.items.map((item) => [
+        item.id,
+        item.label,
+        item.status,
+        item.detail,
+      ]),
     ).toEqual([
-      [
-        'a',
-        'Alice',
-        'OAuth · enabled · acct-a · secondary 90% left · primary 58% left · credits 75% left',
-      ],
-      ['b', 'acct-b', 'OAuth · disabled (manual) · acct-b · primary 1% left'],
-      ['k', 'Keyed', 'API key · enabled · no quota reading yet'],
+      ['a', 'Alice', 'enabled', 'OAuth · acct-a'],
+      ['b', 'acct-b', 'disabled', 'OAuth · acct-b · disabled: manual'],
+      ['k', 'Keyed', 'enabled', 'API key'],
     ])
     expect(accounts.items.map((item) => item.actions.map((a) => a.id))).toEqual(
       [
@@ -221,12 +222,8 @@ describe('command menu sections', () => {
     const quota = section(await menu.open(notes().invocation), 'quota')
     expect(quota.items[0]).toMatchObject({
       id: 'a',
-      detail: 'secondary 90% left · primary 58% left · credits 75% left',
-      facts: {
-        primary: '42% used, resets in 1h 30m',
-        secondary: '10% used',
-        credits: '75% left',
-      },
+      status: '5h 58% left · 7d 90% left · credits 75% left',
+      detail: '5h 58% left, resets 2h · 7d 90% left · credits 75% left',
     })
     const all = await apply(menu, notes().invocation, {
       sectionId: 'quota',
@@ -235,7 +232,7 @@ describe('command menu sections', () => {
     })
     expect(all).toMatchObject({
       ok: true,
-      text: 'Checked quota for 3 account(s).',
+      text: 'Checked quota for 3 accounts.',
     })
     const one = await apply(menu, notes().invocation, {
       sectionId: 'quota',
@@ -257,8 +254,8 @@ describe('command menu sections', () => {
     const n = notes()
     const routing = section(await menu.open(n.invocation), 'routing')
     expect(routing.lines).toEqual([
-      'Mode: Ordered (roster order).',
-      'Roster order: a, b, k.',
+      'Mode: Ordered (roster order)',
+      'Roster order: a, b, k',
     ])
     expect(routing.actions[0]?.knobs[0]).toMatchObject({
       kind: 'choice',
@@ -282,9 +279,9 @@ describe('command menu sections', () => {
     expect(
       result.menu.sections.find((entry) => entry.id === 'routing')?.lines,
     ).toEqual([
-      'Mode: Main first.',
-      'Roster order: a, b, k.',
-      'Tried in order: b, a, k.',
+      'Mode: Main first',
+      'Roster order: a, b, k',
+      'Tried in order: b, a, k',
     ])
     const refused = await apply(menu, n.invocation, {
       sectionId: 'routing',
@@ -300,7 +297,7 @@ describe('command menu sections', () => {
     const menu = m.menu()
     const n = notes()
     const limits = section(await menu.open(n.invocation), 'limits')
-    expect(limits.lines[0]).toBe('Killswitch: off.')
+    expect(limits.lines).toEqual(['Killswitch off'])
     expect(limits.items[0]?.actions[0]?.knobs.map((knob) => knob.id)).toEqual([
       'secondary',
       'primary',
@@ -334,7 +331,7 @@ describe('command menu sections', () => {
     })
     expect(tooHigh).toMatchObject({
       ok: false,
-      text: 'Minimum % left for primary must be at most 100.',
+      text: 'Minimum % left for 5h must be at most 100.',
     })
     // Clearing the last floor drops the account's entry.
     await apply(menu, n.invocation, {
@@ -346,5 +343,79 @@ describe('command menu sections', () => {
     expect((await m.s.config()).killswitch).toEqual({ enabled: true })
     // The pool itself is untouched by every settings write.
     expect(await rosterIds(m.store)).toEqual(['a', 'b', 'k'])
+  })
+
+  it('built-in sections list accounts and then actions under group headers, with summaries only as short lines', async () => {
+    await populate(m.store)
+    const menu = m.menu({
+      accounts: {
+        login: {
+          run: async () => ({ status: 'cancelled' }),
+        },
+      },
+    })
+    const payload = await menu.open(notes().invocation)
+    // Each row's group, in drawing order: the items, then the section actions.
+    const rows = (id: string) => {
+      const found = section(payload, id)
+      return [
+        ...found.items.map((item) => [item.group, item.label, item.status]),
+        ...found.actions.map((action) => [action.group, action.label]),
+      ]
+    }
+    expect(rows('accounts')).toEqual([
+      ['Accounts', 'Alice', 'enabled'],
+      ['Accounts', 'acct-b', 'enabled'],
+      ['Accounts', 'Keyed', 'enabled'],
+      ['Actions', 'Add account'],
+    ])
+    expect(rows('quota')).toEqual([
+      ['Accounts', 'Alice', '5h 58% left · 7d 90% left · credits 75% left'],
+      ['Accounts', 'acct-b', '5h 1% left'],
+      ['Accounts', 'Keyed', 'no quota reading yet'],
+      ['Actions', 'Check now'],
+    ])
+    await apply(menu, notes().invocation, {
+      sectionId: 'limits',
+      itemId: 'a',
+      actionId: 'floors',
+      values: { primary: 10, secondary: 20 },
+    })
+    const limits = section(await menu.open(notes().invocation), 'limits')
+    expect(
+      limits.items.map((item) => [item.group, item.label, item.status]),
+    ).toEqual([
+      ['Floors · killswitch off', 'Alice', '7d ≥20% · 5h ≥10%'],
+      ['Floors · killswitch off', 'acct-b', 'no floors'],
+      ['Floors · killswitch off', 'Keyed', 'no floors'],
+    ])
+    expect(limits.actions).toMatchObject([
+      {
+        id: 'killswitch',
+        group: 'Actions',
+        description:
+          'With the killswitch on, an account whose quota falls below one of its floors is not used.',
+      },
+    ])
+    expect(
+      limits.items[0]?.actions[0]?.knobs.map((knob) => knob.label),
+    ).toEqual(['Minimum % left for 7d', 'Minimum % left for 5h'])
+    for (const id of ['accounts', 'quota', 'routing', 'limits']) {
+      const found = section(payload, id)
+      // A summary or an explanation is a line, never a row a user can press.
+      const labels = [
+        ...found.items.map((item) => item.label),
+        ...found.actions.map((action) => action.label),
+      ]
+      for (const line of found.lines) expect(labels).not.toContain(line)
+      for (const line of found.lines) {
+        expect(line.length).toBeLessThanOrEqual(32)
+        expect(line).not.toContain('(s)')
+        expect(line).not.toEndWith('.')
+      }
+    }
+    expect(section(payload, 'quota').lines).toEqual([])
+    expect(JSON.stringify(payload)).not.toContain('Scope:')
+    expect(JSON.stringify(payload)).not.toContain('not reported')
   })
 })

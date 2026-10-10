@@ -11,6 +11,8 @@ export type Step =
 
 export interface FakePiUi extends PiMenuUi {
   calls: string[]
+  /** Every select's whole title, lines included, in order. */
+  titles: string[]
   notified: Array<{ message: string; type: NotifyKind | undefined }>
   /** Steps not consumed when the run ended. */
   remaining(): number
@@ -24,6 +26,7 @@ export interface FakePiUi extends PiMenuUi {
 export function fakePiUi(script: Step[]): FakePiUi {
   const steps = [...script]
   const calls: string[] = []
+  const titles: string[] = []
   const notified: FakePiUi['notified'] = []
   const next = (kind: 'select' | 'input' | 'confirm', title: string) => {
     const step = steps.shift()
@@ -36,10 +39,12 @@ export function fakePiUi(script: Step[]): FakePiUi {
   }
   return {
     calls,
+    titles,
     notified,
     remaining: () => steps.length,
     async select(title, options) {
       calls.push(`select ${title.split('\n')[0]} [${options.join(' | ')}]`)
+      titles.push(title)
       const step = next('select', title) as { select: string | undefined }
       if (!step || step.select === undefined) return undefined
       const prefix = step.select

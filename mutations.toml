@@ -3852,3 +3852,91 @@ command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^final\saudit\saccepted\sAPI\sre-add\splans\sthe\sprojected\storn\sendpoint\sand\sepoch$']
 expect_message = 'endpoint-mismatch'
+
+# --- shared quota wording and menu grouping (0.13.0) ---
+# Every plugin's dialog, sidebar and auth menu shows quota through one
+# formatter (`src/quota/format.ts`), and every menu renderer draws group
+# headers and rows without actions as text a user cannot select. The three
+# `quota-format-*` rows below break the formatter (dropping the omission of
+# unreported windows, the stale-age marker, and naming windows by length);
+# the three `commands-*` rows break grouping (the seam carrying an item's
+# group, the built-in Accounts header, and Pi keeping action-less rows out of
+# its options).
+
+[[control]]
+id = 'quota-format-omits-unreported-windows'
+guards = 'a window the provider did not report is left out of the quota text instead of appearing as a figure'
+file = 'src/quota/format.ts'
+old = "limit.kind === 'reading' && limit.remainingPercent !== undefined,"
+new = "true /* NON-VACUITY BREAK */,"
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^shared\squota\swording\sa\swindow\sthe\sprovider\sdid\snot\sreport\sis\sleft\sout,\snever\swritten\sas\snot\sreported$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'quota-format-marks-stale-readings'
+guards = 'a quota reading older than fifteen minutes says how old it is, so a stale figure is never shown as current'
+file = 'src/quota/format.ts'
+old = 'if (age > (options.staleAfterMs ?? QUOTA_STALE_AFTER_MS))'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^shared\squota\swording\sa\sreading\solder\sthan\sfifteen\sminutes\sis\smarked\swith\sits\sage\sin\sboth\sforms$']
+expect_message = 'checked 3h ago'
+
+[[control]]
+id = 'quota-format-names-windows-by-length'
+guards = 'a general window is named by its stored length (5h, 7d), never by the provider slot label'
+file = 'src/quota/format.ts'
+old = 'if (limit.scope !== ALL_SCOPE || limit.windowMinutes === undefined)'
+new = 'if (true /* NON-VACUITY BREAK */)'
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^shared\squota\swording\swindows\sare\snamed\sby\stheir\slength\sand\sread\sin\spercent\sleft,\sshortest\sfirst$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'commands-seam-carries-row-group'
+guards = 'an item group crosses the command seam, so a renderer can draw the header instead of an unlabelled run of rows'
+file = 'src/commands/seam.ts'
+old = '''    ...(item.group !== undefined ? { group: String(item.group) } : {}),'''
+new = '''    /* NON-VACUITY BREAK */'''
+test_file = 'test/commands/seam.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/commands/seam.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^command\spayload\sseam\sa\splugin\ssection’s\sgroups\sand\sstatuses\scross\sthe\sseam,\sand\snothing\selse\srides\salong$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'commands-builtin-accounts-grouped'
+guards = 'the built-in Accounts rows sit under their own header ahead of the Actions header'
+file = 'src/commands/builtins.ts'
+old = '''      group: 'Accounts','''
+new = '''      /* NON-VACUITY BREAK */'''
+test_file = 'test/commands/sections.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/commands/sections.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^command\smenu\ssections\sbuilt-in\ssections\slist\saccounts\sand\sthen\sactions\sunder\sgroup\sheaders,\swith\ssummaries\sonly\sas\sshort\slines$']
+expect_message = 'error: expect('
+
+[[control]]
+id = 'commands-pi-actionless-rows-are-text'
+guards = 'the Pi renderer never offers a row that has no actions as an option, so nothing selectable does nothing'
+file = 'src/commands/pi.ts'
+old = '''          .filter((item) => item.actions.length > 0)'''
+new = '''          .filter(() => true /* NON-VACUITY BREAK */)'''
+test_file = 'test/commands/pi.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/commands/pi.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Pi\srenderer\sthe\sPi\srenderer\sshows\sgroup\sheaders\sand\srows\swithout\sactions\sas\stitle\stext\sit\scannot\sselect$']
+expect_message = 'error: expect('

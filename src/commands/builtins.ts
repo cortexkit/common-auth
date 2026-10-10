@@ -4,9 +4,11 @@
 // the same locks as any other writer of those files.
 
 import {
+  formatQuota,
   isQuotaMap,
   type ProjectedQuota,
   projectQuota,
+  quotaWindowName,
 } from '../quota/index.js'
 import {
   DEFAULT_FORMER_MAIN_ID,
@@ -137,62 +139,13 @@ function projected(row: PoolRow, scope: string): ProjectedQuota | undefined {
   return isQuotaMap(row.quota) ? projectQuota(row.quota, scope) : undefined
 }
 
-function formatPercent(value: number): string {
-  return `${Math.round(value)}%`
+/** Real plurals for counts in summaries: `1 account`, `3 accounts`. */
+function count(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
 }
 
-function formatReset(resetsAt: string | undefined, now: number): string {
-  if (resetsAt === undefined) return ''
-  const at = Date.parse(resetsAt)
-  if (!Number.isFinite(at)) return ''
-  const minutes = Math.max(0, Math.round((at - now) / 60_000))
-  if (minutes < 60) return `, resets in ${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 48) return `, resets in ${hours}h ${minutes % 60}m`
-  return `, resets in ${Math.floor(hours / 24)}d`
-}
-
-/** One line per quota window: `primary 58% left` and the credit budget. */
-function quotaSummary(quota: ProjectedQuota | undefined): string {
-  if (!quota || (quota.limits.length === 0 && !quota.budget))
-    return 'no quota reading yet'
-  const parts = quota.limits.map((limit) =>
-    limit.kind === 'reading' && limit.remainingPercent !== undefined
-      ? `${limit.label} ${formatPercent(limit.remainingPercent)} left`
-      : `${limit.label} ${limit.kind === 'retired' ? 'retired' : 'not reported'}`,
-  )
-  if (quota.budget)
-    parts.push(
-      quota.budget.reached
-        ? 'credits spent'
-        : quota.budget.remainingPercent !== undefined
-          ? `credits ${formatPercent(quota.budget.remainingPercent)} left`
-          : 'credits available',
-    )
-  return parts.join(' · ')
-}
-
-function quotaFacts(
-  quota: ProjectedQuota | undefined,
-  now: number,
-): Record<string, string> {
-  const facts: Record<string, string> = {}
-  for (const limit of quota?.limits ?? []) {
-    facts[limit.label] =
-      limit.kind === 'reading' && limit.usedPercent !== undefined
-        ? `${formatPercent(limit.usedPercent)} used${formatReset(limit.resetsAt, now)}`
-        : limit.kind === 'retired'
-          ? 'retired'
-          : 'not reported'
-  }
-  if (quota?.budget)
-    facts.credits = quota.budget.reached
-      ? `spent${formatReset(quota.budget.resetsAt, now)}`
-      : quota.budget.remainingPercent !== undefined
-        ? `${formatPercent(quota.budget.remainingPercent)} left`
-        : 'available'
-  return facts
-}
+/** The header every section's own actions are listed under. */
+const ACTIONS_GROUP = 'Actions'
 
 function loadProblem(load: PoolLoad): string | undefined {
   if (load.status === 'pending-migration')
@@ -267,22 +220,24 @@ function accountsSection(
 ): ResolvedSection {
   const { store, extraLocks } = options
   const locks = extraLocks ? { extraLocks } : {}
-  const scope = options.quota?.scope ?? 'all'
   const ids = snap.rows.map((row) => row.id)
   const problem = loadProblem(snap.load)
   const enabledCount = snap.rows.filter((row) => row.enabled).length
   const items: ResolvedItem[] = snap.rows.map((row, index) => {
     const { account, name } = accountView(row, options)
+    // The quota itself is the Quota section's; an account row stays short.
     const detail = [
       row.type === 'api' ? 'API key' : 'OAuth',
-      row.invalid
-        ? 'invalid'
-        : row.enabled
-          ? 'enabled'
-          : `disabled${row.disabledReason ? ` (${row.disabledReason})` : ''}`,
       ...(account.identity !== undefined ? [account.identity] : []),
-      quotaSummary(projected(row, scope)),
+      ...(!row.invalid && !row.enabled && row.disabledReason
+        ? [`disabled: ${row.disabledReason}`]
+        : []),
     ].join(' · ')
+    const status = row.invalid
+      ? 'invalid'
+      : row.enabled
+        ? 'enabled'
+        : 'disabled'
     const actions: ActionDefinition[] = []
     if (!row.invalid && row.enabled)
       actions.push({
@@ -343,7 +298,15 @@ function accountsSection(
         return `Removed ${name}.`
       },
     })
-    return { id: row.id, label: name, detail, account, actions }
+    return {
+      id: row.id,
+      label: name,
+      detail,
+      group: 'Accounts',
+      status,
+      account,
+      actions,
+    }
   })
 
   const login = options.accounts?.login
@@ -352,6 +315,7 @@ function accountsSection(
     actions.push({
       id: 'add',
       label: login.label ?? 'Add account',
+      group: ACTIONS_GROUP,
       knobs: login.knobs ?? [],
       run: async ({ values, invocation }) => {
         const outcome = await login.run(values, invocation)
@@ -399,8 +363,8 @@ function accountsSection(
         ? [problem]
         : [
             snap.rows.length === 0
-              ? 'No accounts yet.'
-              : `${snap.rows.length} account(s), ${enabledCount} enabled.`,
+              ? 'No accounts yet'
+              : `${count(snap.rows.length, 'account')}, ${enabledCount} enabled`,
           ],
       items: problem ? [] : items,
       actions,
@@ -414,15 +378,19 @@ function quotaSection(
 ): ResolvedSection {
   const scope = options.quota?.scope ?? 'all'
   const now = options.now()
+  // A scoped menu names its model family in the header, since the quota
+  // shown is that family's view of each account.
+  const group = scope === 'all' ? 'Accounts' : `Accounts · ${scope}`
   const items: ResolvedItem[] = snap.rows.map((row) => {
     const { account, name } = accountView(row, options)
     const quota = projected(row, scope)
     return {
       id: row.id,
       label: name,
-      detail: quotaSummary(quota),
+      group,
+      status: formatQuota(quota, { now, form: 'compact' }),
+      detail: formatQuota(quota, { now, form: 'full' }),
       account,
-      facts: quotaFacts(quota, now),
     }
   })
   const candidates = snap.rows.filter((row) => row.candidate)
@@ -431,6 +399,7 @@ function quotaSection(
     actions.push({
       id: 'check',
       label: 'Check now',
+      group: ACTIONS_GROUP,
       knobs: [
         {
           kind: 'choice',
@@ -456,7 +425,7 @@ function quotaSection(
           for (const id of ids) options.store.requestReading(id)
           await options.store.pullsSettled()
         }
-        return `Checked quota for ${ids.length} account(s).`
+        return `Checked quota for ${count(ids.length, 'account')}.`
       },
     })
   return {
@@ -464,8 +433,7 @@ function quotaSection(
     slot: 'quota',
     title: 'Quota',
     content: {
-      lines:
-        snap.rows.length === 0 ? ['No accounts yet.'] : [`Scope: ${scope}.`],
+      lines: snap.rows.length === 0 ? ['No accounts yet'] : [],
       items,
       actions,
     },
@@ -497,14 +465,15 @@ function routingSection(
   )
   const label =
     choices.find((choice) => choice.value === current)?.label ?? current
-  const lines = [`Mode: ${label}.`]
-  if (ids.length > 0) lines.push(`Roster order: ${ids.join(', ')}.`)
+  const lines = [`Mode: ${label}`]
+  if (ids.length > 0) lines.push(`Roster order: ${ids.join(', ')}`)
   if (resolved.mode === 'ordered' && tried.join() !== ids.join())
-    lines.push(`Tried in order: ${tried.join(', ')}.`)
+    lines.push(`Tried in order: ${tried.join(', ')}`)
   const actions: ActionDefinition[] = [
     {
       id: 'mode',
       label: 'Change mode',
+      group: ACTIONS_GROUP,
       knobs: [
         { kind: 'choice', id: 'mode', label: 'Mode', choices, value: current },
       ],
@@ -522,6 +491,7 @@ function routingSection(
     actions.push({
       id: 'order',
       label: 'Set order',
+      group: ACTIONS_GROUP,
       knobs: [
         {
           kind: 'text',
@@ -559,6 +529,26 @@ function floorLabels(options: BuiltinOptions, snap: Snapshot): string[] {
   return labels.length > 0 ? labels : ['primary']
 }
 
+/**
+ * The display name for each floor. A floor is keyed by the quota window
+ * label the plugin stores readings under (`primary`, `five_hour`). When some
+ * account's stored quota reading records that window's length, the floor is
+ * shown under the same name `formatQuota` gives the window (`5h`, `7d`);
+ * otherwise under the label itself. The settings file keeps the label.
+ */
+function floorNames(
+  options: BuiltinOptions,
+  snap: Snapshot,
+): (label: string) => string {
+  const scope = options.quota?.scope ?? 'all'
+  const names = new Map<string, string>()
+  for (const row of snap.rows)
+    for (const limit of projected(row, scope)?.limits ?? [])
+      if (limit.windowMinutes !== undefined && !names.has(limit.label))
+        names.set(limit.label, quotaWindowName(limit))
+  return (label) => names.get(label) ?? label
+}
+
 function limitsSection(
   options: BuiltinOptions,
   snap: Snapshot,
@@ -569,6 +559,8 @@ function limitsSection(
   const enabled = killswitch.enabled === true
   const floors = record(killswitch.accounts)
   const labels = floorLabels(options, snap)
+  const nameOf = floorNames(options, snap)
+  const state = enabled ? 'on' : 'off'
   const items: ResolvedItem[] = snap.rows.map((row) => {
     const { account, name } = accountView(row, options)
     const own = record(floors[row.id])
@@ -576,10 +568,12 @@ function limitsSection(
     return {
       id: row.id,
       label: name,
-      detail:
+      group: `Floors · killswitch ${state}`,
+      // A floor is the least "% left" the account may fall to.
+      status:
         set.length === 0
           ? 'no floors'
-          : `floors: ${set.map((label) => `${label} ${own[label]}%`).join(', ')}`,
+          : set.map((label) => `${nameOf(label)} ≥${own[label]}%`).join(' · '),
       account,
       actions: [
         {
@@ -589,7 +583,7 @@ function limitsSection(
             (label): MenuKnob => ({
               kind: 'number',
               id: label,
-              label: `Minimum % left for ${label}`,
+              label: `Minimum % left for ${nameOf(label)}`,
               min: 0,
               max: 100,
               ...(typeof own[label] === 'number'
@@ -625,15 +619,15 @@ function limitsSection(
     slot: 'limits',
     title: 'Limits',
     content: {
-      lines: [
-        `Killswitch: ${enabled ? 'on' : 'off'}.`,
-        'With the killswitch on, an account whose quota falls below one of its floors is not used.',
-      ],
+      lines: [`Killswitch ${state}`],
       items,
       actions: [
         {
           id: 'killswitch',
           label: enabled ? 'Turn killswitch off' : 'Turn killswitch on',
+          description:
+            'With the killswitch on, an account whose quota falls below one of its floors is not used.',
+          group: ACTIONS_GROUP,
           knobs: [
             {
               kind: 'toggle',

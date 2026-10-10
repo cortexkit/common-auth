@@ -103,7 +103,7 @@ describe('replacing the built-in store sections', () => {
       expect(
         quota?.lines.join('\n') + JSON.stringify(quota?.items),
         'the built-in quota section still reads the store',
-      ).toContain('42')
+      ).toContain('5h 58% left')
     } finally {
       m.cleanup()
     }

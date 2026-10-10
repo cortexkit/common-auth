@@ -275,14 +275,17 @@ describe('account actions', () => {
       store.read = (...args) =>
         clock.span('store-read', {}, () => read(...args))
       const polled: string[] = []
+      // Two days before the reset, a minute after the poll's reading.
+      const now = Date.parse('2029-12-30T00:00:00.000Z')
       const { fake, run } = menu(choose(LOCAL.quotas), {
         store,
+        now: () => now,
         pollQuota: (row) =>
           clock.span('poll', { id: row.id }, async () => {
             polled.push(row.id)
             if (row.id === 'b') throw new Error('HTTP 503')
             return {
-              checkedAt: 1_000,
+              checkedAt: now - 60_000,
               readings: [
                 {
                   label: 'primary',
@@ -310,11 +313,9 @@ describe('account actions', () => {
       })
 
       expect(polled).toEqual(['a', 'b'])
+      expect(fake.text()).toContain('a:\n  5h 58% left, resets 2d\n')
       expect(fake.text()).toContain(
-        'a:\n  primary: 58% left, resets 2030-01-01T00:00:00.000Z\n',
-      )
-      expect(fake.text()).toContain(
-        'b:\n  quota check failed: HTTP 503\n  no quota reading\n',
+        'b:\n  quota check failed: HTTP 503\n  no quota reading yet\n',
       )
       const load = await clock.span('verification-read', {}, () =>
         quotaStore().read(),

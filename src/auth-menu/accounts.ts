@@ -1,4 +1,9 @@
-import { isQuotaMap, projectQuota } from '../quota/index.js'
+import {
+  formatQuota,
+  isQuotaMap,
+  projectQuota,
+  quotaTextParts,
+} from '../quota/index.js'
 import {
   type PoolLockSpec,
   PoolOperationError,
@@ -59,6 +64,11 @@ export interface AccountMenuOptions {
   extraActions?: readonly MenuAction[]
   /** Recorded on a row the menu disables; defaults to `MENU_DISABLE_REASON`. */
   disableReason?: string
+  /**
+   * The current time, used to count down to each quota reset and to tell
+   * how old a quota reading is; defaults to `Date.now`.
+   */
+  now?: () => number
 }
 
 /** The result of reading the rows for the menu. */
@@ -140,32 +150,18 @@ function defaultAccountId(
   }
 }
 
-/** Formats a row's stored quota map as one line per window. */
-export function quotaLines(row: PoolRow): string[] {
-  if (!isQuotaMap(row.quota)) return ['  no quota reading']
-  const projected = projectQuota(row.quota)
-  const lines: string[] = []
-  for (const limit of projected.limits) {
-    const name =
-      limit.scope === 'all' ? limit.label : `${limit.scope}/${limit.label}`
-    if (limit.kind !== 'reading') {
-      lines.push(`  ${name}: no limit reported`)
-      continue
-    }
-    const resets = limit.resetsAt ? `, resets ${limit.resetsAt}` : ''
-    lines.push(`  ${name}: ${limit.remainingPercent}% left${resets}`)
-  }
-  if (projected.budget) {
-    const budget = projected.budget
-    lines.push(
-      budget.reached
-        ? '  budget: reached'
-        : budget.remainingPercent === undefined
-          ? '  budget: available'
-          : `  budget: ${budget.remainingPercent}% left`,
-    )
-  }
-  return lines.length > 0 ? lines : ['  no quota reading']
+/**
+ * Formats a row's stored quota map as one line per window, in the shared
+ * quota wording (`5h 58% left, resets 2h`; see `formatQuota` in `/quota`).
+ * `now` is the current time in ms and defaults to the clock.
+ */
+export function quotaLines(row: PoolRow, now: number = Date.now()): string[] {
+  const projected = isQuotaMap(row.quota) ? projectQuota(row.quota) : undefined
+  const parts = quotaTextParts(projected, { now, form: 'full' })
+  // With nothing to list, the line is the shared formatter's own sentence.
+  return (parts.length > 0 ? parts : [formatQuota(projected, { now })]).map(
+    (line) => `  ${line}`,
+  )
 }
 
 /** Adds an account through the plugin's login and reports what the store did. */
@@ -404,7 +400,8 @@ export function checkQuotasAction(options: AccountMenuOptions): MenuAction {
         context.print(`${row.id}:`)
         const error = errors.get(row.id)
         if (error) context.print(`  quota check failed: ${error}`)
-        for (const line of quotaLines(row)) context.print(line)
+        for (const line of quotaLines(row, (options.now ?? Date.now)()))
+          context.print(line)
       }
     },
   }

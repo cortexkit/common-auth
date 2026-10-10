@@ -68,11 +68,53 @@ describe('Pi renderer', () => {
     ])
     // The top level lists the sections in the fixed order.
     expect(ui.calls[0]).toStartWith(
-      'select Acme [Accounts: 3 account(s), 3 enabled. | Quota: Scope: all. | Routing: Mode: Ordered (roster order). | Limits: Killswitch: off.]',
+      'select Acme [Accounts: 3 accounts, 3 enabled | Quota | Routing: Mode: Ordered (roster order) | Limits: Killswitch off]',
     )
     expect(ui.calls).toContain(
       'confirm Remove: Remove Alice? Its stored credential is deleted.',
     )
+  })
+
+  it('the Pi renderer shows group headers and rows without actions as title text it cannot select', async () => {
+    await populate(m.store)
+    const menu = m.menu()
+    // A header is not an option, so choosing it fails the scripted run.
+    await expect(
+      runPiCommandMenu(
+        menu,
+        fakePiUi([{ select: 'Quota' }, { select: 'Accounts' }]),
+      ),
+    ).rejects.toThrow('no option starts with Accounts')
+
+    const ui = fakePiUi([
+      { select: 'Quota' },
+      { select: 'Back' },
+      { select: 'Accounts' },
+      { select: 'Back' },
+      { select: 'Limits' },
+    ])
+    await runPiCommandMenu(menu, ui)
+    expect(ui.remaining()).toBe(0)
+    expect(ui.calls.filter((call) => !call.startsWith('select Acme'))).toEqual([
+      // Quota's accounts have no actions: they are text, not options.
+      'select Quota [Check now | Back]',
+      // Accounts' rows do something, so they are options with their status.
+      'select Accounts [Alice · enabled | acct-b · enabled | Keyed · enabled | Back]',
+      'select Limits [Alice · no floors | acct-b · no floors | Keyed · no floors | Turn killswitch on | Back]',
+    ])
+    const titles = ui.titles.filter((title) => !title.startsWith('Acme'))
+    expect(titles).toEqual([
+      [
+        'Quota',
+        'Accounts',
+        '  Alice · 5h 58% left · 7d 90% left · credits 75% left',
+        '  acct-b · 5h 1% left',
+        '  Keyed · no quota reading yet',
+      ].join('\n'),
+      'Accounts\n3 accounts, 3 enabled',
+      'Limits\nKillswitch off',
+    ])
+    expect(ui.notified).toEqual([])
   })
 
   it('the Pi renderer does not apply an irreversible action the user declines', async () => {
