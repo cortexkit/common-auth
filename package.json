@@ -24,6 +24,10 @@
       "types": "./dist/fs/index.d.ts",
       "import": "./dist/fs/index.js"
     },
+    "./pi-slot": {
+      "types": "./dist/pi-slot/index.d.ts",
+      "import": "./dist/pi-slot/index.js"
+    },
     "./logger": {
       "types": "./dist/logger/index.d.ts",
       "import": "./dist/logger/index.js"
@@ -127,6 +131,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
     "@cortexkit/claustrum-client": "0.6.2",
+    "@earendil-works/pi-coding-agent": "1.0.4",
     "@opencode/plugin": "2.0.21",
     "@opentui/core": ">=0.5.12",
     "@opentui/solid": ">=0.5.12",
@@ -135,6 +140,7 @@
     "bun-types": "1.4.2",
     "inline-default": "workspace:*",
     "lefthook": "2.1.14",
+    "proper-lockfile": "4.1.2",
     "solid-js": "1.9.12",
     "typescript": "7.0.2"
   }

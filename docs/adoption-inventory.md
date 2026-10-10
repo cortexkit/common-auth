@@ -126,6 +126,67 @@ Adapters supply the target path, lease timing, and opt-in renewal (`renew` still
 
 Type exports: `AtomicWriteOptions`, `LockOptions`, `LockOwnershipDetails`, `RefreshFileLock`, `LockLoss`. Frozen sidebar defaults: name sidebar-write, ttlMs 10000, timeoutMs 15000, renew true; preferences: name preferences, ttlMs 10000, timeoutMs 2000, renew true. Writers only permit timeoutMs override. Contention details identify target/name/timeoutMs; ownership details identify target/name plus optional expected/observed ownership.
 
+### ./pi-slot
+
+`openPiSlot({authPath, provider, stashPath, placeholderKey, lockTimeoutMs?})`
+returns asynchronous `inspect()`, `enterVault()` and `exitVault()` operations.
+`inspect()` reports `{slot: 'original'|'placeholder'|'foreign'|'empty',
+stash: 'valid'|'missing'}` without returning credentials. Without a stash, a
+non-placeholder credential is `original`; with a stash it must have the same
+canonical SHA-256 to be `original`. An absent slot is always `empty`.
+`exitVault()` returns `'restored'|'conflict'|'nothing-to-do'`. `PiSlotError`
+has a credential-free `code`; malformed input/stashes, unsafe paths, lost locks
+and lock timeouts throw typed errors rather than exposing filesystem or JSON
+parser messages. Invalid-state and conflict refusals do not rewrite either file.
+An I/O error after a durable rename may have committed that step: retry using
+the recovery rules below, not by deleting the stash.
+
+The plugin owns a dedicated stash path per auth file/provider and a non-secret,
+deliberately unusable placeholder key. The key must be nonempty, must not start
+with `!`, and must not contain `$` anywhere (including Pi's interpolation and
+escape forms). Keep the same key and paths across restarts. The stash is 0600
+inside a 0700 directory; existing non-private stash directories are refused,
+not chmodded. Regular files only are accepted; do not use symlinked auth files.
+
+All operations share Pi's `<authPath>.lock` mkdir/mtime/rmdir protocol: atomically
+creating the directory acquires the lock, renewing its modification time keeps
+it live, and removing it releases the lock. An old modification time permits
+takeover after a crashed holder. The protocol uses
+`realpath:false`, 30-second stale timeout, 15-second renewal, compromise
+detection, and a bounded ELOCKED retry (default 30 seconds). The implementation
+uses only Node builtins and common-auth's atomic writer, not a runtime
+proper-lockfile dependency. Normal process exit releases owned locks; an abrupt
+kill or signal may leave a lock until its mtime becomes stale. Both auth writes
+and stash writes use a private same-directory temp, file fsync, rename, and
+directory fsync. Unrelated provider values are never reserialized.
+
+On entry, the current slot's raw JSON value (or null for absence), parsed entry,
+provider and canonical SHA-256 are durably stashed **before** installing the
+`{type:'api_key', key:placeholderKey}` placeholder. An existing valid stash plus
+the placeholder is an idempotent no-op. A stash plus the same original resumes
+the interrupted swap. A different credential with a stash throws `conflict`
+without changes. A placeholder without a stash throws `missing-stash`; it is
+never adopted as an original.
+
+On exit, the placeholder is replaced with the saved raw JSON, or removed for an
+originally empty slot, before the stash is durably deleted. A stash plus the
+original completes deletion after an interrupted restore. Foreign logins,
+including deletion of an originally populated slot, return `conflict` and keep
+the stash. No stash and no placeholder returns `nothing-to-do`. Never delete
+the stash to resolve a conflict automatically; let the account owner decide
+which login to retain. A stash hash detects corruption, not malicious rewriting
+by an actor who can already edit private credential files.
+
+Pi's auth storage reloads when the file revision changes, but the model registry
+caches availability. **After a successful swap/restore, the extension must call
+and await `ctx.modelRegistry.refresh()`**, including after restart recovery.
+This helper does not change Pi or register alternate providers/models: local
+and vault modes retain `google/`, `openai-codex/` and `anthropic/` identifiers.
+While in vault mode the plugin must route exclusively through vault accounts;
+the placeholder is not a usable account or a fallback. Enter before returning
+control to Pi, and exit when disconnecting. This cannot prevent a refresh Pi
+already completed before the extension's first opportunity to enter vault mode.
+
 ### ./claustrum
 
 `mutateVaultRoster` callbacks receive `{ assertOwned }` for ownership fencing immediately before a caller-managed rename; existing one-argument callbacks remain compatible. If the assertion rejects, the caller must not rename.

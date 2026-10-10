@@ -1450,3 +1450,36 @@ Pending provenance (excluded from the passing-test table): `persists an approved
 | store | provider-state planning uses the projected replacement epoch rather than the raw old entry epoch | new (neither copy) | final audit fenced disable plans the same account and stamp for a torn target replace |
 | store | provider-state planning preserves the genuine credential epoch while completing a pending target transition | new (neither copy) | final audit fenced disable plans the same account and stamp for a torn target transition |
 | store | an accepted API re-add checks the new endpoint and genuine replacement epoch before raw config is completed | new (neither copy) | final audit accepted API re-add plans the projected torn endpoint and epoch |
+
+## Pi slot protocol sources
+
+The original is the provider credential stored in Pi's auth.json before vault
+mode; the stash is the helper's private file retaining that credential until
+disconnect. See [the pi-slot adoption contract](adoption-inventory.md#pi-slot)
+for the complete transition and recovery rules.
+
+Pi sources were re-read at [v1.0.0 auth-storage.ts](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/src/core/auth-storage.ts): lines 19–25 define the UTF-8/0600 write options (mode applies on creation); 69–114 implement the synchronous lock/read/write path; 116–200 implement the asynchronous `realpath:false`, `retries:0`, `stale:30000`, `onCompromised` lock with bounded ELOCKED retries. `modify`/`delete` serialize the whole provider map using `JSON.stringify(data, null, 2)` (lines 449–480). The installed 1.0.4 `dist/core/auth-storage.js` exposes `AuthStorage.create` and `modify` (lines 263–285, 378–403); its package root exports only `readStoredCredential` from that module. The interop test deep-imports that installed implementation; production never imports Pi internals. `readLatestData` checks file revision (v1.0.0 lines 398–438; installed 1.0.4 lines 330–367).
+
+[Pi v1.0.0 resolve-config-value.ts](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/src/core/resolve-config-value.ts#L138-L151), lines 138–151, documents leading `!` commands, `$NAME`/`${NAME}` interpolation and `$$`/`$!` escapes. The tests invoke the installed 1.0.4 `isCommandConfigValue`, `getConfigValueEnvVarNames` and `resolveConfigValue` directly. `api_key` credentials resolve keys rather than following OAuth refresh (auth-storage.ts lines 441–447); they are used as literal placeholders, never as a vault fallback. [ModelRegistry.refresh](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/src/core/model-registry.ts#L55-L58) delegates to the runtime; [model-runtime.ts lines 839–880](https://github.com/earendil-works/pi/blob/v1.0.0/packages/coding-agent/src/core/model-runtime.ts#L839-L880) reloads config/models and refreshes provider availability. Extensions must refresh that cache after slot transitions.
+
+The first-party lock was matched against the installed **proper-lockfile 4.1.2** `lib/lockfile.js`: lines 11–18 select `<file>.lock` and resolve the path without realpath; 25–43 acquire by mkdir and probe mtime precision; 46–80 handle EEXIST, stat, ENOENT retry without another stale check, and stale removal followed by exactly one acquisition without a stale check; 84–97 define strict `mtime < Date.now() - stale` and rmdir ignoring ENOENT; 99–183 renew and detect compromise (mtime mismatch, ENOENT, or failed update beyond stale, retry other failures after 1000 ms); 185–200 cancel renewal on compromise; 219–221 derive `update = stale / 2` bounded to at least 1000 ms; 288–292 release by cancelling renewal and rmdir. `lib/mtime-precision.js` lines 5–40 probe seconds-versus-milliseconds using ceil-to-second plus 5 ms and cache precision; 44–51 round renewals up for second precision. Published `pi-slot` code imports only Node builtins and common-auth files; proper-lockfile and Pi are dev-only interop oracles. Upstream source: [lockfile.js at v4.1.2](https://github.com/moxystudio/node-proper-lockfile/blob/v4.1.2/lib/lockfile.js), [mtime-precision.js at v4.1.2](https://github.com/moxystudio/node-proper-lockfile/blob/v4.1.2/lib/mtime-precision.js).
+
+| component | behaviour | origin | test |
+| --- | --- | --- | --- |
+| pi-slot | Raw slot restoration, other-provider preservation, private durable stash and idempotence | new (neither copy); Pi auth-storage protocol above | round trip preserves exact provider and other provider bytes |
+| pi-slot | Originally absent slot is removed on exit | new (neither copy) | empty slot round trip deletes only the placeholder |
+| pi-slot | Exit cannot overwrite a foreign login | new (neither copy) | foreign login exit conflict preserves both files |
+| pi-slot | Entry cannot replace a different original while a stash exists | new (neither copy) | foreign login enter refuses credential free and unchanged |
+| pi-slot | No command execution, interpolation or escape interpretation | Pi resolve-config-value above | placeholder refuses all Pi command and interpolation syntax |
+| pi-slot | Stash canonical digest validation precedes all mutations | new (neither copy) | invalid stash refuses both transitions unchanged |
+| pi-slot | Placeholder cannot be adopted as original when stash is lost | new (neither copy) | missing stash never adopts or deletes a placeholder |
+| pi-slot | Invalid and duplicate JSON slots refuse byte-identically | new (neither copy) | malformed and duplicate auth refuse without rewriting |
+| pi-slot | Crash after stash durability resumes swap | new (neither copy) | crash crash-enter after stash-written converges without loss |
+| pi-slot | Crash after placeholder durability keeps saved original | new (neither copy) | crash crash-enter after auth-written converges without loss |
+| pi-slot | Crash after restored auth durability completes stash deletion | new (neither copy) | crash crash-exit after auth-written converges without loss |
+| pi-slot | Crash after stash deletion is already converged | new (neither copy) | crash crash-exit after stash-deleted converges without loss |
+| pi-slot | Helper waits for actual Pi AuthStorage.modify writer | Pi 1.0.4 AuthStorage and proper-lockfile 4.1.2 | waits for real Pi writer and preserves both writes |
+| pi-slot | Actual Pi writer waits for helper's first-party lock | Pi 1.0.4 AuthStorage and proper-lockfile 4.1.2 | real Pi writer waits for helper and preserves both writes |
+| pi-slot | Stale takeover and bounded fresh-lock refusal | proper-lockfile 4.1.2 protocol above | stale lock uses mkdir takeover and fresh lock times out unchanged |
+| pi-slot | Mtime heartbeat, replacement detection, no compromised-lock removal | proper-lockfile 4.1.2 protocol above | holder renews mtime and detects a replaced lock |
+| pi-slot | Embedded consumers need no external runtime imports | new (neither copy) | published import graph contains only node builtins and common auth files |

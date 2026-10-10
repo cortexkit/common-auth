@@ -4194,3 +4194,214 @@ command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^disconnectClaustrumEnrollment\srejects\sa\slost\sceremony\slease\swithout\sdeleting\ssuccessor\sstate$']
 expect_message = 'Expected promise that rejects'
+
+# --- Pi provider-slot custody ---
+# These rows use exact test filters so collateral failures cannot count as catches.
+# Replay each row with Bun 1.3.14 and 1.4.2; messages below are version-neutral.
+[[control]]
+id = 'pi-slot-restore-bytes'
+guards = 'restore raw JSON, not a reserialized credential'
+file = 'src/pi-slot/slot.ts'
+old = 'replaceEntry(auth, provider, stash.entryJson),'
+new = 'replaceEntry(auth, provider, JSON.stringify(stash.entry)), /* NON-VACUITY BREAK */'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sround\strip\spreserves\sexact\sprovider\sand\sother\sprovider\sbytes$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'pi-slot-stash-before-swap'
+guards = 'original stash is durable before auth replacement'
+file = 'src/pi-slot/slot.ts'
+old = 'await atomicWrite(stashPath, JSON.stringify(saved), assertLock)'
+new = 'void saved /* NON-VACUITY BREAK */'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\scrash\scrash-enter\safter\sauth-written\sconverges\swithout\sloss$']
+expect_message = 'missing-stash'
+
+[[control]]
+id = 'pi-slot-resume-entry'
+guards = 'stash plus original resumes the interrupted entry'
+file = 'src/pi-slot/slot.ts'
+old = "if (stash && digest(auth.entry) !== stash.sha256)"
+new = "if (stash && digest(auth.entry) === stash.sha256) return /* NON-VACUITY BREAK */\n        if (stash && digest(auth.entry) !== stash.sha256)"
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\scrash\scrash-enter\safter\sstash-written\sconverges\swithout\sloss$']
+expect_message = 'placeholder'
+
+[[control]]
+id = 'pi-slot-restore-before-delete'
+guards = 'restore auth before deleting the stash'
+file = 'src/pi-slot/slot.ts'
+old = 'replaceEntry(auth, provider, stash.entryJson),'
+new = "replaceEntry(auth, provider, (await deleteStash(assertLock), stash.entryJson)), /* NON-VACUITY BREAK */"
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\scrash\scrash-exit\safter\sstash-deleted\sconverges\swithout\sloss$']
+expect_message = 'missing-stash'
+
+[[control]]
+id = 'pi-slot-foreign-exit'
+guards = 'foreign login leaves both files unchanged on exit'
+file = 'src/pi-slot/slot.ts'
+old = '} else if (digest(auth.entry) !== stash.sha256) {'
+new = '} else if (false /* NON-VACUITY BREAK */) {'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sforeign\slogin\sexit\sconflict\spreserves\sboth\sfiles$']
+expect_message = 'conflict'
+
+[[control]]
+id = 'pi-slot-foreign-enter'
+guards = 'a stash cannot authorize replacing a different login'
+file = 'src/pi-slot/slot.ts'
+old = 'if (stash && digest(auth.entry) !== stash.sha256)'
+new = 'if (false /* NON-VACUITY BREAK */)'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sforeign\slogin\senter\srefuses\scredential\sfree\sand\sunchanged$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'pi-slot-placeholder-command'
+guards = 'placeholder must never execute a Pi command'
+file = 'src/pi-slot/slot.ts'
+old = "placeholderKey.startsWith('!') ||"
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\splaceholder\srefuses\sall\sPi\scommand\sand\sinterpolation\ssyntax$']
+expect_message = 'invalid-options'
+
+[[control]]
+id = 'pi-slot-placeholder-template'
+guards = 'placeholder must never interpolate or unescape Pi config values'
+file = 'src/pi-slot/slot.ts'
+old = "placeholderKey.includes('$') ||"
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\splaceholder\srefuses\sall\sPi\scommand\sand\sinterpolation\ssyntax$']
+expect_message = 'invalid-options'
+
+[[control]]
+id = 'pi-slot-empty-removal'
+guards = 'originally empty slot must not retain a placeholder'
+file = 'src/pi-slot/slot.ts'
+old = 'if (next !== null) {'
+new = "if (next === null) return text /* NON-VACUITY BREAK */\n    if (next !== null) {"
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sempty\sslot\sround\strip\sdeletes\sonly\sthe\splaceholder$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'pi-slot-pi-lock'
+guards = 'helper must wait for Pi real proper-lockfile writer'
+file = 'src/pi-slot/lock.ts'
+old = 'let mtime = await acquire(path, STALE)'
+new = 'let mtime = Date.now() /* NON-VACUITY BREAK */'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\swaits\sfor\sreal\sPi\swriter\sand\spreserves\sboth\swrites$']
+expect_message = 'Expected: false'
+
+[[control]]
+id = 'pi-slot-helper-lock'
+guards = 'real Pi writer must wait for helper lock'
+file = 'src/pi-slot/lock.ts'
+old = 'let mtime = await acquire(path, STALE)'
+new = 'let mtime = Date.now() /* NON-VACUITY BREAK */'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sreal\sPi\swriter\swaits\sfor\shelper\sand\spreserves\sboth\swrites$']
+expect_message = 'Expected: false'
+
+[[control]]
+id = 'pi-slot-stale-boundary'
+guards = 'a fresh lock cannot be removed as stale'
+file = 'src/pi-slot/lock.ts'
+old = 'if (!(mtime < Date.now() - stale)) throw held()'
+new = 'if (false /* NON-VACUITY BREAK */) throw held()'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sstale\slock\suses\smkdir\stakeover\sand\sfresh\slock\stimes\sout\sunchanged$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'pi-slot-renewal'
+guards = 'live holders refresh directory mtime before staleness'
+file = 'src/pi-slot/lock.ts'
+old = 'timer = setTimeout(() => {'
+new = 'timer = setTimeout(() => { return /* NON-VACUITY BREAK */;'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sholder\srenews\smtime\sand\sdetects\sa\sreplaced\slock$']
+expect_message = 'toBeGreaterThan'
+
+[[control]]
+id = 'pi-slot-compromise'
+guards = 'mtime mismatch compromises ownership and prevents removing a replacement'
+file = 'src/pi-slot/lock.ts'
+old = 'if (observed !== mtime) {'
+new = 'if (false /* NON-VACUITY BREAK */) {'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sholder\srenews\smtime\sand\sdetects\sa\sreplaced\slock$']
+expect_message = 'Expected: true'
+
+[[control]]
+id = 'pi-slot-stash-integrity'
+guards = 'stash digest and raw JSON must agree with the saved original'
+file = 'src/pi-slot/slot.ts'
+old = 'stash.sha256 !== digest(stash.entry) ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sinvalid\sstash\srefuses\sboth\stransitions\sunchanged$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'pi-slot-import-graph'
+guards = 'published helper must not depend on external runtime packages'
+file = 'src/pi-slot/slot.ts'
+old = "import { createHash } from 'node:crypto'"
+new = "import { createHash } from 'node:crypto'\nimport 'jsonc-parser' /* NON-VACUITY BREAK */"
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\spublished\simport\sgraph\scontains\sonly\snode\sbuiltins\sand\scommon\sauth\sfiles$']
+expect_message = 'Expected: true'
