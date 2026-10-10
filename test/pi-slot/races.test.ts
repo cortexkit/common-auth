@@ -231,6 +231,61 @@ for (const operation of ['release', 'renewal'] as const) {
 }
 
 // Advance only the lease clock: no timers run during the simulated owner pause.
+test('pi slot races expired release leaves matching directory untouched', async () => {
+  const f = await fixture()
+  let compromised = 0
+  const lease = await acquirePiLock(f.authPath, () => compromised++)
+  const before = await stat(f.lockPath)
+  const clock = spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001)
+  try {
+    await lease.release()
+    expect(compromised).toBe(1)
+    const after = await stat(f.lockPath)
+    expect(after.ino).toBe(before.ino)
+    expect(after.mtimeMs).toBe(before.mtimeMs)
+  } finally {
+    clock.mockRestore()
+  }
+})
+
+test('pi slot races expired exit cleanup leaves matching directory untouched', async () => {
+  const f = await fixture()
+  const lockModule = join(import.meta.dir, '../../src/pi-slot/lock.ts')
+  // The child takes the lock, ages its lease past the 10s sync threshold
+  // without renewing, and exits; its exit cleanup must not remove the lock.
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      '-e',
+      `const { acquirePiLock } = await import(${JSON.stringify(lockModule)});
+       await acquirePiLock(${JSON.stringify(f.authPath)}, () => {});
+       const real = Date.now();
+       Date.now = () => real + 10_001;
+       process.exit(0);`,
+    ],
+    { stdout: 'pipe', stderr: 'pipe' },
+  )
+  expect(await child.exited).toBe(0)
+  expect((await stat(f.lockPath)).isDirectory()).toBe(true)
+})
+
+test('pi slot races fresh exit cleanup removes its own directory', async () => {
+  const f = await fixture()
+  const lockModule = join(import.meta.dir, '../../src/pi-slot/lock.ts')
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      '-e',
+      `const { acquirePiLock } = await import(${JSON.stringify(lockModule)});
+       await acquirePiLock(${JSON.stringify(f.authPath)}, () => {});
+       process.exit(0);`,
+    ],
+    { stdout: 'pipe', stderr: 'pipe' },
+  )
+  expect(await child.exited).toBe(0)
+  await expect(stat(f.lockPath)).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
 test('pi slot races expired renewal leaves matching directory untouched', async () => {
   const f = await fixture()
   let compromised = 0

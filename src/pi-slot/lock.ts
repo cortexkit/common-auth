@@ -13,10 +13,14 @@ const RENEWAL_STALE = 10_000
 const UPDATE = 3_000
 let precision: 's' | 'ms' | undefined
 type Identity = { dev: number; ino: number; mtime: number }
-const active = new Map<string, Identity>()
+/** Held locks, with the time each last renewed, for cleanup at process exit. */
+const active = new Map<string, Identity & { renewedAt: number }>()
 process.once('exit', () => {
   for (const [path, identity] of active) {
     try {
+      // A lease past Pi's 10s sync stale threshold may already belong to a
+      // writer that reclaimed it, so it is left for staleness cleanup.
+      if (identity.renewedAt + RENEWAL_STALE < Date.now()) continue
       const observed = statSync(path)
       if (
         sameDirectory(observed, identity) &&
@@ -94,7 +98,7 @@ export async function acquirePiLock(
   let lastUpdate = Date.now()
   let released = false
   let timer: ReturnType<typeof setTimeout> | undefined
-  active.set(path, identity)
+  active.set(path, { ...identity, renewedAt: lastUpdate })
 
   function compromise() {
     released = true
@@ -153,8 +157,8 @@ export async function acquirePiLock(
     }
     if (released) return
     mtime = next.getTime()
-    active.set(path, { ...identity, mtime })
     lastUpdate = Date.now()
+    active.set(path, { ...identity, mtime, renewedAt: lastUpdate })
     schedule()
   }
   // Tests can resume a paused renewal without waiting for the production timer.
@@ -170,6 +174,14 @@ export async function acquirePiLock(
       released = true
       if (timer) clearTimeout(timer)
       active.delete(path)
+      // An expired lease is never removed, even when the directory still
+      // matches: a sync writer was entitled to reclaim it after 10s. It is
+      // left for the next writer's staleness check instead.
+      const expired = () => lastUpdate + RENEWAL_STALE < Date.now()
+      if (expired()) {
+        compromise()
+        return
+      }
       let observed: Stats
       try {
         observed = await stat(path)
@@ -179,6 +191,7 @@ export async function acquirePiLock(
         return
       }
       if (
+        expired() ||
         !sameDirectory(observed, identity) ||
         mtime !== observed.mtime.getTime()
       ) {
