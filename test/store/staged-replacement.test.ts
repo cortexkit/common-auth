@@ -1,5 +1,6 @@
 import { beforeEach, expect, spyOn } from 'bun:test'
 import * as crypto from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import * as timers from 'node:timers/promises'
@@ -761,14 +762,19 @@ test('staged replacement changed row keys retry once then refuse without publica
   const publication = await plan()
   let attempts = 0
   const publisher = open({
-    onLockEvent: async (event) => {
+    // The store calls lock observers synchronously and does not await what
+    // they return, so the key change is written synchronously here: it must
+    // be on disk before the store re-reads the row keys under the lock. An
+    // async write lands at an unpredictable point and can surface as an
+    // attribution refusal instead of the retry being exercised.
+    onLockEvent: (event) => {
       if (event.type === 'acquired' && event.name === 'provider-test') {
         attempts++
-        const config = await json(configPath)
+        const config = JSON.parse(readFileSync(configPath, 'utf8'))
         config.accounts.find(
           (raw: { id: string }) => raw.id === 'old',
         ).accountId = `changed-${attempts}`
-        await write(configPath, config)
+        writeFileSync(configPath, `${JSON.stringify(config)}\n`)
       }
     },
   })
