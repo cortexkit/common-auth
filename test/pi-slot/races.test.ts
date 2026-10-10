@@ -251,8 +251,9 @@ test('pi slot races expired release leaves matching directory untouched', async 
 test('pi slot races expired exit cleanup leaves matching directory untouched', async () => {
   const f = await fixture()
   const lockModule = join(import.meta.dir, '../../src/pi-slot/lock.ts')
-  // The child takes the lock, ages its lease past the 10s sync threshold
-  // without renewing, and exits; its exit cleanup must not remove the lock.
+  // The child takes the lock, then moves its clock past the 10s after which
+  // Pi's synchronous writer may take over an unrefreshed lock, and exits
+  // without renewing. Its exit cleanup must leave the lock in place.
   const child = Bun.spawn(
     [
       process.execPath,

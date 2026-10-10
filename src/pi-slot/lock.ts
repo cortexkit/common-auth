@@ -18,8 +18,10 @@ const active = new Map<string, Identity & { renewedAt: number }>()
 process.once('exit', () => {
   for (const [path, identity] of active) {
     try {
-      // A lease past Pi's 10s sync stale threshold may already belong to a
-      // writer that reclaimed it, so it is left for staleness cleanup.
+      // Pi's synchronous auth.json writer treats a lock whose mtime has not
+      // been refreshed for 10s as abandoned and may take it over. A lease that
+      // went 10s without renewing may therefore already be that writer's, so
+      // it is left in place; whoever next needs the lock clears it as stale.
       if (identity.renewedAt + RENEWAL_STALE < Date.now()) continue
       const observed = statSync(path)
       if (
@@ -175,8 +177,10 @@ export async function acquirePiLock(
       if (timer) clearTimeout(timer)
       active.delete(path)
       // An expired lease is never removed, even when the directory still
-      // matches: a sync writer was entitled to reclaim it after 10s. It is
-      // left for the next writer's staleness check instead.
+      // matches. Pi's synchronous auth.json writer may take over a lock that
+      // went 10s without an mtime refresh, so after 10s without renewing the
+      // directory may be that writer's. Whoever next needs the lock clears it
+      // as stale.
       const expired = () => lastUpdate + RENEWAL_STALE < Date.now()
       if (expired()) {
         compromise()
