@@ -2,18 +2,14 @@
 # "Mutation catalogue"). Each row deliberately breaks one production guard
 # and names the Bun test(s) that must fail because of it.
 #
-# Every row is a `command` row: `{test}` is a Bun `-t` filter, which Bun reads
-# as a regular expression over the full test name (describe names and the
-# test name joined by single spaces). The ids are anchored (^...$) and escaped,
-# with `\s` standing for each space because ckdev-mutate refuses whitespace in an
-# id. `Ran {count} test` matches Bun's summary line ("Ran 1 test across 1
-# file."), which proves the filter selected a test on both the clean and the
-# mutated tree. Test fixtures import the built package through dist/, so the
-# prebuild steps install and build before the baseline and again after every
-# mutant edit. Replay with the Bun version .github/workflows/ci.yml pins
-# (1.3.14): the row rpc-declared-oversize-413-half-closes guards a workaround for
-# Bun 1.3.14 reusing a connection the server refused with 413, which Bun 1.4.2
-# no longer does, so that row survives on 1.4.2.
+# Command-row `{test}` values are passed to Bun as `-t` regexes over full test
+# names. Rows with JUnit breadth audits use literal leaf names so `broad_id =
+# '{name}'` maps the same testcase. `Ran {count} test` verifies one named test
+# executes on both clean and mutated trees. Fixtures import from `dist/`, so the
+# prebuild steps install and build before the baseline and each mutant. Replay
+# with the Bun version CI pins (1.3.14): `rpc-declared-oversize-413-half-closes`
+# guards a workaround for Bun 1.3.14 reusing a connection refused with 413, which
+# Bun 1.4.2 no longer does.
 prebuild = [
   { name = "install", command = ["bun", "install", "--frozen-lockfile"], timeout_s = 600 },
   { name = "build", command = ["bun", "run", "build"], timeout_s = 600 },
@@ -27,6 +23,9 @@ prebuild = [
 
 [[control]]
 id = 'store-stage-refuse'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'refuse never rotates or writes an existing secret holder'
 file = 'src/store/rows.ts'
 old = "if (mode === 'refuse') {"
@@ -35,7 +34,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\srefuse\spreserves\sholder\sand\sduplicate\srequires\sboth\sstaging\sfields$']
+expect_red = ['staged replacement refuse preserves holder and duplicate requires both staging fields']
 expect_message = 'error: expect('
 
 [[control]]
@@ -53,6 +52,9 @@ expect_message = 'unbound-credential'
 
 [[control]]
 id = 'store-stage-orphan-foreign'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a different stored reservation cannot be replayed by the caller'
 file = 'src/store/rows.ts'
 old = 'staged.reservation !== input.stage?.reservation ||'
@@ -61,11 +63,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sforeign\sorphan\sdifferent\sreservation\srefuses\sunchanged$']
+expect_red = ['staged replacement foreign orphan different reservation refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-orphan-missing'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'staging ownership is never synthesized from caller wishes'
 file = 'src/store/rows.ts'
 old = 'const staged = stamp?.staged'
@@ -74,11 +79,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sforeign\sorphan\smissing\sreservation\srefuses\sunchanged$']
+expect_red = ['staged replacement foreign orphan missing reservation refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-replay-metadata'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'replay compares all provider metadata, not only credentialBound'
 file = 'src/store/rows.ts'
 old = 'staged.providerState !== incomingDigest ||'
@@ -87,11 +95,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sprovider\smetadata$']
+expect_red = ['staged replacement exact replay rejects changed provider metadata']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-replay-label'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'replay compares label including absence'
 file = 'src/store/rows.ts'
 old = 'staged.label !== label ||'
@@ -100,11 +111,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\slabel$']
+expect_red = ['staged replacement exact replay rejects changed label']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-replay-identity'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'replay requires exact identity absence as well as presence'
 file = 'src/store/rows.ts'
 old = 'stamp.binding.identity !== identity'
@@ -113,11 +127,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sidentity\sabsence$']
+expect_red = ['staged replacement exact replay rejects changed identity absence']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-replay-access'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'replay compares the OAuth access token via full dispatch digest'
 file = 'src/store/rows.ts'
 old = '''credentialDigest(credential) !== stamp.digest ||
@@ -128,11 +145,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\saccess\stoken$']
+expect_red = ['staged replacement exact replay rejects changed access token']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-replay-expiry'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'replay compares OAuth expiry via full dispatch digest'
 file = 'src/store/rows.ts'
 old = '''credentialDigest(credential) !== stamp.digest ||
@@ -143,11 +163,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sexpiry$']
+expect_red = ['staged replacement exact replay rejects changed expiry']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-replay-endpoint'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'replay compares trimmed API endpoint and effective header'
 file = 'src/store/rows.ts'
 old = '''credentialDigest(credential) !== stamp.digest ||
@@ -158,11 +181,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sendpoint$']
+expect_red = ['staged replacement exact replay rejects changed endpoint']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-replay-enabled'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'an enabled complete row is not a staged replay'
 file = 'src/store/rows.ts'
 old = '''row.type !== credential.type ||
@@ -173,11 +199,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\senabled\sshape$']
+expect_red = ['staged replacement exact replay rejects changed enabled shape']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-protect-add'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'add protect is evaluated on locked successor management before writes'
 file = 'src/store/rows.ts'
 old = '''async (tx): Promise<AddResult> => {
@@ -188,11 +217,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sprotect\sadd\sobserves\ssuccessor\smanagement\sunder\slocks$']
+expect_red = ['staged replacement protect add observes successor management under locks']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-protect-enable'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'enable protect is evaluated on locked successor management before writes'
 file = 'src/store/rows.ts'
 old = '''async (tx): Promise<RowTransitionResult> => {
@@ -203,11 +235,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sprotect\senable\sobserves\ssuccessor\smanagement\sunder\slocks$']
+expect_red = ['staged replacement protect enable observes successor management under locks']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-protect-disable'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'disable protect is evaluated on locked successor management before writes'
 file = 'src/store/rows.ts'
 old = '''async (tx): Promise<RowTransitionResult> => {
@@ -218,11 +253,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sprotect\sdisable\sobserves\ssuccessor\smanagement\sunder\slocks$']
+expect_red = ['staged replacement protect disable observes successor management under locks']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-enable'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved enable refuses before either file changes'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -231,11 +269,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\senable\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved enable refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-disable'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved disable refuses before either file changes'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -244,11 +285,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\sdisable\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved disable refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-refresh'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved refresh refuses before provider dispatch'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -257,11 +301,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\srefresh\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved refresh refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-replace'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved replace refuses before either file changes'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -270,11 +317,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\sreplace\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved replace refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-rotate'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved rotate refuses before either file changes'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -283,11 +333,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\srotate\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved rotate refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-identity'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved identity observation refuses before either file changes'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -296,11 +349,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\srecordIdentity\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved recordIdentity refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-quota'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved quota observation refuses before either file changes'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -309,11 +365,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\srecordQuota\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved recordQuota refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-provider-state'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved provider state refuses before either file changes'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -322,11 +381,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\supdateProviderState\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved updateProviderState refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-reserved-add'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reserved ordinary re-add never rotates or completes it'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -335,7 +397,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreserved\sadd\srefuses\sunchanged$']
+expect_red = ['staged replacement reserved add refuses unchanged']
 expect_message = 'error: expect('
 
 [[control]]
@@ -353,6 +415,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-remove-fence'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'stale staged cleanup cannot remove a published row'
 file = 'src/store/rows.ts'
 old = '} else if (options.staged)'
@@ -361,11 +426,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sremove\sfence\sdeletes\sreserved\srows\sbut\snever\spublished\srows$']
+expect_red = ['staged replacement remove fence deletes reserved rows but never published rows']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-attribution'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication removal requires exact credential epoch and identity'
 file = 'src/store/publication.ts'
 old = '''assertBoundRowAttribution(
@@ -383,24 +451,31 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sattribution\sunchanged$']
+expect_red = ['staged replacement publication rejects attribution unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-fingerprint'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication refuses a removed secret that changed during preparation'
 file = 'src/store/publication.ts'
 old = 'fingerprintOf(row.credential) !== ref.fingerprint'
 new = 'false /* NON-VACUITY BREAK */'
 test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
-command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
+command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "^$1$"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sfingerprint\sunchanged$']
+expect_red = ['staged replacement publication rejects fingerprint unchanged']
 expect_message = 'error: expect('
+
 
 [[control]]
 id = 'store-publish-config-reservation'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'finalization requires the exact config reservation'
 file = 'src/store/publication.ts'
 old = 'row.staged?.reservation !== ref.reservation ||'
@@ -409,11 +484,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sdifferent\sreservation\sunchanged$']
+expect_red = ['staged replacement publication rejects different reservation unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-stamp-reservation'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'config alone cannot claim staged ownership without the exact stamp marker'
 file = 'src/store/publication.ts'
 old = 'stamp?.staged?.reservation !== ref.reservation ||'
@@ -422,11 +500,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sstamp\sreservation\sunchanged$']
+expect_red = ['staged replacement publication rejects stamp reservation unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-order'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication order names exactly all survivors'
 file = 'src/store/publication.ts'
 old = '''survivors.length !== plan.order.length ||
@@ -437,11 +518,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sorder\sunchanged$']
+expect_red = ['staged replacement publication rejects order unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-enabled-identity'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'the final enabled roster has no duplicate known OAuth identity'
 file = 'src/store/publication.ts'
 old = 'if (identities.has(row.identity))'
@@ -450,11 +534,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\senabled\sidentity\sunchanged$']
+expect_red = ['staged replacement publication rejects enabled identity unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-secret-identity'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a staged secret cannot claim a different removed known identity'
 file = 'src/store/publication.ts'
 old = 'old.fingerprint === row.fingerprint,'
@@ -463,11 +550,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\ssecret\sidentity\sunchanged$']
+expect_red = ['staged replacement publication rejects secret identity unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-protect'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication protect vetoes the irreversible write'
 file = 'src/store/publication.ts'
 old = 'await protectIn(tx, plan.operationId, options.protect)'
@@ -476,11 +566,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sprotect\sunchanged$']
+expect_red = ['staged replacement publication rejects protect unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-required-fingerprint'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a required removal fingerprint cannot be omitted'
 file = 'src/store/publication.ts'
 old = '(rt.ctx.requireRemovedFingerprint && !ref.fingerprint)'
@@ -489,7 +582,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\srequired\sfingerprint\sunchanged$']
+expect_red = ['staged replacement publication rejects required fingerprint unchanged']
 expect_message = 'error: expect('
 
 [[control]]
@@ -520,6 +613,9 @@ expect_message = 'lock-contention'
 
 [[control]]
 id = 'store-publish-refresh-fingerprint'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a middle-row wait sees the refresh spending the planned old token'
 file = 'src/store/publication.ts'
 old = 'fingerprintOf(row.credential) !== ref.fingerprint'
@@ -528,7 +624,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\swaits\sbehind\smiddle\srow\srefresh\sand\schecks\spost\srefresh\sfingerprint$']
+expect_red = ['staged replacement waits behind middle row refresh and checks post refresh fingerprint']
 expect_message = 'error: expect('
 
 [[control]]
@@ -548,6 +644,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-before-observer'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'before-config-write observer rejects before the config rename'
 file = 'src/store/mutate.ts'
 old = 'await this.ctx.onStep?.(`before-${file}-write`, this.info)'
@@ -556,7 +655,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sbefore\spublication\srename\sobserver\sleaves\sold\spool\susable$']
+expect_red = ['staged replacement before publication rename observer leaves old pool usable']
 expect_message = 'error: expect('
 
 [[control]]
@@ -601,6 +700,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-digest'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'reusing an operation id for a different digest cannot adopt its receipt'
 file = 'src/store/publication.ts'
 old = 'if (prior.planDigest !== planDigest)'
@@ -609,7 +711,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sreused\soperation\sid\srefuses\sa\sdifferent\splan\sdigest$']
+expect_red = ['staged replacement reused operation id refuses a different plan digest']
 expect_message = 'error: expect('
 
 [[control]]
@@ -676,6 +778,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-duplicate-prerequisites'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'stage-duplicate requires an explicit disabled reservation'
 file = 'src/store/rows.ts'
 old = "(mode === 'stage-duplicate' && (!input.disabled || !input.stage))"
@@ -684,11 +789,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\srefuse\spreserves\sholder\sand\sduplicate\srequires\sboth\sstaging\sfields$']
+expect_red = ['staged replacement refuse preserves holder and duplicate requires both staging fields']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-replay-reason'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'staged replay requires the exact original disabled reason'
 file = 'src/store/rows.ts'
 old = 'staged.disabledReason !== input.disabled?.reason ||'
@@ -697,7 +805,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sdisabled\sreason$']
+expect_red = ['staged replacement exact replay rejects changed disabled reason']
 expect_message = 'error: expect('
 
 [[control]]
@@ -715,6 +823,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-missing-reservation'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'finalization cannot adopt a row whose config marker is absent'
 file = 'src/store/publication.ts'
 old = 'row.staged?.reservation !== ref.reservation ||'
@@ -723,11 +834,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\smissing\sreservation\sunchanged$']
+expect_red = ['staged replacement publication rejects missing reservation unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-disabled-reason-required'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a disabled finalization must carry its reason'
 file = 'src/store/publication.ts'
 old = ": typeof ref.disabledReason !== 'string')"
@@ -736,11 +850,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sdisabled\sreason\srequired\sunchanged$']
+expect_red = ['staged replacement publication rejects disabled reason required unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-enabled-reason-forbidden'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'an enabled finalization must not carry a disabled reason'
 file = 'src/store/publication.ts'
 old = '? ref.disabledReason !== undefined'
@@ -749,11 +866,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\senabled\sreason\sforbidden\sunchanged$']
+expect_red = ['staged replacement publication rejects enabled reason forbidden unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-removed-reserved'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication removal never consumes another reserved row'
 file = 'src/store/publication.ts'
 old = 'tx.assertNotStaged(ref.id)'
@@ -762,11 +882,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sremoved\sreserved\sunchanged$']
+expect_red = ['staged replacement publication rejects removed reserved unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-removed-unbound'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication removal requires a bindable credential stamp'
 file = 'src/store/publication.ts'
 old = '''assertBoundRowAttribution(
@@ -784,11 +907,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sremoved\sunbound\sunchanged$']
+expect_red = ['staged replacement publication rejects removed unbound unchanged']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-publish-removed-torn'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication removal cannot settle a torn credential by deleting it'
 file = 'src/store/publication.ts'
 old = '''assertBoundRowAttribution(
@@ -806,7 +932,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\spublication\srejects\sremoved\storn\sunchanged$']
+expect_red = ['staged replacement publication rejects removed torn unchanged']
 expect_message = 'error: expect('
 
 [[control]]
@@ -843,6 +969,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-no-rotate-mode'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a stage marker cannot reach the ordinary old-holder rotation branch'
 file = 'src/store/rows.ts'
 old = "if (input.stage !== undefined && mode === 'rotate')"
@@ -851,7 +980,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sstage\swith\srotate\srefuses\sbefore\slocks\sand\spreserves\sholder$']
+expect_red = ['staged replacement stage with rotate refuses before locks and preserves holder']
 expect_message = 'error: expect('
 
 [[control]]
@@ -895,6 +1024,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-raw-label-absence'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a malformed present config label cannot count as the staged label being absent'
 file = 'src/store/rows.ts'
 old = 'raw.label !== label ||'
@@ -903,11 +1035,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\slabel$']
+expect_red = ['staged replacement exact replay rejects changed label']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-stage-raw-identity-absence'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a malformed present config identity cannot count as the staged identity being absent'
 file = 'src/store/rows.ts'
 old = 'raw.accountId !== identity'
@@ -916,7 +1051,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\sreplacement\sexact\sreplay\srejects\schanged\sidentity\sabsence$']
+expect_red = ['staged replacement exact replay rejects changed identity absence']
 expect_message = 'error: expect('
 
 [[control]]
@@ -2753,6 +2888,9 @@ expect_message = 'Expected constructor:'
 
 [[control]]
 id = 'store-revision-exact-rotating-holder'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'the exact valid fingerprint holder stays reserved even behind an invalid earlier holder'
 file = 'src/store/reserved.ts'
 old = 'if (reservation !== undefined)'
@@ -2761,11 +2899,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\srotating\sadd\sfences\sthe\sexact\svalid\sholder\sbehind\san\sinvalid\sholder$']
+expect_red = ['staged revision rotating add fences the exact valid holder behind an invalid holder']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-rotate-orphan-secret'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'rotating add scans other state-only staging reservations before creating a duplicate secret holder'
 file = 'src/store/rows.ts'
 old = 'if (stagedOrphan)'
@@ -2774,7 +2915,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\srotate\sadd\scannot\sduplicate\sa\sstaged\sorphan\sunder\sanother\sid$']
+expect_red = ['staged revision rotate add cannot duplicate a staged orphan under another id']
 expect_message = 'error: expect('
 
 [[control]]
@@ -2792,6 +2933,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-duplicate-orphan-secret'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'duplicate staging cannot claim a state-only orphan secret owned by another id'
 file = 'src/store/rows.ts'
 old = 'if (stagedOrphan)'
@@ -2800,11 +2944,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\sstage-duplicate\sadd\scannot\sduplicate\sa\sstaged\sorphan\sunder\sanother\sid$']
+expect_red = ['staged revision stage-duplicate add cannot duplicate a staged orphan under another id']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-survivor-finalized-secret'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'one resulting secret cannot carry different known identities across survivors and finalized rows'
 file = 'src/store/publication.ts'
 old = 'other.fingerprint === row.fingerprint,'
@@ -2813,11 +2960,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\spublication\srejects\sshared\ssecret\sacross\sdifferent\sidentities\sfor\ssurvivor\sand\sfinalized$']
+expect_red = ['staged revision publication rejects shared secret across different identities for survivor and finalized']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-finalized-secret-identities'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'two finalized rows cannot claim one secret under different known identities'
 file = 'src/store/publication.ts'
 old = 'other.fingerprint === row.fingerprint,'
@@ -2826,11 +2976,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\spublication\srejects\sshared\ssecret\sacross\sdifferent\sidentities\sfor\stwo\sfinalized$']
+expect_red = ['staged revision publication rejects shared secret across different identities for two finalized']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-survivor-secret-identities'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication audits shared secret identities even among untouched survivors'
 file = 'src/store/publication.ts'
 old = 'other.fingerprint === row.fingerprint,'
@@ -2839,11 +2992,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\spublication\srejects\sshared\ssecret\sacross\sdifferent\sidentities\sfor\stwo\ssurvivors$']
+expect_red = ['staged revision publication rejects shared secret across different identities for two survivors']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-surviving-torn-replace'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication refuses surviving state-ahead replacements instead of committing their raw old roster bytes'
 file = 'src/store/publication.ts'
 old = 'if (tornSurvivor)'
@@ -2852,11 +3008,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\spublication\srefuses\sa\ssurviving\storn\sreplace\swithout\srepair$']
+expect_red = ['staged revision publication refuses a surviving torn replace without repair']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-surviving-torn-transition'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication refuses pending transitions in the resulting roster without repairing them'
 file = 'src/store/publication.ts'
 old = 'if (tornSurvivor)'
@@ -2865,11 +3024,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\spublication\srefuses\sa\ssurviving\storn\stransition\swithout\srepair$']
+expect_red = ['staged revision publication refuses a surviving torn transition without repair']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-roster-bijection'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'duplicate survivor ids cannot admit an unknown order id that would serialize as a null account'
 file = 'src/store/publication.ts'
 old = 'const survivors = publicationSurvivors(tx, plan, rows)'
@@ -2878,11 +3040,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\spublication\srejects\sduplicate\sraw\sroster\sids\sinstead\sof\swriting\snull\saccounts$']
+expect_red = ['staged revision publication rejects duplicate raw roster ids instead of writing null accounts']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-removed-roster-duplicates'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'publication refuses raw duplicate ids even when both duplicates are removed'
 file = 'src/store/publication.ts'
 old = 'rosterIds.has(raw.id)'
@@ -2891,7 +3056,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\spublication\srejects\sduplicate\sremoved\sroster\sids\stoo$']
+expect_red = ['staged revision publication rejects duplicate removed roster ids too']
 expect_message = 'error: expect('
 
 [[control]]
@@ -3020,6 +3185,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-reserved-quota-write'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'quota recording never writes an enabled-shaped reserved row'
 file = 'src/store/attribution.ts'
 old = 'tx.assertNotStaged(id)'
@@ -3028,11 +3196,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\sreserved\spull\scapture\sand\squota\srecording\swrite\snothing\seven\sbeside\sa\storn\ssibling$']
+expect_red = ['staged revision reserved pull capture and quota recording write nothing even beside a torn sibling']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-finalize-provider-state'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'finalize compares full provider metadata against the staged digest'
 file = 'src/store/publication.ts'
 old = 'stamp.staged.providerState !== fullProviderDigest'
@@ -3041,11 +3212,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\sfinalize\srejects\schanged\sfull\sstaged\sproviderState\smaterial$']
+expect_red = ['staged revision finalize rejects changed full staged providerState material']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-finalize-label'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'finalize compares the raw original staged label including absence'
 file = 'src/store/publication.ts'
 old = 'stamp.staged.label !== raw?.label ||'
@@ -3054,11 +3228,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\sfinalize\srejects\schanged\sfull\sstaged\slabel\smaterial$']
+expect_red = ['staged revision finalize rejects changed full staged label material']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-finalize-disabled-reason'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'finalize requires the exact disabled reason recorded in the staging stamp'
 file = 'src/store/publication.ts'
 old = 'stamp.staged.disabledReason !== row.disabledReason ||'
@@ -3067,7 +3244,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\sfinalize\srejects\schanged\sfull\sstaged\sdisabledReason\smaterial$']
+expect_red = ['staged revision finalize rejects changed full staged disabledReason material']
 expect_message = 'error: expect('
 
 [[control]]
@@ -3154,6 +3331,9 @@ expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-reject-staged-state-sync'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a rejected staged-state sync stops publication before its config rename'
 file = 'src/store/publication.ts'
 old = 'await tx.syncState()'
@@ -3162,11 +3342,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\sprepublication-state\ssync\srejection\sprevents\sthe\snext\sirreversible\swrite$']
+expect_red = ['staged revision prepublication-state sync rejection prevents the next irreversible write']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-reject-committed-config-sync'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a rejected committed-config sync leaves state cleanup unwritten'
 file = 'src/store/publication.ts'
 old = 'await tx.syncConfig()'
@@ -3175,11 +3358,14 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\scommitted-config\ssync\srejection\sprevents\sthe\snext\sirreversible\swrite$']
+expect_red = ['staged revision committed-config sync rejection prevents the next irreversible write']
 expect_message = 'error: expect('
 
 [[control]]
 id = 'store-revision-reject-cleanup-state-sync'
+broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
+broad_report = 'staged-replacement-broad.xml'
+broad_id = '{name}'
 guards = 'a rejected cleanup-state sync cannot advance the cleaned receipt'
 file = 'src/store/publication.ts'
 old = 'await tx.commitState(undefined, { durable: true })'
@@ -3188,7 +3374,7 @@ test_file = 'test/store/staged-replacement.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^staged\srevision\scleanup-state\ssync\srejection\sprevents\sthe\snext\sirreversible\swrite$']
+expect_red = ['staged revision cleanup-state sync rejection prevents the next irreversible write']
 expect_message = 'error: expect('
 
 # --- changing snapshots can be retried; invalid accounts survive; rejected adds write nothing ---

@@ -11,10 +11,10 @@ Shared libraries for the CortexKit auth plugins for OpenCode and Pi: openai-auth
 
 A passing safety test proves little until it has been seen to fail. [`mutations.toml`](mutations.toml) is the checked-in catalogue: each row deliberately breaks one guard in `src/` (or a CI scan script) and names the Bun test that must fail because of it, so a guard cannot silently stop guarding. A row earns its place by guarding a silent, costly failure: lock exclusion, crash safety, credential loss or leakage, a single-use token used twice, misattributed quota, a wire contract, data loss. Style and cosmetics do not.
 
-The pinned [`ckdev-mutate`](https://github.com/cortexkit/commons/tree/73c7e66145e131eadffdd874c82d93548868b668/crates/cortexkit-mutate) runner replays it from a clean tree. It installs and builds first (fixtures import `dist/`), checks each named test passes, applies the break, rebuilds, requires the test to fail, and restores the source byte for byte:
+The pinned [`ckdev-mutate`](https://github.com/cortexkit/commons/tree/0c99c7e16d8ae22b6e114136b6b7b68be6f1394e/crates/cortexkit-mutate) runner replays it from a clean tree. It installs and builds first (fixtures import `dist/`), checks each named test passes, applies the break, rebuilds, requires the test to fail, and restores the source byte for byte:
 
 ```sh
-cargo install --locked --git https://github.com/cortexkit/commons --rev 73c7e66145e131eadffdd874c82d93548868b668 cortexkit-mutate
+cargo install --locked --git https://github.com/cortexkit/commons --rev 0c99c7e16d8ae22b6e114136b6b7b68be6f1394e cortexkit-mutate
 ckdev-mutate check
 ckdev-mutate run --all
 ckdev-mutate run --diff origin/main
