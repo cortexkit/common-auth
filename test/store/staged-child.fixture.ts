@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import {
   type AddInput,
   openPoolStore,
@@ -19,10 +19,10 @@ const store = openPoolStore({
   },
   requireCredentialStamps: true,
   lockOptions: { retryMs: 1 },
-  onLockEvent: async (event) => {
+  onLockEvent: (event) => {
     if (event.type !== 'acquired') return
     const path = `${event.path}.${event.name}.lock`
-    const record = JSON.parse(await readFile(path, 'utf8'))
+    const record = JSON.parse(readFileSync(path, 'utf8'))
     console.log(`lease:${JSON.stringify({ path, ownerId: record.ownerId })}`)
   },
   onStep: (step, info) => {

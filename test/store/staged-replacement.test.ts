@@ -361,11 +361,21 @@ for (const operation of ['add', 'enable', 'disable'] as const) {
       ...settings,
       management: 'predecessor',
     }))
+    // Recovery will pause after replacing this expired lease with the one the
+    // predecessor holds while it waits for store locks.
+    const managementLockPath = `${statePath}.management-wait.lock`
+    await write(managementLockPath, {
+      ownerId: 'expired-predecessor',
+      expiresAt: Date.now() - 1,
+    })
     const parked = deferred()
     const resume = deferred()
     const predecessor = open({
-      onLockEvent: async (event) => {
-        if (event.type === 'acquired' && event.name === 'management-wait') {
+      onLockStep: async (lock, step) => {
+        if (
+          lock.name === 'management-wait' &&
+          step === 'stale-lock-recreated'
+        ) {
           parked.resolve()
           await resume.promise
         }
@@ -393,14 +403,18 @@ for (const operation of ['add', 'enable', 'disable'] as const) {
           ? predecessor.enable('old', callOptions)
           : predecessor.disable('old', 'late', callOptions),
     )
-    // Settings use only store locks, so this successor lands while the
-    // predecessor is parked ahead of its store-lock acquisition.
+    // Settings use only store locks, so they can change while the predecessor
+    // holds the management lease and waits to acquire those store locks.
     await observed(hooks.lifetime, parked.promise)
+    const heldLease = await json(managementLockPath)
+    expect(heldLease.ownerId).not.toBe('expired-predecessor')
+    expect(heldLease.expiresAt).toBeGreaterThan(Date.now())
     await store.updateSettings((settings) => ({
       ...settings,
       management: 'successor',
     }))
     const successor = await bytes()
+    expect(await json(managementLockPath)).toEqual(heldLease)
     resume.resolve()
     await expect(pending).rejects.toMatchObject({
       kind: 'row-protected',
