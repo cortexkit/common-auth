@@ -3963,3 +3963,64 @@ command = ['bun', 'test', 'test/commands/sections.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^command\smenu\ssections\sno\sbuilt-in\ssection\semits\san\sitem\swithout\sactions,\sand\san\saccount\sthat\scannot\sbe\schecked\sis\sa\squota\sline$']
 expect_message = 'does nothing when chosen'
+
+[[control]]
+id = 'claustrum-enrollment-approved-missing-token-remains-vault'
+guards = 'an approved ceremony with no token remains in vault mode, so callers refuse with the vault-unavailable message instead of falling back to local accounts'
+file = 'src/claustrum/enrollment.ts'
+old = '''  if (
+    status.state === 'approved' ||
+    (status.state === 'blocked' && status.code === 'missing_token')
+  ) {
+    return 'vault'
+  }'''
+new = '''  if (
+    status.state === 'approved' ||
+    (status.state === 'blocked' && status.code === 'missing_token')
+  ) {
+    return 'local' // NON-VACUITY BREAK
+  }'''
+test_file = 'test/claustrum/enrollment.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^enrollmentAuthority\suses\svault\sauthority\sfor\sapproved\sstate\swhen\sthe\stoken\sis\smissing$']
+expect_message = '/Expected: "vault"\s+Received: "local"/'
+
+[[control]]
+id = 'claustrum-enrollment-approved-corrupt-token-remains-vault'
+guards = 'an approved ceremony with a corrupt token remains in vault mode, so callers refuse with the vault-unavailable message instead of falling back to local accounts'
+file = 'src/claustrum/enrollment.ts'
+old = '''      return state.phase === 'approved' && state.proposedName === proposedName
+        ? 'vault'
+        : 'unreadable''''
+new = '''      return 'unreadable' // NON-VACUITY BREAK'''
+test_file = 'test/claustrum/enrollment.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^enrollmentAuthority\suses\svault\sauthority\sfor\sapproved\sstate\swhen\sthe\stoken\sis\scorrupt$']
+expect_message = '/Expected: "vault"\s+Received: "unreadable"/'
+
+[[control]]
+id = 'claustrum-enrollment-unreadable-state-does-not-fall-back'
+guards = 'an unreadable enrollment state refuses authority instead of silently selecting local accounts'
+file = 'src/claustrum/enrollment.ts'
+old = '''    } catch {
+      return 'unreadable'
+    }
+  }
+
+  if ('proposedName' in status'''
+new = '''    } catch {
+      return 'local' // NON-VACUITY BREAK
+    }
+  }
+
+  if ('proposedName' in status'''
+test_file = 'test/claustrum/enrollment.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^enrollmentAuthority\streats\sa\scorrupt\sstate\sfile\swithout\sa\stoken\sas\sunreadable$']
+expect_message = '/Expected: "unreadable"\s+Received: "local"/'

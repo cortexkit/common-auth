@@ -4,6 +4,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   stat,
@@ -20,6 +21,7 @@ import {
   type ClaustrumEnrollmentClient,
   ClaustrumEnrollmentManager,
   classifyEnrollmentError,
+  enrollmentAuthority,
   enrollmentName,
   getClaustrumEnrollmentPaths,
   hostEnrollmentPaths,
@@ -99,6 +101,162 @@ afterEach(async () => {
   await Promise.all(
     tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   )
+})
+
+describe('enrollmentAuthority', () => {
+  test('uses vault authority when a valid token file exists', async () => {
+    const paths = await fixture()
+    await writeFile(
+      paths.tokenPath,
+      JSON.stringify({ token: secret, token_generation: 1 }),
+      { mode: 0o600 },
+    )
+
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+  })
+
+  test('uses vault authority for approved state when the token is missing', async () => {
+    const paths = await fixture()
+    await writeFile(
+      paths.statePath,
+      JSON.stringify({
+        version: 1,
+        phase: 'approved',
+        proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        tokenGeneration: 1,
+        updatedAt: 1,
+      }),
+      { mode: 0o600 },
+    )
+
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+  })
+
+  test('uses vault authority for approved state when the token is corrupt', async () => {
+    const paths = await fixture()
+    await writeFile(
+      paths.statePath,
+      JSON.stringify({
+        version: 1,
+        phase: 'approved',
+        proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        tokenGeneration: 1,
+        updatedAt: 1,
+      }),
+      { mode: 0o600 },
+    )
+    await writeFile(
+      paths.tokenPath,
+      JSON.stringify({ token: 'broken', token_generation: 1 }),
+      { mode: 0o600 },
+    )
+
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+  })
+
+  test('uses local authority when no enrollment files exist', async () => {
+    const paths = await fixture()
+
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('local')
+  })
+
+  test('uses local authority for pending, denied and blocked state', async () => {
+    for (const state of [
+      {
+        version: 1,
+        phase: 'pending',
+        proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        requestSecret: secret,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        version: 1,
+        phase: 'denied',
+        proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        updatedAt: 1,
+      },
+      {
+        version: 1,
+        phase: 'blocked',
+        proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        errorCode: 'invalid_params',
+        updatedAt: 1,
+      },
+    ]) {
+      const paths = await fixture()
+      await writeFile(paths.statePath, JSON.stringify(state), { mode: 0o600 })
+
+      expect(
+        await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+      ).toBe('local')
+    }
+  })
+
+  test('treats a corrupt state file without a token as unreadable', async () => {
+    const paths = await fixture()
+    await writeFile(paths.statePath, '{broken', { mode: 0o600 })
+
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('unreadable')
+  })
+
+  test('treats state for another consumer name as unreadable', async () => {
+    const paths = await fixture()
+    await seedPendingRequest(paths)
+
+    expect(await enrollmentAuthority(paths, CLAUSTRUM_PI_ENROLLMENT_NAME)).toBe(
+      'unreadable',
+    )
+  })
+
+  test('does not change directory entries or mtimes', async () => {
+    const paths = await fixture()
+    await writeFile(
+      paths.statePath,
+      JSON.stringify({
+        version: 1,
+        phase: 'approved',
+        proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        tokenGeneration: 1,
+        updatedAt: 1,
+      }),
+      { mode: 0o600 },
+    )
+    await writeFile(
+      paths.tokenPath,
+      JSON.stringify({ token: secret, token_generation: 1 }),
+      { mode: 0o600 },
+    )
+    const directory = dirname(paths.statePath)
+    const filesBefore = await readdir(directory)
+    const mtimesBefore = await Promise.all(
+      [directory, paths.statePath, paths.tokenPath].map(
+        async (path) => (await stat(path)).mtimeMs,
+      ),
+    )
+
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+    expect(await readdir(directory)).toEqual(filesBefore)
+    expect(
+      await Promise.all(
+        [directory, paths.statePath, paths.tokenPath].map(
+          async (path) => (await stat(path)).mtimeMs,
+        ),
+      ),
+    ).toEqual(mtimesBefore)
+  })
 })
 
 describe('ClaustrumEnrollmentManager', () => {

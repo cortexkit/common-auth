@@ -581,6 +581,47 @@ export async function readClaustrumEnrollmentStatus(
   return statusFromState(state)
 }
 
+/** Resolve the host's account mode from its enrollment files without writing. */
+export async function enrollmentAuthority(
+  paths: ClaustrumEnrollmentPaths,
+  proposedName: string,
+): Promise<'vault' | 'local' | 'unreadable'> {
+  let status: ClaustrumEnrollmentStatus
+  try {
+    status = await readClaustrumEnrollmentStatus(paths, proposedName)
+  } catch (error) {
+    if (
+      !(error instanceof ClaustrumConsumerError) ||
+      (error.kind !== 'invalid-state' && error.kind !== 'invalid-token')
+    ) {
+      return 'unreadable'
+    }
+
+    // An approved ceremony remains vault mode even when its token is corrupt.
+    // Re-read the state so a malformed or unreadable state cannot authorize it.
+    try {
+      const stateValue = await readBoundedJson(paths.statePath)
+      if (stateValue === undefined) return 'unreadable'
+      const state = decodeEnrollmentState(stateValue)
+      return state.phase === 'approved' && state.proposedName === proposedName
+        ? 'vault'
+        : 'unreadable'
+    } catch {
+      return 'unreadable'
+    }
+  }
+
+  if ('proposedName' in status && status.proposedName !== proposedName)
+    return 'unreadable'
+  if (
+    status.state === 'approved' ||
+    (status.state === 'blocked' && status.code === 'missing_token')
+  ) {
+    return 'vault'
+  }
+  return 'local'
+}
+
 /**
  * Read fresh bearer material for one scoped operation; never publish it.
  * Re-reading per operation is what lets an operator reissue a token on disk.

@@ -47,6 +47,7 @@ export {
   classifyEnrollmentError,
   connectClaustrumEnrollmentClient,
   type EnrollmentDisposition,
+  enrollmentAuthority,
   enrollmentName,
   getClaustrumEnrollmentPaths,
   hostEnrollmentPaths,
