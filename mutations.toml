@@ -39,7 +39,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement refuse preserves holder and duplicate requires both staging fields']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-crash-marker'
@@ -68,7 +68,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement foreign orphan different reservation refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-orphan-missing'
@@ -84,7 +84,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement foreign orphan missing reservation refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-metadata'
@@ -100,7 +100,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed provider metadata']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-label'
@@ -116,7 +116,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed label']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-identity'
@@ -132,7 +132,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed identity absence']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-access'
@@ -150,7 +150,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed access token']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-expiry'
@@ -168,7 +168,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed expiry']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-endpoint'
@@ -186,7 +186,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed endpoint']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-enabled'
@@ -204,7 +204,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed enabled shape']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-protect-add'
@@ -222,7 +222,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement protect add observes successor management under locks']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-protect-enable'
@@ -240,7 +240,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement protect enable observes successor management under locks']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-protect-disable'
@@ -258,7 +258,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement protect disable observes successor management under locks']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-enable'
@@ -274,7 +274,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved enable refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-disable'
@@ -290,7 +290,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved disable refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-refresh'
@@ -306,7 +306,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved refresh refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-replace'
@@ -322,7 +322,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved replace refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-rotate'
@@ -338,7 +338,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved rotate refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-identity'
@@ -354,7 +354,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved recordIdentity refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-quota'
@@ -370,7 +370,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved recordQuota refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-provider-state'
@@ -386,7 +386,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved updateProviderState refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-reserved-add'
@@ -402,7 +402,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reserved add refuses unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-never-candidate'
@@ -431,7 +431,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement remove fence deletes reserved rows but never published rows']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-attribution'
@@ -456,7 +456,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects attribution unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-fingerprint'
@@ -472,7 +472,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "^$1$"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects fingerprint unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 
 [[control]]
@@ -489,7 +489,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects different reservation unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-stamp-reservation'
@@ -505,7 +505,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects stamp reservation unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-order'
@@ -523,7 +523,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects order unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-enabled-identity'
@@ -539,7 +539,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects enabled identity unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-secret-identity'
@@ -555,7 +555,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects secret identity unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-protect'
@@ -571,7 +571,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects protect unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-required-fingerprint'
@@ -587,7 +587,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects required fingerprint unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-disabled-final'
@@ -629,7 +629,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement waits behind middle row refresh and checks post refresh fingerprint']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-key-recheck'
@@ -660,7 +660,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement before publication rename observer leaves old pool usable']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-before-lease'
@@ -716,7 +716,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement reused operation id refuses a different plan digest']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-file-sync'
@@ -794,7 +794,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement refuse preserves holder and duplicate requires both staging fields']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-reason'
@@ -810,7 +810,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed disabled reason']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-stamp-parse'
@@ -839,7 +839,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects missing reservation unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-disabled-reason-required'
@@ -855,7 +855,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects disabled reason required unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-enabled-reason-forbidden'
@@ -871,7 +871,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects enabled reason forbidden unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-removed-reserved'
@@ -887,7 +887,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects removed reserved unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-removed-unbound'
@@ -912,7 +912,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects removed unbound unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-removed-torn'
@@ -937,7 +937,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement publication rejects removed torn unchanged']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-publish-forward-cleanup'
@@ -985,7 +985,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement stage with rotate refuses before locks and preserves holder']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-replay-no-pull'
@@ -1040,7 +1040,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed label']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-raw-identity-absence'
@@ -1056,7 +1056,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged replacement exact replay rejects changed identity absence']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-stage-attributed-toggle-repair'
@@ -2904,7 +2904,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision rotating add fences the exact valid holder behind an invalid holder']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-rotate-orphan-secret'
@@ -2920,7 +2920,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision rotate add cannot duplicate a staged orphan under another id']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-refuse-orphan-secret'
@@ -2949,7 +2949,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision stage-duplicate add cannot duplicate a staged orphan under another id']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-survivor-finalized-secret'
@@ -2965,7 +2965,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision publication rejects shared secret across different identities for survivor and finalized']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-finalized-secret-identities'
@@ -2981,7 +2981,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision publication rejects shared secret across different identities for two finalized']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-survivor-secret-identities'
@@ -2997,7 +2997,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision publication rejects shared secret across different identities for two survivors']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-surviving-torn-replace'
@@ -3013,7 +3013,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision publication refuses a surviving torn replace without repair']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-surviving-torn-transition'
@@ -3029,7 +3029,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision publication refuses a surviving torn transition without repair']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-roster-bijection'
@@ -3045,7 +3045,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision publication rejects duplicate raw roster ids instead of writing null accounts']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-removed-roster-duplicates'
@@ -3061,7 +3061,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision publication rejects duplicate removed roster ids too']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-quarantine-before-repair'
@@ -3201,7 +3201,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision reserved pull capture and quota recording write nothing even beside a torn sibling']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-finalize-provider-state'
@@ -3217,7 +3217,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision finalize rejects changed full staged providerState material']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-finalize-label'
@@ -3233,7 +3233,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision finalize rejects changed full staged label material']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-finalize-disabled-reason'
@@ -3249,7 +3249,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision finalize rejects changed full staged disabledReason material']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-staged-state-barrier'
@@ -3347,7 +3347,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision prepublication-state sync rejection prevents the next irreversible write']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-reject-committed-config-sync'
@@ -3363,7 +3363,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision committed-config sync rejection prevents the next irreversible write']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'store-revision-reject-cleanup-state-sync'
@@ -3379,7 +3379,7 @@ runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/staged-replacement.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['staged revision cleanup-state sync rejection prevents the next irreversible write']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 # --- changing snapshots can be retried; invalid accounts survive; rejected adds write nothing ---
 
@@ -4077,7 +4077,7 @@ runner = 'command'
 command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^disconnectClaustrumEnrollment\srefuses\san\sunsafe\sstate\sfile\sand\sleaves\sboth\sfiles\sunchanged$']
-expect_message = 'error: expect('
+expect_message = 'Expected promise that rejects'
 
 # --- OpenCode 2 vault activation method (0.13.0) ---
 # The vault method must call the plugin's activation, never its pool login,
