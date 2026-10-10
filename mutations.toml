@@ -4193,4 +4193,4 @@ runner = 'command'
 command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^disconnectClaustrumEnrollment\srejects\sa\slost\sceremony\slease\swithout\sdeleting\ssuccessor\sstate$']
-expect_message = 'error:'
+expect_message = 'Expected promise that rejects'
