@@ -16,6 +16,7 @@ import {
   ATTEMPT_HEADER,
   installOpenCode2Auth,
   type LimitSignal,
+  registerOpenCode2AuthMethods,
 } from '../../../src/opencode2/index.js'
 import { MARKER_FIELD, RECEIPT_HEADER } from './mock-provider.js'
 
@@ -25,6 +26,13 @@ const CONTROL = process.env.COMMON_AUTH_E2E_CONTROL ?? ''
 const MARK_FRAMES = process.env.COMMON_AUTH_E2E_MARK_FRAMES === '1'
 /** Set by the test to send each attempt's receipt in a header. */
 const RECEIPT_ON_WIRE = process.env.COMMON_AUTH_E2E_RECEIPT_ON_WIRE === '1'
+/**
+ * Set by the test to register a vault activation method. Its value is the
+ * method ID; `COMMON_AUTH_E2E_VAULT_REFUSE` makes activation refuse with the
+ * message it holds, as a plugin does on a host that is not in vault mode.
+ */
+const VAULT_METHOD_ID = process.env.COMMON_AUTH_E2E_VAULT_METHOD ?? ''
+const VAULT_REFUSE = process.env.COMMON_AUTH_E2E_VAULT_REFUSE ?? ''
 const MARK = 'common-auth-e2e'
 const ACCOUNTS: Record<string, { token: string; id: string }> = {
   A: { token: 'tok-A', id: 'acct-A' },
@@ -63,9 +71,35 @@ function limitOf(event: {
 
 export default {
   id: 'cortexkit.common-auth.e2e-placement',
-  async setup(ctx: Parameters<typeof installOpenCode2Auth>[0]) {
+  async setup(
+    ctx: Parameters<typeof installOpenCode2Auth>[0] &
+      Parameters<typeof registerOpenCode2AuthMethods>[0],
+  ) {
     const limited = new Set<string>()
     let receipts = 0
+    let methods: { dispose(): Promise<void> } | undefined
+    if (VAULT_METHOD_ID) {
+      // No pool login method: on a vault-only host the vault method is the
+      // plugin's only way into the host's login picker.
+      methods = await registerOpenCode2AuthMethods(ctx, {
+        integrationID: 'openai',
+        methods: [],
+        onLogin: () => {
+          log('pool-login')
+        },
+        vault: {
+          method: {
+            id: VAULT_METHOD_ID,
+            type: 'oauth',
+            label: 'Use vault accounts',
+          },
+          activate: (context) => {
+            log('activate', { ...context })
+            if (VAULT_REFUSE) throw new Error(VAULT_REFUSE)
+          },
+        },
+      })
+    }
     // Registered before the installer, so they run before its transport
     // hooks: they record the attempt mark the host carried from
     // model.request onto the request and the handshake.
@@ -234,6 +268,9 @@ export default {
       }),
     )
     log('setup')
-    return () => installation.dispose()
+    return async () => {
+      await installation.dispose()
+      await methods?.dispose()
+    }
   },
 }

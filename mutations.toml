@@ -4024,3 +4024,103 @@ command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^enrollmentAuthority\streats\sa\scorrupt\sstate\sfile\swithout\sa\stoken\sas\sunreadable$']
 expect_message = '/Expected: "unreadable"\s+Received: "local"/'
+
+# --- OpenCode 2 vault activation method (0.13.0) ---
+# The vault method must call the plugin's activation, never its pool login,
+# hand the host only this integration's placeholder, fail the host login when
+# activation refuses, and refresh only its own placeholder.
+
+[[control]]
+id = 'opencode2-vault-calls-activate'
+guards = 'choosing the vault method runs the plugin activation that checks vault mode'
+file = 'src/opencode2/integration.ts'
+old = '.then(() => vault.activate({ integrationID, methodID }))'
+new = '.then(() => undefined) // NON-VACUITY BREAK: skip activation'
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^registerOpenCode2AuthMethods\svault\sactivation\sthe\svault\smethod\sactivates\swithout\sa\spool\slogin\sand\shands\sthe\shost\sa\splaceholder$']
+expect_message = '/-\s+"activate"/'
+
+[[control]]
+id = 'opencode2-vault-never-pool-login'
+guards = 'the vault method writes nothing to the plugin pool'
+file = 'src/opencode2/integration.ts'
+old = '.then(() => vault.activate({ integrationID, methodID }))'
+new = '.then(() => vault.activate({ integrationID, methodID })).then(() => options.onLogin(undefined as T, { integrationID, methodID })) // NON-VACUITY BREAK: also run the pool login'
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^registerOpenCode2AuthMethods\svault\sactivation\sthe\svault\smethod\sactivates\swithout\sa\spool\slogin\sand\shands\sthe\shost\sa\splaceholder$']
+expect_message = '/\+\s+"onLogin"/'
+
+[[control]]
+id = 'opencode2-vault-hands-own-placeholder'
+guards = "the vault method hands the host this integration's placeholder"
+file = 'src/opencode2/integration.ts'
+old = '''          .then(() => placeholderFor(methodID)),'''
+new = '''          .then(() => placeholderCredential({ integrationID: 'other', methodID, now: now() })), // NON-VACUITY BREAK: another integration's placeholder'''
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^registerOpenCode2AuthMethods\svault\sactivation\sthe\svault\smethod\sactivates\swithout\sa\spool\slogin\sand\shands\sthe\shost\sa\splaceholder$']
+expect_message = '/Expected: true\s+Received: false/'
+
+[[control]]
+id = 'opencode2-vault-refusal-fails-login'
+guards = 'a refused activation fails the host login and hands it no placeholder'
+file = 'src/opencode2/integration.ts'
+old = '.then(() => vault.activate({ integrationID, methodID }))'
+new = '.then(() => vault.activate({ integrationID, methodID })).catch(() => undefined) // NON-VACUITY BREAK: swallow the refusal'
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^registerOpenCode2AuthMethods\svault\sactivation\sa\srefused\svault\sactivation\sfails\sthe\shost\slogin\swith\sits\smessage\sand\sno\splaceholder$']
+expect_message = 'expect(received).toBeUndefined()'
+
+[[control]]
+id = 'opencode2-vault-refresh-renews'
+guards = 'vault refresh issues a fresh placeholder'
+file = 'src/opencode2/integration.ts'
+old = '''        return placeholderFor(methodID)
+      },'''
+new = '''        return credential // NON-VACUITY BREAK: keep the expired placeholder
+      },'''
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^registerOpenCode2AuthMethods\svault\sactivation\svault\srefresh\srenews\sonly\sthe\svault\smethod.s\sown\splaceholder$']
+expect_message = '/\+\s+"expires": 1831535999999/'
+
+[[control]]
+id = 'opencode2-vault-refresh-own-method'
+guards = "vault refresh refuses a placeholder stored under another of the plugin's methods"
+file = 'src/opencode2/integration.ts'
+old = '''          !isPlaceholderCredential(credential, integrationID) ||
+          credential.methodID !== methodID'''
+new = '''          !isPlaceholderCredential(credential, integrationID) // NON-VACUITY BREAK: accept any method's placeholder'''
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^registerOpenCode2AuthMethods\svault\sactivation\svault\srefresh\srenews\sonly\sthe\svault\smethod.s\sown\splaceholder$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'opencode2-vault-refresh-own-integration'
+guards = "vault refresh refuses another integration's placeholder and a real login"
+file = 'src/opencode2/integration.ts'
+old = '''          !isPlaceholderCredential(credential, integrationID) ||
+          credential.methodID !== methodID'''
+new = '''          credential.methodID !== methodID // NON-VACUITY BREAK: accept any credential under the vault method ID'''
+test_file = 'test/opencode2/integration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/integration.test.ts -t "$1"', 'mutation', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^registerOpenCode2AuthMethods\svault\sactivation\svault\srefresh\srenews\sonly\sthe\svault\smethod.s\sown\splaceholder$']
+expect_message = 'Expected promise that rejects'

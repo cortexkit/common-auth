@@ -6,6 +6,7 @@ import {
   placeholderCredential,
   placeholderSecret,
   registerOpenCode2AuthMethods,
+  VAULT_ACTIVATION_INSTRUCTIONS,
 } from '../../src/opencode2/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
@@ -232,5 +233,146 @@ describe('registerOpenCode2AuthMethods', () => {
     ).toBe(false)
     expect(isPlaceholderCredential({ type: 'key', key: 'k' })).toBe(false)
     expect(isPlaceholderCredential(undefined)).toBe(false)
+  })
+})
+
+const VAULT_METHOD = {
+  id: 'acme-vault',
+  type: 'oauth',
+  label: 'Use vault accounts',
+} as const
+const NOT_VAULT =
+  'This host is not in vault mode; sign in with a local account.'
+
+/** Registers one pool method and the vault method, recording every call. */
+function setupVault(activate: () => void | Promise<void>) {
+  const host = fakeIntegration()
+  const calls: string[] = []
+  const contexts: unknown[] = []
+  const registration = registerOpenCode2AuthMethods<string>(host.ctx, {
+    integrationID: 'acme',
+    now: () => NOW,
+    onLogin: () => {
+      calls.push('onLogin')
+    },
+    methods: [
+      {
+        method: { id: 'acme-code', type: 'oauth', label: 'Paste a code' },
+        authorize: async () => ({
+          url: 'https://login.invalid/',
+          instructions: 'Paste the code',
+          mode: 'code',
+          callback: async (code) => `tokens-for-${code}`,
+        }),
+      },
+    ],
+    vault: {
+      method: VAULT_METHOD,
+      activate: async (context) => {
+        calls.push('activate')
+        contexts.push(context)
+        await activate()
+      },
+    },
+  })
+  const vaultMethod = async () => {
+    await observed(hooks.lifetime, registration)
+    const entry = host.registered.find(
+      (candidate) => candidate.method.id === VAULT_METHOD.id,
+    )
+    if (!entry) throw new Error('the vault method was not registered')
+    return entry
+  }
+  return { calls, contexts, vaultMethod }
+}
+
+describe('registerOpenCode2AuthMethods vault activation', () => {
+  test('the vault method activates without a pool login and hands the host a placeholder', async () => {
+    const { calls, contexts, vaultMethod } = setupVault(() => {})
+    const entry = await vaultMethod()
+    expect(entry.integrationID).toBe('acme')
+    expect(entry.method).toEqual(VAULT_METHOD)
+    const pending = await entry.authorize({})
+    // Nothing to open: the host's CLI and TUI skip the browser for this.
+    expect(pending.mode).toBe('auto')
+    expect(pending.url).toBe('')
+    expect(pending.instructions).toBe(VAULT_ACTIVATION_INSTRUCTIONS)
+    const stored = await pending.callback
+    expect(calls).toEqual(['activate'])
+    expect(contexts).toEqual([
+      { integrationID: 'acme', methodID: 'acme-vault' },
+    ])
+    expect(isPlaceholderCredential(stored, 'acme')).toBe(true)
+    expect(stored).toEqual(
+      placeholderCredential({
+        integrationID: 'acme',
+        methodID: 'acme-vault',
+        now: NOW,
+      }),
+    )
+  })
+
+  test('a refused vault activation fails the host login with its message and no placeholder', async () => {
+    const { calls, vaultMethod } = setupVault(() => {
+      throw new Error(NOT_VAULT)
+    })
+    const entry = await vaultMethod()
+    const pending = await entry.authorize({})
+    let stored: unknown
+    let failure: unknown
+    try {
+      stored = await pending.callback
+    } catch (error) {
+      failure = error
+    }
+    expect(stored).toBeUndefined()
+    expect((failure as Error | undefined)?.message).toBe(NOT_VAULT)
+    expect(calls).toEqual(['activate'])
+  })
+
+  test("vault refresh renews only the vault method's own placeholder", async () => {
+    const { calls, vaultMethod } = setupVault(() => {})
+    const entry = await vaultMethod()
+    const own = placeholderCredential({
+      integrationID: 'acme',
+      methodID: 'acme-vault',
+      now: NOW - 1,
+    })
+    const renewed = await entry.refresh!(own)
+    expect(renewed).toEqual(
+      placeholderCredential({
+        integrationID: 'acme',
+        methodID: 'acme-vault',
+        now: NOW,
+      }),
+    )
+    const refusal =
+      "This login method refreshes only its vault placeholder; choose the plugin's vault login method again."
+    const refused: Credential.OAuth[] = [
+      // A real login stored under the vault method's ID.
+      {
+        type: 'oauth',
+        methodID: 'acme-vault' as Credential.OAuth['methodID'],
+        access: 'real-access',
+        refresh: 'real-refresh',
+        expires: NOW - 1,
+      },
+      // Another integration's placeholder.
+      placeholderCredential({
+        integrationID: 'other',
+        methodID: 'acme-vault',
+        now: NOW - 1,
+      }),
+      // The pool method's placeholder.
+      placeholderCredential({
+        integrationID: 'acme',
+        methodID: 'acme-code',
+        now: NOW - 1,
+      }),
+    ]
+    for (const credential of refused)
+      await expect(entry.refresh!(credential)).rejects.toThrow(refusal)
+    // Refresh neither re-runs activation nor touches the pool.
+    expect(calls).toEqual([])
   })
 })

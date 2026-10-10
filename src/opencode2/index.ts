@@ -8,9 +8,11 @@ export {
 } from './install.js'
 export type {
   FormAnswer,
+  LoginContext,
   PoolAuthorization,
   PoolLoginMethod,
   RegisterOpenCode2AuthMethodsOptions,
+  VaultActivationMethod,
 } from './integration.js'
 export {
   isPlaceholderCredential,
@@ -20,6 +22,7 @@ export {
   placeholderCredential,
   placeholderSecret,
   registerOpenCode2AuthMethods,
+  VAULT_ACTIVATION_INSTRUCTIONS,
 } from './integration.js'
 export type { ServerSentEvent } from './sse.js'
 export { watchServerSentEvents } from './sse.js'

@@ -42,8 +42,15 @@ interface ScenarioResult {
   readonly plugin: PluginEvent[]
   readonly stdout: string[]
   readonly exits: Array<number | null>
+  /** The vault login's exit code and output, when the scenario ran one. */
+  readonly login?: { readonly exit: number | null; readonly output: string }
+  /** The host's credential rows right after that login. */
+  readonly credentials?: unknown
   readonly diagnostics: string
 }
+
+/** The ID the test plugin registers its vault activation method under. */
+const VAULT_METHOD_ID = 'common-auth-e2e-vault'
 
 let scratch = ''
 let cli = ''
@@ -117,6 +124,31 @@ async function collect(
     into.push(decoder.decode(chunk, { stream: true }))
 }
 
+/** Runs one CLI command to completion, killing it after 90 seconds. */
+async function runCli(
+  args: string[],
+  cwd: string,
+  env: Record<string, string>,
+): Promise<{ exit: number | null; stdout: string; stderr: string }> {
+  const child = Bun.spawn([cli, ...args], {
+    cwd,
+    env,
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const out: string[] = []
+  const err: string[] = []
+  const timer = setTimeout(() => child.kill('SIGKILL'), 90_000)
+  await Promise.all([
+    collect(child.stdout, out),
+    collect(child.stderr, err),
+    child.exited,
+  ])
+  clearTimeout(timer)
+  return { exit: child.exitCode, stdout: out.join(''), stderr: err.join('') }
+}
+
 async function runScenario(
   transport: Transport,
   turns: Turn[],
@@ -125,6 +157,12 @@ async function runScenario(
     receiptOnWire?: boolean
     apiKey?: string
     gateOnPlaceholder?: boolean
+    /**
+     * Leave the provider without a configured key and sign in with the test
+     * plugin's vault method through `opencode auth login` before the turns;
+     * `refuse` makes the plugin's activation refuse with that message.
+     */
+    vault?: { refuse?: string }
   } = {},
 ): Promise<ScenarioResult> {
   const root = await mkdtemp(join(tmpdir(), 'common-auth-oc2-e2e-'))
@@ -143,16 +181,26 @@ async function runScenario(
     ...(options.gateOnPlaceholder
       ? { COMMON_AUTH_E2E_GATE_PLACEHOLDER: '1' }
       : {}),
+    ...(options.vault
+      ? {
+          COMMON_AUTH_E2E_VAULT_METHOD: VAULT_METHOD_ID,
+          ...(options.vault.refuse
+            ? { COMMON_AUTH_E2E_VAULT_REFUSE: options.vault.refuse }
+            : {}),
+        }
+      : {}),
   })
   const config = {
     plugins: [pluginDir],
     providers: {
       [PROVIDER]: {
         // Normally use the placeholder returned by the plugin's login; the
-        // pass-through scenario supplies a stock host API key instead.
+        // pass-through scenario supplies a stock host API key instead, and
+        // the vault scenarios configure no key so the host sends the
+        // credential its login stored.
         settings: {
           baseURL: `${mock.url}/v1`,
-          apiKey: options.apiKey ?? PLACEHOLDER,
+          ...(options.vault ? {} : { apiKey: options.apiKey ?? PLACEHOLDER }),
           transport,
         },
         models: { 'mock-model': { name: 'Mock model' } },
@@ -189,8 +237,39 @@ async function runScenario(
   const stdout: string[] = []
   const clientLog: string[] = []
   const exits: Array<number | null> = []
+  let login: ScenarioResult['login']
+  let credentials: unknown
   try {
     await waitForServer(serverURL, server)
+    if (options.vault) {
+      // The CLI's own login, as a user runs it, without a terminal: it
+      // never prompts, and opens no browser.
+      const run = await runCli(
+        [
+          'auth',
+          'login',
+          PROVIDER,
+          '--server',
+          serverURL,
+          '--method',
+          VAULT_METHOD_ID,
+        ],
+        project,
+        env,
+      )
+      login = { exit: run.exit, output: `${run.stdout}${run.stderr}` }
+      clientLog.push(`--- vault login ---\n${login.output}`)
+      const response = await fetch(`${serverURL}/api/credential`, {
+        headers: {
+          authorization: `Basic ${btoa(`opencode:${PASSWORD}`)}`,
+        },
+        signal: AbortSignal.any([
+          hooks.lifetime.signal,
+          AbortSignal.timeout(10_000),
+        ]),
+      })
+      credentials = await response.json()
+    }
     for (const [index, turn] of turns.entries()) {
       writeFileSync(control, JSON.stringify({ next: turn.account }))
       if (turn.reject) mock.reject(turn.account, turn.reject)
@@ -238,11 +317,20 @@ async function runScenario(
     `wire: ${JSON.stringify(mock.records)}`,
     `plugin: ${JSON.stringify(plugin)}`,
     `stdout: ${JSON.stringify(stdout)}`,
+    ...(options.vault ? [`credentials: ${JSON.stringify(credentials)}`] : []),
     ...clientLog,
     `--- host log (tail) ---\n${serverLog.join('').slice(-6000)}`,
   ].join('\n')
   await rm(root, { recursive: true, force: true })
-  return { wire: [...mock.records], plugin, stdout, exits, diagnostics }
+  return {
+    wire: [...mock.records],
+    plugin,
+    stdout,
+    exits,
+    ...(login ? { login } : {}),
+    ...(options.vault ? { credentials } : {}),
+    diagnostics,
+  }
 }
 
 /** Runs the assertions and prints the scenario's evidence when one fails. */
@@ -269,6 +357,16 @@ const pick = (entries: readonly object[], ...keys: string[]) =>
   entries.map((entry) =>
     keys.map((key) => (entry as Record<string, unknown>)[key] ?? '').join(':'),
   )
+
+/** The provider's rows from `GET /api/credential`, without IDs and labels. */
+function hostCredentials(body: unknown) {
+  const rows = (
+    Array.isArray(body) ? body : ((body as { data?: unknown })?.data ?? [])
+  ) as Array<{ integrationID: string; active: boolean; value: unknown }>
+  return rows
+    .filter((row) => row.integrationID === PROVIDER)
+    .map((row) => ({ active: row.active, value: row.value }))
+}
 
 /**
  * Checks that hold for every scenario: the plugin set up once, every account
@@ -345,6 +443,70 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
       expect(
         events(result.plugin, 'mark').every((event) => event.mark === null),
       ).toBe(true)
+    })
+  }, 120_000)
+
+  test('a vault activation login hands the host only the placeholder and the plugin owns its requests', async () => {
+    const result = await runScenario('http', [{ account: 'A' }], {
+      gateOnPlaceholder: true,
+      vault: {},
+    })
+    verify(result, () => {
+      expect(result.login?.exit).toBe(0)
+      expect(result.login?.output).toContain('Connected to')
+      expect(pick(events(result.plugin, 'activate'), 'methodID')).toEqual([
+        VAULT_METHOD_ID,
+      ])
+      expect(events(result.plugin, 'pool-login')).toEqual([])
+      // The host's only credential row for the provider is the placeholder
+      // the vault method returned, under that method's ID.
+      expect(hostCredentials(result.credentials)).toEqual([
+        {
+          active: true,
+          value: {
+            type: 'oauth',
+            methodID: VAULT_METHOD_ID,
+            access: PLACEHOLDER,
+            refresh: PLACEHOLDER,
+            expires: expect.any(Number),
+            metadata: { commonAuthPlaceholder: true },
+          },
+        },
+      ])
+      expect(result.exits).toEqual([0])
+      // The host sent that placeholder, so the gated installer owned the
+      // request and put the vault account on it in the transport hook.
+      expect(pick(primaries(result.wire), 'identity')).toEqual(['A'])
+      expect(
+        result.wire.every(
+          (record) =>
+            record.identity === 'A' &&
+            record.authorization === 'Bearer tok-A' &&
+            !record.forbiddenSeen,
+        ),
+      ).toBe(true)
+      const selects = events(result.plugin, 'select')
+      expect(selects.length).toBeGreaterThan(0)
+      expect(selects.every((entry) => entry.accountId === 'A')).toBe(true)
+      expect(selects.filter((entry) => entry.hook === 'model.request')).toEqual(
+        [],
+      )
+      expect(events(result.plugin, 'warn')).toEqual([])
+    })
+  }, 180_000)
+
+  test('a refused vault activation fails the host login with its message and stores nothing', async () => {
+    const refusal = 'Vault mode is not enabled on this host.'
+    const result = await runScenario('http', [], {
+      gateOnPlaceholder: true,
+      vault: { refuse: refusal },
+    })
+    verify(result, () => {
+      expect(result.login?.exit).not.toBe(0)
+      expect(result.login?.output).toContain(refusal)
+      expect(events(result.plugin, 'activate')).toHaveLength(1)
+      expect(events(result.plugin, 'pool-login')).toEqual([])
+      expect(hostCredentials(result.credentials)).toEqual([])
     })
   }, 120_000)
 
