@@ -1,4 +1,5 @@
-import { rmdirSync } from 'node:fs'
+import type { Stats } from 'node:fs'
+import { rmdirSync, statSync } from 'node:fs'
 import { mkdir, rmdir, stat, utimes } from 'node:fs/promises'
 
 // Protocol source: proper-lockfile 4.1.2 lib/lockfile.js and lib/mtime-precision.js;
@@ -6,16 +7,26 @@ import { mkdir, rmdir, stat, utimes } from 'node:fs/promises'
 const STALE = 30_000
 const UPDATE = STALE / 2
 let precision: 's' | 'ms' | undefined
-const active = new Set<string>()
+type Identity = { dev: number; ino: number; mtime: number }
+const active = new Map<string, Identity>()
 process.once('exit', () => {
-  for (const path of active) {
+  for (const [path, identity] of active) {
     try {
-      rmdirSync(path)
+      const observed = statSync(path)
+      if (
+        sameDirectory(observed, identity) &&
+        observed.mtime.getTime() === identity.mtime
+      )
+        rmdirSync(path)
     } catch {
       /* A compromised or already removed lock is not ours to clean up. */
     }
   }
 })
+
+function sameDirectory(observed: Stats, identity: Identity): boolean {
+  return observed.dev === identity.dev && observed.ino === identity.ino
+}
 
 function errorCode(error: unknown): unknown {
   return typeof error === 'object' && error !== null && 'code' in error
@@ -33,7 +44,7 @@ async function remove(path: string): Promise<void> {
   }
 }
 
-async function acquire(path: string, stale: number): Promise<number> {
+async function acquire(path: string, stale: number): Promise<Identity> {
   try {
     await mkdir(path)
   } catch (error) {
@@ -56,9 +67,10 @@ async function acquire(path: string, stale: number): Promise<number> {
       const probe = new Date(Math.ceil(Date.now() / 1_000) * 1_000 + 5)
       await utimes(path, probe, probe)
     }
-    const mtime = (await stat(path)).mtime.getTime()
+    const observed = await stat(path)
+    const mtime = observed.mtime.getTime()
     precision ??= mtime % 1_000 === 0 ? 's' : 'ms'
-    return mtime
+    return { dev: observed.dev, ino: observed.ino, mtime }
   } catch (error) {
     await remove(path).catch(() => {})
     throw error
@@ -69,13 +81,15 @@ async function acquire(path: string, stale: number): Promise<number> {
 export async function acquirePiLock(
   authPath: string,
   onCompromised: () => void,
+  onRenew?: (renew: () => Promise<void>) => void,
 ): Promise<{ release(): Promise<void> }> {
   const path = `${authPath}.lock`
-  let mtime = await acquire(path, STALE)
+  const identity = await acquire(path, STALE)
+  let mtime = identity.mtime
   let lastUpdate = Date.now()
   let released = false
   let timer: ReturnType<typeof setTimeout> | undefined
-  active.add(path)
+  active.set(path, identity)
 
   function compromise() {
     released = true
@@ -97,15 +111,19 @@ export async function acquirePiLock(
     else schedule(1_000)
   }
   async function update() {
-    let observed: number
+    if (released) return
+    let observed: Stats
     try {
-      observed = (await stat(path)).mtime.getTime()
+      observed = await stat(path)
     } catch (error) {
       retry(error)
       return
     }
     if (released) return
-    if (observed !== mtime) {
+    if (
+      !sameDirectory(observed, identity) ||
+      observed.mtime.getTime() !== mtime
+    ) {
       compromise()
       return
     }
@@ -120,9 +138,15 @@ export async function acquirePiLock(
     }
     if (released) return
     mtime = next.getTime()
+    active.set(path, { ...identity, mtime })
     lastUpdate = Date.now()
     schedule()
   }
+  // Tests can resume a paused renewal without waiting for the production timer.
+  onRenew?.(async () => {
+    if (timer) clearTimeout(timer)
+    await update()
+  })
   schedule()
   return {
     async release() {
@@ -130,6 +154,21 @@ export async function acquirePiLock(
       released = true
       if (timer) clearTimeout(timer)
       active.delete(path)
+      let observed: Stats
+      try {
+        observed = await stat(path)
+      } catch (error) {
+        if (errorCode(error) !== 'ENOENT') throw error
+        compromise()
+        return
+      }
+      if (
+        !sameDirectory(observed, identity) ||
+        mtime !== observed.mtime.getTime()
+      ) {
+        compromise()
+        return
+      }
       await remove(path)
     },
   }

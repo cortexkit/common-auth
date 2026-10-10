@@ -4215,7 +4215,12 @@ expect_message = 'expect(received).toBe(expected)'
 id = 'pi-slot-stash-before-swap'
 guards = 'original stash is durable before auth replacement'
 file = 'src/pi-slot/slot.ts'
-old = 'await atomicWrite(stashPath, JSON.stringify(saved), assertLock)'
+old = '''await atomicWrite(
+            stashPath,
+            JSON.stringify(saved),
+            assertLock,
+            hooks?.beforeRename,
+          )'''
 new = 'void saved /* NON-VACUITY BREAK */'
 test_file = 'test/pi-slot/slot.test.ts'
 runner = 'command'
@@ -4319,8 +4324,8 @@ expect_message = 'expect(received).toBe(expected)'
 id = 'pi-slot-pi-lock'
 guards = 'helper must wait for Pi real proper-lockfile writer'
 file = 'src/pi-slot/lock.ts'
-old = 'let mtime = await acquire(path, STALE)'
-new = 'let mtime = Date.now() /* NON-VACUITY BREAK */'
+old = 'const identity = await acquire(path, STALE)'
+new = 'const identity = await stat(path).then((observed) => ({ dev: observed.dev, ino: observed.ino, mtime: observed.mtime.getTime() }), () => ({ dev: 0, ino: 0, mtime: Date.now() })) /* NON-VACUITY BREAK: bypass acquisition */'
 test_file = 'test/pi-slot/slot.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
@@ -4332,8 +4337,8 @@ expect_message = 'Expected: false'
 id = 'pi-slot-helper-lock'
 guards = 'real Pi writer must wait for helper lock'
 file = 'src/pi-slot/lock.ts'
-old = 'let mtime = await acquire(path, STALE)'
-new = 'let mtime = Date.now() /* NON-VACUITY BREAK */'
+old = 'const identity = await acquire(path, STALE)'
+new = 'const identity = await stat(path).then((observed) => ({ dev: observed.dev, ino: observed.ino, mtime: observed.mtime.getTime() }), () => ({ dev: 0, ino: 0, mtime: Date.now() })) /* NON-VACUITY BREAK: bypass acquisition */'
 test_file = 'test/pi-slot/slot.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
@@ -4371,7 +4376,10 @@ expect_message = 'toBeGreaterThan'
 id = 'pi-slot-compromise'
 guards = 'mtime mismatch compromises ownership and prevents removing a replacement'
 file = 'src/pi-slot/lock.ts'
-old = 'if (observed !== mtime) {'
+old = '''if (
+      !sameDirectory(observed, identity) ||
+      observed.mtime.getTime() !== mtime
+    ) {'''
 new = 'if (false /* NON-VACUITY BREAK */) {'
 test_file = 'test/pi-slot/slot.test.ts'
 runner = 'command'
@@ -4405,3 +4413,141 @@ command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^pi\sslot\spublished\simport\sgraph\scontains\sonly\snode\sbuiltins\sand\scommon\sauth\sfiles$']
 expect_message = 'Expected: true'
+
+# Pi read-swap and stale-holder fencing. Run these exact filters on both Bun versions.
+[[control]]
+id = 'pi-slot-read-symlink-swap'
+guards = 'a pathname changed to a symlink after fstat is refused'
+file = 'src/pi-slot/slot.ts'
+old = '''if (
+      !current.isFile() ||
+      current.dev !== stat.dev ||
+      current.ino !== stat.ino
+    ) {'''
+new = 'if (false /* NON-VACUITY BREAK */) {'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\srefuses\ssymlink\ssubstituted\safter\sdescriptor\scheck$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'pi-slot-read-file-swap'
+guards = 'a different regular inode after fstat is refused even with identical bytes'
+file = 'src/pi-slot/slot.ts'
+old = '''if (
+      !current.isFile() ||
+      current.dev !== stat.dev ||
+      current.ino !== stat.ino
+    ) {'''
+new = 'if (false /* NON-VACUITY BREAK */) {'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\srefuses\sfile\ssubstituted\safter\sdescriptor\scheck$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'pi-slot-release-successor'
+guards = 'release with a changed mtime cannot remove a successor lock'
+file = 'src/pi-slot/lock.ts'
+old = '''if (
+        !sameDirectory(observed, identity) ||
+        mtime !== observed.mtime.getTime()
+      ) {'''
+new = 'if (false /* NON-VACUITY BREAK */) {'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\spaused\srelease\spreserves\ssuccessor\sdirectory\sand\sreports\scompromise$']
+expect_message = 'Expected: 1'
+
+[[control]]
+id = 'pi-slot-renew-successor'
+guards = 'a resumed renewer checks mtime before touching a successor lock'
+file = 'src/pi-slot/lock.ts'
+old = '''if (
+      !sameDirectory(observed, identity) ||
+      observed.mtime.getTime() !== mtime
+    ) {'''
+new = 'if (false /* NON-VACUITY BREAK */) {'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\spaused\srenewal\spreserves\ssuccessor\sdirectory\safter\scompromise$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'pi-slot-compromised-auth-rename'
+guards = 'the rename boundary rejects a compromised auth write with both files unchanged'
+file = 'src/pi-slot/slot.ts'
+old = '''await beforeRename?.(path)
+      assertLock()'''
+new = '''await beforeRename?.(path)
+      /* NON-VACUITY BREAK: omit the rename fence */'''
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\scompromised\slease\srefuses\sauth\srename\swithout\schanging\sfiles$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'pi-slot-compromised-stash-rename'
+guards = 'the rename boundary rejects a compromised stash write before creating the stash'
+file = 'src/pi-slot/slot.ts'
+old = '''await beforeRename?.(path)
+      assertLock()'''
+new = '''await beforeRename?.(path)
+      /* NON-VACUITY BREAK: omit the rename fence */'''
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\scompromised\slease\srefuses\sstash\srename\swithout\schanging\sfiles$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'pi-slot-release-missing'
+guards = 'a vanished lock is reported as compromise rather than a normal release'
+file = 'src/pi-slot/lock.ts'
+old = '''if (errorCode(error) !== 'ENOENT') throw error
+        compromise()'''
+new = '''if (errorCode(error) !== 'ENOENT') throw error
+        /* NON-VACUITY BREAK: ignore a vanished lock */'''
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\smissing\sdirectory\scompromises\srelease$']
+expect_message = 'Expected: 1'
+
+[[control]]
+id = 'pi-slot-release-inode'
+guards = 'release detects a different directory inode even when its mtime collides'
+file = 'src/pi-slot/lock.ts'
+old = 'return observed.dev === identity.dev && observed.ino === identity.ino'
+new = 'return true /* NON-VACUITY BREAK */'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\srelease\srefuses\ssuccessor\swith\scolliding\smtime$']
+expect_message = 'Expected: 1'
+
+[[control]]
+id = 'pi-slot-renew-inode'
+guards = 'renewal detects a different directory inode even when its mtime collides'
+file = 'src/pi-slot/lock.ts'
+old = 'return observed.dev === identity.dev && observed.ino === identity.ino'
+new = 'return true /* NON-VACUITY BREAK */'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\srenewal\srefuses\ssuccessor\swith\scolliding\smtime$']
+expect_message = 'Expected: 1'

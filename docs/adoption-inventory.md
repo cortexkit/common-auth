@@ -147,6 +147,8 @@ with `!`, and must not contain `$` anywhere (including Pi's interpolation and
 escape forms). Keep the same key and paths across restarts. The stash is 0600
 inside a 0700 directory; existing non-private stash directories are refused,
 not chmodded. Regular files only are accepted; do not use symlinked auth files.
+Reads open with `O_NOFOLLOW`, validate the open descriptor, and read from that
+same descriptor. A pathname replaced before the read's identity check is refused.
 
 All operations share Pi's `<authPath>.lock` mkdir/mtime/rmdir protocol: atomically
 creating the directory acquires the lock, renewing its modification time keeps
@@ -159,6 +161,18 @@ proper-lockfile dependency. Normal process exit releases owned locks; an abrupt
 kill or signal may leave a lock until its mtime becomes stale. Both auth writes
 and stash writes use a private same-directory temp, file fsync, rename, and
 directory fsync. Unrelated provider values are never reserialized.
+
+Renewal and release check that the directory's device and inode match those
+recorded after acquisition and its mtime still equals the last mtime written by
+this holder. A changed or missing directory compromises the
+lease: no further renewal or release touches it, and the next auth or stash
+rename is refused. These checks narrow, but do not eliminate, the protocol's
+takeover race. `stat` and `rmdir`/`utimes` are not atomic: a holder paused between
+its own check and the operation can still remove or renew a successor's
+directory. Pi's own proper-lockfile writers have the same limit. The shared
+protocol has no on-disk owner identity; the device/inode checks are local only
+and do not change Pi's on-disk protocol. Adding an owner token would not fence
+Pi's writers.
 
 On entry, the current slot's raw JSON value (or null for absence), parsed entry,
 provider and canonical SHA-256 are durably stashed **before** installing the

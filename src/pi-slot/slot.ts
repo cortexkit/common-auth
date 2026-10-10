@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { lstat, mkdir, open, readFile, unlink } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, mkdir, open, unlink } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { writeJsonAtomic } from '../fs/atomic-write.js'
@@ -162,21 +163,39 @@ function code(error: unknown): unknown {
 async function safeRead(
   path: string,
   privateFile = false,
+  afterReadCheck?: (path: string) => Promise<void>,
 ): Promise<string | undefined> {
+  let file: Awaited<ReturnType<typeof open>> | undefined
   try {
-    const stat = await lstat(path)
+    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const stat = await file.stat()
     if (!stat.isFile() || (privateFile && (stat.mode & 0o777) !== 0o600)) {
       throw new PiSlotError('unsafe-path')
     }
-    const bytes = await readFile(path)
+    await afterReadCheck?.(path)
+    // Refuse a replaced pathname even though the descriptor still pins the checked file.
+    const current = await lstat(path)
+    if (
+      !current.isFile() ||
+      current.dev !== stat.dev ||
+      current.ino !== stat.ino
+    ) {
+      throw new PiSlotError('unsafe-path')
+    }
+    const bytes = await file.readFile()
     const text = bytes.toString('utf8')
     if (!bytes.equals(Buffer.from(text))) {
       throw new PiSlotError(privateFile ? 'invalid-stash' : 'invalid-auth')
     }
     return text
   } catch (error) {
-    if (code(error) === 'ENOENT') return undefined
+    if (code(error) === 'ENOENT' && !file) return undefined
+    if (code(error) === 'ELOOP' || code(error) === 'ENOENT') {
+      throw new PiSlotError('unsafe-path')
+    }
     throw error
+  } finally {
+    await file?.close()
   }
 }
 
@@ -252,11 +271,15 @@ async function atomicWrite(
   path: string,
   text: string,
   assertLock: () => void,
+  beforeRename?: (path: string) => Promise<void>,
 ): Promise<void> {
   await writeJsonAtomic(path, null, {
     serialize: () => text,
     durable: true,
-    beforeRename: async () => assertLock(),
+    beforeRename: async () => {
+      await beforeRename?.(path)
+      assertLock()
+    },
   })
 }
 
@@ -269,10 +292,18 @@ export function openPiSlot(options: PiSlotOptions): PiSlot {
   return createPiSlot(options)
 }
 
-/** Internal durable-boundary injection for crash tests; not exported by the public subpath. */
+/**
+ * Internal test entry point: pause reads, renewals, or renames to simulate races,
+ * and observe durable writes/deletion to simulate crashes. Not a public export.
+ */
 export function createPiSlot(
   options: PiSlotOptions,
   onStep?: (step: 'stash-written' | 'auth-written' | 'stash-deleted') => void,
+  hooks?: {
+    afterReadCheck?: (path: string) => Promise<void>
+    onRenew?: (renew: () => Promise<void>) => void
+    beforeRename?: (path: string) => Promise<void>
+  },
 ): PiSlot {
   const { provider, placeholderKey } = options
   const timeout = options.lockTimeoutMs ?? 30_000
@@ -299,7 +330,7 @@ export function createPiSlot(
   const isPlaceholder = (entry: Entry) => digest(entry) === digest(placeholder)
 
   async function loadStash(): Promise<Stash | undefined> {
-    const text = await safeRead(stashPath, true)
+    const text = await safeRead(stashPath, true, hooks?.afterReadCheck)
     if (text === undefined) return undefined
     try {
       const stash = JSON.parse(text) as Stash
@@ -337,9 +368,13 @@ export function createPiSlot(
       let retry = 0
       while (!release) {
         try {
-          const lease = await acquirePiLock(authPath, () => {
-            compromised = true
-          })
+          const lease = await acquirePiLock(
+            authPath,
+            () => {
+              compromised = true
+            },
+            hooks?.onRenew,
+          )
           release = lease.release
         } catch (error) {
           if (code(error) !== 'ELOCKED') throw error
@@ -364,10 +399,14 @@ export function createPiSlot(
       throw new PiSlotError('io')
     } finally {
       await release?.().catch(() => {})
+      assertLock()
     }
   }
   async function load() {
-    const auth = parseAuth((await safeRead(authPath)) ?? '{}', provider)
+    const auth = parseAuth(
+      (await safeRead(authPath, false, hooks?.afterReadCheck)) ?? '{}',
+      provider,
+    )
     const stash = await loadStash()
     return { auth, stash }
   }
@@ -414,13 +453,19 @@ export function createPiSlot(
             entryJson: entryText(auth),
             sha256: digest(auth.entry),
           }
-          await atomicWrite(stashPath, JSON.stringify(saved), assertLock)
+          await atomicWrite(
+            stashPath,
+            JSON.stringify(saved),
+            assertLock,
+            hooks?.beforeRename,
+          )
           onStep?.('stash-written')
         }
         await atomicWrite(
           authPath,
           replaceEntry(auth, provider, JSON.stringify(placeholder)),
           assertLock,
+          hooks?.beforeRename,
         )
         onStep?.('auth-written')
       }),
@@ -436,6 +481,7 @@ export function createPiSlot(
             authPath,
             replaceEntry(auth, provider, stash.entryJson),
             assertLock,
+            hooks?.beforeRename,
           )
           onStep?.('auth-written')
         } else if (digest(auth.entry) !== stash.sha256) {
