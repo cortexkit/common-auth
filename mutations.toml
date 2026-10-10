@@ -4551,3 +4551,104 @@ command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t 
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^pi\sslot\sraces\srenewal\srefuses\ssuccessor\swith\scolliding\smtime$']
 expect_message = 'Expected: 1'
+
+# --- Pi sync writer compatibility (0.14.1) ---
+# Replayed with Bun 1.3.14 and 1.4.2; expected messages match both Bun versions' assertion output.
+[[control]]
+id = 'pi-slot-sync-renewal-086'
+guards = 'Pi 0.86.1 sync writer cannot reclaim a helper held across its 10s stale threshold'
+file = 'src/pi-slot/lock.ts'
+old = 'const UPDATE = 3_000'
+new = 'const UPDATE = 15_000 /* NON-VACUITY BREAK: async-only renewal interval */'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sreal\sPi\s0\.86\.1\ssync\swriter\sstays\sexcluded\spast\s10\sseconds$']
+expect_message = 'Expected: 0'
+
+[[control]]
+id = 'pi-slot-sync-renewal-104'
+guards = 'Pi 1.0.4 sync writer cannot reclaim a helper held across its 10s stale threshold'
+file = 'src/pi-slot/lock.ts'
+old = 'const UPDATE = 3_000'
+new = 'const UPDATE = 15_000 /* NON-VACUITY BREAK: async-only renewal interval */'
+test_file = 'test/pi-slot/slot.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/slot.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sreal\sPi\s1\.0\.4\ssync\swriter\sstays\sexcluded\spast\s10\sseconds$']
+expect_message = 'Expected: 0'
+
+[[control]]
+id = 'pi-slot-renewal-loss-bound'
+guards = 'loss of confirmed renewal for 10s compromises a lease even with matching directory identity'
+file = 'src/pi-slot/lock.ts'
+old = 'const RENEWAL_STALE = 10_000'
+new = 'const RENEWAL_STALE = 30_000 /* NON-VACUITY BREAK: async-only loss bound */'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\sexpired\srenewal\sleaves\smatching\sdirectory\suntouched$']
+expect_message = 'Expected: 1'
+
+[[control]]
+id = 'pi-slot-expired-renewal'
+guards = 'a resumed owner must not touch mtime after its 10s lease expires'
+file = 'src/pi-slot/lock.ts'
+old = '''async function update() {
+    assertFresh()
+    if (released) return
+    let observed: Stats
+    try {
+      observed = await stat(path)
+    } catch (error) {
+      retry(error)
+      return
+    }
+    assertFresh()
+    if (released) return'''
+new = '''async function update() {
+    /* NON-VACUITY BREAK: omit expiry checks before renewal */
+    if (released) return
+    let observed: Stats
+    try {
+      observed = await stat(path)
+    } catch (error) {
+      retry(error)
+      return
+    }
+    if (released) return'''
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\sexpired\srenewal\sleaves\smatching\sdirectory\suntouched$']
+expect_message = 'Expected: 1'
+
+[[control]]
+id = 'pi-slot-expired-auth-rename'
+guards = 'beforeRename checks lease expiry even without a renewal callback'
+file = 'src/pi-slot/slot.ts'
+old = 'assertFresh?.()'
+new = '/* NON-VACUITY BREAK: omit expiry check from write assertions */'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\sexpired\slease\srefuses\sauth\srename\swith\smatching\sdirectory$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'pi-slot-expired-stash-rename'
+guards = 'beforeRename checks lease expiry before committing the original credential stash'
+file = 'src/pi-slot/slot.ts'
+old = 'assertFresh?.()'
+new = '/* NON-VACUITY BREAK: omit expiry check from write assertions */'
+test_file = 'test/pi-slot/races.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\sraces\sexpired\slease\srefuses\sstash\srename\swith\smatching\sdirectory$']
+expect_message = 'Expected promise that rejects'

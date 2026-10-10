@@ -358,8 +358,10 @@ export function createPiSlot(
     fn: (assertLock: () => void) => Promise<T>,
   ): Promise<T> {
     let release: (() => Promise<void>) | undefined
+    let assertFresh: (() => void) | undefined
     let compromised = false
     const assertLock = () => {
+      assertFresh?.()
       if (compromised) throw new PiSlotError('lock-compromised')
     }
     try {
@@ -376,6 +378,7 @@ export function createPiSlot(
             hooks?.onRenew,
           )
           release = lease.release
+          assertFresh = lease.assertFresh
         } catch (error) {
           if (code(error) !== 'ELOCKED') throw error
           const remaining = deadline - Date.now()

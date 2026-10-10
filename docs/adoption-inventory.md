@@ -153,9 +153,14 @@ same descriptor. A pathname replaced before the read's identity check is refused
 All operations share Pi's `<authPath>.lock` mkdir/mtime/rmdir protocol: atomically
 creating the directory acquires the lock, renewing its modification time keeps
 it live, and removing it releases the lock. An old modification time permits
-takeover after a crashed holder. The protocol uses
-`realpath:false`, 30-second stale timeout, 15-second renewal, compromise
-detection, and a bounded ELOCKED retry (default 30 seconds). The implementation
+takeover after a crashed holder. Both Pi 0.86.1 and 1.0.4 use `realpath:false`,
+but have two lock paths: `FileAuthStorageBackend.acquireLockAsync` sets a
+30-second stale threshold (proper-lockfile renews every 15 seconds), while
+`acquireLockSyncWithRetry`/`withLock` uses proper-lockfile defaults of 10 seconds
+stale and 5 seconds renewal. The helper keeps its **takeover threshold at 30
+seconds** so it never reclaims a live async Pi writer, but **renews every 3
+seconds** to stay fresh for sync writers with margin below their 5-second update.
+ELOCKED retries remain bounded (default 30 seconds). The implementation
 uses only Node builtins and common-auth's atomic writer, not a runtime
 proper-lockfile dependency. Normal process exit releases owned locks; an abrupt
 kill or signal may leave a lock until its mtime becomes stale. Both auth writes
@@ -166,7 +171,13 @@ Renewal and release check that the directory's device and inode match those
 recorded after acquisition and its mtime still equals the last mtime written by
 this holder. A changed or missing directory compromises the
 lease: no further renewal or release touches it, and the next auth or stash
-rename is refused. These checks narrow, but do not eliminate, the protocol's
+rename is refused. More than 10 seconds without a confirmed successful renewal
+also compromises the lease, even if the directory identity and mtime still match:
+a sync Pi writer is already entitled to take over. The helper checks this bound
+before renewal (including after an awaited stat) and at every write/deletion lock
+assertion, including immediately before an auth or stash rename. Failed renewals
+still retry after one second unless the directory is missing or the 10-second
+loss bound has passed. These checks narrow, but do not eliminate, the protocol's
 takeover race. `stat` and `rmdir`/`utimes` are not atomic: a holder paused between
 its own check and the operation can still remove or renew a successor's
 directory. Pi's own proper-lockfile writers have the same limit. The shared

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import type { Stats } from 'node:fs'
 import {
   mkdtemp,
   readFile,
@@ -225,6 +226,74 @@ for (const operation of ['release', 'renewal'] as const) {
     } finally {
       await lease.release()
       await next.release()
+    }
+  })
+}
+
+// Advance only the lease clock: no timers run during the simulated owner pause.
+test('pi slot races expired renewal leaves matching directory untouched', async () => {
+  const f = await fixture()
+  let compromised = 0
+  let renew: () => Promise<void> = async () => {
+    throw new Error('Missing renew hook')
+  }
+  const lease = await acquirePiLock(
+    f.authPath,
+    () => compromised++,
+    (resume) => {
+      renew = resume
+    },
+  )
+  const before = await stat(f.lockPath)
+  const clock = spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001)
+  try {
+    await renew()
+    expect(compromised).toBe(1)
+    const after = await stat(f.lockPath)
+    expect(after.ino).toBe(before.ino)
+    expect(after.mtimeMs).toBe(before.mtimeMs)
+    await renew()
+    expect(compromised).toBe(1)
+  } finally {
+    clock.mockRestore()
+    await lease.release()
+  }
+})
+
+for (const target of ['auth', 'stash'] as const) {
+  test(`pi slot races expired lease refuses ${target} rename with matching directory`, async () => {
+    const f = await fixture()
+    const auth = await readFile(f.authPath)
+    if (target === 'auth') {
+      await createPiSlot(f.options).enterVault()
+      await writeFile(f.authPath, auth)
+    }
+    const stash = target === 'auth' ? await readFile(f.stashPath) : undefined
+    let before: Stats | undefined
+    let clock: ReturnType<typeof spyOn<typeof Date, 'now'>> | undefined
+    const slot = createPiSlot(f.options, undefined, {
+      beforeRename: async (path) => {
+        expect(path).toBe(target === 'auth' ? f.authPath : f.stashPath)
+        before = await stat(f.lockPath)
+        clock = spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001)
+      },
+    })
+    try {
+      await expect(slot.enterVault()).rejects.toEqual(
+        new PiSlotError('lock-compromised'),
+      )
+      expect(await readFile(f.authPath)).toEqual(auth)
+      if (stash) expect(await readFile(f.stashPath)).toEqual(stash)
+      else
+        await expect(stat(f.stashPath)).rejects.toMatchObject({
+          code: 'ENOENT',
+        })
+      if (!before) throw new Error('Missing paused lock snapshot')
+      const after = await stat(f.lockPath)
+      expect(after.ino).toBe(before.ino)
+      expect(after.mtimeMs).toBe(before.mtimeMs)
+    } finally {
+      clock?.mockRestore()
     }
   })
 }

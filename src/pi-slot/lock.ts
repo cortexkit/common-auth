@@ -4,8 +4,13 @@ import { mkdir, rmdir, stat, utimes } from 'node:fs/promises'
 
 // Protocol source: proper-lockfile 4.1.2 lib/lockfile.js and lib/mtime-precision.js;
 // line-level citations and the Pi lock options are recorded in docs/sources.md.
+// Pi's async acquireLockAsync uses stale=30s (update=15s). Keep takeover at 30s
+// so a live async writer's lock cannot be reclaimed between its renewals.
 const STALE = 30_000
-const UPDATE = STALE / 2
+// Pi's sync acquireLockSyncWithRetry uses proper-lockfile defaults: stale=10s,
+// update=5s. Renew every 3s for margin and stop retrying failed renewals after 10s.
+const RENEWAL_STALE = 10_000
+const UPDATE = 3_000
 let precision: 's' | 'ms' | undefined
 type Identity = { dev: number; ino: number; mtime: number }
 const active = new Map<string, Identity>()
@@ -82,7 +87,7 @@ export async function acquirePiLock(
   authPath: string,
   onCompromised: () => void,
   onRenew?: (renew: () => Promise<void>) => void,
-): Promise<{ release(): Promise<void> }> {
+): Promise<{ release(): Promise<void>; assertFresh(): void }> {
   const path = `${authPath}.lock`
   const identity = await acquire(path, STALE)
   let mtime = identity.mtime
@@ -97,6 +102,11 @@ export async function acquirePiLock(
     active.delete(path)
     onCompromised()
   }
+  function assertFresh() {
+    // A sync writer may already have reclaimed an unrenewed lock after 10s,
+    // even if the directory still matches. Never revive that expired lease.
+    if (!released && lastUpdate + RENEWAL_STALE < Date.now()) compromise()
+  }
   function schedule(delay = UPDATE) {
     if (released) return
     timer = setTimeout(() => {
@@ -106,11 +116,15 @@ export async function acquirePiLock(
   }
   function retry(error: unknown) {
     if (released) return
-    if (errorCode(error) === 'ENOENT' || lastUpdate + STALE < Date.now())
+    if (
+      errorCode(error) === 'ENOENT' ||
+      lastUpdate + RENEWAL_STALE < Date.now()
+    )
       compromise()
     else schedule(1_000)
   }
   async function update() {
+    assertFresh()
     if (released) return
     let observed: Stats
     try {
@@ -119,6 +133,7 @@ export async function acquirePiLock(
       retry(error)
       return
     }
+    assertFresh()
     if (released) return
     if (
       !sameDirectory(observed, identity) ||
@@ -149,6 +164,7 @@ export async function acquirePiLock(
   })
   schedule()
   return {
+    assertFresh,
     async release() {
       if (released) return
       released = true

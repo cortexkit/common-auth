@@ -15,6 +15,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { openPiSlot, PiSlotError } from '../../src/pi-slot/index.js'
 import { acquirePiLock } from '../../src/pi-slot/lock.js'
+import { createPiSlot } from '../../src/pi-slot/slot.js'
 
 const key = 'pi-vault-disabled'
 const provider = 'openai-codex'
@@ -88,6 +89,47 @@ const { isCommandConfigValue, getConfigValueEnvVarNames, resolveConfigValue } =
   await import(`${piRoot}resolve-config-value.js`)
 
 describe('pi slot', () => {
+  for (const version of ['0.86.1', '1.0.4']) {
+    test(`real Pi ${version} sync writer stays excluded past 10 seconds`, async () => {
+      const f = await fixture()
+      let report:
+        | { acquired: number; attempts: { elapsed: number; code: string }[] }
+        | undefined
+      let writer: ReturnType<typeof child> | undefined
+      const slot = createPiSlot(f.options, undefined, {
+        beforeRename: async (path) => {
+          if (path !== f.stashPath) return
+          writer = child('pi-sync-writer', f.authPath, f.stashPath, version)
+          report = JSON.parse(await new Response(writer.stdout).text())
+          await finished(writer)
+        },
+      })
+      let writeError: unknown
+      try {
+        await slot.enterVault().catch((error) => {
+          writeError = error
+        })
+        expect(report).toBeDefined()
+        expect(report?.acquired).toBe(0)
+        expect(
+          report?.attempts.some((attempt) => attempt.elapsed > 11_000),
+        ).toBe(true)
+        expect(
+          report?.attempts.every((attempt) => attempt.code === 'ELOCKED'),
+        ).toBe(true)
+        expect(writeError).toBeUndefined()
+        const auth = JSON.parse(await bytes(f.authPath))
+        expect(auth[provider]).toEqual({ type: 'api_key', key })
+        expect(auth.google).toEqual({ type: 'api_key', key: 'literal-google' })
+        await slot.exitVault()
+        expect(await bytes(f.authPath)).toBe(original)
+      } finally {
+        writer?.kill()
+        if (writer) await writer.exited
+      }
+    }, 25_000)
+  }
+
   test('round trip preserves exact provider and other provider bytes', async () => {
     const f = await fixture()
     expect(await f.slot.inspect()).toEqual({
