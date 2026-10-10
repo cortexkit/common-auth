@@ -3854,14 +3854,18 @@ expect_red = ['^final\saudit\saccepted\sAPI\sre-add\splans\sthe\sprojected\storn
 expect_message = 'endpoint-mismatch'
 
 # --- shared quota wording and menu grouping (0.13.0) ---
-# Every plugin's dialog, sidebar and auth menu shows quota through one
-# formatter (`src/quota/format.ts`), and every menu renderer draws group
-# headers and rows without actions as text a user cannot select. The three
-# `quota-format-*` rows below break the formatter (dropping the omission of
-# unreported windows, the stale-age marker, and naming windows by length);
-# the three `commands-*` rows break grouping (the seam carrying an item's
-# group, the built-in Accounts header, and Pi keeping action-less rows out of
-# its options).
+# Two promises to plugins. First, every dialog, sidebar and auth menu shows
+# quota through one formatter (`src/quota/format.ts`), so the wording cannot
+# drift: a window the provider did not report is left out, a stale reading
+# says its age, and a window is named by its length (`5h`, `7d`). The rows
+# `quota-format-omits-unreported-windows`, `quota-format-marks-stale-readings`
+# and `quota-format-names-windows-by-length` each break one of those.
+# Second, a menu option always does something, and text that does nothing
+# is a group header or a line, never an option. `commands-seam-carries-row-group`
+# drops an item's group at the seam, `commands-builtin-accounts-grouped` drops
+# the built-in Accounts header, `commands-pi-actionless-rows-are-text` lets Pi
+# offer rows that do nothing, and `commands-builtin-quota-rows-act` strips the
+# action from the built-in quota rows (OpenCode would hide such rows).
 
 [[control]]
 id = 'quota-format-omits-unreported-windows'
@@ -3940,3 +3944,22 @@ command = ['bun', 'test', 'test/commands/pi.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^Pi\srenderer\sthe\sPi\srenderer\sshows\sgroup\sheaders\sand\srows\swithout\sactions\sas\stitle\stext\sit\scannot\sselect$']
 expect_message = 'error: expect('
+
+[[control]]
+id = 'commands-builtin-quota-rows-act'
+guards = 'every built-in quota row carries a real action, so no OpenCode dialog hides it as a disabled option and no renderer offers a row that does nothing'
+file = 'src/commands/builtins.ts'
+old = '''      actions: [
+        {
+          id: 'check',
+          label: 'Check this account','''
+new = '''      actions: [].slice(1) /* NON-VACUITY BREAK */ || [
+        {
+          id: 'check',
+          label: 'Check this account','''
+test_file = 'test/commands/sections.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/commands/sections.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^command\smenu\ssections\sno\sbuilt-in\ssection\semits\san\sitem\swithout\sactions,\sand\san\saccount\sthat\scannot\sbe\schecked\sis\sa\squota\sline$']
+expect_message = 'does nothing when chosen'

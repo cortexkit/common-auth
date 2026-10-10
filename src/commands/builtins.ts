@@ -381,7 +381,23 @@ function quotaSection(
   // A scoped menu names its model family in the header, since the quota
   // shown is that family's view of each account.
   const group = scope === 'all' ? 'Accounts' : `Accounts · ${scope}`
-  const items: ResolvedItem[] = snap.rows.map((row) => {
+  // Every reading goes through the plugin's own poll when it has one, else
+  // through a store pull per row, for one account and for all alike.
+  const check = async (
+    ids: readonly string[],
+    invocation: CommandInvocation,
+  ): Promise<void> => {
+    if (options.quota?.check) await options.quota.check(ids, invocation)
+    else {
+      for (const id of ids) options.store.requestReading(id)
+      await options.store.pullsSettled()
+    }
+  }
+  // Only an account that can be checked is a row: a row must do something
+  // when chosen. One that cannot (disabled, invalid, without a credential)
+  // is a read-only line saying why, beside what was last read for it.
+  const candidates = snap.rows.filter((row) => row.candidate)
+  const items: ResolvedItem[] = candidates.map((row) => {
     const { account, name } = accountView(row, options)
     const quota = projected(row, scope)
     return {
@@ -391,40 +407,45 @@ function quotaSection(
       status: formatQuota(quota, { now, form: 'compact' }),
       detail: formatQuota(quota, { now, form: 'full' }),
       account,
+      actions: [
+        {
+          id: 'check',
+          label: 'Check this account',
+          run: async ({ invocation }) => {
+            await check([row.id], invocation)
+            return `Checked quota for ${name}.`
+          },
+        },
+      ],
     }
   })
-  const candidates = snap.rows.filter((row) => row.candidate)
+  const unchecked = snap.rows
+    .filter((row) => !row.candidate)
+    .map((row) => {
+      const { name } = accountView(row, options)
+      const reason = row.invalid
+        ? 'invalid'
+        : !row.enabled
+          ? 'disabled'
+          : row.credential === undefined
+            ? 'no credential'
+            : 'unavailable'
+      const quota = formatQuota(projected(row, scope), {
+        now,
+        form: 'compact',
+      })
+      return `${name} (${reason}): ${quota}`
+    })
   const actions: ActionDefinition[] = []
   if (candidates.length > 0)
     actions.push({
       id: 'check',
       label: 'Check now',
+      description: 'Checks every account that can be checked.',
       group: ACTIONS_GROUP,
-      knobs: [
-        {
-          kind: 'choice',
-          id: 'account',
-          label: 'Account',
-          choices: [
-            { value: '*', label: 'All accounts' },
-            ...candidates.map((row) => ({
-              value: row.id,
-              label: accountView(row, options).name,
-            })),
-          ],
-          value: '*',
-        },
-      ],
-      run: async ({ values, invocation }) => {
-        const ids =
-          values.account === '*'
-            ? candidates.map((row) => row.id)
-            : [String(values.account)]
-        if (options.quota?.check) await options.quota.check(ids, invocation)
-        else {
-          for (const id of ids) options.store.requestReading(id)
-          await options.store.pullsSettled()
-        }
+      run: async ({ invocation }) => {
+        const ids = candidates.map((row) => row.id)
+        await check(ids, invocation)
         return `Checked quota for ${count(ids.length, 'account')}.`
       },
     })
@@ -433,7 +454,7 @@ function quotaSection(
     slot: 'quota',
     title: 'Quota',
     content: {
-      lines: snap.rows.length === 0 ? ['No accounts yet'] : [],
+      lines: snap.rows.length === 0 ? ['No accounts yet'] : unchecked,
       items,
       actions,
     },

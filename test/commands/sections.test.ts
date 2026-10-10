@@ -228,19 +228,68 @@ describe('command menu sections', () => {
     const all = await apply(menu, notes().invocation, {
       sectionId: 'quota',
       actionId: 'check',
-      values: { account: '*' },
     })
     expect(all).toMatchObject({
       ok: true,
       text: 'Checked quota for 3 accounts.',
     })
+    expect(polled).toEqual([['a', 'b', 'k']])
+  })
+
+  it('an account row in quota checks exactly that account, through the plugin poll or a store pull', async () => {
+    await populate(m.store)
+    const polled: string[][] = []
+    const menu = m.menu({
+      quota: { check: async (ids) => void polled.push([...ids]) },
+    })
+    const quota = section(await menu.open(notes().invocation), 'quota')
+    expect(
+      quota.items.map((item) => item.actions.map((action) => action.label)),
+    ).toEqual([
+      ['Check this account'],
+      ['Check this account'],
+      ['Check this account'],
+    ])
     const one = await apply(menu, notes().invocation, {
       sectionId: 'quota',
+      itemId: 'b',
       actionId: 'check',
-      values: { account: 'b' },
     })
-    expect(one.ok).toBe(true)
-    expect(polled).toEqual([['a', 'b', 'k'], ['b']])
+    expect(one).toMatchObject({ ok: true, text: 'Checked quota for acct-b.' })
+    expect(polled).toEqual([['b']])
+
+    // Without a plugin poll, only that row's reading is requested.
+    const requested: string[] = []
+    const requestReading = m.store.requestReading.bind(m.store)
+    m.store.requestReading = (id) => {
+      requested.push(id)
+      requestReading(id)
+    }
+    const pulled = await apply(m.menu(), notes().invocation, {
+      sectionId: 'quota',
+      itemId: 'k',
+      actionId: 'check',
+    })
+    expect(pulled).toMatchObject({ ok: true, text: 'Checked quota for Keyed.' })
+    expect(requested).toEqual(['k'])
+  })
+
+  it('no built-in section emits an item without actions, and an account that cannot be checked is a quota line', async () => {
+    await populate(m.store)
+    await m.store.disable('b', 'manual')
+    const menu = m.menu({
+      accounts: { login: { run: async () => ({ status: 'cancelled' }) } },
+    })
+    const payload = await menu.open(notes().invocation)
+    for (const found of payload.menu.sections)
+      for (const item of found.items)
+        expect(
+          item.actions.length,
+          `${found.id}/${item.id} does nothing when chosen`,
+        ).toBeGreaterThan(0)
+    const quota = section(payload, 'quota')
+    expect(quota.items.map((item) => item.id)).toEqual(['a', 'k'])
+    expect(quota.lines).toEqual(['acct-b (disabled): 5h 1% left'])
   })
 
   it('routing mode writes routing.mode beside the pool', async () => {
@@ -375,6 +424,7 @@ describe('command menu sections', () => {
       ['Accounts', 'Keyed', 'no quota reading yet'],
       ['Actions', 'Check now'],
     ])
+    expect(section(payload, 'quota').actions[0]?.knobs).toEqual([])
     await apply(menu, notes().invocation, {
       sectionId: 'limits',
       itemId: 'a',

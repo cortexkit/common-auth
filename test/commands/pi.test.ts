@@ -77,42 +77,64 @@ describe('Pi renderer', () => {
 
   it('the Pi renderer shows group headers and rows without actions as title text it cannot select', async () => {
     await populate(m.store)
-    const menu = m.menu()
+    // The built-in sections give every row an action; a plugin section may
+    // still carry rows that do nothing, under their own header.
+    const menu = m.menu({
+      extras: [
+        {
+          id: 'models',
+          title: 'Models',
+          build: () => ({
+            lines: ['2 models'],
+            items: [
+              { id: 'opus', label: 'Opus', group: 'Pinned', status: 'on' },
+              { id: 'haiku', label: 'Haiku', group: 'Pinned' },
+              {
+                id: 'sonnet',
+                label: 'Sonnet',
+                group: 'Other',
+                status: 'off',
+                actions: [
+                  { id: 'pin', label: 'Pin', run: async () => 'Pinned.' },
+                ],
+              },
+            ],
+            actions: [
+              {
+                id: 'reset',
+                label: 'Reset pins',
+                group: 'Actions',
+                run: async () => 'Reset.',
+              },
+            ],
+          }),
+        },
+      ],
+    })
     // A header is not an option, so choosing it fails the scripted run.
     await expect(
       runPiCommandMenu(
         menu,
-        fakePiUi([{ select: 'Quota' }, { select: 'Accounts' }]),
+        fakePiUi([{ select: 'Models' }, { select: 'Pinned' }]),
       ),
-    ).rejects.toThrow('no option starts with Accounts')
+    ).rejects.toThrow('no option starts with Pinned')
 
     const ui = fakePiUi([
       { select: 'Quota' },
       { select: 'Back' },
-      { select: 'Accounts' },
-      { select: 'Back' },
-      { select: 'Limits' },
+      { select: 'Models' },
     ])
     await runPiCommandMenu(menu, ui)
     expect(ui.remaining()).toBe(0)
     expect(ui.calls.filter((call) => !call.startsWith('select Acme'))).toEqual([
-      // Quota's accounts have no actions: they are text, not options.
-      'select Quota [Check now | Back]',
-      // Accounts' rows do something, so they are options with their status.
-      'select Accounts [Alice · enabled | acct-b · enabled | Keyed · enabled | Back]',
-      'select Limits [Alice · no floors | acct-b · no floors | Keyed · no floors | Turn killswitch on | Back]',
+      // Quota's account rows each check that account, so they are options.
+      'select Quota [Alice · 5h 58% left · 7d 90% left · credits 75% left | acct-b · 5h 1% left | Keyed · no quota reading yet | Check now | Back]',
+      // Rows without actions are text; only Sonnet and Reset do something.
+      'select Models [Sonnet · off | Reset pins | Back]',
     ])
-    const titles = ui.titles.filter((title) => !title.startsWith('Acme'))
-    expect(titles).toEqual([
-      [
-        'Quota',
-        'Accounts',
-        '  Alice · 5h 58% left · 7d 90% left · credits 75% left',
-        '  acct-b · 5h 1% left',
-        '  Keyed · no quota reading yet',
-      ].join('\n'),
-      'Accounts\n3 accounts, 3 enabled',
-      'Limits\nKillswitch off',
+    expect(ui.titles.filter((title) => !title.startsWith('Acme'))).toEqual([
+      'Quota',
+      ['Models', '2 models', 'Pinned', '  Opus · on', '  Haiku'].join('\n'),
     ])
     expect(ui.notified).toEqual([])
   })

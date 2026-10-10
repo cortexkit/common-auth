@@ -118,17 +118,24 @@ export interface MenuItem {
 /**
  * One section of the menu. How every renderer draws it:
  *
- * - `lines` are read-only text shown above the rows. They are never drawn
- *   as options a user can select: a line does nothing when pressed.
- * - The rows are the items, then the section-level actions, in that order.
- *   When a row's `group` differs from the previous row's, a header naming
- *   the group is drawn first. A header is never selectable (on OpenCode it
- *   is the option's `category`).
- * - An item with no actions does nothing, so it is drawn as text, never as
- *   a selectable option (on OpenCode, `disabled`).
+ * - Every option a renderer shows can be selected and does something: it is
+ *   an item with at least one action, or a section-level action. Text that
+ *   does nothing is never an option; it is a group header or a line.
+ * - `lines` are read-only text. On OpenCode they are drawn as header text
+ *   (a `category`) above the first group; on Pi they are part of the select
+ *   title.
+ * - The options are the items, then the section-level actions, in that
+ *   order. When an option's `group` differs from the previous one's, a
+ *   header naming the group is drawn first. A header is never selectable
+ *   (on OpenCode it is the option's `category`).
  * - An item's `status` is drawn right-aligned beside its label (on
  *   OpenCode, `footer`); its `detail` and an action's `description` are
  *   the secondary text (`description`).
+ *
+ * The built-in sections never emit an item without actions, and a plugin
+ * section should not either. A renderer that meets one must not offer it as
+ * an option: on OpenCode a `disabled` option is hidden altogether, so the
+ * item is written as header text instead, and Pi writes it into the title.
  */
 export interface MenuSection {
   id: string
