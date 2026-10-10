@@ -990,8 +990,10 @@ async function removeIfPresent(path: string): Promise<boolean> {
  * refuses rather than falls back to local accounts), and calling this again
  * finishes the job. Returns `idle` when neither file exists. Nothing else in
  * the directory is touched. The token is removed without being parsed, so a
- * corrupt token does not stand in the way; an unreadable or malformed state
- * file refuses, because its owner cannot be checked.
+ * corrupt token does not stand in the way. A malformed state file (bad JSON
+ * or wrong shape) is removed too, since it is what makes `enrollmentAuthority`
+ * report `unreadable`; a state file that fails the safety checks (symlink,
+ * wrong owner, not owner-only) refuses with `unsafe-file` and both files stay.
  */
 export async function disconnectClaustrumEnrollment(
   paths: ClaustrumEnrollmentPaths,
@@ -1008,11 +1010,23 @@ export async function disconnectClaustrumEnrollment(
   })
   if (!lock) return 'busy'
   try {
-    const value = await readBoundedJson(paths.statePath)
-    if (value !== undefined) {
-      const state = decodeEnrollmentState(value)
-      if (state.proposedName !== proposedName) throw wrongConsumer()
+    let state: EnrollmentState | undefined
+    try {
+      const value = await readBoundedJson(paths.statePath)
+      state = value === undefined ? undefined : decodeEnrollmentState(value)
+    } catch (error) {
+      // A malformed state at this host's own path is this host's: the path is
+      // per host, and disconnect is the remedy for the `unreadable` authority
+      // it causes, so it is removed like any other state. An unsafe file
+      // (symlink, wrong owner, group or other bits) is not provably ours and
+      // still refuses; those checks run before the file is parsed.
+      if (
+        !(error instanceof ClaustrumConsumerError) ||
+        error.kind !== 'invalid-state'
+      )
+        throw error
     }
+    if (state && state.proposedName !== proposedName) throw wrongConsumer()
     await lock.assertOwned()
     const removedToken = await removeIfPresent(paths.tokenPath)
     const removedState = await removeIfPresent(paths.statePath)

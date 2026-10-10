@@ -376,6 +376,49 @@ describe('disconnectClaustrumEnrollment', () => {
     expect(await readFile(paths.tokenPath, 'utf8')).toBe(tokenBefore)
   })
 
+  test('removes a malformed state of its own so enrollmentAuthority reports local', async () => {
+    for (const malformed of [
+      '{broken',
+      JSON.stringify({ version: 2, phase: 'approved' }),
+    ]) {
+      const paths = await fixture()
+      await seedApproved(paths)
+      await writeFile(paths.statePath, malformed, { mode: 0o600 })
+      expect(
+        await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+      ).toBe('unreadable')
+
+      expect(
+        await disconnectClaustrumEnrollment(
+          paths,
+          CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        ),
+      ).toBe('disconnected')
+
+      expect(
+        await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+      ).toBe('local')
+      expect(await exists(paths.tokenPath)).toBe(false)
+      expect(await exists(paths.statePath)).toBe(false)
+    }
+  })
+
+  test('refuses an unsafe state file and leaves both files unchanged', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    // Group-readable: the file fails the owner-only check before any parse.
+    await chmod(paths.statePath, 0o640)
+    const stateBefore = await readFile(paths.statePath, 'utf8')
+    const tokenBefore = await readFile(paths.tokenPath, 'utf8')
+
+    await expect(
+      disconnectClaustrumEnrollment(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).rejects.toThrow('owner-only')
+
+    expect(await readFile(paths.statePath, 'utf8')).toBe(stateBefore)
+    expect(await readFile(paths.tokenPath, 'utf8')).toBe(tokenBefore)
+  })
+
   test('returns busy while the ceremony lock is held and deletes nothing', async () => {
     const paths = await fixture()
     await seedApproved(paths)

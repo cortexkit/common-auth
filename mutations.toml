@@ -4029,7 +4029,8 @@ expect_message = '/Expected: "unreadable"\s+Received: "local"/'
 # Disconnect removes the token and then the ceremony state under the ceremony
 # lock. Keeping the state leaves the host in vault mode with no token, which
 # refuses every request; skipping the shared lock lets a disconnect race a
-# reconcile() that is writing a token.
+# reconcile() that is writing a token; removing a state file that fails the
+# safety checks would act on a file that is not provably this host's.
 
 [[control]]
 id = 'claustrum-disconnect-removes-state'
@@ -4058,6 +4059,25 @@ command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^disconnectClaustrumEnrollment\sreturns\sbusy\swhile\sthe\sceremony\slock\sis\sheld\sand\sdeletes\snothing$']
 expect_message = '/Expected: "busy"\s+Received: "disconnected"/'
+
+[[control]]
+id = 'claustrum-disconnect-refuses-unsafe-state'
+guards = 'disconnect removes a malformed state of its own but refuses a state file that fails the safety checks (symlink, wrong owner, not owner-only), leaving both files'
+file = 'src/claustrum/enrollment.ts'
+old = '''        !(error instanceof ClaustrumConsumerError) ||
+        error.kind !== 'invalid-state'
+      )
+        throw error'''
+new = '''        !(error instanceof ClaustrumConsumerError) ||
+        false // NON-VACUITY BREAK
+      )
+        throw error'''
+test_file = 'test/claustrum/enrollment.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^disconnectClaustrumEnrollment\srefuses\san\sunsafe\sstate\sfile\sand\sleaves\sboth\sfiles\sunchanged$']
+expect_message = 'error: expect('
 
 # --- OpenCode 2 vault activation method (0.13.0) ---
 # The vault method must call the plugin's activation, never its pool login,
