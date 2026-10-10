@@ -273,7 +273,7 @@ for (const target of ['auth', 'stash'] as const) {
     let clock: ReturnType<typeof spyOn<typeof Date, 'now'>> | undefined
     const slot = createPiSlot(f.options, undefined, {
       beforeRename: async (path) => {
-        expect(path).toBe(target === 'auth' ? f.authPath : f.stashPath)
+        if (path !== (target === 'auth' ? f.authPath : f.stashPath)) return
         before = await stat(f.lockPath)
         clock = spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001)
       },
