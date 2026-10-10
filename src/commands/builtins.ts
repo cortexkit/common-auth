@@ -225,7 +225,9 @@ function accountsSection(
   const enabledCount = snap.rows.filter((row) => row.enabled).length
   const items: ResolvedItem[] = snap.rows.map((row, index) => {
     const { account, name } = accountView(row, options)
-    // The quota itself is the Quota section's; an account row stays short.
+    // An Accounts row shows only the credential type, identity and any
+    // disabled reason; the account's quota windows are shown in the Quota
+    // section instead, so this row fits one line.
     const detail = [
       row.type === 'api' ? 'API key' : 'OAuth',
       ...(account.identity !== undefined ? [account.identity] : []),
@@ -381,8 +383,11 @@ function quotaSection(
   // A scoped menu names its model family in the header, since the quota
   // shown is that family's view of each account.
   const group = scope === 'all' ? 'Accounts' : `Accounts · ${scope}`
-  // Every reading goes through the plugin's own poll when it has one, else
-  // through a store pull per row, for one account and for all alike.
+  // Checking quota asks the provider for a fresh reading. A plugin that
+  // polls its accounts itself (its own HTTP quota call) supplies
+  // `quota.check`; otherwise each row's reading is requested from the store,
+  // which runs the plugin's pull for that row. Checking one account and
+  // checking all use the same path.
   const check = async (
     ids: readonly string[],
     invocation: CommandInvocation,
@@ -393,9 +398,11 @@ function quotaSection(
       await options.store.pullsSettled()
     }
   }
-  // Only an account that can be checked is a row: a row must do something
-  // when chosen. One that cannot (disabled, invalid, without a credential)
-  // is a read-only line saying why, beside what was last read for it.
+  // Only a routing candidate (enabled, valid and holding a credential) is a
+  // row, because a row must do something when chosen and its action checks
+  // that account's quota. Any other account becomes a read-only line naming
+  // why it can't be checked (disabled, invalid, no credential), followed by
+  // its last stored quota reading.
   const candidates = snap.rows.filter((row) => row.candidate)
   const items: ResolvedItem[] = candidates.map((row) => {
     const { account, name } = accountView(row, options)
