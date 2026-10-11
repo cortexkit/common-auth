@@ -4709,7 +4709,7 @@ test_file = 'test/util/any-signal.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/util/any-signal.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^combineAbortSignals\\sdispose\\sremoves\\severy\\ssource\\slistener\\sacross\\srepeated\\scombines$']
+expect_red = ['^combineAbortSignals\sdispose\sremoves\severy\ssource\slistener\sacross\srepeated\scombines$']
 expect_message = 'Expected: 0'
 
 [[control]]
@@ -4722,7 +4722,7 @@ test_file = 'test/util/any-signal.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/util/any-signal.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^combineAbortSignals\\suses\\sthe\\sfirst\\sinput\\sreason\\swhen\\sseveral\\sinputs\\sare\\salready\\saborted$']
+expect_red = ['^combineAbortSignals\suses\sthe\sfirst\sinput\sreason\swhen\sseveral\sinputs\sare\salready\saborted$']
 expect_message = 'Expected: "first reason"'
 
 [[control]]
@@ -4735,5 +4735,5 @@ test_file = 'test/util/any-signal.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/util/any-signal.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^combineAbortSignals\\simmediately\\saborts\\swhen\\san\\sinput\\sis\\salready\\saborted$']
+expect_red = ['^combineAbortSignals\simmediately\saborts\swhen\san\sinput\sis\salready\saborted$']
 expect_message = 'Expected: true'
