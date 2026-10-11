@@ -4701,6 +4701,9 @@ expect_message = 'expect(received).toEqual(expected)'
 
 [[control]]
 id = 'any-signal-dispose-removes-listeners'
+broad_command = ['bun', 'test', 'test/util/any-signal.test.ts', '--reporter=junit', '--reporter-outfile=any-signal-broad.xml']
+broad_report = 'any-signal-broad.xml'
+broad_id = '{name}'
 guards = 'disposing a combined signal removes every listener from each source signal'
 file = 'src/util/any-signal.ts'
 old = "source.removeEventListener('abort', listener)"
@@ -4714,6 +4717,9 @@ expect_message = 'Expected: 0'
 
 [[control]]
 id = 'any-signal-first-aborted-input-reason'
+broad_command = ['bun', 'test', 'test/util/any-signal.test.ts', '--reporter=junit', '--reporter-outfile=any-signal-broad.xml']
+broad_report = 'any-signal-broad.xml'
+broad_id = '{name}'
 guards = 'the first already-aborted input supplies the combined signal reason'
 file = 'src/util/any-signal.ts'
 old = 'const alreadyAborted = signals.find((signal) => signal.aborted)'
@@ -4727,6 +4733,9 @@ expect_message = 'Expected: "first reason"'
 
 [[control]]
 id = 'any-signal-handles-pre-aborted-input'
+broad_command = ['bun', 'test', 'test/util/any-signal.test.ts', '--reporter=junit', '--reporter-outfile=any-signal-broad.xml']
+broad_report = 'any-signal-broad.xml'
+broad_id = '{name}'
 guards = 'an input already aborted before combination aborts the result immediately'
 file = 'src/util/any-signal.ts'
 old = 'controller.abort(alreadyAborted.reason)'
