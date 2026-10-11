@@ -29,7 +29,7 @@ prebuild = [
 id = 'store-stage-refuse'
 broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
 broad_report = 'staged-replacement-broad.xml'
-broad_id = 'dispose removes every source listener across repeated combines'
+broad_id = '{name}'
 guards = 'refuse never rotates or writes an existing secret holder'
 file = 'src/store/rows.ts'
 old = "if (mode === 'refuse') {"
@@ -58,7 +58,7 @@ expect_message = 'unbound-credential'
 id = 'store-stage-orphan-foreign'
 broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
 broad_report = 'staged-replacement-broad.xml'
-broad_id = 'uses the first input reason when several inputs are already aborted'
+broad_id = '{name}'
 guards = 'a different stored reservation cannot be replayed by the caller'
 file = 'src/store/rows.ts'
 old = 'staged.reservation !== input.stage?.reservation ||'
@@ -74,7 +74,7 @@ expect_message = 'Expected promise that rejects'
 id = 'store-stage-orphan-missing'
 broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
 broad_report = 'staged-replacement-broad.xml'
-broad_id = 'immediately aborts when an input is already aborted'
+broad_id = '{name}'
 guards = 'staging ownership is never synthesized from caller wishes'
 file = 'src/store/rows.ts'
 old = 'const staged = stamp?.staged'
@@ -4712,7 +4712,7 @@ test_file = 'test/util/any-signal.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/util/any-signal.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^combineAbortSignals\sdispose\sremoves\severy\ssource\slistener\sacross\srepeated\scombines$']
+expect_red = ['dispose removes every source listener across repeated combines']
 expect_message = 'Expected: 0'
 
 [[control]]
@@ -4728,7 +4728,7 @@ test_file = 'test/util/any-signal.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/util/any-signal.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^combineAbortSignals\suses\sthe\sfirst\sinput\sreason\swhen\sseveral\sinputs\sare\salready\saborted$']
+expect_red = ['uses the first input reason when several inputs are already aborted']
 expect_message = 'Expected: "first reason"'
 
 [[control]]
@@ -4744,5 +4744,5 @@ test_file = 'test/util/any-signal.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/util/any-signal.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^combineAbortSignals\simmediately\saborts\swhen\san\sinput\sis\salready\saborted$']
+expect_red = ['immediately aborts when an input is already aborted']
 expect_message = 'Expected: true'
