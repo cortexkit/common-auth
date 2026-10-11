@@ -9,6 +9,17 @@
 #include <stdint.h>
 #include <string.h>
 #include <wchar.h>
+#include <winternl.h>
+#include <winioctl.h>
+#include "open-policy.h"
+
+typedef char OpenPolicyMatchesWindowsSdk[
+    PF_READ_CONTROL == READ_CONTROL && PF_WRITE_DAC == WRITE_DAC &&
+    PF_READ_ATTRIBUTES == FILE_READ_ATTRIBUTES && PF_SYNCHRONIZE == SYNCHRONIZE &&
+    PF_GENERIC_READ == GENERIC_READ && PF_GENERIC_WRITE == GENERIC_WRITE &&
+    PF_DELETE == DELETE ? 1 : -1];
+typedef char ReparseQueryNeedsNoDataAccess[
+    ((FSCTL_GET_REPARSE_POINT >> 14) & 3) == FILE_ANY_ACCESS ? 1 : -1];
 
 /* Each transaction owns all handles until completion. Ancestors deny delete
  * sharing so an ordinary other user cannot replace a traversed component. */
@@ -71,8 +82,41 @@ static int user_sid(Job *j) {
 
 static int attributes(Job *j, HANDLE h, int directory) {
   BY_HANDLE_FILE_INFORMATION info;
-  if (GetFileType(h) != FILE_TYPE_DISK || !GetFileInformationByHandle(h, &info)) {
-    fail(j, GetLastError(), "Only ordinary disk objects are supported"); return 0;
+  if (GetFileType(h) != FILE_TYPE_DISK) {
+    fail(j, ERROR_ACCESS_DENIED, "Only ordinary disk objects are supported"); return 0;
+  }
+  if (!GetFileInformationByHandle(h, &info)) {
+    if (GetLastError() != ERROR_ACCESS_DENIED) {
+      fail(j, GetLastError(), "Cannot inspect opened object attributes"); return 0;
+    }
+    /* Security-query handles have no attribute-access permission. StandardInfo
+     * and the reparse query use no file-data rights; uncertain results refuse. */
+    FILE_STANDARD_INFO standard;
+    if (!GetFileInformationByHandleEx(h, FileStandardInfo, &standard, sizeof(standard))) {
+      fail(j, GetLastError(), "Cannot inspect object kind with security-only rights"); return 0;
+    }
+    BYTE *buffer = malloc(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+    OVERLAPPED overlap;
+    memset(&overlap, 0, sizeof(overlap));
+    overlap.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (!buffer || !overlap.hEvent) {
+      free(buffer); if (overlap.hEvent) CloseHandle(overlap.hEvent);
+      fail(j, ERROR_OUTOFMEMORY, "Reparse query allocation failed"); return 0;
+    }
+    DWORD received = 0;
+    BOOL reparse = DeviceIoControl(h, FSCTL_GET_REPARSE_POINT, NULL, 0,
+        buffer, MAXIMUM_REPARSE_DATA_BUFFER_SIZE, &received, &overlap);
+    DWORD error = reparse ? ERROR_SUCCESS : GetLastError();
+    if (!reparse && error == ERROR_IO_PENDING) {
+      reparse = GetOverlappedResult(h, &overlap, &received, TRUE);
+      error = reparse ? ERROR_SUCCESS : GetLastError();
+    }
+    CloseHandle(overlap.hEvent); free(buffer);
+    if (!reparse && error != ERROR_NOT_A_REPARSE_POINT) {
+      fail(j, error, "Cannot exclude reparse points with security-only rights"); return 0;
+    }
+    info.dwFileAttributes = (standard.Directory ? FILE_ATTRIBUTE_DIRECTORY : 0) |
+        (reparse ? FILE_ATTRIBUTE_REPARSE_POINT : 0);
   }
   if (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
     j->refusal = "reparse-point";
@@ -106,7 +150,9 @@ static int descriptor(Job *j, HANDLE h, int canonical) {
   if (!valid) {
     j->refusal = "wrong-owner";
     if (owner) ConvertSidToStringSidW(owner, &j->detail);
-    fail(j, ERROR_ACCESS_DENIED, "Owner is neither the user SID nor the permitted token default owner");
+    fail(j, ERROR_ACCESS_DENIED, canonical ?
+        "Owner is neither the user SID nor the permitted token default owner" :
+        "Permission replacement requires the user SID as owner; ownership will not be taken");
   }
   if (valid && canonical) {
     GetSecurityDescriptorControl(sd, &control, &revision);
@@ -132,6 +178,10 @@ static int descriptor(Job *j, HANDLE h, int canonical) {
             j->mask = entry->Mask; break;
           }
         }
+      } else if (canonical == -1) {
+        /* After access-denied, reject missing/empty/foreign ACLs with security
+         * query rights alone. A usable ACL still needs kind/ACE-flag checks. */
+        valid = 1;
       } else if ((control & SE_DACL_PROTECTED) &&
           ace->Header.AceFlags == (j->directory ? OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE : 0)) {
         valid = 1;
@@ -142,7 +192,12 @@ static int descriptor(Job *j, HANDLE h, int canonical) {
         valid = descriptor(j, j->ancestors[j->count - 1], 1);
         j->directory = 0;
       } else {
-        valid = 0; j->refusal = "not-protected";
+        valid = 0;
+        j->refusal = (control & SE_DACL_PROTECTED) ? "extra-ace" : "not-protected";
+        if (control & SE_DACL_PROTECTED) {
+          ConvertSidToStringSidW(&ace->SidStart, &j->detail);
+          j->mask = ace->Mask;
+        }
       }
     }
     if (!valid) fail(j, ERROR_ACCESS_DENIED, "Strict owner-only DACL required; explicitly migrate current-user-owned objects");
@@ -197,12 +252,45 @@ static int trusted_ancestor(Job *j, HANDLE h, int creation_parent) {
   return valid;
 }
 
-static HANDLE open_object(Job *j, const wchar_t *path, DWORD access, DWORD disposition, SECURITY_ATTRIBUTES *sa, int directory) {
+static HANDLE open_object(Job *j, const wchar_t *path, DWORD access, DWORD disposition, SECURITY_ATTRIBUTES *sa, int directory, int report_error) {
   HANDLE h = CreateFileW(path, access,
       FILE_SHARE_READ | FILE_SHARE_WRITE, sa, disposition,
       FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0), NULL);
-  if (h == INVALID_HANDLE_VALUE) fail(j, GetLastError(), "Cannot open pinned object (ACL, sharing, or path failure)");
+  if (h == INVALID_HANDLE_VALUE && report_error) fail(j, GetLastError(), "Cannot open pinned object (ACL, sharing, or path failure)");
   return h;
+}
+
+/* An empty DACL still lets its owner query/replace the DACL, but does not grant
+ * synchronization or attribute access that CreateFile may also request.
+ * NtCreateFile without synchronous options requests only READ_CONTROL/WRITE_DAC;
+ * these security handles never read file bytes. */
+static HANDLE open_exact_metadata(Job *j, DWORD access, int directory) {
+  size_t length = wcslen(j->path) + 4;
+  wchar_t *buffer = calloc(length + 1, sizeof(wchar_t));
+  if (!buffer) { fail(j, ERROR_OUTOFMEMORY, "Metadata path allocation failed"); return INVALID_HANDLE_VALUE; }
+  memcpy(buffer, L"\\??\\", 4 * sizeof(wchar_t));
+  memcpy(buffer + 4, j->path, (length - 4) * sizeof(wchar_t));
+  UNICODE_STRING name;
+  name.Buffer = buffer;
+  name.Length = (USHORT)(length * sizeof(wchar_t));
+  name.MaximumLength = (USHORT)((length + 1) * sizeof(wchar_t));
+  OBJECT_ATTRIBUTES object;
+  memset(&object, 0, sizeof(object));
+  object.Length = sizeof(object);
+  object.ObjectName = &name;
+  object.Attributes = OBJ_CASE_INSENSITIVE;
+  IO_STATUS_BLOCK io;
+  HANDLE handle = INVALID_HANDLE_VALUE;
+  NTSTATUS status = NtCreateFile(&handle, access, &object, &io, NULL,
+      FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN,
+      FILE_OPEN_REPARSE_POINT | (directory ? FILE_OPEN_FOR_BACKUP_INTENT : 0), NULL, 0);
+  free(buffer);
+  if (status < 0) {
+    DWORD error = RtlNtStatusToDosError(status);
+    fail(j, error, "Cannot open exact-rights security handle (owner/ACL/path refusal)");
+    return INVALID_HANDLE_VALUE;
+  }
+  return handle;
 }
 
 static int pin_ancestors(Job *j) {
@@ -240,7 +328,7 @@ static int pin_ancestors(Job *j) {
   }
   j->ancestors = calloc(length, sizeof(HANDLE));
   if (!j->ancestors) { fail(j, ERROR_OUTOFMEMORY, "Handle allocation failed"); return 0; }
-  HANDLE root_handle = open_object(j, root, READ_CONTROL | FILE_READ_ATTRIBUTES, OPEN_EXISTING, NULL, 1);
+  HANDLE root_handle = open_object(j, root, READ_CONTROL | FILE_READ_ATTRIBUTES, OPEN_EXISTING, NULL, 1, 1);
   if (root_handle == INVALID_HANDLE_VALUE) return 0;
   j->ancestors[j->count++] = root_handle;
   if (!attributes(j, root_handle, 1) || !trusted_ancestor(j, root_handle,
@@ -249,7 +337,7 @@ static int pin_ancestors(Job *j) {
     if (j->path[i] != L'\\') continue;
     wchar_t saved = j->path[i];
     j->path[i] = 0;
-    HANDLE h = open_object(j, j->path, READ_CONTROL | FILE_READ_ATTRIBUTES, OPEN_EXISTING, NULL, 1);
+    HANDLE h = open_object(j, j->path, READ_CONTROL | FILE_READ_ATTRIBUTES, OPEN_EXISTING, NULL, 1, 1);
     j->path[i] = saved;
     if (h == INVALID_HANDLE_VALUE) return 0;
     j->ancestors[j->count++] = h;
@@ -280,29 +368,40 @@ static void execute(napi_env env, void *data) {
     fail(j, GetLastError(), "Cannot construct protected security descriptor"); goto done;
   }
   SECURITY_ATTRIBUTES sa = { sizeof(sa), &sd, FALSE };
-  DWORD access = READ_CONTROL;
-  if (j->op == 0) access |= GENERIC_WRITE | DELETE;
-  if (j->op == 1) access |= GENERIC_READ;
-  if (j->op == 3) access |= WRITE_DAC;
+  PrivateOpenPolicy policy = private_open_policy(j->op);
   if (j->op == 0 && j->directory) {
     if (!CreateDirectoryW(j->path, &sa)) {
       fail(j, GetLastError(), "Exclusive private directory creation failed"); goto done;
     }
     j->created = 1;
   }
-  j->leaf = open_object(j, j->path, access,
-      j->op == 0 && !j->directory ? CREATE_NEW : OPEN_EXISTING,
-      j->op == 0 ? &sa : NULL, j->directory);
-  if (j->leaf == INVALID_HANDLE_VALUE) goto done;
+  j->leaf = policy.exact ? open_exact_metadata(j, policy.access, j->directory) :
+      open_object(j, j->path, policy.access,
+        j->op == 0 && !j->directory ? CREATE_NEW : OPEN_EXISTING,
+        j->op == 0 ? &sa : NULL, j->directory, 0);
+  if (j->leaf == INVALID_HANDLE_VALUE) {
+    DWORD error = GetLastError();
+    if (!j->reason && error == ERROR_ACCESS_DENIED && (j->op == 1 || j->op == 2)) {
+      PrivateOpenPolicy fallback = private_classify_fallback();
+      j->leaf = open_exact_metadata(j, fallback.access, j->directory);
+      if (j->leaf == INVALID_HANDLE_VALUE || !descriptor(j, j->leaf, -1)) goto done;
+      if (j->op == 1) {
+        if (attributes(j, j->leaf, 0) && descriptor(j, j->leaf, 1))
+          fail(j, error, "ACL is canonical but file data access was denied; no bytes were read");
+        goto done;
+      }
+    } else { fail(j, error, "Cannot open pinned object (ACL, sharing, or path failure)"); goto done; }
+  }
   if (j->op == 0) j->created = 1;
+  if (j->op == 3 && !descriptor(j, j->leaf, 0)) goto done;
   if (!attributes(j, j->leaf, j->directory)) goto done;
   if (j->op == 3) {
-    if (!descriptor(j, j->leaf, 0)) goto done;
     DWORD error = SetSecurityInfo(j->leaf, SE_FILE_OBJECT,
         DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL, acl, NULL);
     if (error != ERROR_SUCCESS) {
       fail(j, error, "Cannot apply protected DACL; use a local ACL-capable filesystem"); goto done;
     }
+    if (!attributes(j, j->leaf, j->directory)) goto done;
   }
   if (!descriptor(j, j->leaf, 1)) goto done;
   if (j->op == 0 && !j->directory) {

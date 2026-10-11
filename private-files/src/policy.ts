@@ -30,6 +30,8 @@ export function isPrivateDescriptor(
         !descriptor.daclProtected &&
         ace?.flags === 16 &&
         !!descriptor.parent &&
+        descriptor.parent.currentUser === descriptor.currentUser &&
+        descriptor.parent.defaultOwner === descriptor.defaultOwner &&
         isPrivateDescriptor(descriptor.parent, 'directory'))) &&
     descriptor.aces?.length === 1 &&
     ace?.type === 0 &&

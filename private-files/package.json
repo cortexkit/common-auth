@@ -6,7 +6,7 @@
   "type": "module",
   "repository": { "type": "git", "url": "git+https://github.com/cortexkit/common-auth.git", "directory": "private-files" },
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist/", "prebuilds/", "native/", "README.md", "LICENSE"],
+  "files": ["dist/", "prebuilds/", "native/", "test/native-open-policy.c", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

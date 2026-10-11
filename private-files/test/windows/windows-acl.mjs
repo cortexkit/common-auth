@@ -224,6 +224,18 @@ test('null-DACL, empty-DACL and foreign-owner fixtures refuse', async () => {
           : 'wrong-owner',
     )
     if (kind === 'owner') assert.equal(result.refusal.ownerSid, sd.owner)
+    const expectedReason =
+      kind === 'null'
+        ? 'null-dacl'
+        : kind === 'empty'
+          ? 'empty-dacl'
+          : 'wrong-owner'
+    await assert.rejects(
+      () => readOwnerOnly(file),
+      (error) =>
+        error.code === 'ERR_PRIVATE_FILES_SECURITY' &&
+        error.reason === expectedReason,
+    )
     await refused(() => readPrivateFile(file))
     if (kind === 'owner') await refused(() => securePrivatePath(file, 'file'))
   }

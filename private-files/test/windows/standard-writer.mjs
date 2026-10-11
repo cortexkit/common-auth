@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   createOwnerOnly,
   readOwnerOnly,
+  securePrivatePath,
   verifyOwnerOnly,
 } from './package/dist/index.js'
 
@@ -19,47 +20,59 @@ try {
   assert.deepEqual(await verifyOwnerOnly(file), { ok: true })
   assert.equal((await readOwnerOnly(file)).toString(), 'standard-user bytes')
   const script = fileURLToPath(new URL('./inspect.ps1', import.meta.url))
-  const sd = await new Promise((resolve, reject) => {
-    const child = spawn(
-      join(
-        process.env.SystemRoot,
-        'System32',
-        'WindowsPowerShell',
-        'v1.0',
-        'powershell.exe',
-      ),
-      ['-NoProfile', '-NonInteractive', '-File', script, '-Mode', 'inspect'],
-      {
-        stdio: ['pipe', 'pipe', 'inherit'],
-        env: {
-          ...process.env,
-          PSModulePath: join(
-            process.env.SystemRoot,
-            'System32',
-            'WindowsPowerShell',
-            'v1.0',
-            'Modules',
-          ),
+  const inspect = (mode, data) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(
+        join(
+          process.env.SystemRoot,
+          'System32',
+          'WindowsPowerShell',
+          'v1.0',
+          'powershell.exe',
+        ),
+        ['-NoProfile', '-NonInteractive', '-File', script, '-Mode', mode],
+        {
+          stdio: ['pipe', 'pipe', 'inherit'],
+          env: {
+            ...process.env,
+            PSModulePath: join(
+              process.env.SystemRoot,
+              'System32',
+              'WindowsPowerShell',
+              'v1.0',
+              'Modules',
+            ),
+          },
         },
-      },
-    )
-    let output = ''
-    child.stdout.on('data', (bytes) => {
-      output += bytes
+      )
+      let output = ''
+      child.stdout.on('data', (bytes) => {
+        output += bytes
+      })
+      child.on('error', reject)
+      child.on('exit', (code) =>
+        code === 0
+          ? resolve(JSON.parse(output))
+          : reject(new Error('Standard-user inspector failed')),
+      )
+      child.stdin.end(JSON.stringify(data))
     })
-    child.on('error', reject)
-    child.on('exit', (code) =>
-      code === 0
-        ? resolve(JSON.parse(output))
-        : reject(new Error('Standard-user inspector failed')),
-    )
-    child.stdin.end(JSON.stringify({ path: file }))
-  })
+  const sd = await inspect('inspect', { path: file })
   assert.equal(sd.owner, sd.currentUser)
   assert.equal(sd.defaultOwner, sd.currentUser)
   assert.deepEqual(sd.aces, [
     { type: 0, flags: 0, mask: 0x1f01ff, sid: sd.currentUser },
   ])
+  await inspect('fixture', { path: file, kind: 'empty' })
+  const refused = await verifyOwnerOnly(file)
+  assert.equal(refused.ok, false)
+  assert.equal(refused.refusal.reason, 'empty-dacl')
+  await assert.rejects(
+    () => readOwnerOnly(file),
+    (error) => error.reason === 'empty-dacl',
+  )
+  await securePrivatePath(file, 'file')
+  assert.equal((await readOwnerOnly(file)).toString(), 'standard-user bytes')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

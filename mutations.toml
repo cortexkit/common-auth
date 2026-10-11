@@ -4743,6 +4743,8 @@ id = 'private-files-inherited-parent-proof'
 guards = 'an inherited file ACE is accepted only with a canonical protected owner-only parent descriptor'
 file = 'private-files/src/policy.ts'
 old = '''!!descriptor.parent &&
+        descriptor.parent.currentUser === descriptor.currentUser &&
+        descriptor.parent.defaultOwner === descriptor.defaultOwner &&
         isPrivateDescriptor(descriptor.parent, 'directory')'''
 new = 'true'
 test_file = 'private-files/test/private-files.test.ts'

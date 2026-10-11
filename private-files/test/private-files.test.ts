@@ -57,6 +57,29 @@ describe('private descriptor contract (logic only, not Windows certification)', 
     }
     expect(isPrivateDescriptor(inherited, 'file')).toBe(true)
     expect(
+      isPrivateDescriptor(
+        {
+          ...inherited,
+          parent: {
+            ...parent,
+            currentUser: 'S-1-other',
+            owner: 'S-1-other',
+            aces: [{ type: 0, flags: 3, mask: 0x1f01ff, sid: 'S-1-other' }],
+          },
+        },
+        'file',
+      ),
+    ).toBe(false)
+    expect(
+      isPrivateDescriptor(
+        {
+          ...inherited,
+          parent: { ...parent, defaultOwner: 'S-1-other-default' },
+        },
+        'file',
+      ),
+    ).toBe(false)
+    expect(
       isPrivateDescriptor({ ...inherited, parent: undefined }, 'file'),
     ).toBe(false)
     expect(
