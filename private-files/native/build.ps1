@@ -28,10 +28,16 @@ $target = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
 $out = Join-Path $PSScriptRoot "..\prebuilds\private-files-win32-$Arch.node"
 New-Item -ItemType Directory -Force (Split-Path $out) | Out-Null
 $obj = Join-Path $cache 'addon.obj'
-$cmd = "`"$vcvars`" $target && cl /nologo /std:c11 /W4 /O2 /LD /TC /I`"$include`" `"$PSScriptRoot\addon.c`" /Fo`"$obj`" /link /OUT:`"$out`" /IMPLIB:`"$cache\addon.lib`" `"$library`" advapi32.lib ntdll.lib"
+$hookObject = Join-Path $cache 'delay-load-hook.obj'
+$cmd = "`"$vcvars`" $target && cl /nologo /std:c11 /W4 /O2 /MT /TC /c `"$PSScriptRoot\delay-load-hook.c`" /Fo`"$hookObject`" && cl /nologo /std:c11 /W4 /O2 /LD /TC /I`"$include`" `"$PSScriptRoot\addon.c`" /Fo`"$obj`" /link /OUT:`"$out`" /IMPLIB:`"$cache\addon.lib`" `"$hookObject`" `"$library`" /DELAYLOAD:node.exe delayimp.lib advapi32.lib ntdll.lib"
 & cmd /d /s /c $cmd
 if ($LASTEXITCODE) { throw "MSVC build failed: $LASTEXITCODE" }
 Write-Output "N-API v8 prebuild: $out (Node $NodeVersion, $Arch)"
+$evidence = Join-Path $PSScriptRoot '../private-files-evidence'
+New-Item -ItemType Directory -Force $evidence | Out-Null
+$imports = Join-Path $evidence "imports-$Arch.txt"
+& cmd /d /s /c "`"$vcvars`" $target && dumpbin /imports `"$out`"" | Tee-Object -FilePath $imports
+if ($LASTEXITCODE) { throw 'PE import inspection failed' }
 $unit = Join-Path $cache 'open-policy-test.exe'
 $unitObject = Join-Path $cache 'open-policy-test.obj'
 $unitCommand = "`"$vcvars`" $target && cl /nologo /std:c11 /W4 /MT /TC `"$PSScriptRoot\..\test\native-open-policy.c`" /Fo`"$unitObject`" /Fe`"$unit`""
