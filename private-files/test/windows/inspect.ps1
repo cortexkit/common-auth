@@ -43,6 +43,10 @@ if ($Mode -eq 'inspect') {
   exit
 }
 if ($Mode -eq 'fixture') {
+  if ($inputData.kind -eq 'junction') {
+    New-Item -ItemType Junction -Path $path -Target $inputData.target | Out-Null
+    Write-Output '{}'; exit
+  }
   $security = ReadSecurity $path
   $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
   switch ($inputData.kind) {
@@ -54,7 +58,12 @@ if ($Mode -eq 'fixture') {
       $everyone = [System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')
       $security.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($everyone, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
     }
-    'inherited' { $security.SetAccessRuleProtection($false, $true) }
+    'inherited' {
+      $security.SetAccessRuleProtection($false, $false)
+      foreach ($rule in $security.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier])) {
+        $security.RemoveAccessRuleSpecific($rule)
+      }
+    }
     'defaultOwner' { $security.SetOwner([System.Security.Principal.WindowsIdentity]::GetCurrent().Owner) }
     'empty' { $security.SetSecurityDescriptorSddlForm("O:$($sid.Value)D:P") }
     'null' {
@@ -73,10 +82,6 @@ public static class NullDaclFixture {
     'owner' {
       & icacls $path /setowner '*S-1-5-18' | Out-Null
       if ($LASTEXITCODE) { throw 'Could not set foreign SYSTEM owner fixture' }
-      Write-Output '{}'; exit
-    }
-    'junction' {
-      New-Item -ItemType Junction -Path $path -Target $inputData.target | Out-Null
       Write-Output '{}'; exit
     }
     default { throw 'Unknown fixture' }
@@ -118,10 +123,22 @@ if ($Mode -eq 'probe') {
     $script = Join-Path $public 'probe.ps1'
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'second-user.ps1') -Destination $script
     $credential = [PSCredential]::new("$env:COMPUTERNAME\$name", $password)
+    $stdout = Join-Path $public 'stdout.txt'
+    $stderr = Join-Path $public 'stderr.txt'
     $provisionMs = $probeClock.ElapsedMilliseconds
-    $process = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Credential $credential -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$script`"", '-Request', "`"$request`"") -WorkingDirectory $public -LoadUserProfile -PassThru
-    if (!$process.WaitForExit(45000)) { $process.Kill(); throw 'Second-user probe timed out' }
-    if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $result)) { throw 'Second-user probe did not launch successfully' }
+    try {
+      $process = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Credential $credential -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$script`"", '-Request', "`"$request`"") -WorkingDirectory $public -LoadUserProfile -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+      $null = $process.Handle
+      if (!$process.WaitForExit(45000)) { $process.Kill(); throw 'Second-user probe timed out' }
+      $process.WaitForExit()
+    } catch {
+      throw "Second-user launch/wait failed (userCreated=$userCreated, LoadUserProfile=true, directory=$public): $($_.Exception.ToString())"
+    }
+    if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $result)) {
+      $out = if (Test-Path $stdout) { Get-Content -Raw $stdout } else { '<no stdout>' }
+      $err = if (Test-Path $stderr) { Get-Content -Raw $stderr } else { '<no stderr>' }
+      throw "Second-user probe failed (exitCode=$($process.ExitCode), userCreated=$userCreated, LoadUserProfile=true, resultExists=$(Test-Path -LiteralPath $result)): stdout=$out stderr=$err"
+    }
     $report = Get-Content -Raw -LiteralPath $result | ConvertFrom-Json
     if (!$report.standardUser -or !$report.controlRead -or !$report.fileDenied -or !$report.directoryDenied -or !$report.standardWriter) { throw "Second-user denial/control failed: $($report | ConvertTo-Json -Compress)" }
     $report | Add-Member -NotePropertyName provisionMs -NotePropertyValue $provisionMs

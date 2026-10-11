@@ -26,6 +26,7 @@ const root = join(
 )
 const reports = []
 const latencies = []
+const repairBeforeRemoval = []
 const script = fileURLToPath(new URL('./inspect.ps1', import.meta.url))
 const powershell = join(
   process.env.SystemRoot,
@@ -159,6 +160,7 @@ after(async () => {
       2,
     ),
   )
+  for (const path of repairBeforeRemoval) await securePrivatePath(path, 'file')
   await rm(root, { recursive: true, force: true })
 })
 
@@ -194,18 +196,34 @@ test('foreign-grant fixture refuses before reading bytes', async () => {
   )
   await refused(() => readPrivateFile(file))
   await refused(() => verifyPrivatePath(file, 'file'))
+  assert.deepEqual(await verifyOwnerOnly(file), {
+    ok: false,
+    refusal: { reason: 'extra-ace', sid: 'S-1-1-0', mask: 0x1f01ff },
+  })
 })
 
 test('null-DACL, empty-DACL and foreign-owner fixtures refuse', async () => {
   for (const kind of ['null', 'empty', 'owner']) {
     const file = join(root, kind)
     await createPrivateFile(file, 'must not be read')
+    if (kind === 'empty') repairBeforeRemoval.push(file)
     await inspect('fixture', { path: file, kind })
     const sd = await inspect('inspect', { path: file })
     reports.push({ fixture: kind, descriptor: sd })
     if (kind === 'null') assert.equal(sd.aces, null)
     if (kind === 'empty') assert.deepEqual(sd.aces, [])
     if (kind === 'owner') assert.notEqual(sd.owner, sd.currentUser)
+    const result = await verifyOwnerOnly(file)
+    assert.equal(result.ok, false)
+    assert.equal(
+      result.refusal.reason,
+      kind === 'null'
+        ? 'null-dacl'
+        : kind === 'empty'
+          ? 'empty-dacl'
+          : 'wrong-owner',
+    )
+    if (kind === 'owner') assert.equal(result.refusal.ownerSid, sd.owner)
     await refused(() => readPrivateFile(file))
     if (kind === 'owner') await refused(() => securePrivatePath(file, 'file'))
   }
@@ -217,11 +235,28 @@ test('junction leaf and junction ancestor refuse', async () => {
   await createPrivateFile(join(target, 'token'), 'secret')
   const junction = join(root, 'junction')
   await inspect('fixture', { path: junction, kind: 'junction', target })
+  const result = await verifyOwnerOnly(junction)
+  assert.equal(result.ok, false)
+  assert.equal(result.refusal.reason, 'reparse-point')
   await refused(() => verifyPrivatePath(junction, 'directory'))
   await refused(() => readPrivateFile(join(junction, 'token')))
   await refused(() =>
     createPrivateFile(join(junction, 'new'), 'must not write'),
   )
+})
+
+test('typed not-protected directory and unsupported-filesystem refusals', async () => {
+  const directory = join(root, 'unprotected-dir')
+  await mkdir(directory)
+  const sd = await inspect('inspect', { path: directory })
+  reports.push({ unprotectedDirectory: sd })
+  assert.equal(sd.control & 0x1000, 0)
+  const unprotected = await verifyOwnerOnly(directory)
+  assert.equal(unprotected.ok, false)
+  assert.equal(unprotected.refusal.reason, 'not-protected')
+  const unsupported = await verifyOwnerOnly('\\\\localhost\\C$\\never-opened')
+  assert.equal(unsupported.ok, false)
+  assert.equal(unsupported.refusal.reason, 'unsupported-filesystem')
 })
 
 test('unsafe writable ancestor refuses private children and new creation', async () => {
