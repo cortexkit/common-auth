@@ -14,11 +14,11 @@ try {
   $during | Tee-Object -FilePath private-files-evidence/negative-during.txt
   & ./native/build.ps1
   $env:PRIVATE_FILES_NEGATIVE_CONTROL = '1'
-  & node --test '--test-name-pattern=^foreign-grant fixture refuses before reading bytes$' test/windows/windows-acl.mjs 2>&1 | Tee-Object -FilePath private-files-evidence/negative-test.txt
+  & node --test --test-reporter=tap '--test-name-pattern=^foreign-grant fixture refuses before reading bytes$' test/windows/windows-acl.mjs 2>&1 | Tee-Object -FilePath private-files-evidence/negative-test.txt
   $code = $LASTEXITCODE
   if ($code -eq 0) { throw 'Disabled verifier was not detected by the foreign-grant test' }
   $output = [IO.File]::ReadAllText((Join-Path (Get-Location) 'private-files-evidence/negative-test.txt'))
-  if ($output -notmatch 'not ok.*foreign-grant fixture refuses before reading bytes' -or $output -notmatch 'Missing expected rejection') { throw 'Negative control failed for an unrelated reason' }
+  if ($output -notmatch 'not ok.*foreign-grant fixture refuses before reading bytes' -or $output -notmatch 'Missing expected rejection' -or $output -notmatch '(?m)^# fail 1\s*$') { throw 'Negative control failed for an unrelated reason' }
 } finally {
   git checkout -- $source
   (Get-Item $source).LastWriteTime = Get-Date
@@ -27,4 +27,35 @@ try {
   if ($after) { throw "Mutation restoration left changes: $after" }
   'empty git diff --stat after restore' | Set-Content private-files-evidence/negative-after.txt
   & ./native/build.ps1
+}
+
+$harness = 'test/windows/windows-acl.mjs'
+$originalHarness = [IO.File]::ReadAllText((Join-Path (Get-Location) $harness))
+$originalArtifacts = $env:PRIVATE_FILES_ARTIFACTS
+git add -- $harness
+if (git diff --stat) { throw 'Test-count control requires an empty working diff' }
+try {
+  $skipped = $originalHarness.Replace("`ntest(", "`ntest.skip(") + "`n// NON-VACUITY BREAK`n"
+  if ($skipped -eq $originalHarness -or $skipped -notmatch 'test.skip\(') { throw 'Test-count mutation did not match' }
+  [IO.File]::WriteAllText((Join-Path (Get-Location) $harness), $skipped)
+  $during = git diff --stat
+  if (!$during) { throw 'No test-count mutation diff recorded' }
+  $during | Tee-Object -FilePath private-files-evidence/count-negative-during.txt
+  $caught = $false
+  $env:PRIVATE_FILES_ARTIFACTS = 'private-files-evidence/count-negative'
+  try {
+    & ./test/windows/run-acl.ps1 -Runtime node -EvidenceSuffix '-count-negative'
+  } catch {
+    if ($_.Exception.Message -notmatch 'required_real_acl_test_count: expected 11 executed non-skipped tests; got tests=11 pass=0 fail=0 skip=11') { throw }
+    $_.Exception.Message | Tee-Object -FilePath private-files-evidence/count-negative-test.txt
+    $caught = $true
+  }
+  if (!$caught) { throw 'Skipping all ACL assertions escaped the real-test-count guard' }
+} finally {
+  if ($null -eq $originalArtifacts) { Remove-Item Env:PRIVATE_FILES_ARTIFACTS -ErrorAction SilentlyContinue }
+  else { $env:PRIVATE_FILES_ARTIFACTS = $originalArtifacts }
+  git checkout -- $harness
+  (Get-Item $harness).LastWriteTime = Get-Date
+  if (git diff --stat) { throw 'Test-count mutation restoration left changes' }
+  'empty git diff --stat after restore' | Set-Content private-files-evidence/count-negative-after.txt
 }
