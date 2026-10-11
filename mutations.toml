@@ -29,7 +29,7 @@ prebuild = [
 id = 'store-stage-refuse'
 broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
 broad_report = 'staged-replacement-broad.xml'
-broad_id = '{name}'
+broad_id = 'dispose removes every source listener across repeated combines'
 guards = 'refuse never rotates or writes an existing secret holder'
 file = 'src/store/rows.ts'
 old = "if (mode === 'refuse') {"
@@ -58,7 +58,7 @@ expect_message = 'unbound-credential'
 id = 'store-stage-orphan-foreign'
 broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
 broad_report = 'staged-replacement-broad.xml'
-broad_id = '{name}'
+broad_id = 'uses the first input reason when several inputs are already aborted'
 guards = 'a different stored reservation cannot be replayed by the caller'
 file = 'src/store/rows.ts'
 old = 'staged.reservation !== input.stage?.reservation ||'
@@ -74,7 +74,7 @@ expect_message = 'Expected promise that rejects'
 id = 'store-stage-orphan-missing'
 broad_command = ['bun', 'test', 'test/store/staged-replacement.test.ts', '--reporter=junit', '--reporter-outfile=staged-replacement-broad.xml']
 broad_report = 'staged-replacement-broad.xml'
-broad_id = '{name}'
+broad_id = 'immediately aborts when an input is already aborted'
 guards = 'staging ownership is never synthesized from caller wishes'
 file = 'src/store/rows.ts'
 old = 'const staged = stamp?.staged'
