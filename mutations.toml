@@ -4700,6 +4700,19 @@ expect_red = ['^auth\smenu\sbrowser\sopener\sWindows\sencodes\san\sOAuth\sURL\si
 expect_message = 'expect(received).toEqual(expected)'
 
 [[control]]
+id = 'auth-menu-windows-opener-does-not-wait'
+guards = 'Windows opener launches PowerShell detached and unreferenced, so a slow cold start is never killed before the browser opens'
+file = 'src/auth-menu/login.ts'
+old = 'child.unref()'
+new = 'void child /* NON-VACUITY BREAK */'
+test_file = 'test/auth-menu/login.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/auth-menu/login.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^auth\smenu\sbrowser\sopener\sWindows\sencodes\san\sOAuth\sURL\sintact\swithout\sa\sshell$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
 id = 'any-signal-dispose-removes-listeners'
 broad_command = ['bun', 'test', 'test/util/any-signal.test.ts', '--reporter=junit', '--reporter-outfile=any-signal-broad.xml']
 broad_report = 'any-signal-broad.xml'

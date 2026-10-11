@@ -7,16 +7,28 @@ const oauthUrl =
 describe('auth menu browser opener', () => {
   test('Windows encodes an OAuth URL intact without a shell', () => {
     const calls: unknown[][] = []
+    const events: string[] = []
 
     const opened = openBrowserForMenu(
       oauthUrl,
       'win32',
+      () => {
+        throw new Error('Windows must not wait on a synchronous opener')
+      },
       (file, args, options) => {
         calls.push([file, args, options])
+        return {
+          pid: 4242,
+          on: (event) => events.push(`on:${event}`),
+          unref: () => events.push('unref'),
+        }
       },
     )
 
     expect(opened).toBe(true)
+    // Detached and unreferenced: the caller never waits for PowerShell, whose
+    // cold start can outlast any fixed wait, and a late launch error is caught.
+    expect(events).toEqual(['on:error', 'unref'])
     const expectedCommand =
       "Start-Process 'https://auth.openai.com/oauth/authorize?client_id=client&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&response_type=code&scope=openid%20email&state=it''s 50% done&code_challenge=challenge-value&code_challenge_method=S256'"
     const encodedCommand = Buffer.from(expectedCommand, 'utf16le').toString(
@@ -33,7 +45,7 @@ describe('auth menu browser opener', () => {
           '-EncodedCommand',
           encodedCommand,
         ],
-        { stdio: 'ignore', timeout: 3000 },
+        { detached: true, stdio: 'ignore', windowsHide: true },
       ],
     ])
 
@@ -62,9 +74,28 @@ describe('auth menu browser opener', () => {
 
   test('returns false when the platform opener fails', () => {
     expect(
-      openBrowserForMenu(oauthUrl, 'win32', () => {
+      openBrowserForMenu(oauthUrl, 'linux', () => {
         throw new Error('opener unavailable')
       }),
+    ).toBe(false)
+    expect(
+      openBrowserForMenu(
+        oauthUrl,
+        'win32',
+        () => {},
+        () => {
+          throw new Error('spawn unavailable')
+        },
+      ),
+    ).toBe(false)
+    // Node reports an unstartable process with an undefined pid.
+    expect(
+      openBrowserForMenu(
+        oauthUrl,
+        'win32',
+        () => {},
+        () => ({ pid: undefined, on: () => {}, unref: () => {} }),
+      ),
     ).toBe(false)
   })
 })
