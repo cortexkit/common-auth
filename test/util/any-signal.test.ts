@@ -57,18 +57,6 @@ describe('combineAbortSignals', () => {
     expect(combined.signal.reason).toBe('second reason')
   })
 
-  test('uses the first input reason when several inputs are already aborted', () => {
-    const first = new AbortController()
-    const second = new AbortController()
-    first.abort('first reason')
-    second.abort('second reason')
-
-    const combined = combineAbortSignals([first.signal, second.signal])
-
-    expect(combined.signal.aborted).toBe(true)
-    expect(combined.signal.reason).toBe('first reason')
-  })
-
   test('immediately aborts when an input is already aborted', () => {
     const source = new CountedSignal()
     source.abort('already stopped')

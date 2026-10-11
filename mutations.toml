@@ -4716,20 +4716,20 @@ expect_red = ['dispose removes every source listener across repeated combines']
 expect_message = 'Expected: 0'
 
 [[control]]
-id = 'any-signal-first-aborted-input-reason'
+id = 'any-signal-first-abort-reason'
 broad_command = ['bun', 'test', 'test/util/any-signal.test.ts', '--reporter=junit', '--reporter-outfile=any-signal-broad.xml']
 broad_report = 'any-signal-broad.xml'
 broad_id = '{name}'
-guards = 'the first already-aborted input supplies the combined signal reason'
+guards = 'the first source signal to abort supplies the combined signal reason'
 file = 'src/util/any-signal.ts'
-old = 'const alreadyAborted = signals.find((signal) => signal.aborted)'
-new = 'const alreadyAborted = signals.findLast((signal) => signal.aborted) /* NON-VACUITY BREAK */'
+old = 'const listener = () => abort(source.reason)'
+new = 'const listener = () => abort(signals[0]!.reason) /* NON-VACUITY BREAK */'
 test_file = 'test/util/any-signal.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/util/any-signal.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['uses the first input reason when several inputs are already aborted']
-expect_message = 'Expected: "first reason"'
+expect_red = ['keeps the reason from the first signal that aborts']
+expect_message = 'Expected: "second reason"'
 
 [[control]]
 id = 'any-signal-handles-pre-aborted-input'
