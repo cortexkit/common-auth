@@ -26,7 +26,7 @@ describe('auth menu browser opener', () => {
     )
 
     expect(opened).toBe(true)
-    // Detached and unreferenced: the caller never waits for PowerShell, whose
+    // Unreferenced, not awaited: the caller never waits for PowerShell, whose
     // cold start can outlast any fixed wait, and a late launch error is caught.
     expect(events).toEqual(['on:error', 'unref'])
     const expectedCommand =
@@ -45,7 +45,7 @@ describe('auth menu browser opener', () => {
           '-EncodedCommand',
           encodedCommand,
         ],
-        { detached: true, stdio: 'ignore', windowsHide: true },
+        { stdio: 'ignore', windowsHide: true },
       ],
     ])
 

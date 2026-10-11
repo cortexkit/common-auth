@@ -4701,7 +4701,7 @@ expect_message = 'expect(received).toEqual(expected)'
 
 [[control]]
 id = 'auth-menu-windows-opener-does-not-wait'
-guards = 'Windows opener launches PowerShell detached and unreferenced, so a slow cold start is never killed before the browser opens'
+guards = 'Windows opener launches PowerShell unreferenced without waiting, so a slow cold start is never killed before the browser opens'
 file = 'src/auth-menu/login.ts'
 old = 'child.unref()'
 new = 'void child /* NON-VACUITY BREAK */'

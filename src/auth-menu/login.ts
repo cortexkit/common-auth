@@ -48,7 +48,7 @@ type BrowserExec = (
 type BrowserSpawn = (
   file: string,
   args: string[],
-  options: { detached: true; stdio: 'ignore'; windowsHide: true },
+  options: { stdio: 'ignore'; windowsHide: true },
 ) => {
   pid?: number
   unref(): void
@@ -69,8 +69,10 @@ export function openBrowserForMenu(
       // https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-7.5
       // https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1#-encodedcommand-base64encodedcommand
       // PowerShell is launched without waiting for it: a cold Windows
-      // PowerShell start measured over 3 s on a Windows Server 2022 runner,
-      // and a waiting caller would kill it before the browser opened.
+      // PowerShell start took about 6 s on a Windows Server 2022 runner, and a
+      // waiting caller with a short timeout killed it before the browser
+      // opened. It is not detached: a detached PowerShell has no console and
+      // never ran the command on any Windows runner.
       const command = `Start-Process '${url.replaceAll("'", "''")}'`
       const child = spawn(
         'powershell.exe',
@@ -82,7 +84,7 @@ export function openBrowserForMenu(
           '-EncodedCommand',
           Buffer.from(command, 'utf16le').toString('base64'),
         ],
-        { detached: true, stdio: 'ignore', windowsHide: true },
+        { stdio: 'ignore', windowsHide: true },
       )
       // A failed launch reports asynchronously; without a listener it would
       // become an uncaught exception after this function has returned.
