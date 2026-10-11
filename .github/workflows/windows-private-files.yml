@@ -82,6 +82,8 @@ jobs:
           rustc +stable --version
           cargo +stable build --locked --manifest-path test/fixtures/rust/Cargo.toml
           if ($LASTEXITCODE) { throw 'Rust fixture build failed' }
+      - name: Compare Windows PowerShell inherited and clean module paths
+        run: ./test/windows/module-path-probe.ps1
       - name: Node 24 real-host ACL and second-user tests
         shell: pwsh
         run: |

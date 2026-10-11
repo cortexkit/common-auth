@@ -29,7 +29,19 @@ try {
         'powershell.exe',
       ),
       ['-NoProfile', '-NonInteractive', '-File', script, '-Mode', 'inspect'],
-      { stdio: ['pipe', 'pipe', 'inherit'] },
+      {
+        stdio: ['pipe', 'pipe', 'inherit'],
+        env: {
+          ...process.env,
+          PSModulePath: join(
+            process.env.SystemRoot,
+            'System32',
+            'WindowsPowerShell',
+            'v1.0',
+            'Modules',
+          ),
+        },
+      },
     )
     let output = ''
     child.stdout.on('data', (bytes) => {

@@ -1,5 +1,18 @@
 param([ValidateSet('inspect','fixture','probe','environment')][string]$Mode)
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell must not inherit PowerShell 7's module search path.
+$env:PSModulePath = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/Modules'
+function ReadSecurity([string]$LiteralPath) {
+  $sections = [Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Access
+  if ([IO.Directory]::Exists($LiteralPath)) {
+    return [Security.AccessControl.DirectorySecurity]::new($LiteralPath, $sections)
+  }
+  return [Security.AccessControl.FileSecurity]::new($LiteralPath, $sections)
+}
+function WriteSecurity([string]$LiteralPath, $Security) {
+  if ([IO.Directory]::Exists($LiteralPath)) { [IO.Directory]::SetAccessControl($LiteralPath, $Security) }
+  else { [IO.File]::SetAccessControl($LiteralPath, $Security) }
+}
 $inputData = [Console]::In.ReadToEnd() | ConvertFrom-Json
 if ($Mode -eq 'environment') {
   [pscustomobject]@{
@@ -12,7 +25,7 @@ if ($Mode -eq 'environment') {
 }
 $path = $inputData.path
 if ($Mode -eq 'inspect') {
-  $security = Get-Acl -LiteralPath $path
+  $security = ReadSecurity $path
   $raw = [System.Security.AccessControl.RawSecurityDescriptor]::new($security.GetSecurityDescriptorBinaryForm(), 0)
   $aces = @()
   if ($null -ne $raw.DiscretionaryAcl) {
@@ -25,12 +38,12 @@ if ($Mode -eq 'inspect') {
     currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     defaultOwner = [System.Security.Principal.WindowsIdentity]::GetCurrent().Owner.Value
     control = [int]$raw.ControlFlags
-    aces = if ($null -eq $raw.DiscretionaryAcl) { $null } else { $aces }
+    aces = if ($null -eq $raw.DiscretionaryAcl) { $null } else { ,$aces }
   } | ConvertTo-Json -Depth 8
   exit
 }
 if ($Mode -eq 'fixture') {
-  $security = Get-Acl -LiteralPath $path
+  $security = ReadSecurity $path
   $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
   switch ($inputData.kind) {
     'foreign' {
@@ -68,11 +81,12 @@ public static class NullDaclFixture {
     }
     default { throw 'Unknown fixture' }
   }
-  Set-Acl -LiteralPath $path -AclObject $security
+  WriteSecurity $path $security
   Write-Output '{}'
   exit
 }
 if ($Mode -eq 'probe') {
+  $probeClock = [Diagnostics.Stopwatch]::StartNew()
   $name = 'ckpf' + [Guid]::NewGuid().ToString('N').Substring(0, 12)
   $password = ConvertTo-SecureString ('aA1!' + [Guid]::NewGuid().ToString('N')) -AsPlainText -Force
   $public = Join-Path $env:PUBLIC ('ck-private-probe-' + [Guid]::NewGuid().ToString('N'))
@@ -87,7 +101,7 @@ if ($Mode -eq 'probe') {
     $security.SetAccessRuleProtection($true, $false)
     $everyone = [System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')
     $security.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($everyone, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
-    Set-Acl -LiteralPath $public -AclObject $security
+    WriteSecurity $public $security
     $control = Join-Path $public 'control.txt'
     [IO.File]::WriteAllText($control, 'public-control')
     $request = Join-Path $public 'request.json'
@@ -104,11 +118,14 @@ if ($Mode -eq 'probe') {
     $script = Join-Path $public 'probe.ps1'
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'second-user.ps1') -Destination $script
     $credential = [PSCredential]::new("$env:COMPUTERNAME\$name", $password)
+    $provisionMs = $probeClock.ElapsedMilliseconds
     $process = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Credential $credential -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', "`"$script`"", '-Request', "`"$request`"") -WorkingDirectory $public -LoadUserProfile -PassThru
     if (!$process.WaitForExit(45000)) { $process.Kill(); throw 'Second-user probe timed out' }
     if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $result)) { throw 'Second-user probe did not launch successfully' }
     $report = Get-Content -Raw -LiteralPath $result | ConvertFrom-Json
     if (!$report.standardUser -or !$report.controlRead -or !$report.fileDenied -or !$report.directoryDenied -or !$report.standardWriter) { throw "Second-user denial/control failed: $($report | ConvertTo-Json -Compress)" }
+    $report | Add-Member -NotePropertyName provisionMs -NotePropertyValue $provisionMs
+    $report | Add-Member -NotePropertyName launchAndProbeMs -NotePropertyValue ($probeClock.ElapsedMilliseconds - $provisionMs)
     $report | ConvertTo-Json
   } finally {
     if ($userCreated) { Remove-LocalUser -Name $name -ErrorAction Stop }

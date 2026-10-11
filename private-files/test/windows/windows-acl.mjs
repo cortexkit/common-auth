@@ -37,6 +37,7 @@ const powershell = join(
 
 function inspect(mode, data) {
   return new Promise((resolve, reject) => {
+    const started = performance.now()
     const child = spawn(
       powershell,
       [
@@ -49,7 +50,20 @@ function inspect(mode, data) {
         '-Mode',
         mode,
       ],
-      { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
+      {
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          PSModulePath: join(
+            process.env.SystemRoot,
+            'System32',
+            'WindowsPowerShell',
+            'v1.0',
+            'Modules',
+          ),
+        },
+      },
     )
     let stdout = '',
       stderr = ''
@@ -70,6 +84,11 @@ function inspect(mode, data) {
     })
     child.on('close', (code) => {
       clearTimeout(timeout)
+      reports.push({
+        inspector: mode,
+        elapsedMs: performance.now() - started,
+        exitCode: code,
+      })
       if (code !== 0)
         reject(new Error(`Inspector ${mode} exited ${code}: ${stderr}`))
       else {
