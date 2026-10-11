@@ -518,6 +518,22 @@ describe('CacheKeepManager tick/prewarm', () => {
     })
   })
 
+  test('prewarm sends when AbortSignal.any is unavailable', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, 'any')
+    Reflect.deleteProperty(AbortSignal, 'any')
+    const { mgr, send } = makeManager(clock)
+    try {
+      expect('any' in AbortSignal).toBe(false)
+      mgr.track({ sessionKey: 'sess-no-any', bodyText: body('test') })
+      clock.advance(DUE_MS)
+      await mgr.tick()
+      expect(send).toHaveBeenCalledTimes(1)
+    } finally {
+      mgr.stop()
+      if (descriptor) Object.defineProperty(AbortSignal, 'any', descriptor)
+    }
+  })
+
   test('prewarm drains the response body without canceling a locked body', async () => {
     let drained = false
     const { mgr } = makeManager(

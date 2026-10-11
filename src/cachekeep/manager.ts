@@ -1,3 +1,4 @@
+import { combineAbortSignals } from '../util/any-signal.js'
 import { type CacheKeepWindow, isWithinCacheKeepWindow } from './window.js'
 
 export interface CacheKeepLogger {
@@ -569,10 +570,11 @@ export class CacheKeepManager<M = undefined> {
     if (!this.isCurrent(sessionKey, target)) return
     if (this.retireIfExpired(sessionKey, target)) return
 
-    const signal = AbortSignal.any([
+    const combined = combineAbortSignals([
       AbortSignal.timeout(this.warmTimeoutMs),
       this.abortController.signal,
     ])
+    const signal = combined.signal
     let response: Response
     let text = ''
     try {
@@ -585,6 +587,8 @@ export class CacheKeepManager<M = undefined> {
         error: errorMessage(error),
       })
       return
+    } finally {
+      combined.dispose()
     }
     if (!this.isCurrent(sessionKey, target)) return
 

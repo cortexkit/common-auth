@@ -257,6 +257,21 @@ test('profile 401 retries the new record and reports its version if it also fail
   expect(f.reports[0]?.recordVersion).toBe(4)
 })
 
+test('refresh and authorize work without AbortSignal.any', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, 'any')
+  Reflect.deleteProperty(AbortSignal, 'any')
+  try {
+    expect('any' in AbortSignal).toBe(false)
+    const f = await fixture()
+    const roster = await f.consumer.refresh()
+    const route = f.route(roster, 'oauth:test')
+    const attempt = await f.consumer.authorize(route)
+    expect(attempt.accessToken).toBe('vault-test-access')
+  } finally {
+    if (descriptor) Object.defineProperty(AbortSignal, 'any', descriptor)
+  }
+})
+
 test('cancelling a dispatch during connection setup does not wait for or cancel shared discovery', async () => {
   const f = await fixture()
   const entered = deferred<void>()

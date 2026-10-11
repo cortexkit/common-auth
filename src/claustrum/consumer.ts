@@ -2,6 +2,7 @@ import type { ClaustrumReporterSource } from '@cortexkit/claustrum-client'
 import { createLogger } from '../logger/index.js'
 import type { QuotaObservation } from '../quota/index.js'
 import type { RoutingRow } from '../routing/index.js'
+import { combineAbortSignals } from '../util/any-signal.js'
 import {
   type ClaustrumFamily,
   type ClaustrumScopedAttempt,
@@ -110,23 +111,26 @@ export class ClaustrumConsumer {
   }
 
   #wait<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
-    const combined = AbortSignal.any([
+    const combined = combineAbortSignals([
       this.#shutdown.signal,
       ...(signal ? [signal] : []),
     ])
     return new Promise<T>((resolve, reject) => {
-      const cleanup = () => combined.removeEventListener('abort', abort)
+      const cleanup = () => {
+        combined.signal.removeEventListener('abort', abort)
+        combined.dispose()
+      }
       const abort = () => {
         cleanup()
-        reject(combined.reason)
+        reject(combined.signal.reason)
       }
-      combined.addEventListener('abort', abort, { once: true })
+      combined.signal.addEventListener('abort', abort, { once: true })
       // Observe the operation even after cancellation: shared metadata work may
       // finish for other callers, and a late connection must still be closed.
       pending.then(
         (value) => {
           cleanup()
-          if (combined.aborted) reject(combined.reason)
+          if (combined.signal.aborted) reject(combined.signal.reason)
           else resolve(value)
         },
         (error: unknown) => {
@@ -134,7 +138,7 @@ export class ClaustrumConsumer {
           reject(error)
         },
       )
-      if (combined.aborted) abort()
+      if (combined.signal.aborted) abort()
     })
   }
 
@@ -271,16 +275,25 @@ export class ClaustrumConsumer {
         'route-unavailable',
         'Claustrum route is disabled, removed or changed',
       )
-    return (await this.#wait(this.#getCustody(), signal)).authorize(
-      {
-        credentialId: configured.credentialId,
-        credentialType: configured.credentialType,
-        ...(configured.accountIdentity !== undefined && {
-          accountIdentity: configured.accountIdentity,
-        }),
-      },
-      AbortSignal.any([this.#shutdown.signal, ...(signal ? [signal] : [])]),
-    )
+    const custody = await this.#wait(this.#getCustody(), signal)
+    const combined = combineAbortSignals([
+      this.#shutdown.signal,
+      ...(signal ? [signal] : []),
+    ])
+    try {
+      return await custody.authorize(
+        {
+          credentialId: configured.credentialId,
+          credentialType: configured.credentialType,
+          ...(configured.accountIdentity !== undefined && {
+            accountIdentity: configured.accountIdentity,
+          }),
+        },
+        combined.signal,
+      )
+    } finally {
+      combined.dispose()
+    }
   }
 
   async reportFailure(
