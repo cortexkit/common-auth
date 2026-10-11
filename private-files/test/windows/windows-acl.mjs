@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { after, before, test } from 'node:test'
+import { after, before, test as nodeTest } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
   createPrivateDirectory,
@@ -27,6 +27,9 @@ const root = join(
 const reports = []
 const latencies = []
 const repairBeforeRemoval = []
+// Profile provisioning and credentialed probes need the same budget in Node and Bun.
+const windowsTestOptions = { timeout: 120_000 }
+const test = (name, body) => nodeTest(name, windowsTestOptions, body)
 const script = fileURLToPath(new URL('./inspect.ps1', import.meta.url))
 const powershell = join(
   process.env.SystemRoot,
@@ -353,7 +356,9 @@ test('real Rust writers interoperate with typed verifier and same-handle reader'
     ['rust-lease-dir/inherited-file', 'rust-inherited'],
   ]
   const directory = join(root, 'rust-lease-dir')
-  reports.push({ rustDirectory: await inspect('inspect', { path: directory }) })
+  reports.push({
+    rustDirectory: await inspect('inspect', { path: directory }),
+  })
   assert.deepEqual(await verifyOwnerOnly(directory), { ok: true })
   for (const [name, expected] of fixtures) {
     const file = join(root, name)

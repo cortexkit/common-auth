@@ -1,9 +1,14 @@
-param([ValidateSet('node','bun')][string]$Runtime, [int]$ExpectedCount = 11, [ValidatePattern('^[a-z0-9-]*$')][string]$EvidenceSuffix = '')
+param([ValidateSet('node','bun')][string]$Runtime, [int]$ExpectedCount = 11, [ValidatePattern('^[a-z0-9-]*$')][string]$EvidenceSuffix = '', [string]$ExpectedVersion = '')
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $env:NO_COLOR = '1'
 $version = & $Runtime --version
 if ($LASTEXITCODE) { throw "Cannot query $Runtime version" }
+Write-Output "$Runtime --version: $version"
+if ($Runtime -eq 'bun' -and (!$ExpectedVersion -or $version -ne $ExpectedVersion)) {
+  throw "required_bun_version: expected '$ExpectedVersion', got '$version'; setup must succeed before qualification"
+}
+if ($Runtime -eq 'node' -and $version -notmatch '^v24\.') { throw "Node 24 required; got $version" }
 $arch = & $Runtime -p 'process.arch'
 if ($LASTEXITCODE) { throw "Cannot query $Runtime architecture" }
 New-Item -ItemType Directory -Force private-files-evidence | Out-Null
@@ -11,7 +16,7 @@ $log = Join-Path 'private-files-evidence' "$Runtime-$version-$arch$EvidenceSuffi
 $arguments = if ($Runtime -eq 'node') {
   @('--test', '--test-reporter=tap', './test/windows/windows-acl.mjs')
 } else {
-  @('test', './test/windows/windows-acl.mjs')
+  @('test', '--timeout', '120000', './test/windows/windows-acl.mjs')
 }
 & $Runtime @arguments 2>&1 | Tee-Object -FilePath $log
 $exitCode = $LASTEXITCODE

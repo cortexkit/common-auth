@@ -35,7 +35,7 @@ $originalArtifacts = $env:PRIVATE_FILES_ARTIFACTS
 git add -- $harness
 if (git diff --stat) { throw 'Test-count control requires an empty working diff' }
 try {
-  $skipped = $originalHarness.Replace("`ntest(", "`ntest.skip(") + "`n// NON-VACUITY BREAK`n"
+  $skipped = $originalHarness.Replace("`ntest(", "`nnodeTest.skip(") + "`n// NON-VACUITY BREAK`n"
   if ($skipped -eq $originalHarness -or $skipped -notmatch 'test.skip\(') { throw 'Test-count mutation did not match' }
   [IO.File]::WriteAllText((Join-Path (Get-Location) $harness), $skipped)
   $during = git diff --stat
@@ -58,4 +58,34 @@ try {
   (Get-Item $harness).LastWriteTime = Get-Date
   if (git diff --stat) { throw 'Test-count mutation restoration left changes' }
   'empty git diff --stat after restore' | Set-Content private-files-evidence/count-negative-after.txt
+}
+
+$runner = 'test/windows/run-acl.ps1'
+$originalRunner = [IO.File]::ReadAllText((Join-Path (Get-Location) $runner))
+$actualBun = & bun --version
+if ($LASTEXITCODE) { throw 'Cannot query Bun for version negative control' }
+git add -- $runner
+if (git diff --stat) { throw 'Runtime-version control requires an empty working diff' }
+try {
+  $anchor = 'if ($Runtime -eq ''bun'' -and (!$ExpectedVersion'
+  $wrongVersion = $originalRunner.Replace($anchor, '$ExpectedVersion = ''0.0.0'' # NON-VACUITY BREAK' + "`n" + $anchor)
+  if ($wrongVersion -eq $originalRunner) { throw 'Runtime-version mutation did not match' }
+  [IO.File]::WriteAllText((Join-Path (Get-Location) $runner), $wrongVersion)
+  $during = git diff --stat
+  if (!$during) { throw 'No runtime-version mutation diff recorded' }
+  $during | Tee-Object -FilePath private-files-evidence/version-negative-during.txt
+  $caught = $false
+  try {
+    & ./test/windows/run-acl.ps1 -Runtime bun -ExpectedVersion $actualBun
+  } catch {
+    if ($_.Exception.Message -notmatch 'required_bun_version: expected ''0.0.0'', got') { throw }
+    $_.Exception.Message | Tee-Object -FilePath private-files-evidence/version-negative-test.txt
+    $caught = $true
+  }
+  if (!$caught) { throw 'Wrong Bun version escaped the runtime-version guard' }
+} finally {
+  git checkout -- $runner
+  (Get-Item $runner).LastWriteTime = Get-Date
+  if (git diff --stat) { throw 'Runtime-version mutation restoration left changes' }
+  'empty git diff --stat after restore' | Set-Content private-files-evidence/version-negative-after.txt
 }
