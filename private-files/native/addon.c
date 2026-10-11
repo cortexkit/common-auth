@@ -18,6 +18,9 @@ typedef char OpenPolicyMatchesWindowsSdk[
     PF_READ_ATTRIBUTES == FILE_READ_ATTRIBUTES && PF_SYNCHRONIZE == SYNCHRONIZE &&
     PF_GENERIC_READ == GENERIC_READ && PF_GENERIC_WRITE == GENERIC_WRITE &&
     PF_DELETE == DELETE ? 1 : -1];
+typedef char SecurityInfoNeverNeedsAuditPrivilege[
+    PF_QUERY_SECURITY_INFO == (OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION) &&
+    PF_SET_PRIVATE_DACL == (DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION) ? 1 : -1];
 typedef char ReparseQueryNeedsNoDataAccess[
     ((FSCTL_GET_REPARSE_POINT >> 14) & 3) == FILE_ANY_ACCESS ? 1 : -1];
 
@@ -137,7 +140,7 @@ static int descriptor(Job *j, HANDLE h, int canonical) {
   SECURITY_DESCRIPTOR_CONTROL control = 0;
   DWORD revision;
   DWORD error = GetSecurityInfo(h, SE_FILE_OBJECT,
-      OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, NULL, &acl, NULL, &sd);
+      PF_QUERY_SECURITY_INFO, &owner, NULL, &acl, NULL, &sd);
   if (error != ERROR_SUCCESS) {
     j->refusal = "unsupported-filesystem";
     fail(j, error, "Filesystem cannot return a Windows owner/DACL; use local NTFS"); return 0;
@@ -224,7 +227,7 @@ static int trusted_ancestor(Job *j, HANDLE h, int creation_parent) {
   PACL acl = NULL;
   PSECURITY_DESCRIPTOR sd = NULL;
   DWORD error = GetSecurityInfo(h, SE_FILE_OBJECT,
-      OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, NULL, &acl, NULL, &sd);
+      PF_QUERY_SECURITY_INFO, &owner, NULL, &acl, NULL, &sd);
   if (error != ERROR_SUCCESS) {
     fail(j, error, "Ancestor ACL unavailable; use a private root on local NTFS"); return 0;
   }
@@ -397,7 +400,7 @@ static void execute(napi_env env, void *data) {
   if (!attributes(j, j->leaf, j->directory)) goto done;
   if (j->op == 3) {
     DWORD error = SetSecurityInfo(j->leaf, SE_FILE_OBJECT,
-        DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL, acl, NULL);
+        PF_SET_PRIVATE_DACL, NULL, NULL, acl, NULL);
     if (error != ERROR_SUCCESS) {
       fail(j, error, "Cannot apply protected DACL; use a local ACL-capable filesystem"); goto done;
     }

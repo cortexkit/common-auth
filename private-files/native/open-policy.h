@@ -11,6 +11,8 @@
 #define PF_GENERIC_READ 0x80000000u
 #define PF_GENERIC_WRITE 0x40000000u
 #define PF_DELETE 0x00010000u
+#define PF_QUERY_SECURITY_INFO 0x00000005u
+#define PF_SET_PRIVATE_DACL 0x80000004u
 
 typedef struct { uint32_t access; int exact; } PrivateOpenPolicy;
 

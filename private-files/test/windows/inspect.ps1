@@ -65,7 +65,7 @@ if ($Mode -eq 'fixture') {
       }
     }
     'defaultOwner' { $security.SetOwner([System.Security.Principal.WindowsIdentity]::GetCurrent().Owner) }
-    'empty' { $security.SetSecurityDescriptorSddlForm("O:$($sid.Value)D:P") }
+    'empty' { $security.SetSecurityDescriptorSddlForm('D:P', [Security.AccessControl.AccessControlSections]::Access) }
     'null' {
       Add-Type -TypeDefinition @'
 using System;

@@ -20,6 +20,11 @@ int main(void) {
       repair.access == 0x00060000u && repair.exact);
   failures += check("read_open_requests_data_on_the_verified_io_handle",
       private_open_policy(1).access == 0x80020000u && !private_open_policy(1).exact);
-  printf("4 open policy checks; %d failures\n", failures);
+  failures += check("standard_user_security_paths_never_request_sacl",
+      PF_QUERY_SECURITY_INFO == 0x00000005u && PF_SET_PRIVATE_DACL == 0x80000004u &&
+      !((PF_QUERY_SECURITY_INFO | PF_SET_PRIVATE_DACL) & 0x00000008u) &&
+      !((classify.access | fallback.access | repair.access | private_open_policy(0).access |
+          private_open_policy(1).access) & 0x01000000u));
+  printf("5 open/security policy checks; %d failures\n", failures);
   return failures ? 1 : 0;
 }
