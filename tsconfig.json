@@ -11,6 +11,6 @@
     "jsxImportSource": "@opentui/solid",
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "test/**/*"],
+  "include": ["src/**/*", "test/**/*", "private-files/src/**/*", "private-files/test/**/*.ts"],
   "exclude": ["dist/", "test/.scratch/"]
 }

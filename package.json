@@ -9,7 +9,8 @@
   },
   "type": "module",
   "workspaces": [
-    "test/fixtures/*"
+    "test/fixtures/*",
+    "private-files"
   ],
   "exports": {
     "./rpc": {
@@ -19,6 +20,10 @@
     "./rpc/client": {
       "types": "./dist/rpc/client.d.ts",
       "import": "./dist/rpc/client.js"
+    },
+    "./private-files": {
+      "types": "./dist/private-files/index.d.ts",
+      "import": "./dist/private-files/index.js"
     },
     "./fs": {
       "types": "./dist/fs/index.d.ts",
@@ -89,7 +94,7 @@
     "dist/"
   ],
   "scripts": {
-    "build": "bun scripts/check-local-deps.mjs && bun scripts/check-installed-ranges.mjs && tsc -p tsconfig.build.json",
+    "build": "bun scripts/check-local-deps.mjs && bun scripts/check-installed-ranges.mjs && bun run --cwd private-files build && tsc -p tsconfig.build.json",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "types": "bun run typecheck",
@@ -102,7 +107,8 @@
     "check:opentui-0511": "bun scripts/check-opentui-0511.mjs"
   },
   "dependencies": {
-    "jsonc-parser": "^3.3.1"
+    "jsonc-parser": "^3.3.1",
+    "@cortexkit/private-files": "workspace:*"
   },
   "peerDependencies": {
     "@opentui/core": ">=0.5.11",

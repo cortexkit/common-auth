@@ -14,6 +14,8 @@
     "ignoreUnknown": true,
     "includes": [
       "src/**",
+      "private-files/src/**",
+      "private-files/test/**",
       "test/**",
       "scripts/check-installed-ranges.mjs",
       "scripts/check-sources.mjs",

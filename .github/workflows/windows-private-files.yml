@@ -1,0 +1,127 @@
+name: Windows private-files qualification
+on:
+  push:
+    branches: [windows-private-files-slice1]
+  pull_request:
+    paths: ['private-files/**', 'src/private-files/**', '.github/workflows/windows-private-files.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  private-files-prebuilds:
+    name: Native N-API v8 prebuild (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+          - os: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          architecture: ${{ matrix.arch }}
+      - name: Build with MSVC and record toolchain/runtime
+        shell: pwsh
+        working-directory: private-files
+        run: |
+          node --version
+          node -p 'JSON.stringify(process.versions)'
+          ./native/build.ps1 -Arch '${{ matrix.arch }}'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: private-files-prebuild-${{ matrix.arch }}
+          path: private-files/prebuilds/*.node
+          if-no-files-found: error
+  acl:
+    needs: private-files-prebuilds
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: private-files
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-2022, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3, native Windows ARM64 support
+        with:
+          bun-version: '1.3.14'
+      - name: Install, compile TypeScript and MSVC N-API v8 prebuild
+        shell: pwsh
+        run: |
+          bun install --frozen-lockfile
+          if ($LASTEXITCODE) { throw 'Frozen install failed' }
+          bun run build
+          if ($LASTEXITCODE) { throw 'TypeScript build failed' }
+          ./native/build.ps1
+      - name: Load the distribution prebuilds produced by the dedicated matrix
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: private-files-prebuild-*
+          path: private-files/prebuilds/
+          merge-multiple: true
+      - name: Check both packaged machine architectures
+        run: node scripts/check-prebuilds.mjs
+      - name: Build pinned Rust compatibility fixture with stable toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          if ($LASTEXITCODE) { throw 'Stable Rust install failed' }
+          rustc +stable --version
+          cargo +stable build --locked --manifest-path test/fixtures/rust/Cargo.toml
+          if ($LASTEXITCODE) { throw 'Rust fixture build failed' }
+      - name: Node 24 real-host ACL and second-user tests
+        shell: pwsh
+        run: |
+          node --version
+          node --test test/windows/windows-acl.mjs
+          if ($LASTEXITCODE) { throw 'Required Node ACL tests failed' }
+      - name: Bun 1.3.14 real-host ACL and second-user tests
+        shell: pwsh
+        run: |
+          bun --version
+          bun test/windows/windows-acl.mjs
+          if ($LASTEXITCODE) { throw 'Required Bun 1.3.14 ACL tests failed' }
+      - uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+        with:
+          bun-version: '1.4.2'
+      - name: Bun 1.4.2 real-host ACL and second-user tests
+        shell: pwsh
+        run: |
+          bun --version
+          bun test/windows/windows-acl.mjs
+          if ($LASTEXITCODE) { throw 'Required Bun 1.4.2 ACL tests failed' }
+      - name: Disabled-verifier negative control, restore and rebuild
+        shell: pwsh
+        run: ./scripts/negative-control.ps1
+      - name: Select x64 Node under emulation on ARM64 Windows
+        if: matrix.os == 'windows-11-arm'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          architecture: x64
+      - name: Prove emulated x64 Node loads the x64 prebuild
+        if: matrix.os == 'windows-11-arm'
+        run: |
+          node -p 'process.arch'
+          node --test test/windows/windows-acl.mjs
+          if ($LASTEXITCODE) { throw 'Emulated x64 Node ACL tests failed' }
+      - name: Upload descriptors, versions, timings and mutation proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: private-files-evidence-${{ matrix.os }}
+          path: private-files/private-files-evidence/
+          if-no-files-found: error

@@ -4698,3 +4698,72 @@ command = ['sh', '-c', 'git diff --stat; bun test test/auth-menu/login.test.ts -
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^auth\smenu\sbrowser\sopener\sWindows\sencodes\san\sOAuth\sURL\sintact\swithout\sa\sshell$']
 expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'private-files-predicate-foreign-sid'
+guards = 'normalized descriptor policy refuses a foreign ACE even when the owner and protection match'
+file = 'private-files/src/policy.ts'
+old = 'ace.sid === descriptor.currentUser'
+new = 'true'
+test_file = 'private-files/test/private-files.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'private-files/test/private-files.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^private\sdescriptor\scontract\s\(logic\sonly,\snot\sWindows\scertification\)\srefuses\snoncanonical\sdescriptors$']
+expect_message = '/Expected: false/'
+
+[[control]]
+id = 'private-files-loader-runtime-arch'
+guards = 'runtime architecture, including x64 emulation, selects the matching Windows native ABI'
+file = 'private-files/src/loader.ts'
+old = 'return `private-files-win32-${arch}.node`'
+new = 'return `private-files-win32-x64.node`'
+test_file = 'private-files/test/private-files.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'private-files/test/private-files.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^loader\sselects\sruntime\sarch\sincluding\sx64\semulation\son\sARM64\sWindows$']
+expect_message = '/private-files-win32-arm64.node/'
+
+[[control]]
+id = 'private-files-loader-unsupported-arch'
+guards = 'unsupported Windows architectures fail closed rather than selecting an incompatible binary'
+file = 'private-files/src/loader.ts'
+old = "if (arch !== 'x64' && arch !== 'arm64') {"
+new = 'if (false) {'
+test_file = 'private-files/test/private-files.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'private-files/test/private-files.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^loader\srefuses\sunsupported\sarchitectures\sand\sunqualified\sARM64\sBun$']
+expect_message = '/Expected substring: "No mode-only fallback"/'
+
+[[control]]
+id = 'private-files-inherited-parent-proof'
+guards = 'an inherited file ACE is accepted only with a canonical protected owner-only parent descriptor'
+file = 'private-files/src/policy.ts'
+old = '''!!descriptor.parent &&
+        isPrivateDescriptor(descriptor.parent, 'directory')'''
+new = 'true'
+test_file = 'private-files/test/private-files.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'private-files/test/private-files.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^private\sdescriptor\scontract\s\(logic\sonly,\snot\sWindows\scertification\)\saccepts\stoken\sdefault\sowner\sand\sinherited\sfile\sonly\sunder\sa\scanonical\sprivate\sdirectory$']
+expect_message = '/Expected: false/'
+
+[[control]]
+id = 'private-files-missing-addon-refusal'
+guards = 'a missing or incompatible Windows addon never becomes a successful mode-only backend'
+file = 'private-files/src/loader.ts'
+old = '''} catch (cause) {
+    throw new PrivateFilesUnavailableError('''
+new = '''} catch (cause) {
+    return {} as PrivateFilesNative
+    throw new PrivateFilesUnavailableError('''
+test_file = 'private-files/test/private-files.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'private-files/test/private-files.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^private\sfiles\sPOSIX\scompatibility\sloader\srefuses\sa\smissing\sor\sincompatible\saddon\sinstead\sof\sa\smode\sfallback$']
+expect_message = '/Received function did not throw/'
