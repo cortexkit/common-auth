@@ -111,7 +111,11 @@ if ($Mode -eq 'probe') {
     [IO.File]::WriteAllText($control, 'public-control')
     $request = Join-Path $public 'request.json'
     $result = Join-Path $public 'result.json'
-    @{ control = $control; file = $inputData.file; directory = $inputData.directory; result = $result; runtime = $inputData.runtime; writerScript = (Join-Path $public 'standard-writer.mjs') } | ConvertTo-Json | Set-Content -LiteralPath $request
+    $runtimeCopy = Join-Path $public (Split-Path -Leaf $inputData.runtime)
+    Copy-Item -LiteralPath $inputData.runtime -Destination $runtimeCopy
+    $runtimeHash = (Get-FileHash -LiteralPath $inputData.runtime -Algorithm SHA256).Hash
+    if ((Get-FileHash -LiteralPath $runtimeCopy -Algorithm SHA256).Hash -ne $runtimeHash) { throw 'Probe runtime executable hash mismatch' }
+    @{ control = $control; file = $inputData.file; directory = $inputData.directory; result = $result; runtime = $runtimeCopy; writerScript = (Join-Path $public 'standard-writer.mjs') } | ConvertTo-Json | Set-Content -LiteralPath $request
     $package = Join-Path $public 'package'
     New-Item -ItemType Directory $package | Out-Null
     $packageRoot = Join-Path $PSScriptRoot '../..'
@@ -141,6 +145,7 @@ if ($Mode -eq 'probe') {
     }
     $report = Get-Content -Raw -LiteralPath $result | ConvertFrom-Json
     if (!$report.standardUser -or !$report.controlRead -or !$report.fileDenied -or !$report.directoryDenied -or !$report.standardWriter) { throw "Second-user denial/control failed: $($report | ConvertTo-Json -Compress)" }
+    $report | Add-Member -NotePropertyName runtimeSha256 -NotePropertyValue $runtimeHash
     $report | Add-Member -NotePropertyName provisionMs -NotePropertyValue $provisionMs
     $report | Add-Member -NotePropertyName launchAndProbeMs -NotePropertyValue ($probeClock.ElapsedMilliseconds - $provisionMs)
     $report | ConvertTo-Json

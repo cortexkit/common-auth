@@ -378,23 +378,71 @@ test('real Rust writers interoperate with typed verifier and same-handle reader'
 })
 
 test('warm secure writes yield to the event loop and record latency', async () => {
-  let ticks = 0
+  const intervalMs = 10
+  const minimumWorkMs = 1000
+  const maximumDelayMs = 250
+  let ticks = 0,
+    interleavedTicks = 0,
+    inFlight = 0,
+    maxDelayMs = 0
+  let lastTick = performance.now()
   const timer = setInterval(() => {
+    const now = performance.now()
+    maxDelayMs = Math.max(maxDelayMs, now - lastTick - intervalMs)
+    lastTick = now
     ticks++
-  }, 1)
+    if (inFlight > 0) interleavedTicks++
+  }, intervalMs)
+  let rounds = 0
+  const payload = Buffer.alloc(1024 * 1024, 42)
   try {
-    await Promise.all(
-      Array.from({ length: 32 }, async (_, index) => {
-        const start = performance.now()
-        const file = join(root, `timing-${index}`)
-        await createPrivateFile(file, Buffer.alloc(1024 * 1024, 42))
-        latencies.push(performance.now() - start)
-        assert.equal((await readFile(file)).length, 1024 * 1024)
-      }),
-    )
+    await new Promise((resolve) => setTimeout(resolve, 2 * intervalMs))
+    const start = performance.now()
+    do {
+      // Count timer callbacks only while native writes are pending, not during cleanup.
+      const files = Array.from({ length: 32 }, (_, index) =>
+        join(root, `timing-${index}`),
+      )
+      await Promise.all(
+        files.map(async (file) => {
+          const began = performance.now()
+          inFlight++
+          try {
+            await createPrivateFile(file, payload)
+          } finally {
+            inFlight--
+          }
+          latencies.push(performance.now() - began)
+        }),
+      )
+      await Promise.all(
+        files.map(async (file) =>
+          assert.equal((await readFile(file)).length, payload.length),
+        ),
+      )
+      await Promise.all(files.map((file) => rm(file)))
+      rounds++
+    } while (performance.now() - start < minimumWorkMs)
+    await new Promise((resolve) => setTimeout(resolve, 2 * intervalMs))
   } finally {
     clearInterval(timer)
   }
-  assert.ok(ticks > 0, 'async work must not monopolize the JS event loop')
-  reports.push({ eventLoopTicks: ticks })
+  const measurement = {
+    intervalMs,
+    minimumWorkMs,
+    maximumDelayMs,
+    maxDelayMs,
+    ticks,
+    interleavedTicks,
+    rounds,
+  }
+  reports.push({ eventLoop: measurement })
+  assert.ok(
+    interleavedTicks > 0,
+    `No timer interleaved with pending native writes: ${JSON.stringify(measurement)}`,
+  )
+  assert.ok(
+    maxDelayMs < maximumDelayMs,
+    `Event-loop delay exceeded budget: ${JSON.stringify(measurement)}`,
+  )
 })
