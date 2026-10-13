@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import {
+  PrivateFileError,
+  type PrivateWriteOutcome,
+  verifyPrivate,
+  windowsPrivateFiles,
+  writePrivateAtomic,
+} from './private-files.js'
 
 export interface AtomicWriteOptions {
   serialize?: (value: unknown) => string
@@ -9,6 +16,10 @@ export interface AtomicWriteOptions {
   stageName?: () => string
   /** Sync the staged file and, after rename, its parent directory. Opt-in. */
   durable?: boolean
+  /** Windows opt-in: flush file bytes, without promising directory metadata durability. */
+  durability?: 'file-only-on-windows'
+  /** Reports the Windows publication and durability guarantees, without file bytes. */
+  onOutcome?: (outcome: PrivateWriteOutcome) => void
 }
 
 /** Internal classification of fsync failures, including a failure after rename. */
@@ -37,6 +48,22 @@ export async function writeJsonAtomicTracked(
   options: AtomicWriteOptions,
   onRenamed?: () => void,
 ): Promise<void> {
+  if (windowsPrivateFiles) {
+    return writePrivateAtomic(
+      path,
+      options.serialize
+        ? options.serialize(value)
+        : `${JSON.stringify(value, null, 2)}\n`,
+      {
+        beforeRename: options.beforeRename,
+        stagePath: `${path}.${(options.stageName ?? randomUUID)()}.tmp`,
+        onRenamed,
+        durable: options.durable,
+        durability: options.durability,
+        onOutcome: options.onOutcome,
+      },
+    )
+  }
   await mkdir(dirname(path), { recursive: true })
   const tempPath = `${path}.${(options.stageName ?? randomUUID)()}.tmp`
   let handle: Awaited<ReturnType<typeof open>> | undefined
@@ -83,6 +110,14 @@ export async function writeJsonAtomicTracked(
 
 /** Make an already renamed file and its directory durable without rewriting bytes. */
 export async function syncJsonFile(path: string): Promise<void> {
+  if (windowsPrivateFiles) {
+    await verifyPrivate(path, 'file')
+    const error = new PrivateFileError(path, 'directory-sync-unsupported', {
+      code: 'ENOTSUP',
+    })
+    error.published = true
+    throw error
+  }
   const file = await open(path, 'r')
   try {
     await file.sync()

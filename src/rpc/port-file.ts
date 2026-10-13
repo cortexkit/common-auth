@@ -5,13 +5,20 @@ import {
   mkdir,
   open,
   readdir,
-  readFile,
   rename,
   rmdir,
   stat,
   unlink,
 } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import {
+  ensurePrivateDirectory,
+  PrivateFileError,
+  readPrivateText,
+  verifyPrivate,
+  windowsPrivateFiles,
+  writePrivateAtomic,
+} from '../fs/private-files.js'
 import type { RpcLogChannel } from './index.js'
 
 export interface PortFileEntry {
@@ -128,6 +135,19 @@ export async function writePortFile(
   // persistent ENOENT (e.g. permission, read-only parent) will surface on
   // the second attempt — failing fast beats an unbounded loop.
   const writeOnce = async (): Promise<string> => {
+    const target = join(dir, `port-${entry.pid}.json`)
+    if (windowsPrivateFiles) {
+      await ensurePrivateDirectory(dir, options.secureDir ?? false)
+      await options.beforeWrite?.()
+      await writePrivateAtomic(
+        target,
+        JSON.stringify({ ...entry, startedAt: Date.now() }),
+        {
+          stagePath: `${target}.${(options.stageName ?? randomUUID)()}.tmp`,
+        },
+      )
+      return target
+    }
     await mkdir(dir, {
       recursive: true,
       mode: options.secureDir ? 0o700 : undefined,
@@ -135,7 +155,6 @@ export async function writePortFile(
     if (options.secureDir) await chmod(dir, 0o700)
     await options.beforeWrite?.()
     const full: PortFileEntry = { ...entry, startedAt: Date.now() }
-    const target = join(dir, `port-${entry.pid}.json`)
     const tmp = `${target}.${(options.stageName ?? randomUUID)()}.tmp`
     let handle: Awaited<ReturnType<typeof open>> | undefined
     let created = false
@@ -197,8 +216,10 @@ export async function sweepRpcState(
       const portFile = join(dir, name)
       let raw: string | undefined
       try {
-        raw = await readFile(portFile, 'utf8')
-      } catch {
+        raw = await readPrivateText(portFile)
+      } catch (error) {
+        if (error instanceof PrivateFileError && error.code !== 'ENOENT')
+          throw error
         continue
       }
       if (raw === undefined) continue
@@ -238,9 +259,12 @@ export async function portFileIdentity(
   if (!pidAlive(entry.pid)) return null
   const path = join(resolve(dir), `port-${entry.pid}.json`)
   try {
+    if (windowsPrivateFiles) await verifyPrivate(path, 'file')
     const info = await stat(path)
     return `${path}:${info.dev}:${info.ino}:${info.mtimeMs}:${info.size}`
-  } catch {
+  } catch (error) {
+    if (error instanceof PrivateFileError && error.code !== 'ENOENT')
+      throw error
     return null
   }
 }
@@ -252,8 +276,11 @@ export async function discoverPortFile(
 ): Promise<PortFileEntry | null> {
   let names: string[]
   try {
+    if (windowsPrivateFiles) await verifyPrivate(dir, 'directory')
     names = await readdir(dir)
-  } catch {
+  } catch (error) {
+    if (error instanceof PrivateFileError && error.code !== 'ENOENT')
+      throw error
     return null
   }
   const live: PortFileEntry[] = []
@@ -261,13 +288,16 @@ export async function discoverPortFile(
     if (!name.startsWith('port-') || !name.endsWith('.json')) continue
     try {
       const parsed = JSON.parse(
-        await readFile(join(dir, name), 'utf8'),
+        await readPrivateText(join(dir, name)),
       ) as PortFileEntry
       if (isUsablePortFileEntry(parsed, name)) {
         if (pidAlive(parsed.pid)) live.push(parsed)
         else await unlink(join(dir, name)).catch(() => {})
       }
-    } catch {}
+    } catch (error) {
+      if (error instanceof PrivateFileError && error.code !== 'ENOENT')
+        throw error
+    }
   }
   if (live.length === 0) return null
   const candidates =

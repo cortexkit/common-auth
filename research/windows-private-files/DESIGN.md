@@ -2,6 +2,28 @@
 
 Report only; no implementation or claim of Windows execution. Source snapshots: common-auth `ae42b292b87f662e95bf95c365d8b1139bbb69c8`, openai-auth `ea9e6f88ccafe42577ad6d10b86097d032be602f` (GitHub `main` fetched for this report). The openai-auth report belongs to **that repository**, not common-auth: [findings 1, 2, 4, 5 and 8][OA-census]. They cover ineffective Windows modes, enrollment refusal, replacement failures, lease error assumptions and shared/predictable temp paths. common-auth's [own census](../platform-census-2026-10-08.md) identifies the same shared primitives.
 
+> **2026-10-11 published-contract update:** common-auth enforces exactly
+> `@cortexkit/private-files@0.1.0`'s published policy, not a stricter local
+> descriptor predicate. That contract supersedes two points in §2: reads accept
+> the token user, Administrators or SYSTEM as owner, and a file ACE inherited
+> from an immediate pinned, protected private parent. Elevated writers can have
+> Administrators as their default owner; administrators and SYSTEM can already
+> take ownership of any object. Rejecting those owners would exclude elevated
+> users without protecting against another ordinary user. Accepting inheritance
+> supports files created inside private directories, including Rust writers.
+> Creation still supplies a protected descriptor owned by the token user.
+>
+> The published permission-replacement contract also supersedes §8's refusal of
+> unknown old ACE forms **during migration only**. In an application-dedicated
+> private root, `securePrivatePath` can replace a current-user-owned object's
+> old DACL, including inherited, conditional, unknown or deny ACEs, with the
+> protected owner-only template. This only narrows other users' access; an owner
+> already has implicit WRITE_DAC, so removing an owner-targeted deny grants no
+> new power. The primitive must still validate safe ancestry, prohibit reparse
+> points and ownership takeover, and verify the result by handle. Shared/custom
+> parents are never repaired implicitly. Tightening is reported once per path
+> per process with a historical-exposure/rotation warning, never contents.
+
 ## 1. Backend and request-path cost
 
 **Decision: an asynchronous Windows N-API private-files backend, separate from the file-lock API.** Keep POSIX behavior on Unix. Node [file modes][Node-modes]/[Stats][Node-stats] and Bun [open][Bun-open]/[stat][Bun-stat] expose no owner-SID/DACL capability: Windows mode bits chiefly manipulate writability, not owner/group/other access. All request-path operations return promises; no synchronous filesystem calls, `spawnSync`, `execSync`, native calls that wait on the JavaScript thread, or subprocess per write in the default backend. Missing/unsupported backend means an actionable security refusal, never a mode-only fallback.

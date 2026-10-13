@@ -27,12 +27,22 @@ import {
   writeEnrollmentTokenFile,
 } from '@cortexkit/claustrum-client'
 import { acquireRefreshFileLock } from '../fs/index.js'
+import {
+  ensurePrivateDirectory as ensureWindowsDirectory,
+  readPrivateText,
+  verifyPrivate,
+  windowsPrivateFiles,
+  writePrivateAtomic,
+} from '../fs/private-files.js'
 import { ClaustrumConsumerError } from './errors.js'
 
 const ENROLLMENT_SCHEMA = 1
 const ENROLLMENT_FILE_MAX_BYTES = 16 * 1024
 const ENROLLMENT_LOCK_TTL_MS = 30_000
 const TOKEN_RE = /^[0-9a-f]{64}$/
+// Only non-override hostEnrollmentPaths state directories are declared private
+// application roots. This set never substitutes for descriptor verification.
+const dedicatedEnrollmentRoots = new Set<string>()
 
 /**
  * Codes the vault's closed enrollment-refusal vocabulary marks permanent. The
@@ -205,6 +215,7 @@ export function hostEnrollmentPaths(input: {
       'invalid-state',
       'A relative Claustrum enrollment override needs a base directory',
     )
+  if (!override) dedicatedEnrollmentRoots.add(resolve(input.stateDir))
   const tokenPath = override
     ? isAbsolute(override)
       ? override
@@ -361,6 +372,25 @@ function parseSecretJson(text: string): unknown {
 }
 
 async function readBoundedJson(path: string): Promise<unknown | undefined> {
+  if (windowsPrivateFiles) {
+    try {
+      await ensureWindowsDirectory(
+        dirname(path),
+        dedicatedEnrollmentRoots.has(resolve(dirname(path))),
+      )
+      const text = await readPrivateText(path, true)
+      if (Buffer.byteLength(text) > ENROLLMENT_FILE_MAX_BYTES) {
+        throw new ClaustrumConsumerError(
+          'unsafe-file',
+          'Claustrum enrollment file is too large',
+        )
+      }
+      return parseSecretJson(text)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    }
+  }
   let descriptor: Awaited<ReturnType<typeof open>> | undefined
   try {
     // O_NOFOLLOW: a symlink planted at the path must not redirect a secret read.
@@ -454,6 +484,12 @@ export async function refuseWritableAncestor(
   parent: string,
   options: EnrollmentAncestorOptions = {},
 ): Promise<void> {
+  if (windowsPrivateFiles) {
+    // Native verification holds directory handles while rejecting replaceable
+    // ancestors and reparse points; Windows mode bits cannot prove that policy.
+    await verifyPrivate(parent, 'directory')
+    return
+  }
   const uid = process.geteuid?.()
   if (uid === undefined) return
   const gid = process.getegid?.()
@@ -500,6 +536,11 @@ export async function refuseWritableAncestor(
  * request secret never sit in a directory another account can list.
  */
 async function ensurePrivateDirectory(directory: string): Promise<void> {
+  if (windowsPrivateFiles)
+    return ensureWindowsDirectory(
+      directory,
+      dedicatedEnrollmentRoots.has(resolve(directory)),
+    )
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const metadata = await stat(directory)
   const uid = process.geteuid?.()
@@ -527,6 +568,7 @@ async function writeStateAtomic(
       'Claustrum enrollment state is too large',
     )
   }
+  if (windowsPrivateFiles) return writePrivateAtomic(path, bytes)
   const temporary = join(
     parent,
     `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,

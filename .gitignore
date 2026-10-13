@@ -2,3 +2,4 @@
 node_modules/
 dist/
 test/.scratch/
+windows-private-files-evidence/

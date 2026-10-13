@@ -14,6 +14,7 @@ const fixtureRoot = resolve('test/fixtures/inline-default')
 const inline = ['@cortexkit/common-auth', 'inline-default']
 const sharedSources = [
   'dist/fs/index.js',
+  'dist/fs/private-files.js',
   'dist/fs/atomic-write.js',
   'dist/fs/lock-constants.js',
   'dist/fs/with-lock.js',
@@ -83,12 +84,17 @@ test('linking emits the exact closure and compiles runtime JSX through the encod
       expect(new Set(result.sources).size).toBe(result.sources.length)
       expect(result.externals).toEqual(
         variant === 'raw'
-          ? new Set(['jsonc-parser', 'solid-js/store'])
-          : new Set(['jsonc-parser']),
+          ? new Set([
+              '@cortexkit/private-files',
+              'jsonc-parser',
+              'solid-js/store',
+            ])
+          : new Set(['@cortexkit/private-files', 'jsonc-parser']),
       )
       for (const name of result.emitted) {
         const code = await readFile(join(destination, name), 'utf8')
         expect(code).not.toContain('@cortexkit/common-auth')
+        expect(code).not.toContain('private-files-win32-')
         if (name === result.selector) continue
         for (const reference of parseImports(code, name)) {
           if (reference.specifier.startsWith('.'))

@@ -1,0 +1,90 @@
+[
+  {
+    "id": "private-refusal",
+    "file": "src/fs/private-files.ts",
+    "old": "if (!result.ok) {",
+    "new": "if (!result.ok && Boolean(false) /* NON-VACUITY BREAK */) {",
+    "test": "refusal predicates prevent writes and name path and stage"
+  },
+  {
+    "id": "private-migration-owner",
+    "file": "src/fs/private-files.ts",
+    "old": "].includes(reason as typeof api.EXTRA_ACE)",
+    "new": "].includes(api.EXTRA_ACE /* NON-VACUITY BREAK */)",
+    "test": "foreign ownership and reparse points are never migrated"
+  },
+  {
+    "id": "private-deadline",
+    "file": "src/fs/private-files.ts",
+    "old": "if (now() >= deadline) break",
+    "new": "if (Boolean(false) /* NON-VACUITY BREAK */) break",
+    "test": "elapsed deadline includes IO and lease cap prevents a new attempt"
+  },
+  {
+    "id": "private-native-retry",
+    "file": "src/fs/private-files.ts",
+    "old": "detail.win32Code === 32 || detail.win32Code === 33",
+    "new": "Boolean(true) /* NON-VACUITY BREAK */",
+    "test": "native ACL errors and nonsharing codes are terminal"
+  },
+  {
+    "id": "private-fence",
+    "file": "src/fs/private-files.ts",
+    "old": "await options.beforeRename?.()",
+    "new": "/* NON-VACUITY BREAK: disable the per-attempt lease fence */",
+    "test": "fencing reruns before retry and stops publication"
+  },
+  {
+    "id": "private-publication",
+    "file": "src/fs/private-files.ts",
+    "old": "error.published = published",
+    "new": "error.published = false /* NON-VACUITY BREAK */",
+    "test": "postpublication verify refusal never reports not published"
+  },
+  {
+    "id": "private-stage-ownership",
+    "file": "src/fs/private-files.ts",
+    "old": "await createPrivateBytes(stage, bytes)",
+    "new": "created = true /* NON-VACUITY BREAK */; await createPrivateBytes(stage, bytes)",
+    "test": "failure before publication keeps old bytes and cleans only its own stage"
+  },
+  {
+    "id": "private-lease-contention",
+    "file": "src/fs/refresh-file-lock.ts",
+    "old": "if (code === 'EEXIST') {",
+    "new": "if (['EEXIST', 'EBUSY', 'EPERM', 'EACCES'].includes(code ?? '') /* NON-VACUITY BREAK */) {",
+    "test": "Windows lease acquire does not convert access or sharing errors into success"
+  },
+  {
+    "id": "private-lease-release",
+    "file": "src/fs/refresh-file-lock.ts",
+    "old": "if (windowsPrivateFiles) throw error",
+    "new": "if (Boolean(false) /* NON-VACUITY BREAK */) throw error",
+    "test": "Windows lease release does not convert access or sharing errors into success"
+  },
+  {
+    "id": "private-external",
+    "file": "scripts/check-private-files-external.ts",
+    "old": "'private-files-win32-'",
+    "new": "'UNMATCHABLE NON-VACUITY BREAK'",
+    "testFile": "test/fs/private-files-external.test.ts",
+    "test": "external fence rejects an inlined native loader and a missing import"
+  },
+  {
+    "id": "private-rpc-propagation",
+    "file": "src/rpc/port-file.ts",
+    "old": "error instanceof PrivateFileError && error.code !== 'ENOENT'",
+    "new": "Boolean(false) /* NON-VACUITY BREAK */",
+    "testFile": "./test/windows/common-auth.mjs",
+    "test": "foreign grant on a port token is a typed refusal not discovery fallback",
+    "windowsOnly": true,
+    "build": true
+  },
+  {
+    "id": "private-stage-directory",
+    "file": "src/fs/private-files.ts",
+    "old": "if (dirname(stage) !== dirname(path))",
+    "new": "if (Boolean(false) /* NON-VACUITY BREAK */)",
+    "test": "Windows atomic stage stays in the verified destination directory"
+  }
+]

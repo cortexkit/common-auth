@@ -5,12 +5,20 @@ import {
   mkdir,
   open,
   readdir,
-  readFile,
   rename,
   unlink,
   writeFile,
 } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import {
+  createPrivateBytes,
+  ensurePrivateDirectory,
+  PrivateFileError,
+  readPrivateText,
+  verifyPrivate,
+  windowsPrivateFiles,
+  writePrivateAtomic,
+} from '../fs/private-files.js'
 import { createRedactor } from '../logger/redact.js'
 
 export interface DumpLogger {
@@ -230,7 +238,7 @@ export interface SweepDumpDirectoryOptions {
  * use to anyone. Dumps younger than `minAgeMs`, protected paths and symlinks
  * are kept, and a symlinked directory is refused outright. Response staging
  * files left by a crash are reclaimed once stale, even under the cap.
- * Best-effort: a failure removes less, and never throws.
+ * Cleanup is best-effort, but Windows refuses an unverified private directory.
  */
 export async function sweepDumpDirectory(
   options: SweepDumpDirectoryOptions,
@@ -241,6 +249,7 @@ export async function sweepDumpDirectory(
   const partialStaleMs = options.partialStaleMs ?? DEFAULT_PARTIAL_STALE_MS
   const empty = { removed: 0, freedBytes: 0 }
   if (!(maxBytes > 0)) return empty
+  if (windowsPrivateFiles) await verifyPrivate(dir, 'directory')
 
   try {
     if ((await lstat(dir)).isSymbolicLink()) return empty
@@ -334,6 +343,11 @@ async function replaceFile(
   text: string,
   stageName?: () => string,
 ): Promise<void> {
+  if (windowsPrivateFiles) {
+    return writePrivateAtomic(path, text, {
+      stagePath: `${path}.${stageName ? stageName() : randomBytes(12).toString('hex')}.partial`,
+    })
+  }
   for (let attempt = 0; ; attempt += 1) {
     const staging = `${path}.${stageName ? stageName() : randomBytes(12).toString('hex')}.partial`
     let created = false
@@ -544,13 +558,16 @@ export function createDumper(options: DumpOptions): Dumper {
       .reverse()
     for (const name of candidates) {
       try {
-        const metadata = JSON.parse(await readFile(join(dir, name), 'utf8'))
-        if (metadata?.baselineKey !== baselineKey) continue
-        return await readFile(
-          join(dir, name.replace(/\.meta\.json$/, '.body.json')),
-          'utf8',
+        const metadata = JSON.parse(
+          await readPrivateText(join(dir, name), windowsPrivateFiles),
         )
-      } catch {
+        if (metadata?.baselineKey !== baselineKey) continue
+        return await readPrivateText(
+          join(dir, name.replace(/\.meta\.json$/, '.body.json')),
+          windowsPrivateFiles,
+        )
+      } catch (error) {
+        if (error instanceof PrivateFileError) throw error
         // A file removed or half-written by another process: try the next.
       }
     }
@@ -596,9 +613,12 @@ export function createDumper(options: DumpOptions): Dumper {
     const baselineKey = hashText(`${input.channel}\u0000${session}`)
 
     try {
-      await mkdir(dir, { recursive: true, mode: 0o700 })
-      // mkdir's mode does not apply to a directory that already exists.
-      await chmod(dir, 0o700)
+      if (windowsPrivateFiles) await ensurePrivateDirectory(dir, true)
+      else {
+        await mkdir(dir, { recursive: true, mode: 0o700 })
+        // mkdir's mode does not apply to a directory that already exists.
+        await chmod(dir, 0o700)
+      }
 
       let previous = previousBodies.get(baselineKey)
       let baselineSource: 'memory' | 'disk' | undefined =
@@ -652,7 +672,9 @@ export function createDumper(options: DumpOptions): Dumper {
       })
       // `wx`: a name collision fails loudly instead of overwriting a dump.
       const write = (path: string, text: string) =>
-        writeFile(path, text, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+        windowsPrivateFiles
+          ? createPrivateBytes(path, text)
+          : writeFile(path, text, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
       const writes: Array<[string, string]> = [
         [files.body, body.text],
         [files.metadata, `${JSON.stringify(metadata, null, 2)}\n`],
@@ -680,6 +702,7 @@ export function createDumper(options: DumpOptions): Dumper {
       scheduleSweep(dir, Object.values(files))
       return { id, files, responseFile: `${prefix}.response.json` }
     } catch (error) {
+      if (error instanceof PrivateFileError) throw error
       log?.warn('request dump failed', {
         session: shortSession(session),
         error: error instanceof Error ? error.message : String(error),
@@ -761,6 +784,7 @@ export function createDumper(options: DumpOptions): Dumper {
       )
       return result.responseFile
     } catch (error) {
+      if (error instanceof PrivateFileError) throw error
       log?.warn('response dump failed', {
         id: result.id,
         error: error instanceof Error ? error.message : String(error),

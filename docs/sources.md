@@ -1311,7 +1311,7 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | fs | Descriptor chmod overrides restrictive umask | new (neither copy) | atomic writer restores private mode despite restrictive umask |
 | rpc | Descriptor chmod overrides restrictive umask | new (neither copy) | port staging protects restrictive umask under Bun |
 | rpc | Descriptor chmod overrides restrictive umask | new (neither copy) | port staging protects restrictive umask under Node 24 |
-| rpc | Client-only subpath loads no server modules | new (neither copy) | ./rpc/client loads only the client and port-file modules |
+| rpc | Client-only subpath loads no server modules | new (neither copy) | ./rpc/client loads only client, port-file and private IO modules without the server |
 | rpc | Client-only subpath is the same functions as ./rpc | new (neither copy) | ./rpc/client exports the same client functions as ./rpc |
 | claustrum | accepts a group-writable ancestor owned by the effective user and private group | new (neither copy) | accepts a group-writable ancestor owned by the effective user and private group |
 | claustrum | refuses a group-writable ancestor with another explicit group member | new (neither copy) | refuses a group-writable ancestor with another explicit group member |
@@ -1491,4 +1491,4 @@ The helper retains a 30 s takeover threshold for async Pi writers, renews every 
 | pi-slot | Actual Pi writer waits for helper's first-party lock | Pi 1.0.4 AuthStorage and proper-lockfile 4.1.2 | real Pi writer waits for helper and preserves both writes |
 | pi-slot | Stale takeover and bounded fresh-lock refusal | proper-lockfile 4.1.2 protocol above | stale lock uses mkdir takeover and fresh lock times out unchanged |
 | pi-slot | Mtime heartbeat, replacement detection, no compromised-lock removal | proper-lockfile 4.1.2 protocol above | holder renews mtime and detects a replaced lock |
-| pi-slot | Embedded consumers need no external runtime imports | new (neither copy) | published import graph contains only node builtins and common auth files |
+| pi-slot | Pi embedding keeps the Windows native dependency external, with no unrelated external runtime imports | new (neither copy) | published import graph permits only node builtins, common auth files and external Windows private-files |

@@ -4,6 +4,12 @@ import { lstat, mkdir, open, unlink } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { writeJsonAtomic } from '../fs/atomic-write.js'
+import {
+  ensurePrivateDirectory,
+  PrivateFileError,
+  readPrivateBuffer,
+  windowsPrivateFiles,
+} from '../fs/private-files.js'
 import { acquirePiLock } from './lock.js'
 
 export type PiSlotErrorCode =
@@ -26,6 +32,8 @@ export class PiSlotError extends Error {
 }
 
 export interface PiSlotOptions {
+  /** Permit permission repair of current-user-owned auth/stash parents on Windows. Both must be dedicated private roots, never shared/custom directories. */
+  privateParents?: boolean
   authPath: string
   provider: string
   /**
@@ -165,6 +173,19 @@ async function safeRead(
   privateFile = false,
   afterReadCheck?: (path: string) => Promise<void>,
 ): Promise<string | undefined> {
+  if (windowsPrivateFiles) {
+    try {
+      await afterReadCheck?.(path)
+      const bytes = await readPrivateBuffer(path, true)
+      const text = bytes.toString('utf8')
+      if (!bytes.equals(Buffer.from(text)))
+        throw new PiSlotError(privateFile ? 'invalid-stash' : 'invalid-auth')
+      return text
+    } catch (error) {
+      if (code(error) === 'ENOENT') return undefined
+      throw error
+    }
+  }
   let file: Awaited<ReturnType<typeof open>> | undefined
   try {
     file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
@@ -260,6 +281,9 @@ function replaceEntry(
 }
 
 async function syncDir(path: string): Promise<void> {
+  // Windows flushes file bytes before rename but cannot promise persisted
+  // directory metadata, so this Pi transition deliberately skips directory sync.
+  if (windowsPrivateFiles) return
   const dir = await open(path, 'r')
   try {
     await dir.sync()
@@ -276,6 +300,7 @@ async function atomicWrite(
   await writeJsonAtomic(path, null, {
     serialize: () => text,
     durable: true,
+    durability: windowsPrivateFiles ? 'file-only-on-windows' : undefined,
     beforeRename: async () => {
       await beforeRename?.(path)
       assertLock()
@@ -365,7 +390,16 @@ export function createPiSlot(
       if (compromised) throw new PiSlotError('lock-compromised')
     }
     try {
-      await mkdir(dirname(authPath), { recursive: true, mode: 0o700 })
+      if (windowsPrivateFiles) {
+        await ensurePrivateDirectory(
+          dirname(authPath),
+          options.privateParents ?? false,
+        )
+        await ensurePrivateDirectory(
+          dirname(stashPath),
+          options.privateParents ?? false,
+        )
+      } else await mkdir(dirname(authPath), { recursive: true, mode: 0o700 })
       const deadline = Date.now() + timeout
       let retry = 0
       while (!release) {
@@ -398,7 +432,8 @@ export function createPiSlot(
       assertLock()
       return result
     } catch (error) {
-      if (error instanceof PiSlotError) throw error
+      if (error instanceof PiSlotError || error instanceof PrivateFileError)
+        throw error
       throw new PiSlotError('io')
     } finally {
       await release?.().catch(() => {})
@@ -443,10 +478,17 @@ export function createPiSlot(
         if (stash && digest(auth.entry) !== stash.sha256)
           throw new PiSlotError('conflict')
         if (!stash) {
-          await mkdir(dirname(stashPath), { recursive: true, mode: 0o700 })
-          const dir = await lstat(dirname(stashPath))
-          if (!dir.isDirectory() || (dir.mode & 0o777) !== 0o700)
-            throw new PiSlotError('unsafe-path')
+          if (windowsPrivateFiles)
+            await ensurePrivateDirectory(
+              dirname(stashPath),
+              options.privateParents ?? false,
+            )
+          else {
+            await mkdir(dirname(stashPath), { recursive: true, mode: 0o700 })
+            const dir = await lstat(dirname(stashPath))
+            if (!dir.isDirectory() || (dir.mode & 0o777) !== 0o700)
+              throw new PiSlotError('unsafe-path')
+          }
           const saved: Stash = {
             version: 1,
             provider,

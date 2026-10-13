@@ -30,13 +30,14 @@ function runtimeGraph(entry: string): string[] {
   return [...seen].map((file) => file.slice(root.length)).sort()
 }
 
-test('./rpc/client loads only the client and port-file modules', () => {
+test('./rpc/client loads only client, port-file and private IO modules without the server', () => {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
   expect(pkg.exports['./rpc/client']).toEqual({
     types: './dist/rpc/client.d.ts',
     import: './dist/rpc/client.js',
   })
   expect(runtimeGraph('dist/rpc/client.js')).toEqual([
+    'dist/fs/private-files.js',
     'dist/rpc/client.js',
     'dist/rpc/port-file.js',
     'dist/rpc/rpc-client.js',

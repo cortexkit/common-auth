@@ -450,7 +450,7 @@ describe('pi slot', () => {
     }
   }, 35_000)
 
-  test('published import graph contains only node builtins and common auth files', async () => {
+  test('published import graph permits only node builtins, common auth files and external Windows private-files', async () => {
     const packageJson = JSON.parse(
       await bytes(join(import.meta.dir, '../../package.json')),
     )
@@ -470,9 +470,15 @@ describe('pi slot', () => {
       ]
       for (const match of imports) {
         const specifier = match[1] ?? ''
-        expect(specifier.startsWith('node:') || specifier.startsWith('.')).toBe(
-          true,
-        )
+        expect(
+          specifier.startsWith('node:') ||
+            specifier.startsWith('.') ||
+            specifier === '@cortexkit/private-files',
+        ).toBe(true)
+        if (specifier === '@cortexkit/private-files') {
+          expect(path.endsWith(join('fs', 'private-files.js'))).toBe(true)
+          expect(source).not.toContain('private-files-win32-')
+        }
         if (specifier.startsWith('.'))
           await visit(resolve(dirname(path), specifier))
       }

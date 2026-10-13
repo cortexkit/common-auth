@@ -1,6 +1,7 @@
 import { open } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { join, resolve } from 'node:path'
+import { readPrivateText, windowsPrivateFiles } from '../fs/private-files.js'
 import type {
   ApplyRequest,
   ApplyResult,
@@ -52,6 +53,21 @@ async function boundIdentity(
   entry: PortFileEntry,
 ): Promise<string | null> {
   const path = join(resolve(dir), `port-${entry.pid}.json`)
+  if (windowsPrivateFiles) {
+    const current = JSON.parse(
+      await readPrivateText(path),
+    ) as Partial<PortFileEntry>
+    if (
+      current.pid !== entry.pid ||
+      current.port !== entry.port ||
+      current.token !== entry.token
+    )
+      return null
+    // private-files does not expose the read handle's identity, so a separate
+    // stat cannot bind an RPC-server cache entry to the file that supplied its
+    // token. On Windows, rediscover the port file on every call.
+    return null
+  }
   let handle: Awaited<ReturnType<typeof open>> | undefined
   try {
     handle = await open(path, 'r')
@@ -80,7 +96,11 @@ async function select(
   options: RpcClientOptions,
 ): Promise<Selection | null> {
   const cached = selections.get(key)
-  if (cached && (await portFileIdentity(dir, cached.entry)) === cached.identity)
+  if (
+    !windowsPrivateFiles &&
+    cached &&
+    (await portFileIdentity(dir, cached.entry)) === cached.identity
+  )
     return cached
   selections.delete(key)
   const pending = discoveries.get(key)

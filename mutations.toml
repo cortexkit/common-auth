@@ -4759,3 +4759,138 @@ command = ['bun', 'test', 'test/util/any-signal.test.ts', '-t', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['immediately aborts when an input is already aborted']
 expect_message = 'Expected: true'
+
+# These controls disable common-auth's Windows verification, publication and lease guards.
+# Actual NTFS RPC-token refusal propagation is checked separately by test/windows/mutations.ps1.
+
+[[control]]
+id = "private-refusal"
+guards = "refusal predicates prevent writes and name path and stage"
+file = "src/fs/private-files.ts"
+old = "if (!result.ok) {"
+new = "if (!result.ok && Boolean(false) /* NON-VACUITY BREAK */) {"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["refusal predicates prevent writes and name path and stage"]
+
+[[control]]
+id = "private-migration-owner"
+guards = "foreign ownership and reparse points are never migrated"
+file = "src/fs/private-files.ts"
+old = "].includes(reason as typeof api.EXTRA_ACE)"
+new = "].includes(api.EXTRA_ACE /* NON-VACUITY BREAK */)"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["foreign ownership and reparse points are never migrated"]
+
+[[control]]
+id = "private-deadline"
+guards = "elapsed deadline includes IO and lease cap prevents a new attempt"
+file = "src/fs/private-files.ts"
+old = "if (now() >= deadline) break"
+new = "if (Boolean(false) /* NON-VACUITY BREAK */) break"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["elapsed deadline includes IO and lease cap prevents a new attempt"]
+
+[[control]]
+id = "private-native-retry"
+guards = "native ACL errors and nonsharing codes are terminal"
+file = "src/fs/private-files.ts"
+old = "detail.win32Code === 32 || detail.win32Code === 33"
+new = "Boolean(true) /* NON-VACUITY BREAK */"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["native ACL errors and nonsharing codes are terminal"]
+
+[[control]]
+id = "private-fence"
+guards = "fencing reruns before retry and stops publication"
+file = "src/fs/private-files.ts"
+old = "await options.beforeRename?.()"
+new = "/* NON-VACUITY BREAK: disable the per-attempt lease fence */"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["fencing reruns before retry and stops publication"]
+
+[[control]]
+id = "private-publication"
+guards = "postpublication verify refusal never reports not published"
+file = "src/fs/private-files.ts"
+old = "error.published = published"
+new = "error.published = false /* NON-VACUITY BREAK */"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["postpublication verify refusal never reports not published"]
+
+[[control]]
+id = "private-stage-ownership"
+guards = "failure before publication keeps old bytes and cleans only its own stage"
+file = "src/fs/private-files.ts"
+old = "await createPrivateBytes(stage, bytes)"
+new = "created = true /* NON-VACUITY BREAK */; await createPrivateBytes(stage, bytes)"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["failure before publication keeps old bytes and cleans only its own stage"]
+
+[[control]]
+id = "private-lease-contention"
+guards = "Windows lease acquire does not convert access or sharing errors into success"
+file = "src/fs/refresh-file-lock.ts"
+old = "if (code === 'EEXIST') {"
+new = "if (['EEXIST', 'EBUSY', 'EPERM', 'EACCES'].includes(code ?? '') /* NON-VACUITY BREAK */) {"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["Windows lease acquire does not convert access or sharing errors into success"]
+
+[[control]]
+id = "private-lease-release"
+guards = "Windows lease release does not convert access or sharing errors into success"
+file = "src/fs/refresh-file-lock.ts"
+old = "if (windowsPrivateFiles) throw error"
+new = "if (Boolean(false) /* NON-VACUITY BREAK */) throw error"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["Windows lease release does not convert access or sharing errors into success"]
+
+[[control]]
+id = "private-external"
+guards = "external fence rejects an inlined native loader and a missing import"
+file = "scripts/check-private-files-external.ts"
+old = "'private-files-win32-'"
+new = "'UNMATCHABLE NON-VACUITY BREAK'"
+test_file = "test/fs/private-files-external.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/private-files-external.test.ts", '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["external fence rejects an inlined native loader and a missing import"]
+
+[[control]]
+id = "private-stage-directory"
+guards = "Windows atomic stage stays in the verified destination directory"
+file = "src/fs/private-files.ts"
+old = "if (dirname(stage) !== dirname(path))"
+new = "if (Boolean(false) /* NON-VACUITY BREAK */)"
+test_file = "test/fs/windows-private-files.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test test/fs/windows-private-files.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["Windows atomic stage stays in the verified destination directory"]

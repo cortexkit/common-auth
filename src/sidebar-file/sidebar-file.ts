@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile } from 'node:fs/promises'
+import { chmod, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
   LockContentionError,
@@ -7,6 +7,12 @@ import {
   withLock,
   writeJsonAtomic,
 } from '../fs/index.js'
+import {
+  ensurePrivateDirectory,
+  PrivateFileError,
+  readPrivateText,
+  windowsPrivateFiles,
+} from '../fs/private-files.js'
 
 export interface SidebarFileHooks {
   /** Runs on the first merge attempt, before checking for older, unlocked writers. */
@@ -119,7 +125,9 @@ export function createSidebarFile<T>(
   }
   const readRaw = async (): Promise<string> => {
     try {
-      return await readFile(path, 'utf8')
+      if (windowsPrivateFiles)
+        await ensurePrivateDirectory(dirname(path), options.secureDir ?? true)
+      return await readPrivateText(path, windowsPrivateFiles)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
       throw error
@@ -128,7 +136,8 @@ export function createSidebarFile<T>(
   const read = async (): Promise<T> => {
     try {
       return parse(await readRaw())
-    } catch {
+    } catch (error) {
+      if (error instanceof PrivateFileError) throw error
       return defaultValue
     }
   }
@@ -217,8 +226,9 @@ export function createSidebarFile<T>(
     const hooks: SidebarFileHooks | undefined = writeOptions
     const parent = dirname(path)
     const secureDir = options.secureDir ?? true
-    await mkdir(parent, { recursive: true, mode: 0o700 })
-    if (secureDir) {
+    if (windowsPrivateFiles) await ensurePrivateDirectory(parent, secureDir)
+    else await mkdir(parent, { recursive: true, mode: 0o700 })
+    if (secureDir && !windowsPrivateFiles) {
       await chmod(parent, 0o700).catch((error: unknown) => {
         options.logger?.warn(
           'sidebar directory permission remediation failed',

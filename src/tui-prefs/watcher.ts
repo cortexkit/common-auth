@@ -8,10 +8,17 @@ import {
 import { readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { clearTimeout, setTimeout } from 'node:timers'
+import {
+  PrivateFileError,
+  readPrivateText,
+  windowsPrivateFiles,
+} from '../fs/private-files.js'
 
 type Metadata = Pick<Stats, 'mtimeMs' | 'size' | 'ino' | 'dev'>
 
 export interface TuiPreferencesWatchOptions {
+  /** Receives PrivateFileError instances for Windows access failures, never file contents. */
+  onError?: (error: PrivateFileError) => void
   watchDirectory?: typeof watch
   /** Internal filesystem seam; the first subscriber supplies a shared watcher's I/O. */
   fs?: {
@@ -28,6 +35,9 @@ interface SharedWatcher {
 
 function canonicalPath(file: string): string {
   const path = resolve(file)
+  // Leave reparse points in the path for private-files' ancestor walk to reject;
+  // realpath would follow them before the security backend saw the original path.
+  if (windowsPrivateFiles) return path
   try {
     return realpathSync(path)
   } catch {
@@ -66,7 +76,9 @@ export function watchTuiPreferences(
   if (shared) return shared.subscribe(onChange)
 
   const name = basename(path)
-  const read = options.fs?.readFile ?? ((file) => readFile(file, 'utf8'))
+  const read = windowsPrivateFiles
+    ? (file: string) => readPrivateText(file)
+    : (options.fs?.readFile ?? ((file) => readFile(file, 'utf8')))
   const probe = options.fs?.stat ?? stat
   let timer: ReturnType<typeof setTimeout> | null = null
   let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -75,15 +87,16 @@ export function watchTuiPreferences(
   // Seed synchronously so an immediate write cannot be absorbed as the baseline.
   // The metadata is recorded only together with contents that were read, as in
   // the probe below: if the first read fails, the probe keeps trying.
-  try {
-    const metadata = identity((options.fs?.statSync ?? statSync)(path))
-    lastSeen = (
-      options.fs?.readFileSync ?? ((file) => readFileSync(file, 'utf8'))
-    )(path)
-    lastMetadata = metadata
-  } catch {
-    // Missing or unreadable files are picked up by the probe later.
-  }
+  if (!windowsPrivateFiles)
+    try {
+      const metadata = identity((options.fs?.statSync ?? statSync)(path))
+      lastSeen = (
+        options.fs?.readFileSync ?? ((file) => readFileSync(file, 'utf8'))
+      )(path)
+      lastMetadata = metadata
+    } catch {
+      // Missing or unreadable files are picked up by the probe later.
+    }
   let disposed = false
   const subscribers = new Set<{ notify: () => void }>()
   let checking = Promise.resolve()
@@ -99,7 +112,13 @@ export function watchTuiPreferences(
         lastMetadata = null
         return
       }
-      const text = await read(path).catch(() => null)
+      const text = await read(path).catch((error: unknown) => {
+        if (error instanceof PrivateFileError && error.code !== 'ENOENT') {
+          if (options.onError) options.onError(error)
+          else process.emitWarning(error.message, error.name)
+        }
+        return null
+      })
       if (disposed) return
       // Record the metadata only once its contents were read. A failed read
       // leaves the old value, so the next probe sees a change and retries

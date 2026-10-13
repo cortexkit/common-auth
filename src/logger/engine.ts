@@ -5,6 +5,15 @@ import {
   renameSync,
   statSync,
 } from 'node:fs'
+import { dirname } from 'node:path'
+import {
+  ensurePrivateDirectory,
+  readPrivateText,
+  replaceWindowsFile,
+  verifyPrivate,
+  windowsPrivateFiles,
+  writePrivateAtomic,
+} from '../fs/private-files.js'
 import type { CaptureSink } from './capture-sink.js'
 import { createRedactor, type RedactionOptions } from './redact.js'
 
@@ -84,11 +93,10 @@ export interface LoggerInstance {
   /** Operator override of the level floor; undefined removes it. */
   setLogLevel(level: Level | undefined): void
   /**
-   * Write whatever is buffered. Safe to call synchronously from a
-   * process-exit handler, which is how each host drains the buffer on
-   * shutdown.
+   * On Windows this returns a promise and must be awaited before shutdown;
+   * synchronous process-exit flushing remains available on POSIX only.
    */
-  flushLogs(): void
+  flushLogs(): void | Promise<void>
 }
 
 function chmodPrivate(path: string) {
@@ -114,6 +122,39 @@ function rotateIfNeeded(f: string) {
   } catch {
     /* never throw */
   }
+}
+
+async function flushWindowsFile(file: string, text: string): Promise<void> {
+  await ensurePrivateDirectory(dirname(file))
+  let previous = ''
+  try {
+    previous = await readPrivateText(file, true)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  if (Buffer.byteLength(previous) >= MAX_BYTES) {
+    for (let i = ROTATE_KEEP - 1; i >= 0; i--) {
+      const source = i === 0 ? file : `${file}.${i}`
+      const target = `${file}.${i + 1}`
+      try {
+        await verifyPrivate(source, 'file', true)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+        throw error
+      }
+      try {
+        await verifyPrivate(target, 'file', true)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      await replaceWindowsFile(source, target)
+      await verifyPrivate(target, 'file')
+    }
+    previous = ''
+  }
+  // The backend has no append-handle API. Securely replace the complete log
+  // rather than reopening a verified pathname to append through an unchecked handle.
+  await writePrivateAtomic(file, previous + text)
 }
 
 function safeSerialize(data: unknown): string {
@@ -147,6 +188,8 @@ function createEngine(options?: LoggerOptions): Engine {
   let captureSink: CaptureSink | undefined
   let buffer: string[] = []
   let timer: ReturnType<typeof setTimeout> | undefined
+  let orderedSink: Promise<void> = Promise.resolve()
+  let sinkError: unknown
 
   function configure(next: LoggerOptions): void {
     logFileSource = next.file
@@ -181,7 +224,13 @@ function createEngine(options?: LoggerOptions): Engine {
       clearTimeout(timer)
       timer = undefined
     }
-    if (!buffer.length) return
+    if (!buffer.length) {
+      if (windowsPrivateFiles)
+        return orderedSink.then(() => {
+          if (sinkError) throw sinkError
+        })
+      return
+    }
     let file: string | undefined
     try {
       file = logFilePath()
@@ -192,6 +241,13 @@ function createEngine(options?: LoggerOptions): Engine {
     const text = buffer.join('')
     buffer = []
     if (!file) return
+    if (windowsPrivateFiles) {
+      const next = orderedSink.then(() => flushWindowsFile(file, text))
+      orderedSink = next.catch((error: unknown) => {
+        sinkError = error
+      })
+      return next
+    }
     try {
       rotateIfNeeded(file)
       if (existsSync(file)) chmodPrivate(file)
@@ -205,7 +261,8 @@ function createEngine(options?: LoggerOptions): Engine {
     if (!timer)
       timer = setTimeout(() => {
         timer = undefined
-        flushLogs()
+        const flushed = flushLogs()
+        if (flushed instanceof Promise) void flushed.catch(() => {})
       }, 500)
   }
 
@@ -242,8 +299,10 @@ function createEngine(options?: LoggerOptions): Engine {
       // A sink-only logger has no file to buffer lines for.
       if (logFileSource === undefined) return
       buffer.push(line)
-      if (buffer.length >= 50) flushLogs()
-      else schedule()
+      if (buffer.length >= 50) {
+        const flushed = flushLogs()
+        if (flushed instanceof Promise) void flushed.catch(() => {})
+      } else schedule()
     } catch {
       // Provider and redaction failures must never turn diagnostics into a host crash.
     }
@@ -260,6 +319,7 @@ function createEngine(options?: LoggerOptions): Engine {
   }
 
   function reset() {
+    sinkError = undefined
     buffer = []
     if (timer) {
       clearTimeout(timer)
@@ -312,12 +372,11 @@ export function setLogLevel(l: Level | undefined) {
 }
 
 /**
- * Write whatever the default logger has buffered. Safe to call synchronously
- * from a process-exit handler, which is how each host drains the buffer on
- * shutdown.
+ * Write whatever the default logger has buffered. On Windows await the
+ * promise before shutdown; POSIX keeps synchronous process-exit flushing.
  */
 export function flushLogs() {
-  defaultEngine.flushLogs()
+  return defaultEngine.flushLogs()
 }
 
 export function createLogger(channel: string): ChannelLogger {
@@ -325,7 +384,7 @@ export function createLogger(channel: string): ChannelLogger {
 }
 
 export async function flushForTest() {
-  defaultEngine.flushLogs()
+  return defaultEngine.flushLogs()
 }
 
 /**

@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { readFile, unlink } from 'node:fs/promises'
+import { unlink } from 'node:fs/promises'
 import {
   createServer,
   type IncomingMessage,
@@ -7,6 +7,7 @@ import {
 } from 'node:http'
 import type { Socket } from 'node:net'
 import { join } from 'node:path'
+import { PrivateFileError, readPrivateText } from '../fs/private-files.js'
 import type { RpcLogChannel } from './index.js'
 import {
   type ApplyRequest,
@@ -386,9 +387,13 @@ export async function startRpcServer(
         for (const socket of connections) socket.destroy()
       })
       const portFile = join(options.dir, `port-${process.pid}.json`)
-      const current = await readFile(portFile, 'utf8')
+      const current = await readPrivateText(portFile)
         .then((raw) => JSON.parse(raw) as { port?: unknown; token?: unknown })
-        .catch(() => undefined)
+        .catch((error: unknown) => {
+          if (error instanceof PrivateFileError && error.code !== 'ENOENT')
+            throw error
+          return undefined
+        })
       if (current?.port === port && current.token === token)
         await unlink(portFile).catch(() => {})
     },

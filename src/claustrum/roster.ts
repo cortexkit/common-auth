@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
 import {
   acquireRefreshFileLock,
   withLock,
   writeJsonAtomic,
 } from '../fs/index.js'
+import { readPrivateText, windowsPrivateFiles } from '../fs/private-files.js'
 import {
   isQuotaMap,
   mergeQuotaObservation,
@@ -452,7 +452,7 @@ export async function readVaultRoster(
 ): Promise<VaultRosterFile | undefined> {
   let text: string
   try {
-    text = await readFile(path, 'utf8')
+    text = await readPrivateText(path, windowsPrivateFiles)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error

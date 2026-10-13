@@ -9,6 +9,17 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import {
+  createPrivateBytes,
+  createPrivateDirectoryExclusive,
+  ensurePrivateDirectory,
+  PrivateFileError,
+  privateOperation,
+  readPrivateText,
+  verifyPrivate,
+  windowsPrivateFiles,
+  writePrivateAtomic,
+} from './private-files.js'
 import { LockOwnershipError, lockPathFor } from './with-lock.js'
 
 const setRefreshLockRenewalTimeout = globalThis.setTimeout.bind(globalThis)
@@ -20,7 +31,10 @@ const clearRefreshLockRenewalTimeout = globalThis.clearTimeout.bind(globalThis)
 // to hold — a lost race the caller should retry, not a fatal lock error.
 export function isLostMarkerRaceError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code
-  return code === 'ENOENT' || code === 'EINVAL' || code === 'ENOTDIR'
+  return (
+    code === 'ENOENT' ||
+    (!windowsPrivateFiles && (code === 'EINVAL' || code === 'ENOTDIR'))
+  )
 }
 
 export interface LockLoss {
@@ -84,6 +98,7 @@ export async function acquireRefreshFileLock(options: {
   const now = options.now ?? Date.now
   let renewTimer: ReturnType<typeof setTimeout> | null = null
   let released = false
+  let releaseConfirmed = false
   let loss: LockLoss | undefined
   let resolveLoss!: (loss: LockLoss) => void
   const lostPromise = new Promise<LockLoss>((resolve) => {
@@ -131,6 +146,7 @@ export async function acquireRefreshFileLock(options: {
     cancelRenewalTimer()
     resolveLoss(loss)
   }
+  let terminalIOError: unknown
   let renewalInFlight: Promise<void> | null = null
   // Only the owner of this exclusively-created marker may remove or renew a
   // lock. A contender recovering a stale marker can accidentally rename a newer
@@ -143,6 +159,19 @@ export async function acquireRefreshFileLock(options: {
   const MAX_STEAL_ATTEMPTS = 8
 
   async function readOwner() {
+    if (windowsPrivateFiles) {
+      try {
+        return JSON.parse(await readPrivateText(lockPath, true))
+      } catch (error) {
+        if (
+          (error as NodeJS.ErrnoException).code !== 'EISDIR' &&
+          (error as PrivateFileError).reason !== 'wrong-kind'
+        )
+          throw error
+        await verifyPrivate(lockPath, 'directory', true)
+        return JSON.parse(await readPrivateText(legacyOwnerPath, true))
+      }
+    }
     try {
       return JSON.parse(await readFile(lockPath, 'utf8'))
     } catch (error) {
@@ -153,6 +182,31 @@ export async function acquireRefreshFileLock(options: {
   }
 
   async function writeOwner() {
+    if (windowsPrivateFiles) {
+      const owner = await readOwner()
+      const remaining = Number(owner?.expiresAt) - now()
+      await writePrivateAtomic(
+        lockPath,
+        `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`,
+        {
+          deadline: performance.now() + Math.max(0, remaining),
+          beforeRename: async () => {
+            const current = await readOwner()
+            if (
+              current?.ownerId !== ownerId ||
+              !(Number(current?.expiresAt) > now()) ||
+              !(await ownsEvictionMarker())
+            ) {
+              throw new LockOwnershipError({
+                target: options.path,
+                name: options.name,
+              })
+            }
+          },
+        },
+      )
+      return
+    }
     // Readers must see a complete lease, even while renewal is writing.
     const tempPath = `${lockPath}.${randomUUID()}.tmp`
     let handle: Awaited<ReturnType<typeof open>> | undefined
@@ -175,30 +229,48 @@ export async function acquireRefreshFileLock(options: {
     }
   }
 
+  async function createLease() {
+    const bytes = `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`
+    if (windowsPrivateFiles) await createPrivateBytes(lockPath, bytes)
+    else
+      await writeFile(lockPath, bytes, {
+        encoding: 'utf8',
+        mode: 0o600,
+        flag: 'wx',
+      })
+  }
+  async function leaseContention(error: unknown): Promise<boolean> {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'EEXIST') {
+      if (windowsPrivateFiles) await readOwner()
+      return true
+    }
+    if (code === 'EISDIR') {
+      if (windowsPrivateFiles) {
+        await verifyPrivate(lockPath, 'directory', true)
+        await readPrivateText(legacyOwnerPath, true)
+      }
+      return true
+    }
+    return false
+  }
   async function tryAcquire() {
+    if (windowsPrivateFiles) await ensurePrivateDirectory(dirname(lockPath))
     try {
-      await writeFile(
-        lockPath,
-        `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`,
-        { encoding: 'utf8', mode: 0o600, flag: 'wx' },
-      )
+      await createLease()
       return true
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
-      if (code === 'EEXIST' || code === 'EISDIR') return false
+      if (await leaseContention(error)) return false
       if (code === 'ENOENT') {
         // Reboots can clear runtime temp directories before the next lock acquisition.
-        await mkdir(dirname(lockPath), { recursive: true })
+        if (windowsPrivateFiles) await ensurePrivateDirectory(dirname(lockPath))
+        else await mkdir(dirname(lockPath), { recursive: true })
         try {
-          await writeFile(
-            lockPath,
-            `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`,
-            { encoding: 'utf8', mode: 0o600, flag: 'wx' },
-          )
+          await createLease()
           return true
         } catch (retryError) {
-          const retryCode = (retryError as NodeJS.ErrnoException).code
-          if (retryCode === 'EEXIST' || retryCode === 'EISDIR') return false
+          if (await leaseContention(retryError)) return false
           throw retryError
         }
       }
@@ -216,11 +288,21 @@ export async function acquireRefreshFileLock(options: {
     try {
       const currentOwner = await readOwner()
       return Number(currentOwner?.expiresAt) > now()
-    } catch {
+    } catch (error) {
+      if (
+        windowsPrivateFiles &&
+        (error as NodeJS.ErrnoException).code !== 'ENOENT'
+      )
+        throw error
       try {
         const current = await stat(lockPath)
         return current.mtimeMs + options.ttlMs > now()
-      } catch {
+      } catch (error) {
+        if (
+          windowsPrivateFiles &&
+          (error as NodeJS.ErrnoException).code !== 'ENOENT'
+        )
+          throw error
         // Lock doesn't exist — safe to acquire.
         return false
       }
@@ -230,27 +312,45 @@ export async function acquireRefreshFileLock(options: {
   // Fail-closed: any read error means we do NOT own the marker.
   async function ownsEvictionMarker() {
     try {
-      const owner = JSON.parse(await readFile(evictOwnerPath, 'utf8'))
+      const owner = JSON.parse(
+        await readPrivateText(evictOwnerPath, windowsPrivateFiles),
+      )
       return owner?.ownerId === evictOwnerId
-    } catch {
+    } catch (error) {
+      if (
+        windowsPrivateFiles &&
+        (error as NodeJS.ErrnoException).code !== 'ENOENT'
+      )
+        throw error
       return false
     }
   }
 
+  async function removeLeaseObject(path: string) {
+    if (windowsPrivateFiles)
+      await privateOperation(path, 'remove', () =>
+        rm(path, { recursive: true, force: true }),
+      )
+    else await rm(path, { recursive: true, force: true }).catch(() => {})
+  }
   async function releaseEvictionMarker() {
     if (await ownsEvictionMarker()) {
-      await rm(evictPath, { recursive: true, force: true }).catch(() => {})
+      await removeLeaseObject(evictPath)
     }
   }
 
   async function tryAcquireEvictionMarker() {
-    await mkdir(evictPath)
+    if (windowsPrivateFiles) await createPrivateDirectoryExclusive(evictPath)
+    else await mkdir(evictPath)
     try {
-      await writeFile(
-        evictOwnerPath,
-        `${JSON.stringify({ ownerId: evictOwnerId, createdAt: now() })}\n`,
-        { encoding: 'utf8', mode: 0o600, flag: 'wx' },
-      )
+      const bytes = `${JSON.stringify({ ownerId: evictOwnerId, createdAt: now() })}\n`
+      if (windowsPrivateFiles) await createPrivateBytes(evictOwnerPath, bytes)
+      else
+        await writeFile(evictOwnerPath, bytes, {
+          encoding: 'utf8',
+          mode: 0o600,
+          flag: 'wx',
+        })
     } catch (error) {
       // A competing contender can rename our just-created marker directory
       // away between the mkdir above and this write (the stale-marker steal
@@ -275,6 +375,7 @@ export async function acquireRefreshFileLock(options: {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
       throw error
     }
+    if (windowsPrivateFiles) await verifyPrivate(evictPath, 'directory', true)
     if (evictStat.mtimeMs + EVICT_TTL > now()) return 'fresh'
 
     if (options.onStep) await options.onStep('stale-marker-stat')
@@ -286,7 +387,7 @@ export async function acquireRefreshFileLock(options: {
       throw error
     }
     if (options.onStep) await options.onStep('stale-marker-claimed')
-    await rm(claimedPath, { recursive: true, force: true }).catch(() => {})
+    await removeLeaseObject(claimedPath)
     return 'recovered'
   }
 
@@ -294,7 +395,18 @@ export async function acquireRefreshFileLock(options: {
     try {
       if (!(await tryAcquireEvictionMarker())) return false
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        if (windowsPrivateFiles) {
+          await verifyPrivate(evictPath, 'directory', true)
+          try {
+            await readPrivateText(evictOwnerPath, true)
+          } catch (ownerError) {
+            if ((ownerError as NodeJS.ErrnoException).code !== 'ENOENT')
+              throw ownerError
+          }
+        }
+        return false
+      }
       throw error
     }
 
@@ -316,14 +428,16 @@ export async function acquireRefreshFileLock(options: {
       let owner: { ownerId?: string } | undefined
       try {
         owner = await readOwner()
-      } catch {
+      } catch (error) {
+        if (windowsPrivateFiles) throw error
         return
       }
       if (owner?.ownerId !== ownerId) return
       try {
         await rm(lockPath, { recursive: true, force: true })
         return
-      } catch {
+      } catch (error) {
+        if (windowsPrivateFiles) throw error
         await backoff()
       }
     }
@@ -387,7 +501,12 @@ export async function acquireRefreshFileLock(options: {
           if (!markerAcquired && options.onStep) {
             await options.onStep('renewal-marker-unavailable')
           }
-        } catch {
+        } catch (error) {
+          if (windowsPrivateFiles && error instanceof PrivateFileError) {
+            terminalIOError = error
+            recordLoss('renewal-failed')
+            shouldReschedule = false
+          }
           // Retry transient failures only while the lease can still be verified.
           try {
             const owner = await readOwner()
@@ -465,7 +584,7 @@ export async function acquireRefreshFileLock(options: {
         // The onStep callback can pause while another contender renames
         // our marker, so verify ownership again after the callback.
         if (!(await ownsEvictionMarker())) return null
-        await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+        await removeLeaseObject(lockPath)
         // Fence check 3: re-verify ownership after removing the stale lock.
         if (!(await ownsEvictionMarker())) return null
         if (options.onStep) await options.onStep('stale-lock-removed')
@@ -496,6 +615,7 @@ export async function acquireRefreshFileLock(options: {
     whenLost: () => lostPromise,
     hasLost: () => loss !== undefined,
     assertOwned: async () => {
+      if (terminalIOError) throw terminalIOError
       let observed: { ownerId?: unknown; expiresAt?: unknown } | undefined
       try {
         const owner = await readOwner()
@@ -508,9 +628,11 @@ export async function acquireRefreshFileLock(options: {
         )
           return
         recordLoss(owner?.ownerId !== ownerId ? 'taken-over' : 'expired', owner)
-      } catch {
+      } catch (error) {
         // Unreadable ownership is not evidence of a valid lease.
         recordLoss('unreadable')
+        if (windowsPrivateFiles && error instanceof PrivateFileError)
+          throw error
       }
       throw new LockOwnershipError({
         target: options.path,
@@ -525,27 +647,57 @@ export async function acquireRefreshFileLock(options: {
       })
     },
     release: async () => {
+      if (windowsPrivateFiles && releaseConfirmed) return
       released = true
       cancelRenewalTimer()
       await renewalInFlight
       for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
         try {
+          let removalConfirmed = false
           const markerAcquired = await withEvictionMarker(async () => {
-            const owner = await readOwner()
-            if (owner?.ownerId !== ownerId) return
+            let owner: { ownerId?: string }
+            try {
+              owner = await readOwner()
+            } catch (error) {
+              if (
+                windowsPrivateFiles &&
+                (error as NodeJS.ErrnoException).code === 'ENOENT'
+              ) {
+                removalConfirmed = true
+                return
+              }
+              throw error
+            }
+            if (owner?.ownerId !== ownerId) {
+              removalConfirmed = true
+              return
+            }
             if (options.onStep) await options.onStep('release-owner-confirmed')
             if (!(await ownsEvictionMarker())) return
-            await rm(lockPath, { recursive: true, force: true }).catch(() => {})
+            await removeLeaseObject(lockPath)
+            removalConfirmed = true
           })
-          if (markerAcquired) return
+          if (markerAcquired) {
+            if (windowsPrivateFiles && !removalConfirmed)
+              throw new PrivateFileError(lockPath, 'release-not-confirmed', {
+                code: 'EIO',
+              })
+            releaseConfirmed = removalConfirmed
+            return
+          }
           await recoverStaleEvictionMarker()
-        } catch {
+        } catch (error) {
+          if (windowsPrivateFiles) throw error
           return
         }
         await backoff()
       }
       // Do not delete by pathname without the marker: bounded retries leave the
       // lease to expire rather than risking removal of a successor's lock.
+      if (windowsPrivateFiles)
+        throw new PrivateFileError(lockPath, 'release-not-confirmed', {
+          code: 'ETIMEDOUT',
+        })
     },
   }
 }

@@ -1,7 +1,11 @@
-import { readFile } from 'node:fs/promises'
 import { applyEdits, modify, type ParseError, parse } from 'jsonc-parser'
 import { writeJsonAtomic } from '../fs/atomic-write.js'
 import { WRITER_LOCK_CONSTANTS } from '../fs/lock-constants.js'
+import {
+  PrivateFileError,
+  readPrivateText,
+  windowsPrivateFiles,
+} from '../fs/private-files.js'
 import { withLock } from '../fs/with-lock.js'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -14,11 +18,17 @@ export async function readTuiPreferencesFile(
 ): Promise<Record<string, unknown>> {
   try {
     const errors: ParseError[] = []
-    const root: unknown = parse(await readFile(file, 'utf8'), errors, {
-      allowTrailingComma: true,
-    })
+    const root: unknown = parse(
+      await readPrivateText(file, windowsPrivateFiles),
+      errors,
+      {
+        allowTrailingComma: true,
+      },
+    )
     return errors.length === 0 && isRecord(root) ? root : {}
-  } catch {
+  } catch (error) {
+    if (error instanceof PrivateFileError && error.code !== 'ENOENT')
+      throw error
     return {}
   }
 }
@@ -87,7 +97,7 @@ export function createTuiPreferenceWriter(
     await withLock(file, lockOptions, async (lock) => {
       let text: string
       try {
-        text = await readFile(file, 'utf8')
+        text = await readPrivateText(file, windowsPrivateFiles)
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
         text = ''

@@ -5,6 +5,7 @@
     "": {
       "name": "@cortexkit/common-auth",
       "dependencies": {
+        "@cortexkit/private-files": "^0.1.0",
         "jsonc-parser": "^3.3.1",
       },
       "devDependencies": {
@@ -184,6 +185,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.14", "", { "os": "win32", "cpu": "x64" }, "sha512-oJWmBhoHsnhUKIke+0gXDX0mltJrWHA1UyHsrTlXwX0TL64ilVZAo+TYZm97baecV0esBdpzy3k96q+09JaZUQ=="],
 
     "@cortexkit/claustrum-client": ["@cortexkit/claustrum-client@0.6.2", "", { "dependencies": { "@cortexkit/subc-client": "^0.16.0" } }, "sha512-9eZwP08q10r2t3YgZQLE0e5qL861L+IevkcEik0G6E2ZT2pXJwpygxnc6o1AFc1vF4N3jqA0PMOf4NzTmiXViw=="],
+
+    "@cortexkit/private-files": ["@cortexkit/private-files@0.1.0", "", {}, "sha512-gQ3Ad0UohqGxA92CM64+UWWap8deP+uYA0cW0RV5owLWHG+S9sHci0HHr9ZYEZiyPsgF0wj/zbznqBXz1+GAPQ=="],
 
     "@cortexkit/subc-client": ["@cortexkit/subc-client@0.16.1", "", {}, "sha512-TJqOcfMVxhCfZMANmEH/9w+L+zYxFSy5p5Zl/shDErtGSeUF6HFiwZ7OR/P2qFvpSg/yxCbsdenZ7rs5SE6fhA=="],
 

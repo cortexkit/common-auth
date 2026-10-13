@@ -110,6 +110,72 @@ A floor (`@opentui/core` and `@opentui/solid` `>=0.5.11`, `@cortexkit/claustrum-
 
 ### ./fs
 
+#### Windows owner-only persistence
+
+`@cortexkit/private-files@^0.1.0` is a **runtime dependency**, not an optional
+peer. Only the Windows branch dynamically imports it; its own loader selects
+the published x64/ARM64 N-API prebuild. Unsupported volumes, ambiguous/local
+namespaces, reparse points, unsafe ancestors, unavailable native loading and
+failed descriptor verification refuse without falling back to mode bits.
+`PrivateFileError` (exported from `/fs`) identifies `path`, `stage`, normalized
+`code`, optional `win32Code`/`reason`, `published`, `fileDurable`,
+`durabilityConfirmed`, rename `attempts`/`elapsedMs` and an optional private
+`orphanPath`. Its message contains remediation, never file contents. POSIX
+bytes, modes, atomic replacement and synchronous logger flushing are unchanged.
+
+Reads use the backend's same-handle verify-and-read, not verify-then-Node-open.
+The exact published read policy (including elevated owners and file inheritance
+under a pinned protected parent) supersedes the earlier design; see the dated
+update in [Windows private-files design](../research/windows-private-files/DESIGN.md).
+New stages are protected and verified while empty by `createPrivateFile` before
+bytes are written. Windows replacement never unlinks its destination first:
+only rename gets six maximum attempts, with delays 10/20/40/80/100 ms and a
+500 ms monotonic elapsed cap. A pending filesystem call can overrun the cap;
+no overlapping late retry is started. Lease renewal has an additional lifetime
+cap and repeats the owner/expiry/marker fence before each rename attempt.
+Sharing/access errors are never acquisition, release or contention success.
+Only demonstrated exclusive collisions and missing-object Win32 codes are
+normalized; original errors remain available as the cause.
+
+Existing files are permission-migrated only inside a verified private parent.
+Directory remediation is limited to caller-declared application-dedicated
+roots: RPC/sidebar `secureDir: true`, a dump-only `dir`, Pi's explicit
+`privateParents: true`, or enrollment's non-override `hostEnrollmentPaths`
+`stateDir`. Those options declare a private root, **not** an arbitrary home,
+shared config tree or custom parent. Override enrollment parents and Pi parents
+without that declaration must already verify, otherwise the operator must move
+to/provision a dedicated private root. Missing directories are created privately,
+but existing ancestors are never recursively tightened. Migration uses
+`securePrivatePath`, never takes ownership, and verifies again by handle; once
+per process/path it warns that the object may previously have been readable and
+credentials may need rotation. Enrollment token cleanup is not part of migration.
+Enrollment token publication belongs to claustrum-client's coordinated adoption,
+not this common-auth change.
+
+`durable: true` retains the file-and-directory contract. On Windows directory
+metadata durability is unqualified, so it throws after rename with
+`published: true`, `fileDurable: true`, `durabilityConfirmed: false`. An explicit
+`durability: 'file-only-on-windows'` opt-in permits that weaker guarantee:
+`FlushFileBuffers` on the stage precedes rename, without a directory-metadata
+promise. `onOutcome` reports these flags without bytes; tracked publication
+callbacks fire once at rename even if verification/durability fails afterward.
+
+**Bundlers:** openai-auth bundles common-auth and antigravity-auth embeds its
+files. Both must keep `@cortexkit/private-files` external and ship it as a runtime
+dependency; do not inline its loader or native binary, and do not redirect its
+architecture resolution. The common-auth build runs
+`bun scripts/check-private-files-external.ts` over emitted JavaScript, requiring
+bare external imports and refusing an inlined native-loader signature. This
+check is a packaging fence, not Windows ACL certification.
+
+Real qualification lives in `.github/workflows/windows-private-files.yml`:
+Windows latest/2022/11 ARM, Node 24, Bun 1.3.14 and 1.4.2. It uses independent
+PowerShell/.NET descriptor inspection, a non-admin second-user probe with a
+public read positive control, real common-auth writers, and held handles without
+`FILE_SHARE_DELETE` for within/beyond-budget replacement. Portable fake-clock
+tests prove logic only. Evidence is stored in `windows-private-files-evidence/`,
+outside regenerable build directories; a missing capability fails, never skips.
+
 (0.9.2) Atomic JSON writes and refresh-lock lease updates write complete contents into exclusively created staging files, enforcing 0600 through the open descriptor before rename so readers never observe partial bytes.
 
 0.9.0 keeps the 0.8.0 lease lock. A lease holder that stalls past its lease can still overwrite or remove a successor's lock record (measured); the replacement is an OS kernel lock (`@cortexkit/file-lock`), now background hardening with no release target. Taking the lease over needs the holder to stall past its lease while holding the lock with a contender waiting.
@@ -127,6 +193,15 @@ Adapters supply the target path, lease timing, and opt-in renewal (`renew` still
 Type exports: `AtomicWriteOptions`, `LockOptions`, `LockOwnershipDetails`, `RefreshFileLock`, `LockLoss`. Frozen sidebar defaults: name sidebar-write, ttlMs 10000, timeoutMs 15000, renew true; preferences: name preferences, ttlMs 10000, timeoutMs 2000, renew true. Writers only permit timeoutMs override. Contention details identify target/name/timeoutMs; ownership details identify target/name plus optional expected/observed ownership.
 
 ### ./pi-slot
+
+On Windows Pi explicitly opts into file-only durability: the stash's bytes are
+file-flushed and its rename is published before the slot is changed. There is
+no directory metadata guarantee: **a crash between the stash rename and its
+directory metadata reaching disk could lose the stash on Windows.** This is not
+a claim about NTFS journal ordering. `privateParents: true` declares auth/stash
+parents application-dedicated for current-owner permission migration; omit it
+for custom/shared parents, which must already verify or refuse with remediation.
+Real Windows CI exercises stash enter/inspect/exit, ACLs and second-user denial.
 
 `openPiSlot({authPath, provider, stashPath, placeholderKey, lockTimeoutMs?})`
 returns asynchronous `inspect()`, `enterVault()` and `exitVault()` operations.
@@ -217,6 +292,19 @@ already completed before the extension's first opportunity to enter vault mode.
 `mutateVaultRoster` callbacks receive `{ assertOwned }` for ownership fencing immediately before a caller-managed rename; existing one-argument callbacks remain compatible. If the assertion rejects, the caller must not rename.
 
 ### ./logger
+
+On Windows `flushLogs()` returns a promise and hosts **must await it before
+shutdown**, rather than registering only a synchronous process-exit hook. Each
+instance serializes its sink operations, securing before writing and rotating.
+Because the published primitive has no append-handle operation, the Windows
+sink securely replaces the complete bounded log instead of reopening a verified
+pathname to append. Explicit flushes reject with typed, content-free errors;
+timer-triggered failures are retained for a later flush to report. The log must
+live under a private dedicated directory; no shared/custom log parent is
+silently chmodded. POSIX keeps the existing synchronous append and exit behavior.
+Windows preferences watchers likewise have no synchronous secret-read baseline:
+they read asynchronously through the backend and surface refusals via `onError`
+(or a content-free warning when it is not supplied).
 
 Runtime exports: `initLogger({ file, level?, captureSink?, extraSecretKeys?, extraValuePatterns? })`, `createLogger(channel)`, `setLogLevel(levelOrUndefined)`, `flushLogs()`, `flushForTest()`, `resetLoggerForTest()`, `createCaptureSink()`, `createRedactor(options?)`, `redact(value)`, `redactStrings(value)`. File and level accept host providers; the host installs exit flushing. Capture returns records/sink/clear. A logger exposes error/warn/info/debug/trace methods taking message and optional data.
 

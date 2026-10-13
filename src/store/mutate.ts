@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { setTimeout as snapshotDelay } from 'node:timers/promises'
 import {
   AtomicSyncError,
@@ -6,6 +5,7 @@ import {
   writeJsonAtomic,
   writeJsonAtomicTracked,
 } from '../fs/atomic-write.js'
+import { readPrivateText, windowsPrivateFiles } from '../fs/private-files.js'
 import { LockContentionError, LockOwnershipError } from '../fs/with-lock.js'
 import {
   type PoolFailurePhase,
@@ -102,7 +102,7 @@ export type ReadResult =
 
 async function readText(path: string): Promise<string | undefined> {
   try {
-    return await readFile(path, 'utf8')
+    return await readPrivateText(path, windowsPrivateFiles)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error

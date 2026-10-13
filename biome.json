@@ -17,6 +17,7 @@
       "test/**",
       "scripts/check-installed-ranges.mjs",
       "scripts/check-sources.mjs",
+      "scripts/check-private-files-external.ts",
       "package.json",
       "!!dist",
       "!!.cortexkit",

@@ -89,7 +89,7 @@
     "dist/"
   ],
   "scripts": {
-    "build": "bun scripts/check-local-deps.mjs && bun scripts/check-installed-ranges.mjs && tsc -p tsconfig.build.json",
+    "build": "bun scripts/check-local-deps.mjs && bun scripts/check-installed-ranges.mjs && tsc -p tsconfig.build.json && bun scripts/check-private-files-external.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "types": "bun run typecheck",
@@ -102,6 +102,7 @@
     "check:opentui-0511": "bun scripts/check-opentui-0511.mjs"
   },
   "dependencies": {
+    "@cortexkit/private-files": "^0.1.0",
     "jsonc-parser": "^3.3.1"
   },
   "peerDependencies": {
