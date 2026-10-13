@@ -4894,3 +4894,15 @@ runner = "command"
 command = ['sh', '-c', 'git diff --stat; bun test test/fs/windows-private-files.test.ts -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ["Windows atomic stage stays in the verified destination directory"]
+
+[[control]]
+id = "private-watchdog-cancellation"
+guards = "Windows watchdog cancels the caller wait and kills its own helper"
+file = "test/windows/watchdog.mjs"
+old = "state.abort.abort()"
+new = "/* NON-VACUITY BREAK: do not interrupt the pending caller await */"
+test_file = "test/fs/windows-watchdog.test.mjs"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test test/fs/windows-watchdog.test.mjs -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["Windows watchdog cancels the caller wait and kills its own helper"]

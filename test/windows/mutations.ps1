@@ -6,11 +6,18 @@ New-Item -ItemType Directory -Force -Path windows-private-files-evidence | Out-N
 $results = @()
 function Run-Selected($row, $phase) {
   $file = if ($row.testFile) { $row.testFile } else { 'test/fs/windows-private-files.test.ts' }
-  $output = & bun test $file -t $row.test --timeout 120000 2>&1
+  $log = Join-Path windows-private-files-evidence ("mutation-$ExpectedVersion-$($row.id)-$phase.log")
+  [IO.File]::WriteAllText((Join-Path $PWD $log), '')
+  $output = [Collections.Generic.List[string]]::new()
+  & bun test $file -t $row.test --timeout 90000 2>&1 | ForEach-Object {
+    $line = $_.ToString()
+    $output.Add($line)
+    [Console]::Out.WriteLine($line)
+    [Console]::Out.Flush()
+    [IO.File]::AppendAllText((Join-Path $PWD $log), $line + [Environment]::NewLine)
+  }
   $exit = $LASTEXITCODE
   $text = $output -join "`n"
-  $output | Out-File -LiteralPath (Join-Path windows-private-files-evidence ("mutation-$ExpectedVersion-$($row.id)-$phase.log"))
-  $output | ForEach-Object { Write-Host $_ }
   if ($text -notmatch 'Ran 1 test') { throw 'Mutation must execute exactly one named test' }
   if ($phase -eq 'baseline') {
     if ($exit -ne 0 -or $text -notmatch '(?m)^\s*1 pass\s*$' -or $text -notmatch '(?m)^\s*0 fail\s*$') { throw "Baseline failed: $($row.id)" }
@@ -58,9 +65,9 @@ $harness = 'test/windows/common-auth.mjs'
 if (((& git diff --stat) -join "`n").Trim()) { throw 'Count control requires an empty unstaged diff' }
 try {
   $original = [IO.File]::ReadAllText((Join-Path $PWD $harness))
-  $anchor = "import { test } from 'node:test'"
+  $anchor = 'const registerTest = nativeTest'
   if (-not $original.Contains($anchor)) { throw 'Count-control import anchor missing' }
-  $mutant = "import { test as nodeTest } from 'node:test'; const test = (...args) => nodeTest.skip(...args) /* NON-VACUITY BREAK */"
+  $mutant = 'const registerTest = nativeTest.skip /* NON-VACUITY BREAK */'
   [IO.File]::WriteAllText((Join-Path $PWD $harness), $original.Replace($anchor, $mutant))
   $applied = (& git diff --stat) -join "`n"
   if (-not $applied.Trim()) { throw 'Count control did not change a tracked file' }

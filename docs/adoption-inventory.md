@@ -175,6 +175,12 @@ public read positive control, real common-auth writers, and held handles without
 `FILE_SHARE_DELETE` for within/beyond-budget replacement. Portable fake-clock
 tests prove logic only. Evidence is stored in `windows-private-files-evidence/`,
 outside regenerable build directories; a missing capability fails, never skips.
+Runtime steps have separate six-minute limits and stream assertions, native
+codes and pending-operation labels to the job log while appending the evidence
+log. Each real test has a 30/60-second watchdog: expiry identifies the test and
+pending await, interrupts the caller's wait and kills its owned helpers. Native
+IO itself is not cancellable; timed-out private fixtures are retained, and the
+runner exits unsuccessfully after reporting rather than waiting indefinitely.
 
 (0.9.2) Atomic JSON writes and refresh-lock lease updates write complete contents into exclusively created staging files, enforcing 0600 through the open descriptor before rename so readers never observe partial bytes.
 

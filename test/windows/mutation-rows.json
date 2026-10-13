@@ -86,5 +86,13 @@
     "old": "if (dirname(stage) !== dirname(path))",
     "new": "if (Boolean(false) /* NON-VACUITY BREAK */)",
     "test": "Windows atomic stage stays in the verified destination directory"
+  },
+  {
+    "id": "private-watchdog-cancellation",
+    "file": "test/windows/watchdog.mjs",
+    "old": "state.abort.abort()",
+    "new": "/* NON-VACUITY BREAK: do not interrupt the pending caller await */",
+    "testFile": "test/fs/windows-watchdog.test.mjs",
+    "test": "Windows watchdog cancels the caller wait and kills its own helper"
   }
 ]

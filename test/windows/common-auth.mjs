@@ -1,21 +1,102 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  access as fsAccess,
+  readFile as fsReadFile,
+  rm as fsRm,
+  writeFile as fsWriteFile,
+  mkdir,
+} from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { test } from 'node:test'
+import { after, test as nativeTest } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { createOwnerOnly } from '@cortexkit/private-files'
 import { createDumper } from '../../dist/dump/index.js'
 import {
-  acquireRefreshFileLock,
+  acquireRefreshFileLock as acquireLease,
+  writeJsonAtomic as atomicWrite,
   PrivateFileError,
-  writeJsonAtomic,
 } from '../../dist/fs/index.js'
 import { createLoggerInstance } from '../../dist/logger/index.js'
-import { openPiSlot } from '../../dist/pi-slot/index.js'
-import { discoverPortFile, writePortFile } from '../../dist/rpc/port-file.js'
+import { openPiSlot as piSlot } from '../../dist/pi-slot/index.js'
+import {
+  discoverPortFile as discoverPort,
+  writePortFile as writePort,
+} from '../../dist/rpc/port-file.js'
 import { createSidebarFile } from '../../dist/sidebar-file/index.js'
+import {
+  ownChild,
+  pending,
+  progress,
+  timedOut,
+  watchdogFailures,
+  withWatchdog,
+} from './watchdog.mjs'
+
+const registerTest = nativeTest
+function test(name, options, body) {
+  const budget =
+    name.includes('second user') || name.includes('migration') ? 60_000 : 30_000
+  registerTest(name, { ...options, timeout: budget + 10_000 }, () =>
+    withWatchdog(name, budget, body),
+  )
+}
+after(() => {
+  // Native IO cannot be cancelled. A failed watchdog must not leave the runner
+  // alive indefinitely after all tests have reported their failures.
+  if (watchdogFailures) setTimeout(() => process.exit(1), 1_000)
+})
+
+const access = (path) => pending(`access ${path}`, () => fsAccess(path))
+const readFile = (path, ...args) =>
+  pending(`readFile ${path}`, () => fsReadFile(path, ...args))
+const writeFile = (path, ...args) =>
+  pending(`evidence write ${path}`, () => fsWriteFile(path, ...args))
+const rm = (path, options) => {
+  if (timedOut()) {
+    progress('private-fixture-retained', { path })
+    return Promise.resolve()
+  }
+  return pending(`cleanup ${path}`, () => fsRm(path, options))
+}
+const writeJsonAtomic = (path, ...args) =>
+  pending(`atomic JSON ${path}`, () => atomicWrite(path, ...args))
+const writePortFile = (path, ...args) =>
+  pending(`RPC port publication ${path}`, () => writePort(path, ...args))
+const discoverPortFile = (path, ...args) =>
+  pending(`RPC discovery ${path}`, () => discoverPort(path, ...args))
+async function acquireRefreshFileLock(options) {
+  const lease = await pending(`lease acquire ${options.path}`, () =>
+    acquireLease({
+      ...options,
+      onStep: async (step) => {
+        progress('lease-step', { step })
+        await options.onStep?.(step)
+      },
+    }),
+  )
+  return (
+    lease && {
+      ...lease,
+      assertOwned: () =>
+        pending(`lease assertOwned ${options.path}`, () => lease.assertOwned()),
+      release: () =>
+        pending(`lease release ${options.path}`, () => lease.release()),
+    }
+  )
+}
+function openPiSlot(options) {
+  const slot = piSlot(options)
+  return {
+    inspect: () =>
+      pending(`Pi inspect ${options.authPath}`, () => slot.inspect()),
+    enterVault: () =>
+      pending(`Pi stash enter ${options.stashPath}`, () => slot.enterVault()),
+    exitVault: () =>
+      pending(`Pi stash exit ${options.stashPath}`, () => slot.exitVault()),
+  }
+}
 
 assert.ok(
   process.env.LOCALAPPDATA,
@@ -27,7 +108,16 @@ const evidence = resolve(
   'windows-private-files-evidence',
   `${process.release.name}-${process.versions.bun ?? process.version}-${process.arch}`,
 )
-await mkdir(evidence, { recursive: true })
+try {
+  await withWatchdog('harness evidence setup', 10_000, () =>
+    pending('evidence directory mkdir', () =>
+      mkdir(evidence, { recursive: true }),
+    ),
+  )
+} catch (error) {
+  setTimeout(() => process.exit(1), 1_000)
+  throw error
+}
 const powershell = join(
   process.env.SystemRoot,
   'System32',
@@ -35,7 +125,7 @@ const powershell = join(
   'v1.0',
   'powershell.exe',
 )
-const timeout = 120_000
+const timeout = 45_000
 
 function helper(script, request) {
   // pwsh's module paths are incompatible with Windows PowerShell 5.1. Let the
@@ -57,31 +147,46 @@ function helper(script, request) {
     ],
     { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env },
   )
+  ownChild(child)
   let output = ''
   let errors = ''
   child.stdout.on('data', (bytes) => {
     output += bytes
+    progress('powershell-stdout', {
+      script,
+      action: request.action,
+      output: bytes.toString(),
+    })
   })
   child.stderr.on('data', (bytes) => {
     errors += bytes
+    progress('powershell-stderr', {
+      script,
+      action: request.action,
+      output: bytes.toString(),
+    })
   })
   child.stdin.end(JSON.stringify(request))
-  const done = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      child.kill()
-      reject(new Error(`${script} timed out`))
-    }, timeout)
-    child.on('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-    child.on('exit', (code) => {
-      clearTimeout(timer)
-      code === 0
-        ? resolve(output.trim())
-        : reject(new Error(`${script} failed (${code}): ${errors}`))
-    })
-  })
+  const done = pending(
+    `PowerShell ${script} ${request.action ?? 'hold'}`,
+    () =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          child.kill()
+          reject(new Error(`${script} timed out`))
+        }, timeout)
+        child.on('error', (error) => {
+          clearTimeout(timer)
+          reject(error)
+        })
+        child.on('close', (code) => {
+          clearTimeout(timer)
+          code === 0
+            ? resolve(output.trim())
+            : reject(new Error(`${script} failed (${code}): ${errors}`))
+        })
+      }),
+  )
   return { child, done }
 }
 async function inspect(paths, label) {
@@ -114,19 +219,25 @@ async function privateRoot() {
     process.env.LOCALAPPDATA,
     `common-auth-windows-${randomUUID()}`,
   )
-  await createOwnerOnly(root, { kind: 'dir' })
+  await pending(`private root create ${root}`, () =>
+    createOwnerOnly(root, { kind: 'dir' }),
+  )
   return root
 }
 async function hold(path, holdMs) {
   const running = helper('hold.ps1', { path, holdMs })
-  await new Promise((resolve, reject) => {
-    let output = ''
-    running.child.stdout.on('data', (bytes) => {
-      output += bytes
-      if (output.includes('ready')) resolve()
-    })
-    running.done.catch(reject)
-  })
+  await pending(
+    `wait for no-delete-sharing handle ${path}`,
+    () =>
+      new Promise((resolve, reject) => {
+        let output = ''
+        running.child.stdout.on('data', (bytes) => {
+          output += bytes
+          if (output.includes('ready')) resolve()
+        })
+        running.done.catch(reject)
+      }),
+  )
   return running
 }
 
@@ -149,27 +260,37 @@ test('real writers have independently inspected ACLs and deny a standard second 
       defaultValue: {},
       normalize: (value) => value,
     })
-    await sidebar.write({ active: 'private fixture' })
-    assert.deepEqual(await sidebar.read(), { active: 'private fixture' })
+    await pending('sidebar write', () =>
+      sidebar.write({ active: 'private fixture' }),
+    )
+    assert.deepEqual(await pending('sidebar read', () => sidebar.read()), {
+      active: 'private fixture',
+    })
     const logPath = join(root, 'logs', 'private.log')
     const logger = createLoggerInstance({ file: logPath })
     logger.createLogger('qualification').info('ordered one')
     const firstFlush = logger.flushLogs()
     logger.createLogger('qualification').info('ordered two')
-    await Promise.all([firstFlush, logger.flushLogs()])
+    await pending('ordered logger flush', () =>
+      Promise.all([firstFlush, logger.flushLogs()]),
+    )
     const log = await readFile(logPath, 'utf8')
     assert.ok(log.indexOf('ordered one') < log.indexOf('ordered two'))
     const dumper = createDumper({ dir: join(root, 'dumps'), enabled: true })
-    const dump = await dumper.dump({
-      channel: 'qualification',
-      session: 'private',
-      bodyText: '{"prompt":"private prompt fixture"}',
-    })
+    const dump = await pending('dump artifacts', () =>
+      dumper.dump({
+        channel: 'qualification',
+        session: 'private',
+        bodyText: '{"prompt":"private prompt fixture"}',
+      }),
+    )
     assert.ok(dump)
-    const response = await dumper.dumpResponse(dump, {
-      status: 200,
-      fields: { private: 'fixture' },
-    })
+    const response = await pending('dump response', () =>
+      dumper.dumpResponse(dump, {
+        status: 200,
+        fields: { private: 'fixture' },
+      }),
+    )
     assert.ok(response)
     const authPath = join(root, 'pi', 'auth.json')
     const stashPath = join(root, 'stash', 'pi.json')
@@ -225,7 +346,10 @@ test('real writers have independently inspected ACLs and deny a standard second 
     )
     await lease.assertOwned()
     const leasePath = `${atomic}.qualification.lock`
-    await renewed
+    await pending(
+      'wait for first lease renewal-finished callback',
+      () => renewed,
+    )
     await lease.assertOwned()
     assert.ok(
       JSON.parse(await readFile(leasePath, 'utf8')).expiresAt > initialExpiry,
@@ -279,7 +403,7 @@ test('real writers have independently inspected ACLs and deny a standard second 
       'private pi fixture',
     )
   } finally {
-    await lease?.release()
+    if (!timedOut()) await lease?.release()
     await rm(root, { recursive: true, force: true })
   }
 })
@@ -428,8 +552,10 @@ test('dedicated sidebar migration repairs owned objects without rewriting siblin
       normalize: (value) => value,
       secureDir: true,
     })
-    await sidebar.update((current) => ({ ...current, migrated: true }))
-    assert.deepEqual(await sidebar.read(), {
+    await pending('sidebar permission migration and update', () =>
+      sidebar.update((current) => ({ ...current, migrated: true })),
+    )
+    assert.deepEqual(await pending('sidebar read', () => sidebar.read()), {
       retained: 'private migration fixture',
       migrated: true,
     })
@@ -468,7 +594,7 @@ test('native absence and exclusive collision retain precise adapter codes', {
   try {
     const path = join(root, 'state.json')
     await assert.rejects(
-      readPrivateText(path),
+      pending('native missing-file read', () => readPrivateText(path)),
       (error) =>
         error instanceof PrivateFileError &&
         error.code === 'ENOENT' &&
