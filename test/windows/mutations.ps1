@@ -72,7 +72,7 @@ try {
   $applied = (& git diff --stat) -join "`n"
   if (-not $applied.Trim()) { throw 'Count control did not change a tracked file' }
   $caught = $false
-  try { & ./test/windows/run.ps1 -Runtime bun -ExpectedVersion $ExpectedVersion }
+  try { & ./test/windows/run.ps1 -Runtime bun -ExpectedVersion $ExpectedVersion -EvidenceLabel 'all-skipped-control' }
   catch {
     if ($_.Exception.Message -notmatch 'Windows verification count guard:') { throw }
     Write-Host '(fail) Windows verification count guard'

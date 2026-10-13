@@ -9,7 +9,6 @@ import {
   mkdir,
 } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { after, test as nativeTest } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { createOwnerOnly } from '@cortexkit/private-files'
 import { createDumper } from '../../dist/dump/index.js'
@@ -34,13 +33,25 @@ import {
   withWatchdog,
 } from './watchdog.mjs'
 
+const runner = process.versions.bun
+  ? await import('bun:test')
+  : await import('node:test')
+const nativeTest = runner.test
 const registerTest = nativeTest
+const after = process.versions.bun ? runner.afterAll : runner.after
+let registeredTests = 0
 function test(name, options, body) {
   const budget =
     name.includes('second user') || name.includes('migration') ? 60_000 : 30_000
-  registerTest(name, { ...options, timeout: budget + 10_000 }, () =>
-    withWatchdog(name, budget, body),
-  )
+  registeredTests++
+  progress('test-registered', {
+    name,
+    count: registeredTests,
+    runner: process.versions.bun ? 'bun:test' : 'node:test',
+  })
+  const run = () => withWatchdog(name, budget, body)
+  if (process.versions.bun) registerTest(name, run, budget + 10_000)
+  else registerTest(name, { ...options, timeout: budget + 10_000 }, run)
 }
 after(() => {
   // Native IO cannot be cancelled. A failed watchdog must not leave the runner

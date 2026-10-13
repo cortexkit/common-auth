@@ -1,11 +1,11 @@
-param([ValidateSet('node','bun')][string]$Runtime, [string]$ExpectedVersion)
+param([ValidateSet('node','bun')][string]$Runtime, [string]$ExpectedVersion, [string]$EvidenceLabel = 'real')
 $ErrorActionPreference = 'Stop'
 $version = (& $Runtime --version).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Runtime version command failed' }
 if ($ExpectedVersion -and $version -ne $ExpectedVersion) { throw "Wrong runtime: expected $ExpectedVersion, got $version" }
 Write-Host "$Runtime $version"
 New-Item -ItemType Directory -Force -Path windows-private-files-evidence | Out-Null
-$log = Join-Path windows-private-files-evidence ("suite-$Runtime-$version.log")
+$log = Join-Path windows-private-files-evidence ("suite-$Runtime-$version-$EvidenceLabel.log")
 [IO.File]::WriteAllText((Join-Path $PWD $log), '')
 $output = [Collections.Generic.List[string]]::new()
 function Record-Line($value) {

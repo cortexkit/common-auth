@@ -61,10 +61,17 @@ try {
   $exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   Progress 'credentialed child launch'
   $child = Start-Process -FilePath $exe -Credential $credential -LoadUserProfile -WorkingDirectory $public -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ('"' + (Join-Path $public 'probe.ps1') + '"')) -PassThru -RedirectStandardOutput (Join-Path $public 'stdout.txt') -RedirectStandardError (Join-Path $public 'stderr.txt')
+  # Holding the handle before exit makes ExitCode observable for credentialed children.
+  $null = $child.Handle
   Progress 'waiting for credentialed child'
   if (-not $child.WaitForExit(30000)) { $child.Kill(); $child.WaitForExit(5000) | Out-Null; throw 'Second-user probe timed out' }
+  $child.WaitForExit()
   Progress "credentialed child exit: $($child.ExitCode)"
-  if ($child.ExitCode -ne 0) { throw ('Second-user probe failed: ' + [IO.File]::ReadAllText((Join-Path $public 'stderr.txt'))) }
+  $resultExists = [IO.File]::Exists((Join-Path $public 'result.json'))
+  if ($child.ExitCode -ne 0 -or -not $resultExists) {
+    $diagnostic = @{ exitCode = $child.ExitCode; userCreated = [bool]$user; LoadUserProfile = $true; resultExists = $resultExists; stdout = [IO.File]::ReadAllText((Join-Path $public 'stdout.txt')); stderr = [IO.File]::ReadAllText((Join-Path $public 'stderr.txt')) } | ConvertTo-Json -Compress
+    throw ('Second-user probe failed: ' + $diagnostic)
+  }
   $result = [IO.File]::ReadAllText((Join-Path $public 'result.json')) | ConvertFrom-Json
   if ($result.sid -ne $user.SID.Value -or -not $result.standardUser -or -not $result.publicRead -or -not $result.directoryDenied -or -not $result.filesDenied) { throw 'Second-user identity, positive control or denial failed' }
   $result | ConvertTo-Json -Compress
