@@ -17,10 +17,14 @@ function Record-Line($value) {
 }
 if ($Runtime -eq 'node') { & node --test test/windows/common-auth.mjs 2>&1 | ForEach-Object { Record-Line $_ }; $exit = $LASTEXITCODE }
 else { & bun test ./test/windows/common-auth.mjs --timeout 90000 2>&1 | ForEach-Object { Record-Line $_ }; $exit = $LASTEXITCODE }
-$text = $output -join "`n"
+$text = ($output -join "`n") -replace "`r", ''
+$text = $text -replace '\x1B\[[0-9;]*[A-Za-z]', ''
 if ($exit -ne 0) { throw "Windows writers failed ($exit); assertions and native codes were streamed to stdout" }
-if ($Runtime -eq 'node') {
-  if ($text -notmatch '(?m)^# tests 7\s*$' -or $text -notmatch '(?m)^# pass 7\s*$' -or $text -notmatch '(?m)^# fail 0\s*$' -or $text -notmatch '(?m)^# skipped 0\s*$') { throw 'Windows verification count guard: expected exactly seven executed Windows tests without skips' }
-} elseif ($text -notmatch '(?m)^\s*7 pass\s*$' -or $text -notmatch '(?m)^\s*0 fail\s*$' -or $text -notmatch 'Ran 7 tests' -or $text -match '[1-9][0-9]* skip') {
-  throw 'Windows verification count guard: expected exactly seven executed Windows tests without skips'
+$patterns = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'summary-patterns.json')) | ConvertFrom-Json
+$policy = $patterns.$Runtime
+foreach ($pattern in $policy.required) {
+  if ($text -notmatch ('(?m)' + $pattern)) { throw 'Windows verification count guard: expected exactly seven executed Windows tests without skips' }
+}
+foreach ($pattern in $policy.forbidden) {
+  if ($text -match ('(?m)' + $pattern)) { throw 'Windows verification count guard: expected exactly seven executed Windows tests without skips' }
 }

@@ -1,0 +1,19 @@
+{
+  "node": {
+    "required": [
+      "^(?:ℹ |# )tests 7[ \\t]*$",
+      "^(?:ℹ |# )pass 7[ \\t]*$",
+      "^(?:ℹ |# )fail 0[ \\t]*$",
+      "^(?:ℹ |# )skipped 0[ \\t]*$"
+    ],
+    "forbidden": []
+  },
+  "bun": {
+    "required": [
+      "^[ \\t]*7 pass[ \\t]*$",
+      "^[ \\t]*0 fail[ \\t]*$",
+      "^Ran 7 tests across 1 file\\.[^\\n]*$"
+    ],
+    "forbidden": ["^[ \\t]*[1-9][0-9]* skip(?:ped)?[ \\t]*$"]
+  }
+}
