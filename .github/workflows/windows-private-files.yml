@@ -45,38 +45,74 @@ jobs:
           bun run typecheck
           if ($LASTEXITCODE) { throw 'Typecheck failed' }
       - name: Node native loader smoke
+        id: node_load
+        if: always()
         shell: pwsh
         run: |
           node --input-type=module -e "import { verifyOwnerOnly } from '@cortexkit/private-files'; const r = await verifyOwnerOnly(process.cwd()); if (!r.ok && r.refusal.reason === 'unsupported-filesystem') throw new Error(r.refusal.message); console.log(process.version, process.arch, 'native loader reached ACL verification')"
           if ($LASTEXITCODE) { throw 'Native Node loader failed' }
       - name: Node real ACLs, writers, denial positive control and sharing
+        id: node_acl
+        if: always()
         shell: pwsh
         run: ./test/windows/run.ps1 -Runtime node
       - name: Bun 1.4.2 native loader smoke
+        id: bun142_load
+        if: always()
         shell: pwsh
         run: |
           bun -e "import { verifyOwnerOnly } from '@cortexkit/private-files'; const r = await verifyOwnerOnly(process.cwd()); if (!r.ok && r.refusal.reason === 'unsupported-filesystem') throw new Error(r.refusal.message); console.log(Bun.version, process.arch, 'native loader reached ACL verification')"
           if ($LASTEXITCODE) { throw 'Native Bun loader failed' }
       - name: Bun 1.4.2 real writers
+        id: bun142_acl
+        if: always()
         shell: pwsh
         run: ./test/windows/run.ps1 -Runtime bun -ExpectedVersion '1.4.2'
       - name: Bun 1.4.2 mutation proofs
+        id: bun142_mutations
+        if: always()
         shell: pwsh
         run: ./test/windows/mutations.ps1 -ExpectedVersion '1.4.2'
       - uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+        id: bun1314_setup
+        if: always()
         with:
           bun-version: '1.3.14'
       - name: Bun 1.3.14 native loader smoke
+        id: bun1314_load
+        if: always()
         shell: pwsh
         run: |
           bun -e "import { verifyOwnerOnly } from '@cortexkit/private-files'; const r = await verifyOwnerOnly(process.cwd()); if (!r.ok && r.refusal.reason === 'unsupported-filesystem') throw new Error(r.refusal.message); console.log(Bun.version, process.arch, 'native loader reached ACL verification')"
           if ($LASTEXITCODE) { throw 'Native Bun loader failed' }
       - name: Bun 1.3.14 real writers
+        id: bun1314_acl
+        if: always()
         shell: pwsh
         run: ./test/windows/run.ps1 -Runtime bun -ExpectedVersion '1.3.14'
       - name: Bun 1.3.14 mutation proofs
+        id: bun1314_mutations
+        if: always()
         shell: pwsh
         run: ./test/windows/mutations.ps1 -ExpectedVersion '1.3.14'
+      - name: Require every runtime check to pass
+        if: always()
+        shell: pwsh
+        env:
+          NODE_LOAD: ${{ steps.node_load.outcome }}
+          NODE_ACL: ${{ steps.node_acl.outcome }}
+          BUN142_LOAD: ${{ steps.bun142_load.outcome }}
+          BUN142_ACL: ${{ steps.bun142_acl.outcome }}
+          BUN142_MUTATIONS: ${{ steps.bun142_mutations.outcome }}
+          BUN1314_SETUP: ${{ steps.bun1314_setup.outcome }}
+          BUN1314_LOAD: ${{ steps.bun1314_load.outcome }}
+          BUN1314_ACL: ${{ steps.bun1314_acl.outcome }}
+          BUN1314_MUTATIONS: ${{ steps.bun1314_mutations.outcome }}
+        run: |
+          $checks = @('NODE_LOAD','NODE_ACL','BUN142_LOAD','BUN142_ACL','BUN142_MUTATIONS','BUN1314_SETUP','BUN1314_LOAD','BUN1314_ACL','BUN1314_MUTATIONS')
+          $failed = @($checks | Where-Object { [Environment]::GetEnvironmentVariable($_) -ne 'success' })
+          foreach ($check in $checks) { Write-Host "$check $([Environment]::GetEnvironmentVariable($check))" }
+          if ($failed.Count) { throw "Runtime qualification failed: $($failed -join ', ')" }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

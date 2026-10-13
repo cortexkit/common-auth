@@ -38,6 +38,13 @@ const powershell = join(
 const timeout = 120_000
 
 function helper(script, request) {
+  // pwsh's module paths are incompatible with Windows PowerShell 5.1. Let the
+  // child rebuild its own default module paths instead of inheriting pwsh's.
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => key.toUpperCase() !== 'PSMODULEPATH',
+    ),
+  )
   const child = spawn(
     powershell,
     [
@@ -48,7 +55,7 @@ function helper(script, request) {
       '-File',
       join(here, script),
     ],
-    { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
+    { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env },
   )
   let output = ''
   let errors = ''

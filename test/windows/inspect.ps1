@@ -1,4 +1,6 @@
 $ErrorActionPreference = 'Stop'
+# Only Windows PowerShell's built-in modules are needed by this helper or its credentialed child.
+$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
 $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
 if ($request.action -eq 'inspect') {
   $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -18,10 +20,14 @@ if ($request.action -eq 'inspect') {
   exit
 }
 if ($request.action -eq 'grant') {
-  $acl = Get-Acl -LiteralPath $request.path
+  $isDir = [IO.Directory]::Exists($request.path)
+  $sections = [Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Access
+  if ($isDir) { $acl = [Security.AccessControl.DirectorySecurity]::new($request.path, $sections) }
+  else { $acl = [Security.AccessControl.FileSecurity]::new($request.path, $sections) }
   $rule = [Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'FullControl', 'Allow')
   $acl.AddAccessRule($rule)
-  Set-Acl -LiteralPath $request.path -AclObject $acl
+  if ($isDir) { [IO.Directory]::SetAccessControl($request.path, $acl) }
+  else { [IO.File]::SetAccessControl($request.path, $acl) }
   exit
 }
 if ($request.action -ne 'deny') { throw 'Unknown inspector action' }
@@ -34,7 +40,7 @@ try {
   $acl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
   $acl.SetAccessRuleProtection($true, $false)
   $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
-  Set-Acl -LiteralPath $public -AclObject $acl
+  [IO.Directory]::SetAccessControl($public, $acl)
   [IO.File]::WriteAllText((Join-Path $public 'control.txt'), 'public control')
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'second-user.ps1') -Destination (Join-Path $public 'probe.ps1')
   $password = ConvertTo-SecureString ('Aa1!' + [Guid]::NewGuid().ToString('N')) -AsPlainText -Force
