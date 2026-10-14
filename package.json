@@ -109,7 +109,7 @@
     "@opentui/core": ">=0.5.11",
     "@opentui/solid": ">=0.5.11",
     "solid-js": "1.9.12",
-    "@cortexkit/claustrum-client": ">=0.6.2",
+    "@cortexkit/claustrum-client": ">=0.9.0",
     "@opencode/plugin": ">=2.0.21"
   },
   "peerDependenciesMeta": {
@@ -131,7 +131,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
-    "@cortexkit/claustrum-client": "0.6.2",
+    "@cortexkit/claustrum-client": "0.9.0",
     "@earendil-works/pi-coding-agent": "1.0.4",
     "@opencode/plugin": "2.0.21",
     "@opentui/core": ">=0.5.12",
