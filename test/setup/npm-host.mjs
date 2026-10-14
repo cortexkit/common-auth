@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,6 +50,72 @@ function run(args) {
   checks++
   return result.stdout
 }
+
+function inspectAcls(paths) {
+  const result = spawnSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      fileURLToPath(new URL('../windows/inspect.ps1', import.meta.url)),
+    ],
+    {
+      input: JSON.stringify({ action: 'inspect', paths }),
+      env,
+      encoding: 'utf8',
+      timeout: 30_000,
+    },
+  )
+  assert.equal(result.status, 0, `ACL inspector failed: ${result.stderr}`)
+  return JSON.parse(result.stdout)
+}
+
+function verifyInheritedConfigAcls(folder) {
+  const reference = join(folder, 'ordinary-acl-reference.json')
+  // A child created independently of setup records the folder's ordinary file inheritance.
+  writeFileSync(reference, '{}', { flag: 'wx' })
+  try {
+    const { objects } = inspectAcls([
+      folder,
+      reference,
+      config,
+      join(folder, 'tui.jsonc'),
+    ])
+    const expected = objects[1]
+    assert.equal(
+      expected.control & 0x1000,
+      0,
+      'ordinary reference has no protected DACL',
+    )
+    const normalized = (aces) =>
+      aces
+        .map((ace) => JSON.stringify([ace.type, ace.flags, ace.mask, ace.sid]))
+        .sort()
+    for (const actual of objects.slice(2)) {
+      assert.equal(
+        actual.control & 0x1000,
+        0,
+        `${actual.path} has no protected DACL`,
+      )
+      assert.ok(
+        actual.aces.length > 0 &&
+          actual.aces.every((ace) => (ace.flags & 0x10) !== 0),
+        `${actual.path} inherits all ACL entries`,
+      )
+      assert.deepEqual(
+        normalized(actual.aces),
+        normalized(expected.aces),
+        `${actual.path} matches its folder's file-inheritance policy`,
+      )
+    }
+    console.log('7 inherited config ACL checks passed')
+  } finally {
+    rmSync(reference, { force: true })
+  }
+}
 try {
   const executable = findExecutableOnPath('opencode', { env })
   check(executable, 'npm OpenCode is on PATH')
@@ -86,30 +153,7 @@ try {
     'plugin is not registered a second time under plugins',
   )
   if (process.platform === 'win32') {
-    const acl = spawnSync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        fileURLToPath(new URL('./verify-config-acl.ps1', import.meta.url)),
-      ],
-      {
-        env: {
-          ...env,
-          COMMON_AUTH_SETUP_CONFIG_DIR: join(root, '.config', 'opencode'),
-        },
-        encoding: 'utf8',
-      },
-    )
-    process.stdout.write(acl.stdout ?? '')
-    assert.equal(
-      acl.status,
-      0,
-      `Inherited config ACL checks failed: ${acl.stderr}`,
-    )
+    verifyInheritedConfigAcls(join(root, '.config', 'opencode'))
     checks++
   }
   console.log(

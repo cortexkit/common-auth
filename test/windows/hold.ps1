@@ -4,5 +4,6 @@ $handle = [IO.File]::Open($request.path, [IO.FileMode]::Open, [IO.FileAccess]::R
 try {
   [Console]::Out.WriteLine('ready')
   [Console]::Out.Flush()
-  Start-Sleep -Milliseconds $request.holdMs
+  # Keep delete sharing denied until the test signals that the writer has finished.
+  while (-not [IO.File]::Exists($request.releaseFile)) { [Threading.Thread]::Sleep(10) }
 } finally { $handle.Dispose() }
