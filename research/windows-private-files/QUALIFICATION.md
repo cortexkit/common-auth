@@ -1,12 +1,63 @@
 # Common-auth Windows private-files qualification
 
-## Qualified implementation and evidence
+## 2026-10-14 safe-parent and trusted-owner migration qualification
+
+[Windows private-files run 38526335878](https://github.com/cortexkit/common-auth/actions/runs/38526335878)
+and [CI run 38526336022](https://github.com/cortexkit/common-auth/actions/runs/38526336022)
+both succeeded on `8a0b05d4d3ca0a0bdc38a4df4476316362db4181`. This is the current
+qualification; the sections below retain the earlier owner-only-parent rollout
+as history. The final documentation commit records these runs without changing
+the tested implementation.
+
+The implementation uses published `@cortexkit/private-files@0.2.1`, kept external.
+Existing containing directories use `verifySafeParent` on both platforms to
+check that another ordinary user cannot plant or replace entries in the containing
+directory, or replace a traversed ancestor component. Existing directories are
+never tightened; missing directories are created owner-only. Secret files
+keep the owner-only create/verify/read contract. Named legacy secret files may
+have their DACL secured by handle after their parent passes, with user,
+Administrators or LocalSystem ownership unchanged. TrustedInstaller is trusted
+for parents, not secret files. See the dated [design update](DESIGN.md).
+
+| Runner | Node 24 | Bun 1.3.14 | Bun 1.4.2 | Mutation replays per Bun version |
+| --- | --- | --- | --- | --- |
+| windows-latest | 11 pass, 0 fail, 0 skip | 11 pass, 0 fail, 0 skip | 11 pass, 0 fail, 0 skip | 16/16 CAUGHT |
+| windows-2022 | 11 pass, 0 fail, 0 skip | 11 pass, 0 fail, 0 skip | 11 pass, 0 fail, 0 skip | 16/16 CAUGHT |
+| windows-11-arm | 11 pass, 0 fail, 0 skip | 11 pass, 0 fail, 0 skip | 11 pass, 0 fail, 0 skip | 16/16 CAUGHT |
+
+The real suites cover stores directly in each account's `.config/opencode`,
+write/read/lease locking and RPC publication, Administrators-owned inherited
+legacy-file migration without ownership changes, and warmed standard-user
+inherited-file migration. Independent PowerShell descriptors record the file
+DACLs and the unchanged parent/profile ACLs. Runner-temp and Users-Modify parents
+refuse with `writable-by-others`. The earlier writer, sharing, foreign-grant,
+sibling-preservation and native-error cases remain required.
+
+All six runner/Bun pairs recorded baseline and sole named red logs for
+`private-parent-owner-only` (the real admin config positive) and
+`private-migration-safe-parent` (the pre-repair negative delegation control).
+Each `mutations-<version>.json` artifact records 16 CAUGHT rows, a non-empty
+applied source diff and an empty restored diff: 96 caught replays in total.
+Deliberately skipping every real assertion also made the suite wrapper reject
+the run on all six pairs, rather than accept a skip-only green exit. Ubuntu's
+umask-0002/private-group 0775 exception is a POSIX test and mutation control,
+verified on Linux rather than presented as Windows coverage.
+
+Both Linux Bun suites passed 1547 tests with 13 opt-in host skips and no failures.
+Fresh JUnit source-evidence checks matched all 1443 ledger cells. Build, types,
+lint and the pinned `ckdev-mutate 0.12.1 check --strict` passed (327 rows verified).
+Regular CI passed `check`, including source evidence, and the separate real
+OpenCode placement job. Windows artifacts are the three
+`windows-private-files-<runner>` uploads on the linked Windows run; they are
+outside regenerable build directories. The editing worktree did not push.
+
+## Prior qualified implementation and evidence
 
 [Windows private-files run 38497115986](https://github.com/cortexkit/common-auth/actions/runs/38497115986)
 fully succeeded on `9044ba1c033b8764c4d6c13eace5311bbb33e9ee`: all three Windows
 jobs and all nine real runtime suites passed. Deliberately disabling guards
 caused their named tests alone to fail in all 84 replays, and disabling all real
-assertions made the wrapper refuse in all six skipped-suite controls. This is the current qualification,
+assertions made the wrapper refuse in all six skipped-suite controls. This was the earlier qualification,
 including retained logger append handles, verified rotation, line-ending-safe
 mutation replay and one warmed standard-user account per job. The final delivery
 adds documentation only after this tested revision. Regular CI also passed, as
