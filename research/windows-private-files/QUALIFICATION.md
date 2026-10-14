@@ -176,6 +176,22 @@ The checker passed on Bun 1.3.14 and 1.4.2; corrupting the logger anchor or disa
 CRLF normalization each failed only its named checker test on both runtimes.
 Evidence is retained in `windows-private-files-evidence/harness-eol/`.
 
+[Run 38494610873](https://github.com/cortexkit/common-auth/actions/runs/38494610873)
+on `aadaa39be9c5925c6523e210b76961edef2dad73` then caught all fourteen mutations
+on both Bun versions on every runner; regular CI passed. All suites passed except
+the Node writer/denial test on windows-2022: product operations completed, but
+first logon/profile creation for a fresh local user exhausted the existing
+45-second inspector budget. Qualification therefore provisions one standard user
+per job and warms its profile in a separate four-minute setup step (150-second
+child wait), with timing records. Probes reuse that SID and masked step-output
+credential, retain a fresh public-read positive control before every denial, and
+keep the original 30-second child/45-second helper budgets. An always-run,
+two-minute cleanup step removes only the provisioned account and verifies removal;
+setup and cleanup outcomes are mandatory workflow gates. Portable structural
+checks cover reuse, budgets, masking and cleanup, with named red controls for
+missing profile loading, missing masking and conditional cleanup. They do not
+prove Windows logon timing; the final workflow rerun remains required.
+
 ## Limits and remaining adoption
 
 - These results qualify the listed local-NTFS/OS/runtime combinations. They do
