@@ -5,10 +5,10 @@
 import { createHash } from 'node:crypto'
 import { chmod, writeFile } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
-// subc-client is the claustrum client's own transport and is not a direct
-// dependency here, so resolve it from the client's location.
+// Use the real subc transport's framing and handshake on both Node and Bun,
+// rather than reimplementing the Claustrum client's wire protocol.
 interface SubcWire {
   buildFlags(binary: boolean, priority: number, subscription: boolean): number
   buildFrame(
@@ -41,13 +41,7 @@ interface SubcWire {
   SERVER_PROOF_DOMAIN: Uint8Array | string
 }
 
-const clientEntry = Bun.resolveSync(
-  '@cortexkit/claustrum-client',
-  import.meta.dir,
-)
-const subc = (await import(
-  Bun.resolveSync('@cortexkit/subc-client', dirname(clientEntry))
-)) as SubcWire
+const subc = (await import('@cortexkit/subc-client')) as SubcWire
 
 const key = Uint8Array.from({ length: 32 }, (_, index) => index + 1)
 const daemonId = Uint8Array.from({ length: 16 }, (_, index) => 200 + index)

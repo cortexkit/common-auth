@@ -38,10 +38,11 @@ if ($request.action -eq 'grant') {
   else { [IO.File]::SetAccessControl($request.path, $acl) }
   exit
 }
-if ($request.action -eq 'users-modify' -or $request.action -eq 'admin-legacy') {
-  if ($request.action -eq 'users-modify') {
+if ($request.action -eq 'users-modify' -or $request.action -eq 'users-read' -or $request.action -eq 'admin-legacy') {
+  if ($request.action -eq 'users-modify' -or $request.action -eq 'users-read') {
     $acl = [Security.AccessControl.DirectorySecurity]::new($request.path, [Security.AccessControl.AccessControlSections]::All)
-    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    $rights = if ($request.action -eq 'users-read') { 'ReadAndExecute' } else { 'Modify' }
+    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), $rights, 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
     [IO.Directory]::SetAccessControl($request.path, $acl)
   } else {
     [IO.File]::WriteAllText($request.path, '{"legacy":true}')
