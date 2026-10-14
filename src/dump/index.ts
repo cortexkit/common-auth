@@ -235,8 +235,9 @@ export interface SweepDumpDirectoryOptions {
  * writes are counted or removed, so unrelated files in a directory the user
  * chose survive. A dump's files are evicted together, oldest dump first by
  * its newest file, because a body without its metadata (or the reverse) is no
- * use to anyone. Dumps younger than `minAgeMs`, protected paths and symlinks
- * are kept, and a symlinked directory is refused outright. Response staging
+ * use to anyone. Dumps younger than `minAgeMs`, caller-listed `protectedPaths`
+ * (such as a just-written dump) and symlinks are kept, and a symlinked directory
+ * is refused outright. Response staging
  * files left by a crash are reclaimed once stale, even under the cap.
  * Cleanup is best-effort, but Windows refuses an unverified private directory.
  */

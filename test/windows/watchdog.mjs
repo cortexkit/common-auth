@@ -45,7 +45,7 @@ export function ownChild(child) {
   child.once('exit', () => state?.children.delete(child))
 }
 
-/** Cancels the test's wait, not an in-flight native IO transaction. */
+/** Reject the caller's await on watchdog expiry; native IO continues, so timed-out fixtures cannot be safely removed yet. */
 export async function pending(label, operation) {
   const state = contexts.getStore()
   if (!state) return operation()

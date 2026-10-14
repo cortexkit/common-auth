@@ -152,6 +152,20 @@ credentials may need rotation. Enrollment token cleanup is not part of migration
 Enrollment token publication belongs to claustrum-client's coordinated adoption,
 not this common-auth change.
 
+The private-file writers/readers listed in the [Windows design adoption inventory](../research/windows-private-files/DESIGN.md#4-adoption-inventory)
+are implemented as follows:
+
+| Site | Windows protection and caller obligation |
+| --- | --- |
+| Atomic JSON (including tracked writes) | Verify the private parent, create/verify the empty stage before bytes, replace in place, then verify the published file. Store, settings, preferences and roster inherit this writer. |
+| Refresh lease | Secure acquire/renewal stages, the eviction-marker directory and its owner file; verify reads and retain ownership/lifetime fences. Acquisition access/sharing errors reject rather than implying another owner won; release access/sharing errors reject rather than reporting the lease released. |
+| RPC token | Verify-and-read tokens; secure staging even without `secureDir`. `secureDir: true` declares a dedicated parent for permission migration, not a shared/custom directory. |
+| Sidebar | Secure its private parent and use the shared writer; `secureDir: true` opts a dedicated root into migration. |
+| Logger | Ordered asynchronous sink, verified reads and private replacement/rotation. Hosts await `flushLogs()` before shutdown; existing shared parents refuse. |
+| Dump | Dedicated private directory, exclusive private artifacts and secure baseline/response staging; unverified parents refuse rather than silently losing a dump. |
+| Enrollment | Handle-based token/status reads, safe Windows namespace checks, private directory creation and pending-state publication. Only the default dedicated state root is permission-migrated; override parents must already verify. No incidental token deletion. |
+| Pi slot | Handle-based auth/stash reads and private staging. `privateParents: true` declares dedicated parents for permission migration; custom parents must already verify. File-only Windows durability is explicit. |
+
 `durable: true` retains the file-and-directory contract. On Windows directory
 metadata durability is unqualified, so it throws after rename with
 `published: true`, `fileDurable: true`, `durabilityConfirmed: false`. An explicit
@@ -181,6 +195,15 @@ log. Each real test has a 30/60-second watchdog: expiry identifies the test and
 pending await, interrupts the caller's wait and kills its owned helpers. Native
 IO itself is not cancellable; timed-out private fixtures are retained, and the
 runner exits unsuccessfully after reporting rather than waiting indefinitely.
+
+**Qualified result:** [run 38483433873](https://github.com/cortexkit/common-auth/actions/runs/38483433873)
+passed on implementation commit `8747613155dd833542c593a44b6572e92eea9723`:
+seven real tests on each runner/runtime, and all 13 guard mutations CAUGHT on
+both Bun versions on all three runners. The all-skipped count control also
+refused. See [qualification and limits](../research/windows-private-files/QUALIFICATION.md)
+for evidence paths and what this result does **not** establish. This qualifies
+the tested local-NTFS combinations, not arbitrary Windows volumes or consumers'
+direct writers.
 
 (0.9.2) Atomic JSON writes and refresh-lock lease updates write complete contents into exclusively created staging files, enforcing 0600 through the open descriptor before rename so readers never observe partial bytes.
 
@@ -225,11 +248,11 @@ the recovery rules below, not by deleting the stash.
 The plugin owns a dedicated stash path per auth file/provider and a non-secret,
 deliberately unusable placeholder key. The key must be nonempty, must not start
 with `!`, and must not contain `$` anywhere (including Pi's interpolation and
-escape forms). Keep the same key and paths across restarts. The stash is 0600
+escape forms). Keep the same key and paths across restarts. On POSIX the stash is 0600
 inside a 0700 directory; existing non-private stash directories are refused,
 not chmodded. Regular files only are accepted; do not use symlinked auth files.
-Reads open with `O_NOFOLLOW`, validate the open descriptor, and read from that
-same descriptor. A pathname replaced before the read's identity check is refused.
+POSIX reads open with `O_NOFOLLOW`, validate the open descriptor, and read from
+that same descriptor; Windows uses the private-files handle-based read. A pathname replaced before the read's identity check is refused.
 
 All operations share Pi's `<authPath>.lock` mkdir/mtime/rmdir protocol: atomically
 creating the directory acquires the lock, renewing its modification time keeps
@@ -241,12 +264,13 @@ but have two lock paths: `FileAuthStorageBackend.acquireLockAsync` sets a
 stale and 5 seconds renewal. The helper keeps its **takeover threshold at 30
 seconds** so it never reclaims a live async Pi writer, but **renews every 3
 seconds** to stay fresh for sync writers with margin below their 5-second update.
-ELOCKED retries remain bounded (default 30 seconds). The implementation
-uses only Node builtins and common-auth's atomic writer, not a runtime
-proper-lockfile dependency. Normal process exit releases owned locks; an abrupt
+ELOCKED retries remain bounded (default 30 seconds). The lock implementation
+uses Node builtins and common-auth's atomic writer, not a runtime
+proper-lockfile dependency; Windows private-file operations use the published
+`@cortexkit/private-files` runtime dependency. Normal process exit releases owned locks; an abrupt
 kill or signal may leave a lock until its mtime becomes stale. Both auth writes
-and stash writes use a private same-directory temp, file fsync, rename, and
-directory fsync. Unrelated provider values are never reserialized.
+and stash writes use a private same-directory temp, file fsync and rename;
+directory fsync is confirmed on POSIX only. Unrelated provider values are never reserialized.
 
 Renewal and release check that the directory's device and inode match those
 recorded after acquisition and its mtime still equals the last mtime written by

@@ -59,7 +59,8 @@ foreach ($row in $rows) {
 $results | ConvertTo-Json -Depth 5 | Out-File -LiteralPath (Join-Path windows-private-files-evidence ("mutations-$ExpectedVersion.json"))
 Write-Host "$($results.Count) CAUGHT controls on Bun $ExpectedVersion; no collateral failures in the selected tests"
 
-# A zero-work run must not qualify the Windows security suite merely by exiting 0.
+# Skipping every real assertion must fail the wrapper's test-count guard,
+# even when the test runner exits successfully with all seven tests skipped.
 $harness = 'test/windows/common-auth.mjs'
 & git add -- $harness
 if (((& git diff --stat) -join "`n").Trim()) { throw 'Count control requires an empty unstaged diff' }

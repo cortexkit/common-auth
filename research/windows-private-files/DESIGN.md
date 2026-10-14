@@ -24,6 +24,12 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > parents are never repaired implicitly. Tightening is reported once per path
 > per process with a historical-exposure/rotation warning, never contents.
 
+> **Implementation qualification:** common-auth's Windows writers passed the
+> three-runner Node/Bun matrix in [run 38483433873](https://github.com/cortexkit/common-auth/actions/runs/38483433873).
+> See [QUALIFICATION.md](QUALIFICATION.md) for the tested scope, mutation evidence
+> and limits. Sections below describe the pre-implementation research decision;
+> the dated published-contract update above states which policy details changed.
+
 ## 1. Backend and request-path cost
 
 **Decision: an asynchronous Windows N-API private-files backend, separate from the file-lock API.** Keep POSIX behavior on Unix. Node [file modes][Node-modes]/[Stats][Node-stats] and Bun [open][Bun-open]/[stat][Bun-stat] expose no owner-SID/DACL capability: Windows mode bits chiefly manipulate writability, not owner/group/other access. All request-path operations return promises; no synchronous filesystem calls, `spawnSync`, `execSync`, native calls that wait on the JavaScript thread, or subprocess per write in the default backend. Missing/unsupported backend means an actionable security refusal, never a mode-only fallback.

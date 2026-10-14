@@ -23,7 +23,7 @@ function ioCode(detail: {
 
 // Import only on Windows; the package owns native loading and architecture selection.
 let backend: Promise<Backend> | undefined
-/** Internal unit-test seam; never a public backend fallback. */
+/** Tests inject a backend here; production always imports the private-files package. */
 export function setPrivateFilesBackendForTest(api?: Backend): void {
   backend = api ? Promise.resolve(api) : undefined
 }
@@ -77,7 +77,11 @@ export async function privateOperation<T>(
   }
 }
 
-/** Permission-only migration is opt-in for an application-dedicated object, never a shared ancestor. */
+/**
+ * With `migrate`, replace an owned object's DACL with owner-only permissions.
+ * Callers must limit this to their dedicated private files/directories, never
+ * shared parents; the backend still refuses foreign ownership or unsafe ancestry.
+ */
 export async function verifyPrivate(
   path: string,
   kind: Kind,

@@ -1090,8 +1090,8 @@ expect_message = '/Expected constructor: \[class LockContentionError[^\n]*\nRece
 id = 'fs-lock-try-once-refuses-held-lock'
 guards = 'the try-once acquire returns null while another owner holds the lock, instead of reporting an existing lock file as acquired'
 file = 'src/fs/refresh-file-lock.ts'
-old = "if (code === 'EEXIST' || code === 'EISDIR') return false"
-new = "if (code === 'EEXIST' || code === 'EISDIR') return true"
+old = "if (await leaseContention(error)) return false"
+new = "if (await leaseContention(error)) return true /* NON-VACUITY BREAK */"
 test_file = 'test/fs/with-lock.test.ts'
 runner = "command"
 command = ["bun", "test", "test/fs/with-lock.test.ts", "-t", "{test}"]
@@ -1158,10 +1158,8 @@ expect_message = '/ENOENT: no such file or directory, open .*tokens\.json\.refre
 id = 'fs-lock-stale-lock-is-reclaimed'
 guards = 'an expired lock is removed under the eviction marker and recreated, so a crashed holder cannot block the lock forever'
 file = 'src/fs/refresh-file-lock.ts'
-old = '''
-        await rm(lockPath, { recursive: true, force: true }).catch(() => {})
-        // Fence check 3'''
-new = '        // Fence check 3'
+old = 'await removeLeaseObject(lockPath)'
+new = '/* NON-VACUITY BREAK: retain the expired lease instead of reclaiming it */'
 test_file = 'test/fs/with-lock.test.ts'
 runner = "command"
 command = ["bun", "test", "test/fs/with-lock.test.ts", "-t", "{test}"]

@@ -18,7 +18,7 @@ export interface AtomicWriteOptions {
   durable?: boolean
   /** Windows opt-in: flush file bytes, without promising directory metadata durability. */
   durability?: 'file-only-on-windows'
-  /** Reports the Windows publication and durability guarantees, without file bytes. */
+  /** Reports Windows rename success, file/directory durability, retry counts and error codes, never file bytes. */
   onOutcome?: (outcome: PrivateWriteOutcome) => void
 }
 
