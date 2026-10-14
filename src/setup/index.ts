@@ -11,6 +11,7 @@ export {
   listSetupProcesses,
   ProcessFenceViolationError,
   ProcessInspectionError,
+  type ProcessInspectionStep,
 } from './process-fence.js'
 export {
   type PlannedWrite,

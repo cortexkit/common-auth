@@ -3,7 +3,11 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'jsonc-parser'
-import { AMBIGUOUS_OPENCODE_MESSAGE, runSetup } from '../../src/setup/index.js'
+import {
+  AMBIGUOUS_OPENCODE_MESSAGE,
+  ProcessInspectionError,
+  runSetup,
+} from '../../src/setup/index.js'
 import { fakeIO, plugin, terminal } from './helpers.js'
 
 const roots: string[] = []
@@ -19,6 +23,39 @@ async function profile() {
 }
 
 describe('setup flow', () => {
+  test('inspection refusal prints the step and timeout or exit code before rejecting', async () => {
+    for (const timedOut of [false, true]) {
+      const io = fakeIO()
+      io.folders.add('/home/test/.config/opencode')
+      const failure = new ProcessInspectionError({
+        step: 'CIM',
+        exitCode: timedOut ? 1 : 7,
+        signal: timedOut ? 'SIGTERM' : null,
+        timedOut,
+        durationMs: timedOut ? 15_010 : 42,
+      })
+      io.fence = {
+        async listRunningHosts() {
+          throw failure
+        },
+      }
+      const p = plugin()
+      let mutations = 0
+      p.signInLocal = p.migrate = async () => {
+        mutations++
+      }
+      const term = terminal()
+      await expect(
+        runSetup(p, ['--yes'], { ...io, terminal: term }),
+      ).rejects.toBe(failure)
+      expect(term.lines.join('')).toContain(
+        `CIM: ${timedOut ? 'timed out' : 'exit code 7'}`,
+      )
+      expect(mutations).toBe(0)
+      expect(io.files.size).toBe(0)
+    }
+  })
+
   test('dry run reports running hosts instead of refusing', async () => {
     const io = fakeIO()
     io.folders.add('/home/test/.config/opencode')

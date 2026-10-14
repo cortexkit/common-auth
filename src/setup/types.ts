@@ -31,6 +31,9 @@ export interface CommandResult {
   exitCode: number
   stdout: string
   stderr: string
+  signal?: NodeJS.Signals | null
+  timedOut?: boolean
+  durationMs?: number
 }
 export interface CommandRunner {
   run(

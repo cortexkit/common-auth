@@ -4,17 +4,20 @@ import type { CommandResult, CommandRunner, SetupEnvironment } from './types.js'
 export const defaultCommandRunner: CommandRunner = {
   run(file, args, options = {}) {
     return new Promise((resolve) => {
+      const started = performance.now()
+      const timeoutMs = options.timeoutMs ?? 15_000
       execFile(
         file,
         [...args],
         {
           env: options.env ?? process.env,
-          timeout: options.timeoutMs ?? 15_000,
+          timeout: timeoutMs,
           windowsHide: true,
           windowsVerbatimArguments: options.windowsVerbatimArguments,
           maxBuffer: 1024 * 1024,
         },
         (error, stdout, stderr) => {
+          const durationMs = performance.now() - started
           resolve({
             exitCode: error
               ? typeof error.code === 'number'
@@ -23,6 +26,15 @@ export const defaultCommandRunner: CommandRunner = {
               : 0,
             stdout: String(stdout ?? ''),
             stderr: String(stderr ?? ''),
+            signal: error?.signal ?? null,
+            // Buffer-limit and spawn errors have string codes, not timeout kills.
+            timedOut:
+              error?.killed === true &&
+              typeof error.code !== 'string' &&
+              error.signal === 'SIGTERM' &&
+              durationMs >= timeoutMs &&
+              timeoutMs > 0,
+            durationMs,
           })
         },
       )
