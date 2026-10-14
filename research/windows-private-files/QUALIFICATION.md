@@ -112,13 +112,18 @@ report. Full stdout/stderr records are retained under
 `windows-private-files-evidence/portable-linux-bun-<version>.*.log`.
 The Bun 1.4.2 test run passed but could not write its optional JUnit output because
 the ignored evidence directory was not present on that remote job; the retained
-console records contain its complete pass/skip/fail summary. Three pre-existing
-lock mutation anchors were retargeted after helper factoring, without changing
-their tests or contract: held leases must still refuse acquisition, release must
-preserve a successor's lease, and expired legacy leases must still be reclaimed.
-Each retargeted control's sole named test
+console records contain its complete pass/skip/fail summary. Seven pre-existing
+mutation anchors were retargeted or narrowed after helper factoring and the new
+Windows branches, without changing their tests or contract: held leases must
+still refuse acquisition, release must preserve a successor's lease, expired
+legacy leases must still be reclaimed, atomic/RPC staging names must remain
+unpredictable, failed POSIX watcher seeds must be retried, and stable POSIX RPC
+calls must reuse validated discovery. Each retargeted control's sole named test
 was observed red on Bun 1.4.2, then its source was restored with an empty diff.
-The catalogue is validated with the pinned `ckdev-mutate check` command.
+The catalogue passed `ckdev-mutate check` (runner 0.12.0, Bun 1.3.14): all 320
+controls' anchors and exact test names verified. The new deadline/release-error
+catalogue anchors were also made context-specific; each was observed red alone
+on Bun 1.4.2 and restored. Neither the production guards nor their tests changed.
 
 ## Limits and remaining adoption
 

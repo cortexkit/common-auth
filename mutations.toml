@@ -1209,8 +1209,8 @@ expect_message = '/expect\(lock\.hasLost\(\)\)\.toBe\(true\)[\s\S]*Received: fal
 id = 'atomic-write-stages-under-random-name'
 guards = 'writeJsonAtomic stages under a fresh random name, never a predictable one another local user could pre-plant'
 file = 'src/fs/atomic-write.ts'
-old = '(options.stageName ?? randomUUID)()'
-new = '(options.stageName ?? (() => String(process.pid)))()'
+old = 'const tempPath = `${path}.${(options.stageName ?? randomUUID)()}.tmp`'
+new = 'const tempPath = `${path}.${(options.stageName ?? (() => String(process.pid)))()}.tmp` /* NON-VACUITY BREAK */'
 test_file = 'test/fs/atomic-write.test.ts'
 runner = "command"
 command = ["bun", "test", "test/fs/atomic-write.test.ts", "-t", "{test}"]
@@ -1261,8 +1261,8 @@ expect_message = "/ENOENT: no such file or directory, (lstat|statx) '[^']*state\
 id = 'port-file-stages-under-random-name'
 guards = 'writePortFile stages the token-bearing port file under a random name, so a stale file at the old pid-based name cannot block or capture it'
 file = 'src/rpc/port-file.ts'
-old = '(options.stageName ?? randomUUID)()'
-new = '(options.stageName ?? (() => String(process.pid)))()'
+old = 'const tmp = `${target}.${(options.stageName ?? randomUUID)()}.tmp`'
+new = 'const tmp = `${target}.${(options.stageName ?? (() => String(process.pid)))()}.tmp` /* NON-VACUITY BREAK */'
 test_file = 'test/rpc/staging-security.test.ts'
 runner = "command"
 command = ["bun", "test", "test/rpc/staging-security.test.ts", "-t", "{test}"]
@@ -2525,10 +2525,10 @@ expect_message = 'the failed read was retried'
 id = 'tui-prefs-failed-seed-records-no-metadata'
 guards = 'when the first synchronous read fails, no metadata is recorded, so the probe keeps reading until the file is readable'
 file = 'src/tui-prefs/watcher.ts'
-old = '''    lastMetadata = metadata
-  } catch {'''
-new = '''  } catch {
-    lastMetadata = identity((options.fs?.statSync ?? statSync)(path)) // NON-VACUITY BREAK: record metadata after a failed seed read.'''
+old = '''      lastMetadata = metadata
+    } catch {'''
+new = '''    } catch {
+      lastMetadata = identity((options.fs?.statSync ?? statSync)(path)) // NON-VACUITY BREAK: record metadata after a failed seed read.'''
 test_file = 'test/tui-prefs/watcher.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/tui-prefs/watcher.test.ts', '-t', '{test}']
@@ -2553,7 +2553,11 @@ expect_message = 'only the call that discovered A goes to A'
 id = 'rpc-client-stable-selection-skips-discovery'
 guards = 'ten stable pending calls, across clients with the same selection key, perform one validated discovery'
 file = 'src/rpc/rpc-client.ts'
-old = '''  if (cached && (await portFileIdentity(dir, cached.entry)) === cached.identity)
+old = '''  if (
+    !windowsPrivateFiles &&
+    cached &&
+    (await portFileIdentity(dir, cached.entry)) === cached.identity
+  )
     return cached'''
 new = '  void cached // NON-VACUITY BREAK: rediscover on every call.'
 test_file = 'test/rpc/client-discovery-cache.test.ts'
@@ -4795,8 +4799,24 @@ expect_red = ["foreign ownership and reparse points are never migrated"]
 id = "private-deadline"
 guards = "elapsed deadline includes IO and lease cap prevents a new attempt"
 file = "src/fs/private-files.ts"
-old = "if (now() >= deadline) break"
-new = "if (Boolean(false) /* NON-VACUITY BREAK */) break"
+old = '''
+    if (now() >= deadline) break
+    if (delay)
+      await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(
+        Math.min(delay, Math.max(0, deadline - now())),
+      )
+    if (now() >= deadline) break
+    await options.beforeRename?.()
+    if (now() >= deadline) break'''
+new = '''
+    if (Boolean(false) /* NON-VACUITY BREAK */) break
+    if (delay)
+      await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(
+        Math.min(delay, Math.max(0, deadline - now())),
+      )
+    if (Boolean(false) /* NON-VACUITY BREAK */) break
+    await options.beforeRename?.()
+    if (Boolean(false) /* NON-VACUITY BREAK */) break'''
 test_file = "test/fs/windows-private-files.test.ts"
 runner = "command"
 command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
@@ -4867,8 +4887,18 @@ expect_red = ["Windows lease acquire does not convert access or sharing errors i
 id = "private-lease-release"
 guards = "Windows lease release does not convert access or sharing errors into success"
 file = "src/fs/refresh-file-lock.ts"
-old = "if (windowsPrivateFiles) throw error"
-new = "if (Boolean(false) /* NON-VACUITY BREAK */) throw error"
+old = '''
+        } catch (error) {
+          if (windowsPrivateFiles) throw error
+          return
+        }
+        await backoff()'''
+new = '''
+        } catch (error) {
+          if (Boolean(false) /* NON-VACUITY BREAK */) throw error
+          return
+        }
+        await backoff()'''
 test_file = "test/fs/windows-private-files.test.ts"
 runner = "command"
 command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
