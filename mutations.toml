@@ -5327,7 +5327,7 @@ id = 'private-safe-parent-not-owner-only'
 guards = 'safe containing directories do not need the secret file owner-only template'
 file = 'src/fs/private-files.ts'
 old = 'const result = await (await loadBackend()).verifySafeParent(path, options)'
-new = 'const result = await (await loadBackend()).verifyOwnerOnly(path).then((r) => r.ok ? { ok: true as const } : { ok: false as const, path, level: path, reason: r.refusal.reason }) /* NON-VACUITY BREAK */'
+new = 'const result = await (await loadBackend()).verifyOwnerOnly(path).then((r) => r.ok ? { ok: true as const } : { ok: false as const, path, level: undefined as string | undefined, reason: r.refusal.reason }) /* NON-VACUITY BREAK */'
 test_file = 'test/fs/windows-private-files.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/fs/windows-private-files.test.ts', '-t', '{test}']

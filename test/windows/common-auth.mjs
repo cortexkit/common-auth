@@ -371,7 +371,7 @@ test('runner temp and Users Modify parents refuse with writable-by-others', {
   }
 })
 
-test('Administrators-owned inherited legacy file refuses with explicit DACL remediation', {
+test('Administrators-owned inherited legacy file migrates in place without changing ownership', {
   timeout,
 }, async () => {
   const dir = join(process.env.USERPROFILE, '.config', 'opencode')
@@ -383,21 +383,25 @@ test('Administrators-owned inherited legacy file refuses with explicit DACL reme
       await helper('inspect.ps1', { action: 'inspect', paths: [path] }).done,
     )
     assert.equal(before.objects[0].owner, 'S-1-5-32-544')
-    await assert.rejects(
-      verifyPrivate(path, 'file', true),
-      (error) =>
-        error instanceof PrivateFileError &&
-        error.reason === 'wrong-owner' &&
-        error.message.includes(path) &&
-        error.message.includes('explicit owner-only DACL repair'),
+    assert.equal(before.objects[0].control & 0x1000, 0)
+    assert.ok(
+      before.objects[0].aces.some(
+        (ace) => ace.flags & 16 && ace.sid === 'S-1-5-18',
+      ),
     )
+    await verifyPrivate(path, 'file', true)
+    assert.deepEqual(JSON.parse(await readPrivateText(path)), { legacy: true })
     const after = JSON.parse(
       await helper('inspect.ps1', { action: 'inspect', paths: [path] }).done,
     )
-    assert.deepEqual(after.objects, before.objects)
+    assert.equal(after.objects[0].owner, before.objects[0].owner)
+    assert.equal(after.objects[0].control & 0x1004, 0x1004)
+    assert.deepEqual(after.objects[0].aces, [
+      { type: 0, flags: 0, mask: 0x1f01ff, sid: after.sid },
+    ])
     await writeFile(
-      join(evidence, 'admin-owned-legacy-refusal.json'),
-      JSON.stringify(after, null, 2),
+      join(evidence, 'admin-owned-legacy-migration.json'),
+      JSON.stringify({ before, after }, null, 2),
     )
   } finally {
     await rm(path, { force: true })

@@ -120,8 +120,9 @@ failed descriptor verification refuse without falling back to mode bits.
 `PrivateFileError` (exported from `/fs`) identifies `path`, `stage`, normalized
 `code`, optional `win32Code`/`reason`, `published`, `fileDurable`,
 `durabilityConfirmed`, rename `attempts`/`elapsedMs` and an optional private
-`orphanPath`. Its message contains remediation, never file contents. POSIX
-bytes, modes, atomic replacement and synchronous logger flushing are unchanged.
+`orphanPath`. Its message contains remediation, never file contents. POSIX secret-file
+bytes, modes and atomic replacement are unchanged; existing parents now use the
+shared safe-parent policy, as do synchronous logger flushes.
 
 Reads use the backend's same-handle verify-and-read, not verify-then-Node-open.
 The exact published read policy (including elevated owners and file inheritance
@@ -137,34 +138,36 @@ Sharing/access errors are never acquisition, release or contention success.
 Only demonstrated exclusive collisions and missing-object Win32 codes are
 normalized; original errors remain available as the cause.
 
-Existing files are permission-migrated only inside a verified private parent.
-Directory remediation is limited to caller-declared application-dedicated
-roots: RPC/sidebar `secureDir: true`, a dump-only `dir`, Pi's explicit
-`privateParents: true`, or enrollment's non-override `hostEnrollmentPaths`
-`stateDir`. Those options declare a private root, **not** an arbitrary home,
-shared config tree or custom parent. Override enrollment parents and Pi parents
-without that declaration must already verify, otherwise the operator must move
-to/provision a dedicated private root. Missing directories are created privately,
-but existing ancestors are never recursively tightened. Migration uses
-`securePrivatePath`, never takes ownership, and verifies again by handle; once
-per process/path it warns that the object may previously have been readable and
-credentials may need rotation. Enrollment token cleanup is not part of migration.
-Enrollment token publication belongs to claustrum-client's coordinated adoption,
-not this common-auth change.
+Existing containing directories use `verifySafeParent` on both platforms,
+not the owner-only secret-file template. Safe real config parents can retain
+SYSTEM/Administrators/user inheritance on Windows or a proven user-private-group
+0775 layout on POSIX. Missing directories are created owner-only; no existing
+parent, dedicated root or sibling is implicitly tightened. `secureDir` and
+`privateParents` are retained for compatibility, not permission-repair opt-ins.
+
+Only the specific secret file paths common-auth owns can be permission-migrated
+after their parent passes that policy. Published `private-files@0.2.1` accepts the
+user, Administrators and LocalSystem as file owners, refuses reparse points and
+foreign owners, replaces the DACL by handle without changing ownership and
+verifies again by handle. TrustedInstaller is accepted for parents, not secret
+files. Once per process/path, migration warns that the file may previously have
+been readable and credentials may need rotation. Enrollment token cleanup is
+not part of migration. Enrollment token publication belongs to
+claustrum-client's coordinated adoption, not this common-auth change.
 
 The private-file writers/readers listed in the [Windows design adoption inventory](../research/windows-private-files/DESIGN.md#4-adoption-inventory)
 are implemented as follows:
 
 | Site | Windows protection and caller obligation |
 | --- | --- |
-| Atomic JSON (including tracked writes) | Verify the private parent, create/verify the empty stage before bytes, replace in place, then verify the published file. Store, settings, preferences and roster inherit this writer. |
+| Atomic JSON (including tracked writes) | Verify the safe parent, create/verify the empty stage before bytes, replace in place, then verify the published file. Store, settings, preferences and roster inherit this writer. |
 | Refresh lease | Secure acquire/renewal stages, the eviction-marker directory and its owner file; verify reads and retain ownership/lifetime fences. Acquisition access/sharing errors reject rather than implying another owner won; release access/sharing errors reject rather than reporting the lease released. |
-| RPC token | Verify-and-read tokens; secure staging even without `secureDir`. `secureDir: true` declares a dedicated parent for permission migration, not a shared/custom directory. |
-| Sidebar | Secure its private parent and use the shared writer; `secureDir: true` opts a dedicated root into migration. |
-| Logger | Ordered asynchronous append sink under a verified protected private parent; retain the handle for automatic flushes, close before verified rotation/path changes, and discard it on IO errors. Hosts await `flushLogs()` to drain and close before shutdown; existing shared parents refuse. |
+| RPC token | Verify-and-read tokens; safe-parent validation and owner-only staging irrespective of `secureDir`, with no parent tightening. |
+| Sidebar | Verify its safe parent without tightening and use the shared writer; missing parents are created owner-only. |
+| Logger | Ordered asynchronous append sink under a verified safe parent; retain the handle for automatic flushes, close before verified rotation/path changes, and discard it on IO errors. Hosts await `flushLogs()` to drain and close before shutdown; writable-by-others parents refuse. |
 | Dump | Dedicated private directory, exclusive private artifacts and secure baseline/response staging; unverified parents refuse rather than silently losing a dump. |
-| Enrollment | Handle-based token/status reads, safe Windows namespace checks, private directory creation and pending-state publication. Only the default dedicated state root is permission-migrated; override parents must already verify. No incidental token deletion. |
-| Pi slot | Handle-based auth/stash reads and private staging. `privateParents: true` declares dedicated parents for permission migration; custom parents must already verify. File-only Windows durability is explicit. |
+| Enrollment | Handle-based token/status reads, shared safe-parent namespace checks, owner-only creation of missing directories and pending-state publication. Specific owned legacy files may migrate in safe default or override parents. No incidental token deletion. |
+| Pi slot | Handle-based auth/stash reads and owner-only staging. Existing parents must pass the safe-parent policy, irrespective of `privateParents`, and are never tightened. File-only Windows durability is explicit. |
 
 `durable: true` retains the file-and-directory contract. On Windows directory
 metadata durability is unqualified, so it throws after rename with

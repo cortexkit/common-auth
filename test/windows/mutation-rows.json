@@ -99,7 +99,7 @@
     "id": "private-parent-owner-only",
     "file": "src/fs/private-files.ts",
     "old": "const result = await (await loadBackend()).verifySafeParent(path, options)",
-    "new": "const result = await (await loadBackend()).verifyOwnerOnly(path).then((r) => r.ok ? { ok: true as const } : { ok: false as const, path, level: path, reason: r.refusal.reason }) /* NON-VACUITY BREAK */",
+    "new": "const result = await (await loadBackend()).verifyOwnerOnly(path).then((r) => r.ok ? { ok: true as const } : { ok: false as const, path, level: undefined as string | undefined, reason: r.refusal.reason }) /* NON-VACUITY BREAK */",
     "testFile": "./test/windows/common-auth.mjs",
     "test": "real admin config parent permits write read lock and RPC publication",
     "windowsOnly": true,

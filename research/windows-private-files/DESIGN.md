@@ -24,7 +24,7 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > parents are never repaired implicitly. Tightening is reported once per path
 > per process with a historical-exposure/rotation warning, never contents.
 >
-> **2026-10-14 safe-parent update (private-files 0.2.0):** existing containing
+> **2026-10-14 safe-parent update (private-files 0.2.1):** existing containing
 > directories now use `verifySafeParent` on both platforms, rather than the
 > owner-only secret-file template. Missing dedicated components are still
 > created owner-only; an existing config/home/parent directory is never
@@ -37,8 +37,8 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > next component, rather than for unrelated sibling creation. This is an
 > entry-integrity policy, not a claim that the directory itself is unreadable.
 > The versioned policy and types are available in the
-> [published README](https://unpkg.com/@cortexkit/private-files@0.2.0/README.md)
-> and [declarations](https://unpkg.com/@cortexkit/private-files@0.2.0/dist/index.d.ts).
+> [published README](https://unpkg.com/@cortexkit/private-files@0.2.1/README.md)
+> and [declarations](https://unpkg.com/@cortexkit/private-files@0.2.1/dist/index.d.ts).
 >
 > The measured safe-parent spec (`openai-auth/.cortexkit/alfonso/reports/windows-safe-parent/SPEC.md`,
 > lines 11–12 and 40) records profile owners as "SYSTEM or Administrators" and
@@ -55,16 +55,15 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > other users' access; it cannot undo historical exposure or revoke old handles.
 > A once-per-file warning names the path, never secret contents.
 >
-> **Published-backend limitation:** 0.2.0's `securePrivatePath` requires the
-> token user as owner, although verification accepts Administrators/SYSTEM as
-> file owners. Automatic migration therefore currently refuses legacy files
-> owned by Administrators/SYSTEM with explicit owner-only DACL remediation by
-> their owner/administrator; running without elevation does not change an
-> existing Administrators owner and is not a sufficient repair. No ownership
-> takeover or subprocess ACL repair is attempted. Newly created private files
-> and canonical trusted-owner reads remain supported. Windows qualification
-> covers new admin-account files in the real config folder, standard-user
-> inherited-ACL migration, and an unchanged Administrators-owned refusal.
+> **Trusted-owner file migration (0.2.1):** `securePrivatePath` now accepts
+> the same file owners as verification: the token user, Administrators and
+> LocalSystem. It replaces only the DACL by handle and leaves the owner
+> unchanged; `READ_CONTROL|WRITE_DAC` is still required. TrustedInstaller is
+> trusted for parents, not secret files. Wrong owners, reparse points, unsafe
+> parents and failed verification still refuse, with remediation, never an
+> ownership takeover or a subprocess repair. Windows qualification covers new
+> admin-account files and Administrators-owned inherited-ACL migration in the
+> real config folder, plus warmed standard-user inherited-ACL migration.
 >
 > **Windows logger append decision:** after verifying the safe containing
 > parent and creating/verifying its log file, common-auth opens an append handle
@@ -131,13 +130,13 @@ The inventory below distinguishes direct mode sites from consumers of the shared
 | common-auth direct sites | Adoption |
 | --- | --- |
 | [`src/fs/atomic-write.ts:45,53`][CA-atomic] | All private JSON staging files; `writeJsonAtomic` and tracked variant. |
-| [`src/fs/refresh-file-lock.ts:161,167,183,196,252`][CA-lease] | Renewal temp, initial lease, missing-parent retry, eviction-marker owner file. Secure lock/marker parents as well as files; metadata integrity matters even without secret bytes. |
-| [`src/rpc/port-file.ts:133,135,143,146`][CA-rpc] | `secureDir` directory creation/tightening and bearer-token staging file. Token files require a private staging boundary even when `secureDir` was not requested; do not privatize an arbitrary shared parent silently. |
-| [`src/sidebar-file/sidebar-file.ts:220,222`][CA-sidebar] | Private parent and optional existing-parent tightening; JSON files inherit shared-writer protection. |
+| [`src/fs/refresh-file-lock.ts:161,167,183,196,252`][CA-lease] | Renewal temp, initial lease, missing-parent retry, eviction-marker owner file. Verify existing lock/marker parents with the shared safe-parent rule, create missing directories owner-only and keep files owner-only; metadata integrity matters even without secret bytes. |
+| [`src/rpc/port-file.ts:133,135,143,146`][CA-rpc] | Bearer-token staging and owner-only directory creation. Existing RPC parents use the safe-parent rule on both platforms and are never tightened, irrespective of `secureDir`. |
+| [`src/sidebar-file/sidebar-file.ts:220,222`][CA-sidebar] | Safe existing parents are verified without tightening; missing parents are created owner-only. JSON files inherit shared-writer protection and owned legacy files may be permission-migrated. |
 | [`src/logger/engine.ts:96,108,113,197,198`][CA-logger] | Existing/rotated log chmod and append creation. Windows uses an ordered async append sink under a verified private parent; secure before opening, retain the handle for automatic flushes, and close it before verified rotation or explicit shutdown flushing. |
 | [`src/dump/index.ts:342,345,599,601,655`][CA-dump] | Staged baseline replacement, private dump directory and exclusive artifacts; prompts may be sensitive. |
-| [`src/claustrum/enrollment.ts:336,503,512,537,540`][CA-enrollment] | Secret read mask, enrollment directory creation/remediation and pending-state temp file. Replace ancestor checks at 472–487 with Windows namespace validation; Unix remediation text is not a Windows fix. |
-| [`src/pi-slot/slot.ts:172,368,446,448`][CA-pi] | Exact-0600 auth-file read, auth/stash private-parent creation and exact-0700 stash-directory check. Windows uses the same descriptor policy, not exact synthetic modes. |
+| [`src/claustrum/enrollment.ts:336,503,512,537,540`][CA-enrollment] | Secret read mask, owner-only creation of missing enrollment directories and pending-state staging. All existing containing directories and ancestors use the shared safe-parent rule on both platforms; owned legacy files may migrate in default or override parents that pass it. |
+| [`src/pi-slot/slot.ts:172,368,446,448`][CA-pi] | Exact-0600 POSIX auth-file reads and owner-only creation of missing auth/stash parents. Existing stash parents use the safe-parent rule, not exact-0700 directory permissions. Windows files keep the published owner-only descriptor/read policy. |
 
 Common-auth's shared writer additionally covers [`store/mutate.ts:467,518`][CA-mutate], [`store/settings.ts:171`][CA-settings], [`tui-prefs/tui-preferences.ts:102`][CA-tui], [`sidebar-file/sidebar-file.ts:162`][CA-sidebar], [`pi-slot/slot.ts:276`][CA-pi], and [`claustrum/roster.ts:519`][CA-roster]. Their lock users adopt the secured lease primitive without an API bypass.
 
@@ -200,7 +199,7 @@ This job qualifies its tested local-NTFS/runtime combination, not all users/grou
 
 **Decision: explicit, fail-closed, current-owner migration before normal reads/writes.** Removing inherited access cannot undo previous exposure. The enrollment token may have been returned only once; do not delete it as an incidental cleanup action.
 
-Under the relevant lock and with reparse/ancestor checks, inspect existing roots and files before parsing secrets. A current-user-owned ordinary object in safe ancestry may be secured in place by replacing its DACL with the protected template, then verified by handle. Automatic permission-only remediation is limited to application-dedicated private roots; for a shared/custom parent require an explicit operator migration into a new private root. Never take ownership of a foreign-owned object, follow a reparse point, or recursively rewrite an arbitrary config/home tree. Unknown ACE forms, unsafe ancestry, unavailable ACL support or failed verification refuse with a path/stage/remediation diagnostic, without token contents.
+Under the relevant lock and with reparse/ancestor checks, inspect existing files before parsing secrets. A policy-trusted ordinary secret file at a specific path common-auth owns may have its DACL secured in place, then verified by handle, once its parent passes `verifySafeParent`. Windows file owners may be the token user, Administrators or LocalSystem; ownership is never changed. Existing parent directories, arbitrary siblings and directory trees are never implicitly repaired. Unsafe ancestry, unavailable ACL support or failed verification refuse with a path/stage/remediation diagnostic, without token contents. The dated contract update above supersedes the original dedicated-root-only migration restriction.
 
 Copy/move into a new root uses secure staging and explicit success checks; retain the old object until the new copy is verified and published, then remove only the known old object. State/config remain coherent under existing transaction locks. Do not treat an unsecured legacy file as an accepted normal read simply because migration was offered. Record policy version only after descriptor verification; that marker is an optimization, never proof for subsequent reads. Report possible historical exposure and recommend credential rotation/re-enrollment; coordinate token rotation with claustrum-client's maintainer so a once-only approved token is not lost or silently invalidated.
 

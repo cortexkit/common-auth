@@ -55,7 +55,7 @@ export class PrivateFileError extends Error {
       reason?: string
     }
     super(
-      `Private file refused at ${stage}: ${path} (${detail?.reason ?? detail?.code ?? 'io-error'}). Use a safe parent directory. Legacy Windows files must be owned by the token user for automatic permission repair; an Administrators-owned legacy file requires explicit owner-only DACL repair by its owner or administrator, without changing ownership. Previously exposed credentials may need rotation. Windows requires the private-files native prebuild and an ACL-persisting local filesystem such as NTFS.`,
+      `Private file refused at ${stage}: ${path} (${detail?.reason ?? detail?.code ?? 'io-error'}). Use a safe parent directory. Repair only a named secret file in safe ancestry whose owner the published policy trusts, without changing its owner or any existing directory. Previously exposed credentials may need rotation. Windows requires the private-files native prebuild and an ACL-persisting local filesystem such as NTFS.`,
       { cause },
     )
     this.name = 'PrivateFileError'
