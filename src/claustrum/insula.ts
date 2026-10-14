@@ -4,6 +4,11 @@ import type {
   ClaustrumConnector,
 } from '@cortexkit/claustrum-client'
 import { storeIdentity } from '@cortexkit/claustrum-client'
+// A static import: claustrum-client already loads subc-client whenever
+// /claustrum is imported, so loading it lazily saves nothing, and a dynamic
+// import makes bundlers emit a separate chunk that a running host loses when
+// its dist folder is rebuilt underneath it.
+import { SubcClient } from '@cortexkit/subc-client'
 
 /** Insula's window fields are open: plugins choose which limits they understand. */
 export interface InsulaUsageWindow {
@@ -62,7 +67,7 @@ export interface InsulaUsageTransport {
   getUsage(): Promise<unknown>
 }
 
-/** Constructing this transport does not load the optional subc-client peer. */
+/** Constructing this transport opens no connection; getUsage opens one per call. */
 export function insulaUsageTransport(
   options: ClaustrumClientOptions & { connectionFile: string },
 ): InsulaUsageTransport {
@@ -86,7 +91,6 @@ export function insulaUsageTransport(
         timer.unref?.()
       })
       const request = (async () => {
-        const { SubcClient } = await import('@cortexkit/subc-client')
         client = options.connector
           ? await options.connector({
               connectionFile: options.connectionFile,
