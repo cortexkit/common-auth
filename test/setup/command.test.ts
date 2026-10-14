@@ -49,6 +49,21 @@ describe('setup flow', () => {
     ).rejects.toThrow('Please quit')
   })
 
+  test('a Pi folder without the pi CLI is skipped and never blocks OpenCode', async () => {
+    const io = fakeIO()
+    io.folders.add('/home/test/.config/opencode')
+    io.folders.add('/home/test/.pi/agent')
+    const term = terminal()
+    const result = await runSetup(plugin(), ['--yes', '--dry-run'], {
+      ...io,
+      terminal: term,
+    })
+    expect(result.hosts).toEqual(['opencode'])
+    expect(term.lines.join('')).toContain(
+      'Pi: skipped, because its folder exists but pi is not on PATH.',
+    )
+  })
+
   test('dry run reports inspection failure and still plans without changing files', async () => {
     const io = fakeIO()
     io.folders.add('/home/test/.config/opencode')
@@ -83,6 +98,7 @@ describe('setup flow', () => {
         }
     const result = await runSetup(p, ['--yes', '--dry-run'], {
       terminal: term,
+      home: root,
       env: { PATH: '', OPENCODE_CONFIG_DIR: root },
       fence: {
         async listRunningHosts() {
@@ -120,6 +136,7 @@ describe('setup flow', () => {
     const term = terminal()
     await runSetup(p, ['--yes', '--login'], {
       terminal: term,
+      home: root,
       env: { PATH: '', OPENCODE_CONFIG_DIR: root },
       fence: {
         async listRunningHosts() {
@@ -145,6 +162,7 @@ describe('setup flow', () => {
     await expect(
       runSetup(p, ['--yes'], {
         terminal: terminal(),
+        home: root,
         env: { PATH: '', OPENCODE_CONFIG_DIR: root },
         fence: {
           async listRunningHosts() {
@@ -170,6 +188,7 @@ describe('setup flow', () => {
     await expect(
       runSetup(p, ['--yes'], {
         terminal: terminal(),
+        home: root,
         env: { PATH: '', OPENCODE_CONFIG_DIR: root },
         fence: {
           async listRunningHosts() {
@@ -390,6 +409,7 @@ describe('setup flow', () => {
     await expect(
       runSetup(p, ['--yes'], {
         terminal: terminal(),
+        home: root,
         env: { PATH: '', OPENCODE_CONFIG_DIR: root },
         fence: {
           async listRunningHosts() {

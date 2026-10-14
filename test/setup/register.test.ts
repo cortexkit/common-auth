@@ -41,6 +41,7 @@ describe('setup registration', () => {
       await chmod(file, 0o644)
       await registerOpenCode(
         planOpenCodeRegistration(plugin(root), '2', {
+          home: root,
           env: { OPENCODE_CONFIG_DIR: root },
         }),
       )
@@ -53,7 +54,7 @@ describe('setup registration', () => {
 
   test('creates schema config and TUI atomically and is idempotent', async () => {
     const root = await profile()
-    const io = { env: { OPENCODE_CONFIG_DIR: root } }
+    const io = { home: root, env: { OPENCODE_CONFIG_DIR: root } }
     const p = plugin(root)
     const writes = planOpenCodeRegistration(p, '1', io)
     expect(writes.map((write) => write.path)).toEqual([
@@ -156,7 +157,7 @@ describe('setup registration', () => {
 
   test('prefers existing JSONC otherwise JSON and v2 only uses plural server config', async () => {
     const root = await profile()
-    const io = { env: { OPENCODE_CONFIG_DIR: root } }
+    const io = { home: root, env: { OPENCODE_CONFIG_DIR: root } }
     await writeFile(join(root, 'opencode.json'), '{}\n')
     expect(
       planOpenCodeRegistration(plugin(root), '2', io).map(
@@ -218,6 +219,7 @@ describe('setup registration', () => {
     await expect(
       registerOpenCode(
         planOpenCodeRegistration(plugin(root), '1', {
+          home: root,
           env: { OPENCODE_CONFIG_DIR: root },
         }),
         async () => {

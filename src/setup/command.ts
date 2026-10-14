@@ -100,8 +100,17 @@ export async function runSetup(
     terminal,
     `Claustrum: ${detection.claustrum.available ? 'available' : 'not available'}`,
   )
+  // Pi is registered by running its CLI, so a leftover Pi folder without the
+  // CLI cannot be set up. Leave it out instead of failing the whole run, so it
+  // never blocks setting up OpenCode.
+  const piWithoutCli = detection.pi.installed && !detection.pi.executable
+  if (piWithoutCli)
+    printLine(
+      terminal,
+      'Pi: skipped, because its folder exists but pi is not on PATH. Install the Pi CLI and rerun setup to add it.',
+    )
   const found = (['opencode', 'pi'] as const).filter(
-    (host) => detection[host].installed,
+    (host) => detection[host].installed && !(host === 'pi' && piWithoutCli),
   )
   if (!options.yes && !isInteractive(terminal))
     throw new Error('Setup requires a TTY or --yes.')
@@ -140,10 +149,6 @@ export async function runSetup(
     )
     return { hosts, dryRun: options.dryRun, mode: 'local', detection }
   }
-  if (hosts.includes('pi') && !detection.pi.executable)
-    throw new Error(
-      'Pi agent folder found, but pi is not on PATH. Install its CLI before setup.',
-    )
   const { env, platform } = setupPaths(io)
   const fence =
     io.fence ??

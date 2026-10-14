@@ -5652,3 +5652,17 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^an\saccount\squota\swrite\sis\srefused\sfor\sanother\saccount\sor\san\sunbound\sroute$']
 expect_message = 'Expected: false'
+
+[[control]]
+id = 'setup-pi-folder-without-cli-is-skipped'
+guards = 'a leftover Pi folder without the pi CLI is left out of setup instead of failing the run for OpenCode'
+file = 'src/setup/command.ts'
+old = "(host) => detection[host].installed && !(host === 'pi' && piWithoutCli),"
+new = "(host) => detection[host].installed /* NON-VACUITY BREAK: keep Pi without its CLI. */,"
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sa\sPi\sfolder\swithout\sthe\spi\sCLI\sis\sskipped\sand\snever\sblocks\sOpenCode$']
+expect_message = 'Received'
