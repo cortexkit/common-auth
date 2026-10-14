@@ -236,8 +236,15 @@ async function privateRoot() {
   )
   return root
 }
-async function hold(path, holdMs) {
-  const running = helper('hold.ps1', { path, holdMs })
+async function hold(path) {
+  const releaseFile = `${path}.release-${randomUUID()}`
+  const running = helper('hold.ps1', { path, releaseFile })
+  let releasePromise = null
+  const release = () => {
+    releasePromise ??= writeFile(releaseFile, 'release')
+    return releasePromise
+  }
+  const done = running.done.finally(() => rm(releaseFile, { force: true }))
   await pending(
     `wait for no-delete-sharing handle ${path}`,
     () =>
@@ -247,10 +254,10 @@ async function hold(path, holdMs) {
           output += bytes
           if (output.includes('ready')) resolve()
         })
-        running.done.catch(reject)
+        done.catch(reject)
       }),
   )
-  return running
+  return { child: running.child, done, release }
 }
 
 test('real admin config parent permits write read lock and RPC publication', {
@@ -600,7 +607,8 @@ test('sharing violation released within retry budget publishes complete replacem
   try {
     const path = join(root, 'replace.json')
     await writeJsonAtomic(path, { old: true })
-    const held = await hold(path, 120)
+    const held = await hold(path)
+    let attempts = 0
     let missing = 0
     const observations = []
     const monitor = setInterval(() => {
@@ -611,13 +619,24 @@ test('sharing violation released within retry budget publishes complete replacem
       )
     }, 1)
     try {
-      await writeJsonAtomic(path, { new: true })
+      await writeJsonAtomic(
+        path,
+        { new: true },
+        {
+          beforeRename: async () => {
+            // Reaching the second attempt proves the first rename was refused by the held handle.
+            if (++attempts === 2) await held.release()
+          },
+        },
+      )
     } finally {
       clearInterval(monitor)
+      await held.release()
       await held.done
       await Promise.all(observations)
     }
     assert.equal(missing, 0, 'destination was never unlinked')
+    assert.ok(attempts >= 2, 'a held first rename was retried')
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { new: true })
     await inspect([root, path], 'sharing-replaced')
   } finally {
@@ -633,7 +652,7 @@ test('sharing violation beyond retry budget keeps the complete old destination',
     const path = join(root, 'replace.json')
     await writeJsonAtomic(path, { old: true })
     const before = await readFile(path)
-    const held = await hold(path, 1_000)
+    const held = await hold(path)
     let failure
     try {
       await assert.rejects(writeJsonAtomic(path, { new: true }), (error) => {
@@ -661,6 +680,8 @@ test('sharing violation beyond retry budget keeps the complete old destination',
         ),
       )
     } finally {
+      // Release only after the rejection and old-byte assertions, not after an arbitrary delay.
+      await held.release()
       await held.done
     }
   } finally {

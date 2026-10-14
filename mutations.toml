@@ -20,6 +20,133 @@ prebuild = [
   { name = "build", command = ["bun", "run", "build"], timeout_s = 600 },
 ]
 
+# --- auth-plugin setup: OpenCode/Pi discovery and package registration ---
+[[control]]
+id = 'setup-static-claustrum'
+guards = 'Setup Claustrum imports remain static so plugin rebuilds cannot strand a running host on a removed lazy chunk'
+file = 'src/setup/detect.ts'
+old = 'const connect = io.connect ?? connectClaustrumEnrollmentClient'
+new = "const connect = io.connect ?? (await import('../claustrum/enrollment.js')).connectClaustrumEnrollmentClient /* NON-VACUITY BREAK */"
+test_file = 'test/setup/bundle.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/bundle.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/bundle.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\skeeps\sClaustrum\simports\sstatic\sand\sbundles\swithout\slazy\schunks$']
+expect_message = 'dynamic-import'
+
+[[control]]
+id = 'setup-config-not-private'
+guards = 'Ordinary host config registration preserves its mode instead of using the secret-file writer'
+file = 'src/setup/register.ts'
+old = "import { writeHostConfigAtomic } from './config-write.js'"
+new = "import { writeJsonAtomic as writeHostConfigAtomic } from '../fs/index.js' // NON-VACUITY BREAK"
+test_file = 'test/setup/register.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/register.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/register.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sregistration\sconfig\sregistration\snever\sapplies\sprivate\swriter\spermissions$']
+expect_message = 'Received: 384'
+
+[[control]]
+id = 'setup-windows-runtime-pi'
+guards = 'Pi entry scripts are recognized behind Node and Bun image names'
+file = 'src/setup/process-fence.ts'
+old = "PI_SCRIPT_PATTERN.test(command) ? 'pi' : null"
+new = "false /* NON-VACUITY BREAK */ ? 'pi' : null"
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/fence.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\sWindows\sinspects\sNode\sand\sBun\scommand\slines\sfor\shost\sentry\sscripts$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'setup-windows-idle-pid'
+guards = 'Windows tasklist idle PID zero is accepted before filtering host processes'
+file = 'src/setup/process-fence.ts'
+old = 'pid < 0'
+new = 'pid <= 0 /* NON-VACUITY BREAK */'
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/fence.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\sWindows\sidle\sPID\szero\sand\scurrent\sruntime\sprocess\sare\svalid\slisting\srows$']
+expect_message = 'cannot prove hosts are stopped'
+
+[[control]]
+id = 'setup-windows-cmd-path'
+guards = 'Windows npm batch launchers count as installed without a successful direct exec'
+file = 'src/setup/detect.ts'
+old = "['.exe', '.cmd', '.bat', '']"
+new = "['.exe', '.bat', ''] /* NON-VACUITY BREAK */"
+test_file = 'test/setup/detect.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/detect.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/detect.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sdetection\sWindows\scmd\slauncher\salone\sis\sinstalled$']
+expect_message = 'Expected: true'
+
+[[control]]
+id = 'setup-desktop-markers'
+guards = 'Desktop installation markers count as installed on every supported OS'
+file = 'src/setup/detect.ts'
+old = 'openCodeDesktopMarkers(io).some((marker) => fs.exists(marker)) ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/setup/detect.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/detect.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/detect.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sdetection\sDesktop\smarkers\salone\sare\sinstalled\son\severy\sOS$']
+expect_message = 'Expected: true'
+
+[[control]]
+id = 'setup-config-folder'
+guards = 'An OpenCode config directory is enough even before a config file is created'
+file = 'src/setup/detect.ts'
+old = 'fs.isDirectory(configDir) ||'
+new = 'false /* NON-VACUITY BREAK */ ||'
+test_file = 'test/setup/detect.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/detect.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/detect.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sdetection\sconfig\sfolder\swithout\sa\sconfig\sfile\sis\sinstalled$']
+expect_message = 'Expected: true'
+
+[[control]]
+id = 'setup-deduplicate-package'
+guards = 'Upgrading a package leaves exactly one registration despite older duplicates'
+file = 'src/setup/register.ts'
+old = 'matches.slice(1).reverse()'
+new = '[] /* NON-VACUITY BREAK */'
+test_file = 'test/setup/register.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/register.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/register.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sregistration\sreplaces\solder\spackage\sentries\sand\sremoves\sduplicates$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'setup-process-fence'
+guards = 'Active hosts refuse setup rather than racing migration and credential writes'
+file = 'src/setup/process-fence.ts'
+old = 'if (active.length) throw new ProcessFenceViolationError(active)'
+new = 'if (false /* NON-VACUITY BREAK */) throw new ProcessFenceViolationError(active)'
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/fence.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\srefuses\sactive\sPOSIX\shosts\sand\sredacts\scommand\sarguments$']
+expect_message = 'Expected promise that rejects'
+
 # --- staged roster publication (0.12.0) ---
 # The runner first proves a named test passes with its guard intact, then
 # deliberately removes that guard and requires the same test to fail. The

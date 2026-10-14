@@ -4,6 +4,7 @@ Rows for the gated tests in `placement.e2e.test.ts`. They run only with `COMMON_
 
 | component | behaviour | origin | test |
 | --- | --- | --- | --- |
+| setup | An end-to-end test against OpenCode 2.0.22 registers a package only under plugin. Its root exports the OpenCode 1 plugin, and its ./server entry for OpenCode 2 loads and fires a model hook | new | singular plugin loads the server entry of a dual entry package |
 | opencode2 placement | HTTP carries the chosen account per request and switches mid-session; quota lands on the right account | new (neither copy) | http carries the chosen account per request and switches mid-session |
 | opencode2 placement | WebSocket carries the chosen account per socket and switches mid-session; quota frames land on the right account | new (neither copy) | websocket carries the chosen account per socket and switches mid-session |
 | opencode2 placement | A WebSocket rate limit before output moves the turn to the next account | new (neither copy) | websocket refusal before output moves the turn to the next account |
