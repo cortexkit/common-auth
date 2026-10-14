@@ -61,6 +61,7 @@ const { setPrivateFilesBackendForTest, PrivateFileError } = await import(
 )
 setPrivateFilesBackendForTest({
   ...api,
+  verifySafeParent: async () => ({ ok: true }),
   createOwnerOnly: (path) => original.mkdir(path),
   createPrivateFile: async (path, bytes) => {
     creates++

@@ -1,4 +1,3 @@
-import { chmod, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
   LockContentionError,
@@ -72,10 +71,9 @@ export interface SidebarFileOptions<T> {
   normalize: (parsed: unknown) => T
   timeoutMs?: number
   /**
-   * Tighten an existing parent directory to 0o700 before each write. Defaults
-   * to true. Pass false for a directory the user chose (an override path),
-   * whose permissions are theirs to set. A parent this library has to create
-   * is always created private, either way.
+   * Retained for compatibility. Existing parents are always checked for safe
+   * entry permissions without tightening them; missing directories are always
+   * created owner-only, regardless of this option.
    */
   secureDir?: boolean
   logger?: {
@@ -226,16 +224,7 @@ export function createSidebarFile<T>(
     const hooks: SidebarFileHooks | undefined = writeOptions
     const parent = dirname(path)
     const secureDir = options.secureDir ?? true
-    if (windowsPrivateFiles) await ensurePrivateDirectory(parent, secureDir)
-    else await mkdir(parent, { recursive: true, mode: 0o700 })
-    if (secureDir && !windowsPrivateFiles) {
-      await chmod(parent, 0o700).catch((error: unknown) => {
-        options.logger?.warn(
-          'sidebar directory permission remediation failed',
-          { error: error instanceof Error ? error.message : String(error) },
-        )
-      })
-    }
+    await ensurePrivateDirectory(parent, secureDir)
     const committed = await withLock(path, lockOptions, async (lock) => {
       const commit = async (value: T) => ({
         value,

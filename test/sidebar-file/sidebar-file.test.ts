@@ -166,10 +166,10 @@ test('undefined merge skips the write', async () => {
   expect(await fs.readFile(target, 'utf8')).toBe('1')
 })
 
-test('supplied parent is hardened from 0755 to 0700', async () => {
+test('supplied safe parent is verified without tightening its 0755 mode', async () => {
   await fs.chmod(dir, 0o755)
   await writer().write(1)
-  expect((await fs.stat(dir)).mode & 0o777).toBe(0o700)
+  expect((await fs.stat(dir)).mode & 0o777).toBe(0o755)
 })
 
 test('secureDir false leaves a user-chosen parent at its own mode', async () => {
@@ -197,7 +197,7 @@ test('secureDir false still creates a missing parent private', async () => {
   expect((await fs.stat(join(dir, 'chosen'))).mode & 0o777).toBe(0o700)
 })
 
-test('EPERM chmod warns once and still resolves the queued write', async () => {
+test('existing safe parent never invokes permission repair', async () => {
   const warnings: unknown[] = []
   const file = createSidebarFile({
     path: target,
@@ -215,16 +215,12 @@ test('EPERM chmod warns once and still resolves the queued write', async () => {
   )
   try {
     await file.write(42)
+    expect(spy).not.toHaveBeenCalled()
   } finally {
     spy.mockRestore()
   }
   expect(await fs.readFile(target, 'utf8')).toBe('42')
-  expect(warnings).toEqual([
-    {
-      message: 'sidebar directory permission remediation failed',
-      data: { error: 'denied' },
-    },
-  ])
+  expect(warnings).toEqual([])
 })
 
 test('sidebar lock TTL is observed before commit', async () => {

@@ -38,7 +38,20 @@ if ($request.action -eq 'grant') {
   else { [IO.File]::SetAccessControl($request.path, $acl) }
   exit
 }
-if ($request.action -ne 'deny') { throw 'Unknown inspector action' }
+if ($request.action -eq 'users-modify' -or $request.action -eq 'admin-legacy') {
+  if ($request.action -eq 'users-modify') {
+    $acl = [Security.AccessControl.DirectorySecurity]::new($request.path, [Security.AccessControl.AccessControlSections]::All)
+    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+    [IO.Directory]::SetAccessControl($request.path, $acl)
+  } else {
+    [IO.File]::WriteAllText($request.path, '{"legacy":true}')
+    $acl = [Security.AccessControl.FileSecurity]::new($request.path, [Security.AccessControl.AccessControlSections]::All)
+    $acl.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+    [IO.File]::SetAccessControl($request.path, $acl)
+  }
+  exit
+}
+if ($request.action -ne 'deny' -and $request.action -ne 'config-user') { throw 'Unknown inspector action' }
 $name = $env:COMMON_AUTH_PROBE_USER
 if (-not $name -or -not $env:COMMON_AUTH_PROBE_PASSWORD -or -not $env:COMMON_AUTH_PROBE_SID) { throw 'Provision and warm the standard probe user before running suites' }
 $user = Get-LocalUser -Name $name
@@ -55,8 +68,20 @@ try {
   $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
   [IO.Directory]::SetAccessControl($public, $acl)
   [IO.File]::WriteAllText((Join-Path $public 'control.txt'), 'public control')
-  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'second-user.ps1') -Destination (Join-Path $public 'probe.ps1')
-  @{ paths = $request.paths; directory = $request.directory; expectedSid = $user.SID.Value } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $public 'request.json')
+  if ($request.action -eq 'config-user') {
+    $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+    Copy-Item -LiteralPath (Join-Path $repo 'dist') -Destination (Join-Path $public 'dist') -Recurse
+    $modules = Join-Path $public 'node_modules\@cortexkit'
+    [IO.Directory]::CreateDirectory($modules) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repo 'node_modules\@cortexkit\private-files') -Destination (Join-Path $modules 'private-files') -Recurse
+    Copy-Item -LiteralPath $request.runtime -Destination (Join-Path $public 'runtime.exe')
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'standard-config.mjs') -Destination $public
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'standard-config.ps1') -Destination (Join-Path $public 'probe.ps1')
+    @{ expectedSid = $user.SID.Value; runtimeName = 'runtime.exe' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $public 'request.json')
+  } else {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'second-user.ps1') -Destination (Join-Path $public 'probe.ps1')
+    @{ paths = $request.paths; directory = $request.directory; expectedSid = $user.SID.Value } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $public 'request.json')
+  }
   $credential = [PSCredential]::new("$env:COMPUTERNAME\$name", $password)
   $exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   Progress 'credentialed child launch'
@@ -73,8 +98,9 @@ try {
     throw ('Second-user probe failed: ' + $diagnostic)
   }
   $result = [IO.File]::ReadAllText((Join-Path $public 'result.json')) | ConvertFrom-Json
-  if ($result.sid -ne $user.SID.Value -or -not $result.standardUser -or -not $result.publicRead -or -not $result.directoryDenied -or -not $result.filesDenied) { throw 'Second-user identity, positive control or denial failed' }
-  $result | ConvertTo-Json -Compress
+  if ($request.action -eq 'deny' -and ($result.sid -ne $user.SID.Value -or -not $result.standardUser -or -not $result.publicRead -or -not $result.directoryDenied -or -not $result.filesDenied)) { throw 'Second-user identity, positive control or denial failed' }
+  if ($request.action -eq 'config-user' -and ($result.sid -ne $user.SID.Value -or -not $result.standardUser)) { throw 'Standard config identity failed' }
+  $result | ConvertTo-Json -Depth 10 -Compress
 } finally {
   Progress 'public control cleanup'
   if ([IO.Directory]::Exists($public)) { Remove-Item -LiteralPath $public -Recurse -Force }

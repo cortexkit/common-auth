@@ -1,15 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { Dirent } from 'node:fs'
-import {
-  chmod,
-  mkdir,
-  open,
-  readdir,
-  rename,
-  rmdir,
-  stat,
-  unlink,
-} from 'node:fs/promises'
+import { open, readdir, rename, rmdir, stat, unlink } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
   ensurePrivateDirectory,
@@ -148,11 +139,7 @@ export async function writePortFile(
       )
       return target
     }
-    await mkdir(dir, {
-      recursive: true,
-      mode: options.secureDir ? 0o700 : undefined,
-    })
-    if (options.secureDir) await chmod(dir, 0o700)
+    await ensurePrivateDirectory(dir)
     await options.beforeWrite?.()
     const full: PortFileEntry = { ...entry, startedAt: Date.now() }
     const tmp = `${target}.${(options.stageName ?? randomUUID)()}.tmp`

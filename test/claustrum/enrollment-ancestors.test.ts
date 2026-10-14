@@ -51,9 +51,12 @@ async function fixture(
   return { root, parent, options: { passwdPath, groupPath } }
 }
 
-async function refuses(f: Awaited<ReturnType<typeof fixture>>) {
+async function refuses(
+  f: Awaited<ReturnType<typeof fixture>>,
+  reason = 'writable-by-others',
+) {
   await expect(refuseWritableAncestor(f.parent, f.options)).rejects.toThrow(
-    `Claustrum enrollment path has a writable ancestor: ${f.parent}. Another user could replace it. Run: chmod g-w,o-w ${f.parent}`,
+    `Claustrum enrollment parent refused: ${f.parent} (${reason}).`,
   )
 }
 
@@ -71,6 +74,24 @@ posixTest(
       `# comment\n\ntester:x:${gid}:tester\n`,
     )
     await refuseWritableAncestor(f.parent, f.options)
+  },
+)
+posixTest(
+  'Ubuntu umask 0002 config layout passes the shared safe-parent policy unchanged',
+  async () => {
+    const f = await fixture()
+    const previous = process.umask(0o002)
+    try {
+      const config = join(f.root, '.config')
+      const opencode = join(config, 'opencode')
+      await mkdir(opencode, { recursive: true, mode: 0o777 })
+      expect((await stat(config)).mode & 0o777).toBe(0o775)
+      await refuseWritableAncestor(opencode, f.options)
+      expect((await stat(config)).mode & 0o777).toBe(0o775)
+      expect((await stat(opencode)).mode & 0o777).toBe(0o775)
+    } finally {
+      process.umask(previous)
+    }
   },
 )
 posixTest(
@@ -111,7 +132,7 @@ posixTest(
     const f = await fixture(`tester:x:${uid + 1}:${gid}::/:/bin/sh\n`)
     const mock = spyOn(process, 'geteuid').mockReturnValue(uid + 1)
     try {
-      await refuses(f)
+      await refuses(f, 'wrong-owner')
     } finally {
       mock.mockRestore()
     }
@@ -137,7 +158,7 @@ posixTest(
     await refuses(f)
   },
 )
-posixTest('accepts a sticky world-writable ancestor', async () => {
+posixTest('refuses a sticky world-writable containing directory', async () => {
   const f = await fixture()
   // Bun 1.3.14's fs.chmod drops bits above 0o777 (the directory stays 0777),
   // so set the sticky bit with chmod(1). Its stat reports the bit correctly,
@@ -145,7 +166,7 @@ posixTest('accepts a sticky world-writable ancestor', async () => {
   const set = spawnSync('chmod', ['1777', f.parent])
   expect(set.status).toBe(0)
   expect((await stat(f.parent)).mode & 0o7777).toBe(0o1777)
-  await refuseWritableAncestor(f.parent, f.options)
+  await refuses(f)
 })
 posixTest(
   'refuses a group-writable ancestor when its uid is absent',

@@ -180,6 +180,7 @@ export async function acquireRefreshFileLock(options: {
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code !== 'EISDIR') throw error
+      await verifyPrivate(lockPath, 'directory')
       return JSON.parse(await readFile(legacyOwnerPath, 'utf8'))
     }
   }
@@ -269,7 +270,7 @@ export async function acquireRefreshFileLock(options: {
     return false
   }
   async function tryAcquire() {
-    if (windowsPrivateFiles) await ensurePrivateDirectory(dirname(lockPath))
+    await ensurePrivateDirectory(dirname(lockPath))
     try {
       await createLease()
       return true
@@ -278,8 +279,7 @@ export async function acquireRefreshFileLock(options: {
       if (await leaseContention(error)) return false
       if (code === 'ENOENT') {
         // Reboots can clear runtime temp directories before the next lock acquisition.
-        if (windowsPrivateFiles) await ensurePrivateDirectory(dirname(lockPath))
-        else await mkdir(dirname(lockPath), { recursive: true })
+        await ensurePrivateDirectory(dirname(lockPath))
         try {
           await createLease()
           return true
@@ -409,7 +409,7 @@ export async function acquireRefreshFileLock(options: {
 
   async function tryAcquireEvictionMarker() {
     if (windowsPrivateFiles) await createPrivateDirectoryExclusive(evictPath)
-    else await mkdir(evictPath)
+    else await mkdir(evictPath, { mode: 0o700 })
     try {
       const bytes = `${JSON.stringify({ ownerId: evictOwnerId, createdAt: now() })}\n`
       if (windowsPrivateFiles) await createPrivateBytes(evictOwnerPath, bytes)

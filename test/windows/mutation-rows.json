@@ -96,6 +96,23 @@
     "test": "Windows logger steady flushes append without reading or rewriting the log"
   },
   {
+    "id": "private-parent-owner-only",
+    "file": "src/fs/private-files.ts",
+    "old": "const result = await (await loadBackend()).verifySafeParent(path, options)",
+    "new": "const result = await (await loadBackend()).verifyOwnerOnly(path).then((r) => r.ok ? { ok: true as const } : { ok: false as const, path, level: path, reason: r.refusal.reason }) /* NON-VACUITY BREAK */",
+    "testFile": "./test/windows/common-auth.mjs",
+    "test": "real admin config parent permits write read lock and RPC publication",
+    "windowsOnly": true,
+    "build": true
+  },
+  {
+    "id": "private-migration-safe-parent",
+    "file": "src/fs/private-files.ts",
+    "old": "await verifySafeDirectory(dirname(path))\n        await api.securePrivatePath(path, kind)",
+    "new": "/* NON-VACUITY BREAK: skip the safe parent before in-place repair */\n        await api.securePrivatePath(path, kind)",
+    "test": "in-place securing refuses writable parents before backend repair"
+  },
+  {
     "id": "private-watchdog-cancellation",
     "file": "test/windows/watchdog.mjs",
     "old": "state.abort.abort()",

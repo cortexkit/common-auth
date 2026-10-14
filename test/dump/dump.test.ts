@@ -447,11 +447,11 @@ describe('request dumps', () => {
     expect((await readdir(dumpDir)).length).toBe(3)
   })
 
-  test('tightens an existing dump directory to 0700', async () => {
+  test('verifies an existing safe dump directory without tightening its mode', async () => {
     await mkdir(dumpDir, { mode: 0o755 })
     await chmod(dumpDir, 0o755)
     await dumper().dump({ session: 's', channel: 'http', bodyText: '{}' })
-    expect((await stat(dumpDir)).mode & 0o777).toBe(0o700)
+    expect((await stat(dumpDir)).mode & 0o777).toBe(0o755)
   })
 
   test('stores the plugin body summary computed on the redacted body', async () => {
@@ -1008,10 +1008,15 @@ describe('dump directory byte cap', () => {
         warn: mock(() => {}),
       },
     })
-    const statSpy = spyOn(fs, 'lstat')
+    const statSpy = spyOn(fs, 'readdir')
     hooks.lifetime.finish(async () => statSpy.mockRestore())
     const sweepStarts = () =>
-      statSpy.mock.calls.filter(([path]) => path === dumpDir).length
+      statSpy.mock.calls.filter(
+        ([path, options]) =>
+          path === dumpDir &&
+          typeof options === 'object' &&
+          options?.withFileTypes,
+      ).length
     await d.dump({ session: 's', channel: 'http', bodyText: '{}' })
     await firstSweep
     expect(sweepStarts()).toBe(1)
@@ -1019,8 +1024,7 @@ describe('dump directory byte cap', () => {
     await writeAged(join(dumpDir, dumpArtifactName(1)), '12345678', 1_000)
     t += 1000
     await d.dump({ session: 's', channel: 'http', bodyText: '{}' })
-    // A scheduled sweep calls directory lstat before its first await, so no
-    // sleep is needed to detect an unwanted second sweep after dump resolves.
+    // Count sweep enumerations, not parent-policy metadata checks made by each write.
     expect(sweepStarts()).toBe(1)
     expect(await readdir(dumpDir)).toContain(dumpArtifactName(1))
 

@@ -30,6 +30,7 @@ const { setPrivateFilesBackendForTest, PrivateFileError } = await import(
 )
 setPrivateFilesBackendForTest({
   ...api,
+  verifySafeParent: async () => ({ ok: true }),
   createOwnerOnly: async (path) => {
     await originalMkdir(path)
   },

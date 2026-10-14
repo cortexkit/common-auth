@@ -1,21 +1,20 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
-  chmod,
   lstat,
-  mkdir,
   open,
   readdir,
   rename,
   unlink,
   writeFile,
 } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import {
   createPrivateBytes,
   ensurePrivateDirectory,
   PrivateFileError,
   readPrivateText,
   verifyPrivate,
+  verifySafeDirectory,
   windowsPrivateFiles,
   writePrivateAtomic,
 } from '../fs/private-files.js'
@@ -250,9 +249,8 @@ export async function sweepDumpDirectory(
   const partialStaleMs = options.partialStaleMs ?? DEFAULT_PARTIAL_STALE_MS
   const empty = { removed: 0, freedBytes: 0 }
   if (!(maxBytes > 0)) return empty
-  if (windowsPrivateFiles) await verifyPrivate(dir, 'directory')
-
   try {
+    await verifyPrivate(dir, 'directory')
     if ((await lstat(dir)).isSymbolicLink()) return empty
     const protectedPaths = new Set(
       (options.protectedPaths ?? []).map((path) => resolve(path)),
@@ -329,7 +327,12 @@ export async function sweepDumpDirectory(
       options.logger?.debug('removed old dump files', { removed, freedBytes })
     }
     return { removed, freedBytes }
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof PrivateFileError &&
+      error.code === 'ERR_PRIVATE_FILES_SECURITY'
+    )
+      throw error
     return empty
   }
 }
@@ -349,6 +352,7 @@ async function replaceFile(
       stagePath: `${path}.${stageName ? stageName() : randomBytes(12).toString('hex')}.partial`,
     })
   }
+  await verifySafeDirectory(dirname(path))
   for (let attempt = 0; ; attempt += 1) {
     const staging = `${path}.${stageName ? stageName() : randomBytes(12).toString('hex')}.partial`
     let created = false
@@ -568,7 +572,11 @@ export function createDumper(options: DumpOptions): Dumper {
           windowsPrivateFiles,
         )
       } catch (error) {
-        if (error instanceof PrivateFileError) throw error
+        if (
+          error instanceof PrivateFileError &&
+          (windowsPrivateFiles || error.code === 'ERR_PRIVATE_FILES_SECURITY')
+        )
+          throw error
         // A file removed or half-written by another process: try the next.
       }
     }
@@ -614,12 +622,7 @@ export function createDumper(options: DumpOptions): Dumper {
     const baselineKey = hashText(`${input.channel}\u0000${session}`)
 
     try {
-      if (windowsPrivateFiles) await ensurePrivateDirectory(dir, true)
-      else {
-        await mkdir(dir, { recursive: true, mode: 0o700 })
-        // mkdir's mode does not apply to a directory that already exists.
-        await chmod(dir, 0o700)
-      }
+      await ensurePrivateDirectory(dir)
 
       let previous = previousBodies.get(baselineKey)
       let baselineSource: 'memory' | 'disk' | undefined =
@@ -703,7 +706,11 @@ export function createDumper(options: DumpOptions): Dumper {
       scheduleSweep(dir, Object.values(files))
       return { id, files, responseFile: `${prefix}.response.json` }
     } catch (error) {
-      if (error instanceof PrivateFileError) throw error
+      if (
+        error instanceof PrivateFileError &&
+        (windowsPrivateFiles || error.code === 'ERR_PRIVATE_FILES_SECURITY')
+      )
+        throw error
       log?.warn('request dump failed', {
         session: shortSession(session),
         error: error instanceof Error ? error.message : String(error),
@@ -785,7 +792,11 @@ export function createDumper(options: DumpOptions): Dumper {
       )
       return result.responseFile
     } catch (error) {
-      if (error instanceof PrivateFileError) throw error
+      if (
+        error instanceof PrivateFileError &&
+        (windowsPrivateFiles || error.code === 'ERR_PRIVATE_FILES_SECURITY')
+      )
+        throw error
       log?.warn('response dump failed', {
         id: result.id,
         error: error instanceof Error ? error.message : String(error),

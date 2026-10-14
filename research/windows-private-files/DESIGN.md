@@ -24,7 +24,49 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > parents are never repaired implicitly. Tightening is reported once per path
 > per process with a historical-exposure/rotation warning, never contents.
 >
-> **Windows logger append decision:** after verifying the protected owner-only
+> **2026-10-14 safe-parent update (private-files 0.2.0):** existing containing
+> directories now use `verifySafeParent` on both platforms, rather than the
+> owner-only secret-file template. Missing dedicated components are still
+> created owner-only; an existing config/home/parent directory is never
+> tightened. The published README states: "A user-owned 0775 config directory
+> passes when its effective group has no other members or other primary-group
+> users." Enrollment delegates its ancestor checks to that same policy.
+> On Windows the parent may grant control to the token user, SYSTEM,
+> Administrators and TrustedInstaller, but no other ordinary principal may
+> plant or replace entries. Ancestors are checked for rights to replace the
+> next component, rather than for unrelated sibling creation. This is an
+> entry-integrity policy, not a claim that the directory itself is unreadable.
+> The versioned policy and types are available in the
+> [published README](https://unpkg.com/@cortexkit/private-files@0.2.0/README.md)
+> and [declarations](https://unpkg.com/@cortexkit/private-files@0.2.0/dist/index.d.ts).
+>
+> The measured safe-parent spec (`openai-auth/.cortexkit/alfonso/reports/windows-safe-parent/SPEC.md`,
+> lines 11–12 and 40) records profile owners as "SYSTEM or Administrators" and
+> config entries as "Inherited only: SYSTEM, Administrators, the user, Full";
+> "The profile folder passes, and so does the OpenCode config folder."
+> Secret files remain owner-only, including same-handle verify/read.
+>
+> Permission-only migration is now allowed for the specific secret file paths
+> common-auth owns even in those normal config folders, not just under a
+> dedicated root. Before replacing a file's DACL, common-auth requires a safe
+> parent; private-files refuses reparse points and ownership takeover, pins the
+> file, narrows its DACL to the protected owner-only template and verifies by
+> handle. No directory or arbitrary sibling is repaired. This only removes
+> other users' access; it cannot undo historical exposure or revoke old handles.
+> A once-per-file warning names the path, never secret contents.
+>
+> **Published-backend limitation:** 0.2.0's `securePrivatePath` requires the
+> token user as owner, although verification accepts Administrators/SYSTEM as
+> file owners. Automatic migration therefore currently refuses legacy files
+> owned by Administrators/SYSTEM with explicit owner-only DACL remediation by
+> their owner/administrator; running without elevation does not change an
+> existing Administrators owner and is not a sufficient repair. No ownership
+> takeover or subprocess ACL repair is attempted. Newly created private files
+> and canonical trusted-owner reads remain supported. Windows qualification
+> covers new admin-account files in the real config folder, standard-user
+> inherited-ACL migration, and an unchanged Administrators-owned refusal.
+>
+> **Windows logger append decision:** after verifying the safe containing
 > parent and creating/verifying its log file, common-auth opens an append handle
 > with `fs.open(file, 'a')`. This supersedes the blanket pathname-reopen prohibition
 > for this write-only sink: other ordinary users cannot create, replace or link

@@ -1,15 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { constants as fsConstants } from 'node:fs'
-import {
-  chmod,
-  mkdir,
-  open,
-  readFile,
-  realpath,
-  rename,
-  stat,
-  unlink,
-} from 'node:fs/promises'
+import { open, readFile, rename, unlink } from 'node:fs/promises'
 import {
   basename,
   dirname,
@@ -29,8 +20,9 @@ import {
 import { acquireRefreshFileLock } from '../fs/index.js'
 import {
   ensurePrivateDirectory as ensureWindowsDirectory,
+  PrivateFileError,
   readPrivateText,
-  verifyPrivate,
+  verifySafeDirectory,
   windowsPrivateFiles,
   writePrivateAtomic,
 } from '../fs/private-files.js'
@@ -40,9 +32,6 @@ const ENROLLMENT_SCHEMA = 1
 const ENROLLMENT_FILE_MAX_BYTES = 16 * 1024
 const ENROLLMENT_LOCK_TTL_MS = 30_000
 const TOKEN_RE = /^[0-9a-f]{64}$/
-// Only non-override hostEnrollmentPaths state directories are declared private
-// application roots. This set never substitutes for descriptor verification.
-const dedicatedEnrollmentRoots = new Set<string>()
 
 /**
  * Codes the vault's closed enrollment-refusal vocabulary marks permanent. The
@@ -215,7 +204,7 @@ export function hostEnrollmentPaths(input: {
       'invalid-state',
       'A relative Claustrum enrollment override needs a base directory',
     )
-  if (!override) dedicatedEnrollmentRoots.add(resolve(input.stateDir))
+
   const tokenPath = override
     ? isAbsolute(override)
       ? override
@@ -374,10 +363,7 @@ function parseSecretJson(text: string): unknown {
 async function readBoundedJson(path: string): Promise<unknown | undefined> {
   if (windowsPrivateFiles) {
     try {
-      await ensureWindowsDirectory(
-        dirname(path),
-        dedicatedEnrollmentRoots.has(resolve(dirname(path))),
-      )
+      await ensureWindowsDirectory(dirname(path))
       const text = await readPrivateText(path, true)
       if (Buffer.byteLength(text) > ENROLLMENT_FILE_MAX_BYTES) {
         throw new ClaustrumConsumerError(
@@ -424,133 +410,44 @@ export interface EnrollmentAncestorOptions {
   groupPath?: string
 }
 
-function accountRecords(text: string, fields: number): string[][] | undefined {
-  const records: string[][] = []
-  for (const line of text.split('\n')) {
-    if (line.trim() === '' || line.startsWith('#')) continue
-    const parts = line.split(':')
-    if (
-      parts.length !== fields ||
-      !/^[^\s:,]+$/.test(parts[0] ?? '') ||
-      !/^\d+$/.test(parts[2] ?? '') ||
-      !Number.isSafeInteger(Number(parts[2])) ||
-      (fields === 7 &&
-        (!/^\d+$/.test(parts[3] ?? '') ||
-          !Number.isSafeInteger(Number(parts[3])))) ||
-      (fields === 4 &&
-        parts[3] !== '' &&
-        !/^[^\s:,]+(?:,[^\s:,]+)*$/.test(parts[3] ?? ''))
-    )
-      return undefined
-    records.push(parts)
-  }
-  return records
-}
-
-async function isPrivateGroup(
-  uid: number,
-  gid: number,
-  options: EnrollmentAncestorOptions,
-): Promise<boolean> {
-  try {
-    const [passwdText, groupText] = await Promise.all([
-      readFile(options.passwdPath ?? '/etc/passwd', 'utf8'),
-      readFile(options.groupPath ?? '/etc/group', 'utf8'),
-    ])
-    const users = accountRecords(passwdText, 7)
-    const groups = accountRecords(groupText, 4)
-    if (!users || !groups) return false
-    const owners = users.filter((user) => Number(user[2]) === uid)
-    const matchingGroups = groups.filter((group) => Number(group[2]) === gid)
-    if (owners.length !== 1 || matchingGroups.length !== 1) return false
-    const name = owners[0]?.[0]
-    const members = matchingGroups[0]?.[3] ?? ''
-    return (
-      (members === '' ||
-        members.split(',').every((member) => member === name)) &&
-      !users.some((user) => Number(user[2]) !== uid && Number(user[3]) === gid)
-    )
-  } catch {
-    // Missing local records (including NSS-only accounts) cannot prove exclusivity.
-    return false
+function ancestorPolicyOptions(options: EnrollmentAncestorOptions) {
+  if (!options.passwdPath && !options.groupPath) return undefined
+  return {
+    fs: {
+      readFile: (path: string) =>
+        readFile(
+          path === '/etc/passwd'
+            ? (options.passwdPath ?? path)
+            : path === '/etc/group'
+              ? (options.groupPath ?? path)
+              : path,
+        ),
+    },
   }
 }
 
-/**
- * Protect setup writes from directory replacement. Group write access is safe
- * only when local account records prove that the effective user's group is private.
- */
+/** Use private-files' single parent policy for enrollment setup on both platforms. */
 export async function refuseWritableAncestor(
   parent: string,
   options: EnrollmentAncestorOptions = {},
 ): Promise<void> {
-  if (windowsPrivateFiles) {
-    // Native verification holds directory handles while rejecting replaceable
-    // ancestors and reparse points; Windows mode bits cannot prove that policy.
-    await verifyPrivate(parent, 'directory')
-    return
-  }
-  const uid = process.geteuid?.()
-  if (uid === undefined) return
-  const gid = process.getegid?.()
-  let component: string
   try {
-    component = await realpath(parent)
-  } catch {
-    return
-  }
-  // Load lazily, once per traversal: account changes take effect on the next write.
-  let privateGroup: boolean | undefined
-  for (;;) {
-    const metadata = await stat(component).catch(() => undefined)
-    if (
-      metadata &&
-      (metadata.mode & 0o022) !== 0 &&
-      (metadata.mode & 0o1000) === 0
-    ) {
-      if (privateGroup === undefined) {
-        privateGroup =
-          gid !== undefined && (await isPrivateGroup(uid, gid, options))
-      }
-      if (
-        (metadata.mode & 0o002) !== 0 ||
-        metadata.uid !== uid ||
-        metadata.gid !== gid ||
-        !privateGroup
-      ) {
-        throw new ClaustrumConsumerError(
-          'unsafe-file',
-          `Claustrum enrollment path has a writable ancestor: ${component}. Another user could replace it. Run: chmod g-w,o-w ${component}`,
-        )
-      }
-    }
-    const next = dirname(component)
-    if (next === component) return
-    component = next
+    await verifySafeDirectory(parent, ancestorPolicyOptions(options))
+  } catch (error) {
+    if (!(error instanceof PrivateFileError)) throw error
+    throw new ClaustrumConsumerError(
+      'unsafe-file',
+      `Claustrum enrollment parent refused: ${error.path} (${error.reason ?? error.code}). Use a folder that other users cannot write or replace.`,
+    )
   }
 }
 
-/**
- * Create the enrollment directory owner-only (0700), and tighten it to 0700
- * when it already exists with group or other bits, so the token and the
- * request secret never sit in a directory another account can list.
- */
-async function ensurePrivateDirectory(directory: string): Promise<void> {
-  if (windowsPrivateFiles)
-    return ensureWindowsDirectory(
-      directory,
-      dedicatedEnrollmentRoots.has(resolve(directory)),
-    )
-  await mkdir(directory, { recursive: true, mode: 0o700 })
-  const metadata = await stat(directory)
-  const uid = process.geteuid?.()
-  if (uid !== undefined && metadata.uid !== uid) {
-    throw new ClaustrumConsumerError(
-      'unsafe-file',
-      'Claustrum enrollment directory must be owned by the current user',
-    )
-  }
-  if ((metadata.mode & 0o077) !== 0) await chmod(directory, 0o700)
+/** Create missing enrollment components owner-only; never tighten an existing parent. */
+async function ensurePrivateDirectory(
+  directory: string,
+  options: EnrollmentAncestorOptions = {},
+): Promise<void> {
+  await ensureWindowsDirectory(directory, false, ancestorPolicyOptions(options))
 }
 
 async function writeStateAtomic(
@@ -559,7 +456,7 @@ async function writeStateAtomic(
   ancestorOptions: EnrollmentAncestorOptions = {},
 ): Promise<void> {
   const parent = dirname(path)
-  await ensurePrivateDirectory(parent)
+  await ensurePrivateDirectory(parent, ancestorOptions)
   await refuseWritableAncestor(parent, ancestorOptions)
   const bytes = `${JSON.stringify(state)}\n`
   if (Buffer.byteLength(bytes) > ENROLLMENT_FILE_MAX_BYTES) {

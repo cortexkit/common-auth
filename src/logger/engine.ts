@@ -7,6 +7,7 @@ import {
 } from 'node:fs'
 import { type FileHandle, open } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { verifySafeParentSync } from '@cortexkit/private-files'
 import {
   createPrivateBytes,
   ensurePrivateDirectory,
@@ -155,7 +156,7 @@ async function openWindowsFile(
       await verifyPrivate(file, 'file', true)
     }
   }
-  // The parent's verified protected owner-only DACL denies other ordinary users the ability to create, replace or link entries between verification and fs.open.
+  // The safe-parent policy denies other ordinary users the ability to create, replace or link entries between verification and fs.open.
   // This protects against other ordinary users, not the owner or administrators, whose ability to change that namespace is outside our threat model.
   sink.handle = await privateOperation(file, 'log-open', () => open(file, 'a'))
   sink.file = file
@@ -314,6 +315,11 @@ function createEngine(options?: LoggerOptions): Engine {
       })
     }
     try {
+      const parent = verifySafeParentSync(dirname(resolve(file)))
+      if (!parent.ok)
+        throw new Error(
+          `Log parent refused: ${parent.level ?? parent.path} (${parent.reason})`,
+        )
       rotateIfNeeded(file)
       if (existsSync(file)) chmodPrivate(file)
       appendFileSync(file, text, { encoding: 'utf8', mode: 0o600 })

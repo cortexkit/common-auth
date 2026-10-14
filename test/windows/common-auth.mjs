@@ -17,6 +17,7 @@ import {
   writeJsonAtomic as atomicWrite,
   PrivateFileError,
 } from '../../dist/fs/index.js'
+import { readPrivateText, verifyPrivate } from '../../dist/fs/private-files.js'
 import { createLoggerInstance } from '../../dist/logger/index.js'
 import { openPiSlot as piSlot } from '../../dist/pi-slot/index.js'
 import {
@@ -251,6 +252,157 @@ async function hold(path, holdMs) {
   )
   return running
 }
+
+test('real admin config parent permits write read lock and RPC publication', {
+  timeout,
+}, async () => {
+  const dir = join(process.env.USERPROFILE, '.config', 'opencode')
+  await mkdir(dir, { recursive: true })
+  const before = JSON.parse(
+    await helper('inspect.ps1', {
+      action: 'inspect',
+      paths: [dir, process.env.USERPROFILE],
+    }).done,
+  )
+  assert.ok(
+    before.objects[0].aces.some(
+      (ace) => ace.sid === 'S-1-5-18' && ace.flags & 16,
+    ),
+  )
+  const path = join(dir, `common-auth-${randomUUID()}.json`)
+  let port
+  try {
+    await writeJsonAtomic(path, { realConfig: true })
+    assert.deepEqual(JSON.parse(await readPrivateText(path)), {
+      realConfig: true,
+    })
+    const lease = await acquireRefreshFileLock({
+      path,
+      name: 'config-proof',
+      ttlMs: 30_000,
+      renew: false,
+    })
+    assert.ok(lease)
+    await lease.assertOwned()
+    assert.equal(
+      await acquireRefreshFileLock({
+        path,
+        name: 'config-proof',
+        ttlMs: 30_000,
+        renew: false,
+      }),
+      null,
+    )
+    await lease.release()
+    port = await writePortFile(dir, {
+      port: 34567,
+      token: 'config-proof-token',
+      pid: process.pid,
+    })
+    assert.equal(
+      JSON.parse(await readPrivateText(port)).token,
+      'config-proof-token',
+    )
+    await inspect([path, port], 'real-admin-config-files')
+    const after = JSON.parse(
+      await helper('inspect.ps1', {
+        action: 'inspect',
+        paths: [dir, process.env.USERPROFILE],
+      }).done,
+    )
+    assert.deepEqual(
+      after.objects,
+      before.objects,
+      'existing profile/config ACLs must not be tightened',
+    )
+    await writeFile(
+      join(evidence, 'real-admin-config-parent.json'),
+      JSON.stringify(after, null, 2),
+    )
+  } finally {
+    await rm(path, { force: true })
+    if (port) await rm(port, { force: true })
+  }
+})
+
+test('real standard second user config supports inherited secret migration and all writers', {
+  timeout,
+}, async () => {
+  const result = JSON.parse(
+    await helper('inspect.ps1', {
+      action: 'config-user',
+      runtime: process.execPath,
+    }).done,
+  )
+  assert.equal(result.standardUser, true)
+  assert.equal(result.sid, process.env.COMMON_AUTH_PROBE_SID)
+  for (const name of ['write', 'read', 'lock', 'migration', 'rpc'])
+    assert.equal(result.checks[name], true)
+  assert.equal(result.checks.runtime, process.versions.bun ?? process.version)
+  assert.match(result.checks.dir, /\\\.config\\opencode$/i)
+  assert.ok(
+    result.before.aces.some((ace) => ace.flags & 16 && ace.sid === 'S-1-5-18'),
+  )
+  await writeFile(
+    join(evidence, 'real-standard-config-migration.json'),
+    JSON.stringify(result, null, 2),
+  )
+})
+
+test('runner temp and Users Modify parents refuse with writable-by-others', {
+  timeout,
+}, async () => {
+  assert.ok(process.env.RUNNER_TEMP)
+  const root = await privateRoot()
+  try {
+    await helper('inspect.ps1', { action: 'users-modify', path: root }).done
+    for (const parent of [process.env.RUNNER_TEMP, root]) {
+      const path = join(parent, `common-auth-refused-${randomUUID()}.json`)
+      await assert.rejects(
+        writeJsonAtomic(path, { secret: 'never written' }),
+        (error) =>
+          error instanceof PrivateFileError &&
+          error.reason === 'writable-by-others',
+      )
+      await assert.rejects(access(path))
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Administrators-owned inherited legacy file refuses with explicit DACL remediation', {
+  timeout,
+}, async () => {
+  const dir = join(process.env.USERPROFILE, '.config', 'opencode')
+  await mkdir(dir, { recursive: true })
+  const path = join(dir, `common-auth-admin-legacy-${randomUUID()}.json`)
+  try {
+    await helper('inspect.ps1', { action: 'admin-legacy', path }).done
+    const before = JSON.parse(
+      await helper('inspect.ps1', { action: 'inspect', paths: [path] }).done,
+    )
+    assert.equal(before.objects[0].owner, 'S-1-5-32-544')
+    await assert.rejects(
+      verifyPrivate(path, 'file', true),
+      (error) =>
+        error instanceof PrivateFileError &&
+        error.reason === 'wrong-owner' &&
+        error.message.includes(path) &&
+        error.message.includes('explicit owner-only DACL repair'),
+    )
+    const after = JSON.parse(
+      await helper('inspect.ps1', { action: 'inspect', paths: [path] }).done,
+    )
+    assert.deepEqual(after.objects, before.objects)
+    await writeFile(
+      join(evidence, 'admin-owned-legacy-refusal.json'),
+      JSON.stringify(after, null, 2),
+    )
+  } finally {
+    await rm(path, { force: true })
+  }
+})
 
 test('real writers have independently inspected ACLs and deny a standard second user', {
   timeout,
@@ -562,7 +714,7 @@ test('dedicated sidebar migration repairs owned objects without rewriting siblin
     const sibling = join(parent, 'unrelated.json')
     await writeJsonAtomic(path, { retained: 'private migration fixture' })
     await writeJsonAtomic(sibling, { unrelated: true })
-    for (const fixture of [parent, path, sibling])
+    for (const fixture of [path, sibling])
       await helper('inspect.ps1', { action: 'grant', path: fixture }).done
     const before = JSON.parse(
       await helper('inspect.ps1', {
@@ -570,7 +722,7 @@ test('dedicated sidebar migration repairs owned objects without rewriting siblin
         paths: [parent, path, sibling],
       }).done,
     )
-    for (const fixture of before.objects)
+    for (const fixture of before.objects.slice(1))
       assert.ok(
         fixture.aces.some((ace) => ace.sid === 'S-1-1-0'),
         'foreign-grant fixture really exists',

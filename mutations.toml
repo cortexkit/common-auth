@@ -1902,8 +1902,8 @@ expect_message = '/Expected: false\s+Received: true/'
 id = 'claustrum-private-group-refuses-other-member'
 guards = 'a group-writable enrollment ancestor is accepted only when the group lists no member other than the effective user'
 file = 'src/claustrum/enrollment.ts'
-old = "members.split(',').every((member) => member === name)"
-new = "members.split(',').some((member) => member === name)"
+old = 'await verifySafeDirectory(parent, ancestorPolicyOptions(options))'
+new = '/* NON-VACUITY BREAK: bypass the shared private-group policy */'
 test_file = 'test/claustrum/enrollment-ancestors.test.ts'
 runner = "command"
 command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "{test}"]
@@ -1916,8 +1916,8 @@ expect_message = 'Received promise that resolved'
 id = 'claustrum-private-group-refuses-other-primary-user'
 guards = 'a group-writable enrollment ancestor is refused when another user has that group as its primary group'
 file = 'src/claustrum/enrollment.ts'
-old = '!users.some((user) => Number(user[2]) !== uid && Number(user[3]) === gid)'
-new = 'true'
+old = 'await verifySafeDirectory(parent, ancestorPolicyOptions(options))'
+new = '/* NON-VACUITY BREAK: bypass the shared private-group policy */'
 test_file = 'test/claustrum/enrollment-ancestors.test.ts'
 runner = "command"
 command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "{test}"]
@@ -5321,3 +5321,42 @@ list_command = ["bun", "scripts/list-bun-tests.mjs", "test/logger/windows-append
 test_count_pattern = 'Ran {count} test'
 expect_red = ["Windows logger steady flushes append without reading or rewriting the log"]
 expect_message = "steady flushes must not read the log"
+
+[[control]]
+id = 'private-safe-parent-not-owner-only'
+guards = 'safe containing directories do not need the secret file owner-only template'
+file = 'src/fs/private-files.ts'
+old = 'const result = await (await loadBackend()).verifySafeParent(path, options)'
+new = 'const result = await (await loadBackend()).verifyOwnerOnly(path).then((r) => r.ok ? { ok: true as const } : { ok: false as const, path, level: path, reason: r.refusal.reason }) /* NON-VACUITY BREAK */'
+test_file = 'test/fs/windows-private-files.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/fs/windows-private-files.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Windows\sprivate\sIO\slogic\ssafe\sexisting\sparents\sdo\snot\srequire\sowner-only\spermissions\sor\srepair$']
+
+[[control]]
+id = 'private-migration-safe-parent'
+guards = 'legacy secret permission repair checks its containing directory before calling the backend'
+file = 'src/fs/private-files.ts'
+old = '''await verifySafeDirectory(dirname(path))
+        await api.securePrivatePath(path, kind)'''
+new = '''/* NON-VACUITY BREAK: skip the safe parent before in-place repair */
+        await api.securePrivatePath(path, kind)'''
+test_file = 'test/fs/windows-private-files.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/fs/windows-private-files.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Windows\sprivate\sIO\slogic\sin-place\ssecuring\srefuses\swritable\sparents\sbefore\sbackend\srepair$']
+expect_message = 'Received promise that resolved'
+
+[[control]]
+id = 'private-ubuntu-parent-exception'
+guards = 'Ubuntu private-group 0775 config parents use the shared safe-parent rule, not owner-only directory permissions'
+file = 'src/claustrum/enrollment.ts'
+old = 'await verifySafeDirectory(parent, ancestorPolicyOptions(options))'
+new = "await (await import('@cortexkit/private-files')).verifyPrivatePath(parent, 'directory') /* NON-VACUITY BREAK */"
+test_file = 'test/claustrum/enrollment-ancestors.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment-ancestors.test.ts', '-t', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Ubuntu\sumask\s0002\sconfig\slayout\spasses\sthe\sshared\ssafe-parent\spolicy\sunchanged$']

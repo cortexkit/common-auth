@@ -51,6 +51,7 @@ describe('Windows private IO logic', () => {
         createPrivateFile: async () => {
           writes++
         },
+        verifyPrivatePath: async () => {},
         verifyOwnerOnly: async () => ({
           ok: false,
           refusal: {
@@ -64,11 +65,12 @@ describe('Windows private IO logic', () => {
       })
       const path = join(root, 'state.json')
       try {
+        await verifyPrivate(path, 'file')
         await writePrivateAtomic(path, 'DO-NOT-WRITE')
         throw new Error('verification did not refuse')
       } catch (error) {
         expect(error).toBeInstanceOf(PrivateFileError)
-        expect((error as PrivateFileError).path).toBe(root)
+        expect((error as PrivateFileError).path).toBe(path)
         expect((error as PrivateFileError).stage).toBe('verify')
         expect((error as Error).message).not.toContain('DO-NOT-WRITE')
       }
@@ -91,11 +93,12 @@ describe('Windows private IO logic', () => {
         calls.push('verify-handle')
       },
     })
-    await expect(verifyPrivate(root, 'directory')).rejects.toBeInstanceOf(
+    const path = join(root, 'legacy.json')
+    await expect(verifyPrivate(path, 'file')).rejects.toBeInstanceOf(
       PrivateFileError,
     )
     expect(calls).toEqual([])
-    await verifyPrivate(root, 'directory', true)
+    await verifyPrivate(path, 'file', true)
     expect(calls).toEqual(['secure', 'verify-handle'])
   })
 
@@ -118,9 +121,54 @@ describe('Windows private IO logic', () => {
         },
       })
       await expect(
-        verifyPrivate(root, 'directory', true),
+        verifyPrivate(join(root, 'legacy.json'), 'file', true),
       ).rejects.toBeInstanceOf(PrivateFileError)
     }
+    expect(repairs).toBe(0)
+  })
+
+  test('in-place securing refuses writable parents before backend repair', async () => {
+    const path = join(root, 'legacy.json')
+    let repairs = 0
+    setPrivateFilesBackendForTest({
+      ...api,
+      verifyOwnerOnly: async () => ({
+        ok: false,
+        refusal: { reason: api.NOT_PROTECTED, message: 'inherited ACL' },
+      }),
+      verifySafeParent: async (parent) => ({
+        ok: false,
+        reason: api.WRITABLE_BY_OTHERS,
+        path: parent,
+        level: parent,
+      }),
+      securePrivatePath: async () => {
+        repairs++
+      },
+      verifyPrivatePath: async () => {},
+    })
+    await expect(verifyPrivate(path, 'file', true)).rejects.toMatchObject({
+      reason: 'writable-by-others',
+      path: root,
+      stage: 'safe-parent',
+    })
+    expect(repairs).toBe(0)
+  })
+
+  test('safe existing parents do not require owner-only permissions or repair', async () => {
+    let repairs = 0
+    setPrivateFilesBackendForTest({
+      ...api,
+      verifySafeParent: async () => ({ ok: true }),
+      verifyOwnerOnly: async () => ({
+        ok: false,
+        refusal: { reason: api.EXTRA_ACE, sid: 'SYSTEM', mask: 0x1f01ff },
+      }),
+      securePrivatePath: async () => {
+        repairs++
+      },
+    })
+    await verifyPrivate(root, 'directory', true)
     expect(repairs).toBe(0)
   })
 

@@ -64,7 +64,7 @@ $results | ConvertTo-Json -Depth 5 | Out-File -LiteralPath (Join-Path windows-pr
 Write-Host "$($results.Count) CAUGHT controls on Bun $ExpectedVersion; no collateral failures in the selected tests"
 
 # Skipping every real assertion must fail the wrapper's test-count guard,
-# even when the test runner exits successfully with all seven tests skipped.
+# even when the test runner exits successfully with all eleven tests skipped.
 $harness = 'test/windows/common-auth.mjs'
 & git add -- $harness
 if (((& git diff --stat) -join "`n").Trim()) { throw 'Count control requires an empty unstaged diff' }
