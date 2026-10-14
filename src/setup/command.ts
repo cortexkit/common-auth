@@ -14,6 +14,7 @@ import {
   assertHostsStopped,
   createProcessFence,
   ProcessFenceViolationError,
+  ProcessInspectionError,
 } from './process-fence.js'
 import { selectSetupHosts } from './prompts.js'
 import {
@@ -153,7 +154,15 @@ export async function runSetup(
   const fence =
     io.fence ??
     createProcessFence(io.runner ?? defaultCommandRunner, { platform })
-  const stopped = () => assertHostsStopped(fence, env)
+  const stopped = async () => {
+    try {
+      await assertHostsStopped(fence, env)
+    } catch (error) {
+      if (error instanceof ProcessInspectionError)
+        printLine(terminal, error.refusalText)
+      throw error
+    }
+  }
   if (options.dryRun) {
     try {
       const active = await fence.listRunningHosts(env)
@@ -167,11 +176,13 @@ export async function runSetup(
           terminal,
           `${name} is running; setup will ask you to quit it.`,
         )
-    } catch {
+    } catch (error) {
       printLine(
         terminal,
         'Process inspection failed; real setup will require successful inspection and stopped OpenCode/Pi hosts.',
       )
+      if (error instanceof ProcessInspectionError)
+        printLine(terminal, error.refusalText)
     }
   } else await stopped()
   if (options.claustrum && !detection.claustrum.available)

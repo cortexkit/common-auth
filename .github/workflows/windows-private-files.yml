@@ -91,6 +91,12 @@ jobs:
           if ($LASTEXITCODE) { throw 'Build failed' }
           npm install --global opencode-ai
           if ($LASTEXITCODE) { throw 'OpenCode install failed' }
+      - name: Time 10 real Windows process listings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node test/setup/windows-process-timing.mjs
+          if ($LASTEXITCODE) { throw 'Windows process timing observed listing failures' }
       - name: Node real Windows process listing and Node/Bun Pi process fencing
         if: runner.os == 'Windows'
         shell: pwsh

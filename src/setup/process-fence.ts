@@ -1,5 +1,10 @@
 import { defaultCommandRunner } from './command-runner.js'
-import type { CommandRunner, ProcessFence, SetupEnvironment } from './types.js'
+import type {
+  CommandResult,
+  CommandRunner,
+  ProcessFence,
+  SetupEnvironment,
+} from './types.js'
 
 const HOST_PATTERN =
   /(?:^|[/\\])(opencode|litecode|opencode2|pi)(?:\.(?:exe|cmd|bat|m?js))?(?=$|\s|")/i
@@ -13,11 +18,45 @@ function hostName(command: string): string | null {
   )
 }
 
-export class ProcessInspectionError extends Error {
+export interface ProcessInspectionStep {
+  step: 'tasklist' | 'CIM' | 'ps'
+  exitCode: number | null
+  signal: NodeJS.Signals | null
+  timedOut: boolean
+  durationMs: number
+}
+
+export class ProcessInspectionError
+  extends Error
+  implements ProcessInspectionStep
+{
   readonly code = 'process-inspection-failed'
-  constructor() {
+  readonly step: ProcessInspectionStep['step']
+  readonly exitCode: number | null
+  readonly signal: NodeJS.Signals | null
+  readonly timedOut: boolean
+  readonly durationMs: number
+  constructor(details: ProcessInspectionStep) {
     super('Process inspection failed; setup cannot prove hosts are stopped.')
     this.name = 'ProcessInspectionError'
+    this.step = details.step
+    this.exitCode = details.exitCode
+    this.signal = details.signal
+    this.timedOut = details.timedOut
+    this.durationMs = details.durationMs
+  }
+
+  get refusalText(): string {
+    const outcome = this.timedOut
+      ? 'timed out'
+      : this.signal
+        ? `signal ${this.signal}`
+        : this.exitCode === null
+          ? 'could not start or complete'
+          : this.exitCode === 0
+            ? 'invalid output (exit code 0)'
+            : `exit code ${this.exitCode}`
+    return `${this.message} ${this.step}: ${outcome} after ${Math.round(this.durationMs)} ms.`
   }
 }
 
@@ -40,16 +79,56 @@ export class ProcessFenceViolationError extends Error {
 /** List processes before filtering hosts; Windows PID 0 is a valid idle-process row. */
 export async function listSetupProcesses(
   runner: CommandRunner = defaultCommandRunner,
-  options: { platform?: string; env?: SetupEnvironment } = {},
+  options: {
+    platform?: string
+    env?: SetupEnvironment
+    onStep?: (details: ProcessInspectionStep) => void
+  } = {},
 ): Promise<Array<{ pid: number; command: string }>> {
   const windows = (options.platform ?? process.platform) === 'win32'
+  let inspection: ProcessInspectionStep = {
+    step: windows ? 'tasklist' : 'ps',
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    durationMs: 0,
+  }
+  const inspect = async (
+    step: ProcessInspectionStep['step'],
+    file: string,
+    args: readonly string[],
+  ): Promise<CommandResult> => {
+    const started = performance.now()
+    inspection = {
+      step,
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      durationMs: 0,
+    }
+    try {
+      const result = await runner.run(file, args, { env: options.env })
+      inspection = {
+        step,
+        exitCode: result.exitCode,
+        signal: result.signal ?? null,
+        timedOut: result.timedOut ?? false,
+        durationMs: result.durationMs ?? performance.now() - started,
+      }
+      return result
+    } finally {
+      if (inspection.exitCode === null)
+        inspection.durationMs = performance.now() - started
+      options.onStep?.({ ...inspection })
+    }
+  }
   try {
-    const result = await runner.run(
+    const result = await inspect(
+      windows ? 'tasklist' : 'ps',
       windows ? 'tasklist.exe' : 'ps',
       windows ? ['/fo', 'csv', '/nh'] : ['-eo', 'pid,command'],
-      { env: options.env },
     )
-    if (result.exitCode !== 0) throw new ProcessInspectionError()
+    if (result.exitCode !== 0) throw new ProcessInspectionError(inspection)
     const processes: Array<{ pid: number; command: string }> = []
     for (const line of result.stdout.split(/\r?\n/)) {
       const trimmed = line.trim()
@@ -58,40 +137,36 @@ export async function listSetupProcesses(
       let command: string
       if (windows) {
         const match = /^"([^"]+)","(\d+)"(?:,|$)/.exec(trimmed)
-        if (!match) throw new ProcessInspectionError()
+        if (!match) throw new ProcessInspectionError(inspection)
         command = match[1] ?? ''
         pid = Number(match[2])
       } else {
         const match = /^(\d+)\s+(.+)$/.exec(trimmed)
         if (!match) {
           if (/^PID\s+COMMAND$/i.test(trimmed)) continue
-          throw new ProcessInspectionError()
+          throw new ProcessInspectionError(inspection)
         }
         pid = Number(match[1])
         command = match[2] ?? ''
       }
       if (!Number.isSafeInteger(pid) || pid < 0)
-        throw new ProcessInspectionError()
+        throw new ProcessInspectionError(inspection)
       processes.push({ pid, command })
     }
-    if (!processes.length) throw new ProcessInspectionError()
+    if (!processes.length) throw new ProcessInspectionError(inspection)
     // tasklist identifies native hosts, but npm Pi/OpenCode scripts appear as Node or Bun.
     const runtimes = processes.filter(
       (entry) =>
         entry.pid !== process.pid && /^(?:node|bun)\.exe$/i.test(entry.command),
     )
     if (windows && runtimes.length) {
-      const details = await runner.run(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter \"Name = 'node.exe' OR Name = 'bun.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
-        ],
-        { env: options.env },
-      )
-      if (details.exitCode !== 0) throw new ProcessInspectionError()
+      const details = await inspect('CIM', 'powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter \"Name = 'node.exe' OR Name = 'bun.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
+      ])
+      if (details.exitCode !== 0) throw new ProcessInspectionError(inspection)
       const value: unknown = JSON.parse(details.stdout || 'null')
       const rows: unknown[] =
         value === null ? [] : Array.isArray(value) ? value : [value]
@@ -104,11 +179,11 @@ export async function listSetupProcesses(
           !('CommandLine' in row) ||
           !Number.isSafeInteger(row.ProcessId)
         )
-          throw new ProcessInspectionError()
+          throw new ProcessInspectionError(inspection)
         if (typeof row.CommandLine === 'string')
           commands.set(Number(row.ProcessId), row.CommandLine)
         else if (runtimes.some((entry) => entry.pid === row.ProcessId))
-          throw new ProcessInspectionError()
+          throw new ProcessInspectionError(inspection)
       }
       for (const entry of runtimes) {
         // A process absent from the later CIM snapshot already exited.
@@ -116,8 +191,9 @@ export async function listSetupProcesses(
       }
     }
     return processes
-  } catch {
-    throw new ProcessInspectionError()
+  } catch (error) {
+    if (error instanceof ProcessInspectionError) throw error
+    throw new ProcessInspectionError(inspection)
   }
 }
 

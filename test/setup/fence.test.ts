@@ -4,9 +4,97 @@ import {
   createProcessFence,
   listSetupProcesses,
   ProcessFenceViolationError,
+  ProcessInspectionError,
+  type ProcessInspectionStep,
 } from '../../src/setup/index.js'
 
 describe('setup process fence', () => {
+  test('inspection failures carry safe step timeout exit signal and duration fields', async () => {
+    for (const step of ['tasklist', 'CIM', 'ps'] as const) {
+      for (const timedOut of [false, true]) {
+        const observations: ProcessInspectionStep[] = []
+        const runner = {
+          async run(file: string) {
+            if (step === 'CIM' && file === 'tasklist.exe')
+              return {
+                exitCode: 0,
+                stdout: '"node.exe","111","Console","1","30 K"\n',
+                stderr: '',
+              }
+            return {
+              exitCode: timedOut ? 1 : 7,
+              signal: timedOut ? ('SIGTERM' as const) : null,
+              timedOut,
+              durationMs: timedOut ? 15_010 : 42,
+              stdout: 'secret command line',
+              stderr: 'secret stderr',
+            }
+          },
+        }
+        try {
+          await listSetupProcesses(runner, {
+            platform: step === 'ps' ? 'linux' : 'win32',
+            onStep: (details) => observations.push(details),
+          })
+          throw new Error('must refuse')
+        } catch (error) {
+          expect(error).toBeInstanceOf(ProcessInspectionError)
+          expect(error).toMatchObject({
+            step,
+            exitCode: timedOut ? 1 : 7,
+            signal: timedOut ? 'SIGTERM' : null,
+            timedOut,
+            durationMs: timedOut ? 15_010 : 42,
+          })
+          expect((error as Error).message).toBe(
+            'Process inspection failed; setup cannot prove hosts are stopped.',
+          )
+          expect(observations.at(-1)).toMatchObject({ step, timedOut })
+          expect(JSON.stringify(error)).not.toContain('secret')
+          expect((error as ProcessInspectionError).refusalText).toContain(
+            `${step}: ${timedOut ? 'timed out' : 'exit code 7'}`,
+          )
+        }
+      }
+    }
+  })
+
+  test('parse and runner exceptions retain the failing step without leaking causes', async () => {
+    for (const throws of [false, true]) {
+      const runner = {
+        async run(file: string) {
+          if (file === 'tasklist.exe')
+            return {
+              exitCode: 0,
+              stdout: '"bun.exe","111","Console","1","30 K"\n',
+              stderr: '',
+            }
+          if (throws) throw new Error('secret command line')
+          return { exitCode: 0, stdout: 'secret invalid JSON', stderr: '' }
+        },
+      }
+      try {
+        await listSetupProcesses(runner, { platform: 'win32' })
+        throw new Error('must refuse')
+      } catch (error) {
+        expect(error).toBeInstanceOf(ProcessInspectionError)
+        expect(error).toMatchObject({
+          step: 'CIM',
+          exitCode: throws ? null : 0,
+          signal: null,
+          timedOut: false,
+        })
+        expect(
+          (error as ProcessInspectionError).durationMs,
+        ).toBeGreaterThanOrEqual(0)
+        expect(JSON.stringify(error)).not.toContain('secret')
+        expect((error as ProcessInspectionError).refusalText).not.toContain(
+          'secret',
+        )
+      }
+    }
+  })
+
   test('Windows idle PID zero and current runtime process are valid listing rows', async () => {
     const runner = {
       async run(file: string) {
