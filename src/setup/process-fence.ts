@@ -6,6 +6,11 @@ import type {
   SetupEnvironment,
 } from './types.js'
 
+// A cold PowerShell/WMI query took 13.8 s on Windows Server 2022; warm queries
+// took less than 0.5 s. This is the product's one-shot latency budget, not a test
+// deadline: 45 s is about three times the worst measured cold start.
+const WINDOWS_CIM_TIMEOUT_MS = 45_000
+
 const HOST_PATTERN =
   /(?:^|[/\\])(opencode|litecode|opencode2|pi)(?:\.(?:exe|cmd|bat|m?js))?(?=$|\s|")/i
 const PI_SCRIPT_PATTERN =
@@ -97,6 +102,7 @@ export async function listSetupProcesses(
     step: ProcessInspectionStep['step'],
     file: string,
     args: readonly string[],
+    timeoutMs?: number,
   ): Promise<CommandResult> => {
     const started = performance.now()
     inspection = {
@@ -107,7 +113,10 @@ export async function listSetupProcesses(
       durationMs: 0,
     }
     try {
-      const result = await runner.run(file, args, { env: options.env })
+      const result = await runner.run(file, args, {
+        env: options.env,
+        timeoutMs,
+      })
       inspection = {
         step,
         exitCode: result.exitCode,
@@ -160,12 +169,17 @@ export async function listSetupProcesses(
         entry.pid !== process.pid && /^(?:node|bun)\.exe$/i.test(entry.command),
     )
     if (windows && runtimes.length) {
-      const details = await inspect('CIM', 'powershell.exe', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter \"Name = 'node.exe' OR Name = 'bun.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
-      ])
+      const details = await inspect(
+        'CIM',
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter \"Name = 'node.exe' OR Name = 'bun.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
+        ],
+        WINDOWS_CIM_TIMEOUT_MS,
+      )
       if (details.exitCode !== 0) throw new ProcessInspectionError(inspection)
       const value: unknown = JSON.parse(details.stdout || 'null')
       const rows: unknown[] =

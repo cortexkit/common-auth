@@ -23,6 +23,43 @@ async function profile() {
 }
 
 describe('setup flow', () => {
+  test('real and dry runs print progress before process inspection begins', async () => {
+    for (const dryRun of [false, true]) {
+      const io = fakeIO()
+      io.folders.add('/home/test/.config/opencode')
+      const term = terminal()
+      let inspected = false
+      const failure = new ProcessInspectionError({
+        step: 'CIM',
+        exitCode: 1,
+        signal: 'SIGTERM',
+        timedOut: true,
+        durationMs: 45_001,
+      })
+      io.fence = {
+        async listRunningHosts() {
+          expect(term.lines.at(-1)?.trim()).toBe(
+            'Checking that OpenCode and Pi are not running…',
+          )
+          inspected = true
+          throw failure
+        },
+      }
+      const result = runSetup(
+        plugin(),
+        dryRun ? ['--yes', '--dry-run'] : ['--yes'],
+        {
+          ...io,
+          terminal: term,
+        },
+      )
+      if (dryRun) expect((await result).dryRun).toBe(true)
+      else await expect(result).rejects.toBe(failure)
+      expect(inspected).toBe(true)
+      expect(term.lines.join('')).toContain('CIM: timed out')
+    }
+  })
+
   test('inspection refusal prints the step and timeout or exit code before rejecting', async () => {
     for (const timedOut of [false, true]) {
       const io = fakeIO()

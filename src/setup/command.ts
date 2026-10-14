@@ -163,6 +163,7 @@ export async function runSetup(
       throw error
     }
   }
+  printLine(terminal, 'Checking that OpenCode and Pi are not running…')
   if (options.dryRun) {
     try {
       const active = await fence.listRunningHosts(env)

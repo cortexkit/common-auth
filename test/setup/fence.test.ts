@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   assertHostsStopped,
+  type CommandRunner,
   createProcessFence,
   listSetupProcesses,
   ProcessFenceViolationError,
@@ -9,6 +10,67 @@ import {
 } from '../../src/setup/index.js'
 
 describe('setup process fence', () => {
+  test('Windows CIM uses a 45 second one-shot budget and still refuses past it', async () => {
+    for (const durationMs of [20_000, 45_001]) {
+      const calls: string[] = []
+      const runner: CommandRunner = {
+        async run(file, _args, options) {
+          calls.push(file)
+          if (file === 'tasklist.exe') {
+            expect(options?.timeoutMs).toBeUndefined()
+            return {
+              exitCode: 0,
+              stdout: '"node.exe","111","Console","1","30 K"\n',
+              stderr: '',
+              durationMs: 300,
+            }
+          }
+          expect(file).toBe('powershell.exe')
+          const timedOut = durationMs > (options?.timeoutMs ?? 15_000)
+          return {
+            exitCode: timedOut ? 1 : 0,
+            signal: timedOut ? 'SIGTERM' : null,
+            timedOut,
+            durationMs,
+            stdout: timedOut
+              ? ''
+              : JSON.stringify({
+                  ProcessId: 111,
+                  CommandLine:
+                    'node C:\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js --secret hidden',
+                }),
+            stderr: timedOut ? 'secret stderr' : '',
+          }
+        },
+      }
+      const fence = createProcessFence(runner, { platform: 'win32' })
+      if (durationMs === 20_000) {
+        expect(
+          (await fence.listRunningHosts()).map((host) => host.pid),
+        ).toEqual([111])
+      } else {
+        try {
+          await assertHostsStopped(fence)
+          throw new Error('must refuse')
+        } catch (error) {
+          expect(error).toBeInstanceOf(ProcessInspectionError)
+          expect(error).toMatchObject({
+            step: 'CIM',
+            timedOut: true,
+            durationMs: 45_001,
+          })
+          expect((error as ProcessInspectionError).refusalText).toContain(
+            'CIM: timed out',
+          )
+          expect((error as ProcessInspectionError).refusalText).not.toContain(
+            'secret',
+          )
+        }
+      }
+      expect(calls).toEqual(['tasklist.exe', 'powershell.exe'])
+    }
+  })
+
   test('inspection failures carry safe step timeout exit signal and duration fields', async () => {
     for (const step of ['tasklist', 'CIM', 'ps'] as const) {
       for (const timedOut of [false, true]) {
