@@ -82,7 +82,8 @@ async function scenario() {
         steps.push('live-owner-refused')
       },
       onStep: async (step) => {
-        steps.push(step)
+        if (step !== 'lock-read-ready' && step !== 'lock-missing')
+          steps.push(step)
         await onStep?.(step)
         for (const point of pause
           ? Array.isArray(pause)

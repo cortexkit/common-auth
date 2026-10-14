@@ -46,6 +46,32 @@ test('lock paths and frozen writer constants preserve writer defaults', () => {
   expect(Object.isFrozen(WRITER_LOCK_CONSTANTS.preferences)).toBe(true)
 })
 
+test('withLock forwards awaited lock steps and renewal timer observations', async () => {
+  const steps: string[] = []
+  const timers: string[] = []
+  await withLock(
+    target,
+    {
+      name,
+      ttlMs: 10_000,
+      timeoutMs: 100,
+      renew: true,
+      onStep: async (step) => {
+        steps.push(step)
+      },
+      onRenewalTimer: (event) => {
+        timers.push(event)
+      },
+    },
+    async (lock) => {
+      expect(timers).toEqual(['scheduled'])
+      await lock.assertOwned()
+    },
+  )
+  expect(steps).toContain('release-owner-confirmed')
+  expect(timers).toEqual(['scheduled', 'cancelled'])
+})
+
 test('the fs subpath exports the try-once lock: a held lock returns null until released', async () => {
   const publicApi = await import('../../src/fs/index.js')
   const first = await publicApi.acquireRefreshFileLock({

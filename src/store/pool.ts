@@ -135,6 +135,7 @@ export interface OpenPoolStoreOptions {
   hold?: (point: HoldPoint, rowId: string) => void | Promise<void>
   onLockEvent?: LockEnvironment['onLockEvent']
   onLockStep?: LockEnvironment['onLockStep']
+  onRenewalTimer?: LockEnvironment['onRenewalTimer']
 }
 
 export type PoolLoad =
@@ -355,6 +356,9 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
       now: options.now ?? Date.now,
       ...(options.onLockEvent ? { onLockEvent: options.onLockEvent } : {}),
       ...(options.onLockStep ? { onLockStep: options.onLockStep } : {}),
+      ...(options.onRenewalTimer
+        ? { onRenewalTimer: options.onRenewalTimer }
+        : {}),
     },
     removedIds: memory.removedIds,
     requireCredentialStamps: options.requireCredentialStamps === true,

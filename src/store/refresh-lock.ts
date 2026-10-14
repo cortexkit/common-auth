@@ -47,6 +47,10 @@ export interface LockEnvironment {
     lock: { name: string; path: string },
     step: LockStep,
   ) => void | Promise<void>
+  onRenewalTimer?: (
+    lock: { name: string; path: string },
+    event: 'scheduled' | 'cancelled',
+  ) => void
 }
 
 export interface HeldLock {
@@ -96,6 +100,12 @@ export async function acquirePoolLock(
       now: env.now,
       renew: options.renew,
       onContended: () => emit('contended'),
+      ...(env.onRenewalTimer
+        ? {
+            onRenewalTimer: (event: 'scheduled' | 'cancelled') =>
+              env.onRenewalTimer?.({ name: spec.name, path: spec.path }, event),
+          }
+        : {}),
       ...(options.renewIntervalMs !== undefined
         ? { renewIntervalMs: options.renewIntervalMs }
         : {}),

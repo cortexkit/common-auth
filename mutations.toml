@@ -1178,17 +1178,56 @@ id = 'fs-lock-stale-reclaim-rechecks-liveness-under-marker'
 guards = 'a contender that saw a stale lock rechecks liveness after taking the eviction marker, so a replacement owner installed meanwhile is preserved'
 file = 'src/fs/refresh-file-lock.ts'
 old = '''
-      try {
-        if (await lockIsLive()) return contended()'''
+        const confirmed = await readLockState()'''
 new = '''
-      try {
-        if (false) return contended()'''
+        const confirmed = observed as LockState /* NON-VACUITY BREAK */'''
 test_file = 'test/fs/acquisition-orderings.test.ts'
 runner = "command"
 command = ["bun", "test", "test/fs/acquisition-orderings.test.ts", "-t", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^deterministic\sstale\sacquisition\sorderings\sordering\s2\srechecks\sliveness\sunder\sthe\smarker\sand\spreserves\sthe\sreplacement\sowner$']
-expect_message = '/expect\(await first\)\.toBeNull\(\)[\s\S]*Received: \{/'
+expect_message = 'stale-lock-confirmed'
+
+[[control]]
+id = 'fs-lock-missing-is-not-stale'
+guards = 'a missing lock retries exclusive creation without taking an eviction marker or claiming stale eviction'
+file = 'src/fs/refresh-file-lock.ts'
+old = "return { status: 'missing' }"
+new = "return { status: 'stale', identity: { kind: 'owner', ownerId: 'missing', expiresAt: 0 } } /* NON-VACUITY BREAK */"
+test_file = 'test/fs/stale-lock-identity.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/fs/stale-lock-identity.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^stale\slock\sidentity\smissing\slock\sretries\sexclusive\screate\swithout\san\seviction\smarker$']
+expect_message = 'stale-lock-observed'
+
+[[control]]
+id = 'fs-lock-stale-removal-binds-identity'
+guards = 'the final removal fence preserves a different expired record installed after stale confirmation'
+file = 'src/fs/refresh-file-lock.ts'
+old = 'if (!sameStaleLock(observed.identity, current)) continue'
+new = 'if (false /* NON-VACUITY BREAK */) continue'
+test_file = 'test/fs/stale-lock-identity.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/fs/stale-lock-identity.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^stale\slock\sidentity\spreserves\sexpired\sreplacement\safter\sstale\sconfirmation$']
+expect_message = 'toBeNull'
+
+[[control]]
+id = 'fs-lock-renewal-rechecks-expiry-before-publish'
+guards = 'a holder whose lease expires after the awaited renewal barrier cannot publish a renewed lease'
+file = 'src/fs/refresh-file-lock.ts'
+old = '''        current?.ownerId !== ownerId ||
+        !(Number(current?.expiresAt) > now()) ||'''
+new = '''        current?.ownerId !== ownerId ||
+        false /* NON-VACUITY BREAK */ ||'''
+test_file = 'test/fs/stale-lock-identity.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/fs/stale-lock-identity.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^stale\slock\sidentity\srenewal\srefuses\sexpiry\safter\sits\slast\sawaited\swrite\sbarrier$']
+expect_message = 'toEqual'
 
 [[control]]
 id = 'fs-lock-renewal-error-stops-on-takeover'

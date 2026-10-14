@@ -35,6 +35,10 @@ export interface LockOptions {
   ttlMs: number
   timeoutMs: number
   renew?: boolean
+  onStep?: Parameters<typeof acquireRefreshFileLock>[0]['onStep']
+  onRenewalTimer?: Parameters<
+    typeof acquireRefreshFileLock
+  >[0]['onRenewalTimer']
 }
 
 export async function withLock<T>(
@@ -49,6 +53,10 @@ export async function withLock<T>(
       name: options.name,
       ttlMs: options.ttlMs,
       renew: options.renew ?? false,
+      ...(options.onStep ? { onStep: options.onStep } : {}),
+      ...(options.onRenewalTimer
+        ? { onRenewalTimer: options.onRenewalTimer }
+        : {}),
     })
     if (lock) {
       try {

@@ -655,7 +655,7 @@ describe('acquireRefreshFileLock', () => {
       renew: true,
       renewIntervalMs: 1,
       onStep: async (step) => {
-        if (step === 'renewal-write-ready') {
+        if (step === 'renewal-write-finished') {
           renewalWriteReady.resolve()
           await releaseRenewal.promise
         }
@@ -666,13 +666,7 @@ describe('acquireRefreshFileLock', () => {
 
     await observed(hooks.lifetime, renewalWriteReady.promise)
     currentNow = start + 10_000
-    const successor = await acquireRefreshFileLock({
-      name,
-      path,
-      ttlMs: 100,
-      now: () => currentNow,
-    })
-    expect(successor).not.toBeNull()
+    await rm(`${lockPath}.evicting`, { recursive: true, force: true })
 
     releaseRenewal.resolve()
     await observed(hooks.lifetime, renewalFinished.promise)
@@ -683,7 +677,6 @@ describe('acquireRefreshFileLock', () => {
     )
     expect(first!.hasLost()).toBe(true)
     await first?.release()
-    await successor?.release()
   })
 
   it('preserves a successor record during post-write relinquish', async () => {
@@ -708,7 +701,7 @@ describe('acquireRefreshFileLock', () => {
       renew: true,
       renewIntervalMs: 1,
       onStep: async (step) => {
-        if (step === 'renewal-write-ready') {
+        if (step === 'renewal-write-finished') {
           renewalWriteReady.resolve()
           await releaseRenewal.promise
         }

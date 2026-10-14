@@ -79,6 +79,8 @@ export async function acquireRefreshFileLock(options: {
       | 'stale-marker-stat'
       | 'stale-marker-claimed'
       | 'stale-lock-observed'
+      | 'lock-read-ready'
+      | 'lock-missing'
       | 'stale-lock-confirmed'
       | 'stale-lock-removed'
       | 'stale-lock-recreated'
@@ -87,6 +89,7 @@ export async function acquireRefreshFileLock(options: {
       | 'renewal-marker-unavailable'
       | 'renewal-write-fenced'
       | 'renewal-write-ready'
+      | 'renewal-write-finished'
       | 'relinquish-read'
       | 'renewal-finished'
       | 'release-owner-confirmed',
@@ -221,6 +224,17 @@ export async function acquireRefreshFileLock(options: {
       await handle.chmod(0o600)
       await handle.close()
       handle = undefined
+      const current = await readOwner()
+      if (
+        current?.ownerId !== ownerId ||
+        !(Number(current?.expiresAt) > now()) ||
+        !(await ownsEvictionMarker())
+      ) {
+        throw new LockOwnershipError({
+          target: options.path,
+          name: options.name,
+        })
+      }
       await rename(tempPath, lockPath)
       created = false
     } finally {
@@ -284,29 +298,83 @@ export async function acquireRefreshFileLock(options: {
     )
   }
 
-  async function lockIsLive() {
+  type StaleIdentity =
+    | { kind: 'owner'; ownerId: string; expiresAt: number }
+    | {
+        kind: 'stat'
+        dev: number
+        ino: number
+        mtimeMs: number
+        expiresAt: number
+      }
+  type LockState =
+    | { status: 'missing' }
+    | { status: 'live' }
+    | { status: 'stale'; identity: StaleIdentity }
+
+  async function readLockState(notifyReady = true): Promise<LockState> {
+    if (notifyReady && options.onStep) await options.onStep('lock-read-ready')
+    let owner: { ownerId?: unknown; expiresAt?: unknown } | undefined
     try {
-      const currentOwner = await readOwner()
-      return Number(currentOwner?.expiresAt) > now()
+      owner = await readOwner()
     } catch (error) {
       if (
         windowsPrivateFiles &&
         (error as NodeJS.ErrnoException).code !== 'ENOENT'
       )
         throw error
-      try {
-        const current = await stat(lockPath)
-        return current.mtimeMs + options.ttlMs > now()
-      } catch (error) {
-        if (
-          windowsPrivateFiles &&
-          (error as NodeJS.ErrnoException).code !== 'ENOENT'
-        )
-          throw error
-        // Lock doesn't exist — safe to acquire.
-        return false
+    }
+    const expiresAt = Number(owner?.expiresAt)
+    if (Number.isFinite(expiresAt) && expiresAt > now())
+      return { status: 'live' }
+    if (typeof owner?.ownerId === 'string' && Number.isFinite(expiresAt)) {
+      return {
+        status: 'stale',
+        identity: { kind: 'owner', ownerId: owner.ownerId, expiresAt },
       }
     }
+    try {
+      const current = await stat(lockPath)
+      const legacyExpiry = Number.isFinite(expiresAt)
+        ? expiresAt
+        : current.mtimeMs + options.ttlMs
+      if (legacyExpiry > now()) return { status: 'live' }
+      return {
+        status: 'stale',
+        identity: {
+          kind: 'stat',
+          dev: current.dev,
+          ino: current.ino,
+          mtimeMs: current.mtimeMs,
+          expiresAt: legacyExpiry,
+        },
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        if (options.onStep) await options.onStep('lock-missing')
+        return { status: 'missing' }
+      }
+      throw error
+    }
+  }
+
+  function sameStaleLock(observed: StaleIdentity, current: LockState) {
+    if (current.status !== 'stale') return false
+    const identity = current.identity
+    if (observed.kind === 'owner' && identity.kind === 'owner') {
+      return (
+        observed.ownerId === identity.ownerId &&
+        observed.expiresAt === identity.expiresAt
+      )
+    }
+    return (
+      observed.kind === 'stat' &&
+      identity.kind === 'stat' &&
+      observed.dev === identity.dev &&
+      observed.ino === identity.ino &&
+      observed.mtimeMs === identity.mtimeMs &&
+      observed.expiresAt === identity.expiresAt
+    )
   }
 
   // Fail-closed: any read error means we do NOT own the marker.
@@ -489,6 +557,7 @@ export async function acquireRefreshFileLock(options: {
               return
             }
             await writeOwner()
+            if (options.onStep) await options.onStep('renewal-write-finished')
             if (!(await ownsEvictionMarker())) {
               // If marker ownership cannot be read, stop claiming the lease
               // and remove only a record that still carries our owner id.
@@ -558,7 +627,10 @@ export async function acquireRefreshFileLock(options: {
     for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
       acquired = await tryAcquire()
       if (acquired) break
-      if (await lockIsLive()) return contended()
+      const observed = await readLockState()
+      if (observed.status === 'live') return contended()
+      // Absence is a create opportunity, never evidence of an expired lease.
+      if (observed.status === 'missing') continue
       if (options.onStep) await options.onStep('stale-lock-observed')
 
       try {
@@ -577,13 +649,22 @@ export async function acquireRefreshFileLock(options: {
       }
 
       try {
-        if (await lockIsLive()) return contended()
+        const confirmed = await readLockState()
+        if (confirmed.status === 'live') return contended()
+        if (!sameStaleLock(observed.identity, confirmed)) continue
         // Verify marker ownership before removing a lock found not live.
         if (!(await ownsEvictionMarker())) return null
         if (options.onStep) await options.onStep('stale-lock-confirmed')
         // The onStep callback can pause while another contender renames
         // our marker, so verify ownership again after the callback.
         if (!(await ownsEvictionMarker())) return null
+        const current = await readLockState(false)
+        if (!sameStaleLock(observed.identity, current)) continue
+        // The final read and removal are not atomic. While this stale file
+        // exists, wx cannot create a successor; the marker excludes other
+        // evictors and release/renewal. An expired holder cannot renew: renewal
+        // rechecks expiry and marker ownership immediately before publishing.
+        // Thus cooperating lock users cannot replace the file in this window.
         await removeLeaseObject(lockPath)
         // Fence check 3: re-verify ownership after removing the stale lock.
         if (!(await ownsEvictionMarker())) return null

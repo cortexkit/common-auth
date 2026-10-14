@@ -9,13 +9,39 @@ import {
 } from '../../src/store/refresh-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
-import { blocked, deferred, type Scenario, scenario } from './helpers.js'
+import { blocked, deferred, oauth, type Scenario, scenario } from './helpers.js'
 
 const hooks = lifetimeHooks()
 const { it } = hooks
 let s: Scenario
 beforeEach(async () => {
   s = hooks.lifetime.manage(await scenario())
+})
+
+it('runtime store forwards lock steps and renewal timer observations with lock identity', async () => {
+  const steps: string[] = []
+  const timers: { name: string; path: string; event: string }[] = []
+  const store = s.open({
+    onLockStep: async (lock, step) => {
+      steps.push(`${lock.name}:${step}`)
+    },
+    onRenewalTimer: (lock, event) => {
+      timers.push({ ...lock, event })
+    },
+  })
+  await store.add({
+    id: 'observed',
+    label: 'observed',
+    credential: oauth('observed'),
+  })
+  expect(steps.some((step) => step.endsWith(':release-owner-confirmed'))).toBe(
+    true,
+  )
+  expect(timers.length).toBeGreaterThan(0)
+  for (const lock of timers.filter((entry) => entry.event === 'scheduled')) {
+    expect(timers).toContainEqual({ ...lock, event: 'cancelled' })
+    expect([s.configPath, s.statePath]).toContain(lock.path)
+  }
 })
 
 it('contended events distinguish live owners from stale takeovers and successful attempts', async () => {
