@@ -5331,6 +5331,7 @@ new = 'const result = await (await loadBackend()).verifyOwnerOnly(path).then((r)
 test_file = 'test/fs/windows-private-files.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/fs/windows-private-files.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/fs/windows-private-files.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^Windows\sprivate\sIO\slogic\ssafe\sexisting\sparents\sdo\snot\srequire\sowner-only\spermissions\sor\srepair$']
 
@@ -5345,6 +5346,7 @@ new = '''/* NON-VACUITY BREAK: skip the safe parent before in-place repair */
 test_file = 'test/fs/windows-private-files.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/fs/windows-private-files.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/fs/windows-private-files.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^Windows\sprivate\sIO\slogic\sin-place\ssecuring\srefuses\swritable\sparents\sbefore\sbackend\srepair$']
 expect_message = 'Received promise that resolved'
@@ -5358,5 +5360,6 @@ new = "await (await import('@cortexkit/private-files')).verifyPrivatePath(parent
 test_file = 'test/claustrum/enrollment-ancestors.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/claustrum/enrollment-ancestors.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/enrollment-ancestors.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^Ubuntu\sumask\s0002\sconfig\slayout\spasses\sthe\sshared\ssafe-parent\spolicy\sunchanged$']
