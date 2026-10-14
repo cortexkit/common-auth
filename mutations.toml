@@ -1947,7 +1947,7 @@ command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/enrollment-ancestors.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^authorizes\swith\san\sowner-only\stoken\sbelow\sa\snon-private\swritable\sancestor$']
-expect_message = 'has a writable ancestor'
+expect_message = 'Claustrum enrollment parent refused'
 
 # --- sidebar RPC: port files, proxy bypass, request limits ---
 
