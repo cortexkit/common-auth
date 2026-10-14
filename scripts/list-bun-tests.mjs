@@ -1,151 +1,107 @@
-import { mock } from 'bun:test'
-import { existsSync, statSync } from 'node:fs'
-import { dirname, extname, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-const [testFile, pattern] = process.argv.slice(2)
-
-if (!testFile || pattern === undefined) {
-  console.error('usage: bun scripts/list-bun-tests.mjs <test-file> <name-pattern>')
-  process.exit(2)
+function fail(message) {
+  process.stderr.write(`${message}\n`)
+  process.exit(1)
 }
 
-const selectedNames = []
-const describeNames = []
-
-function defineTest(name) {
-  selectedNames.push([...describeNames, String(name)].filter(Boolean).join(' '))
-}
-
-function defineSuite(name, body) {
-  if (typeof body !== 'function') return
-  describeNames.push(String(name))
-  try {
-    body()
-  } finally {
-    describeNames.pop()
-  }
-}
-
-function formatEachName(title, value, index) {
-  if (typeof title === 'function') {
-    return title(...(Array.isArray(value) ? value : [value]))
-  }
-
-  const values = Array.isArray(value) ? value : [value]
-  let valueIndex = 0
-  return title.replace(/\$([\w]+)|%([sdifjoO#%])/g, (match, key, format) => {
-    if (key) return String(value?.[key] ?? match)
-    if (format === '%') return '%'
-    if (format === '#') return String(index)
-    const entry = values[valueIndex++]
-    if (entry === undefined) return match
-    if (format === 'd' || format === 'i' || format === 'f') return String(Number(entry))
-    if (format === 'j') return JSON.stringify(entry)
-    return String(entry)
-  })
-}
-
-function test(name) {
-  defineTest(name)
-}
-
-test.skip = test
-test.todo = () => {}
-test.only = test
-test.skipIf = () => test
-test.each = (cases) => (name) => {
-  cases.forEach((value, index) => defineTest(formatEachName(name, value, index)))
-}
-
-function describe(name, body) {
-  defineSuite(name, body)
-}
-
-describe.skip = describe
-describe.todo = () => {}
-describe.only = describe
-describe.skipIf = () => describe
-describe.each = (cases) => (name, body) => {
-  cases.forEach((value, index) =>
-    defineSuite(formatEachName(name, value, index), () => body(value)),
-  )
-}
-
-const noop = () => {}
-const mockedTestApi = {
-  afterAll: noop,
-  afterEach: noop,
-  beforeAll: noop,
-  beforeEach: noop,
-  describe,
-  expect: () => new Proxy(noop, { get: () => noop }),
-  it: test,
-  mock: { module: noop, restore: noop, restoreAll: noop },
-  spyOn: () => new Proxy(noop, { get: () => noop }),
-  suite: describe,
-  test,
-}
-
-// Bun has no list-only test command, so registration is captured without invoking
-// callbacks. This lets the listing apply Bun's own JavaScript regex matching.
-mock.module('bun:test', () => mockedTestApi)
-
-const imported = new Set()
-const registrationModules = []
-
-function localImports(source) {
-  return Array.from(
-    source.matchAll(
-      /\b(?:import|export)\s+(?:[^'"]*?\s+from\s*)?['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-    ),
-    (match) => match[1] ?? match[2],
-  )
-}
-
-function resolveImport(from, specifier) {
-  if (!specifier.startsWith('.')) return undefined
-  const base = resolve(dirname(from), specifier)
-  const extension = extname(base)
-  const candidates = extension
-    ? [
-        base,
-        ...(extension === '.js'
-          ? [base.slice(0, -3) + '.ts', base.slice(0, -3) + '.tsx']
-          : []),
+function decodeXml(value) {
+  return value.replace(
+    /&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos);/gi,
+    (_entity, name) => {
+      if (name[0] === '#') {
+        const codePoint =
+          name[1].toLowerCase() === 'x'
+            ? Number.parseInt(name.slice(2), 16)
+            : Number.parseInt(name.slice(1), 10)
+        return String.fromCodePoint(codePoint)
+      }
+      return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[
+        name.toLowerCase()
       ]
-    : [base, ...['.ts', '.tsx', '.js', '.mjs', '.cjs', '.json'].map((ext) => base + ext)]
-  candidates.push(
-    ...['index.ts', 'index.tsx', 'index.js', 'index.mjs'].map((name) => resolve(base, name)),
+    },
   )
-  return candidates.find((candidate) => {
-    try {
-      return statSync(candidate).isFile()
-    } catch {
-      return false
-    }
-  })
 }
 
-async function loadTestModules(filename) {
-  const absolute = resolve(filename)
-  if (imported.has(absolute) || !existsSync(absolute)) return
-  imported.add(absolute)
+function attributes(tag) {
+  return Object.fromEntries(
+    [...tag.matchAll(/([\w:-]+)="([^"]*)"/g)].map(([, name, value]) => [
+      name,
+      decodeXml(value),
+    ]),
+  )
+}
 
-  const source = await Bun.file(absolute).text()
-  const dependencies = localImports(source)
-  for (const specifier of dependencies) {
-    const dependency = resolveImport(absolute, specifier)
-    if (dependency) await loadTestModules(dependency)
+function listedNames(xml) {
+  const suites = []
+  const names = []
+  const tags = /<testsuite\b([^>]*)>|<\/testsuite>|<testcase\b([^>]*?)(?:\/?>)/g
+  for (const match of xml.matchAll(tags)) {
+    if (match[1] !== undefined) {
+      suites.push(attributes(match[1]).name)
+      continue
+    }
+    if (match[0] === '</testsuite>') {
+      suites.pop()
+      continue
+    }
+    const testName = attributes(match[2]).name
+    if (!testName) continue
+    const describeNames = suites.slice(1).filter(Boolean)
+    names.push([...describeNames, testName].join(' '))
+  }
+  return names
+}
+
+const args = process.argv.slice(2)
+if (args.length !== 2) {
+  fail('usage: bun scripts/list-bun-tests.mjs <test-file> <name-pattern>')
+}
+const [testFile, pattern] = args
+
+let selector
+try {
+  selector = new RegExp(pattern)
+} catch (error) {
+  fail(`invalid Bun test-name pattern: ${error.message}`)
+}
+
+const temporaryDir = mkdtempSync(join(tmpdir(), 'ckdev-mutate-bun-list-'))
+const reportPath = join(temporaryDir, 'junit.xml')
+try {
+  // A never-matching filter makes Bun list discovered tests as skipped without
+  // executing their bodies; the JUnit suites retain their describe hierarchy.
+  const result = spawnSync(
+    'bun',
+    [
+      'test',
+      testFile,
+      '-t',
+      '(?!)',
+      '--reporter=junit',
+      `--reporter-outfile=${reportPath}`,
+    ],
+    { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+  )
+  if (result.error) fail(`could not list Bun tests: ${result.error.message}`)
+
+  let xml
+  try {
+    xml = readFileSync(reportPath, 'utf8')
+  } catch {
+    fail(
+      `Bun did not produce a JUnit test listing for ${testFile}: ${(result.stderr || result.stdout).trim()}`,
+    )
+  }
+  if (!xml.includes('<testsuites')) {
+    fail(`Bun produced an invalid JUnit test listing for ${testFile}`)
   }
 
-  if (dependencies.includes('bun:test')) registrationModules.push(absolute)
+  const selected = listedNames(xml).filter((name) => selector.test(name))
+  process.stdout.write(`${JSON.stringify(selected)}\n`)
+} finally {
+  rmSync(temporaryDir, { recursive: true, force: true })
 }
-
-await loadTestModules(testFile)
-for (const modulePath of registrationModules) {
-  await import(pathToFileURL(modulePath).href)
-}
-
-const matcher = new RegExp(pattern)
-console.log(JSON.stringify(selectedNames.filter((name) => matcher.test(name))))
