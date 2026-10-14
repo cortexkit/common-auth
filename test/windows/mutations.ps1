@@ -1,6 +1,8 @@
 param([Parameter(Mandatory)][string]$ExpectedVersion)
 $ErrorActionPreference = 'Stop'
 if ((& bun --version).Trim() -ne $ExpectedVersion) { throw 'Wrong Bun version for mutation proofs' }
+& bun ./scripts/check-windows-mutation-anchors.mjs
+if ($LASTEXITCODE) { throw 'Windows mutation anchor validation failed' }
 $rows = Get-Content -Raw -LiteralPath test/windows/mutation-rows.json | ConvertFrom-Json
 New-Item -ItemType Directory -Force -Path windows-private-files-evidence | Out-Null
 $results = @()
@@ -31,10 +33,11 @@ foreach ($row in $rows) {
   if ($LASTEXITCODE) { throw 'Could not stage live mutation source' }
   $before = (& git diff --stat) -join "`n"
   if ($before.Trim()) { throw 'Mutation requires an empty unstaged diff' }
+  $target = Join-Path $PWD $row.file
+  $originalBytes = [IO.File]::ReadAllBytes($target)
   try {
-    $original = [IO.File]::ReadAllText((Join-Path $PWD $row.file))
-    if (-not $original.Contains($row.old)) { throw "Mutation anchor not found: $($row.id)" }
-    [IO.File]::WriteAllText((Join-Path $PWD $row.file), $original.Replace($row.old, $row.new))
+    & bun ./test/windows/mutation-source.mjs ./test/windows/mutation-rows.json $row.id
+    if ($LASTEXITCODE) { throw "Mutation application failed: $($row.id)" }
     $applied = (& git diff --stat) -join "`n"
     if (-not $applied.Trim()) { throw 'Mutation did not change a tracked source file' }
     Write-Host $applied
@@ -45,8 +48,9 @@ foreach ($row in $rows) {
     Run-Selected $row 'red'
     $results += @{ id = $row.id; runtime = $ExpectedVersion; outcome = 'CAUGHT'; expected_red = $row.test; applied = $applied; restored = '' }
   } finally {
-    & git checkout -- $row.file
-    if ($LASTEXITCODE) { throw 'Mutation restore failed' }
+    # Restore the captured bytes, including BOM/line endings, not a Git-normalized text copy.
+    [IO.File]::WriteAllBytes($target, $originalBytes)
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($target)) -cne [Convert]::ToBase64String($originalBytes)) { throw 'Mutation byte restore failed' }
     (Get-Item -LiteralPath $row.file).LastWriteTime = Get-Date
     $restored = (& git diff --stat) -join "`n"
     if ($restored.Trim()) { throw 'Mutation restore left a non-empty diff' }
@@ -64,10 +68,11 @@ Write-Host "$($results.Count) CAUGHT controls on Bun $ExpectedVersion; no collat
 $harness = 'test/windows/common-auth.mjs'
 & git add -- $harness
 if (((& git diff --stat) -join "`n").Trim()) { throw 'Count control requires an empty unstaged diff' }
+$originalBytes = [IO.File]::ReadAllBytes((Join-Path $PWD $harness))
 try {
   $original = [IO.File]::ReadAllText((Join-Path $PWD $harness))
   $anchor = 'const registerTest = nativeTest'
-  if (-not $original.Contains($anchor)) { throw 'Count-control import anchor missing' }
+  if ([Regex]::Matches($original, [Regex]::Escape($anchor)).Count -ne 1) { throw 'Count-control import anchor must match exactly once' }
   $mutant = 'const registerTest = nativeTest.skip /* NON-VACUITY BREAK */'
   [IO.File]::WriteAllText((Join-Path $PWD $harness), $original.Replace($anchor, $mutant))
   $applied = (& git diff --stat) -join "`n"
@@ -82,8 +87,8 @@ try {
   if (-not $caught) { throw 'Skipping all real Windows checks was incorrectly accepted' }
   @{ id = 'private-windows-count'; runtime = $ExpectedVersion; outcome = 'CAUGHT'; expected_red = 'Windows verification count guard'; applied = $applied; restored = '' } | ConvertTo-Json | Out-File -LiteralPath (Join-Path windows-private-files-evidence ("count-control-$ExpectedVersion.json"))
 } finally {
-  & git checkout -- $harness
-  if ($LASTEXITCODE) { throw 'Count-control restore failed' }
+  [IO.File]::WriteAllBytes((Join-Path $PWD $harness), $originalBytes)
+  if ([Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PWD $harness))) -cne [Convert]::ToBase64String($originalBytes)) { throw 'Count-control byte restore failed' }
   (Get-Item -LiteralPath $harness).LastWriteTime = Get-Date
   if (((& git diff --stat) -join "`n").Trim()) { throw 'Count-control restore left a non-empty diff' }
 }

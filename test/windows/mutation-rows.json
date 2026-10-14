@@ -16,8 +16,8 @@
   {
     "id": "private-deadline",
     "file": "src/fs/private-files.ts",
-    "old": "if (now() >= deadline) break",
-    "new": "if (Boolean(false) /* NON-VACUITY BREAK */) break",
+    "old": "    if (now() >= deadline) break\n    if (delay)\n      await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(\n        Math.min(delay, Math.max(0, deadline - now())),\n      )\n    if (now() >= deadline) break\n    await options.beforeRename?.()\n    if (now() >= deadline) break",
+    "new": "    if (Boolean(false) /* NON-VACUITY BREAK */) break\n    if (delay)\n      await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(\n        Math.min(delay, Math.max(0, deadline - now())),\n      )\n    if (Boolean(false) /* NON-VACUITY BREAK */) break\n    await options.beforeRename?.()\n    if (Boolean(false) /* NON-VACUITY BREAK */) break",
     "test": "elapsed deadline includes IO and lease cap prevents a new attempt"
   },
   {
@@ -58,8 +58,8 @@
   {
     "id": "private-lease-release",
     "file": "src/fs/refresh-file-lock.ts",
-    "old": "if (windowsPrivateFiles) throw error",
-    "new": "if (Boolean(false) /* NON-VACUITY BREAK */) throw error",
+    "old": "        } catch (error) {\n          if (windowsPrivateFiles) throw error\n          return\n        }\n        await backoff()",
+    "new": "        } catch (error) {\n          if (Boolean(false) /* NON-VACUITY BREAK */) throw error\n          return\n        }\n        await backoff()",
     "test": "Windows lease release does not convert access or sharing errors into success"
   },
   {
@@ -73,8 +73,8 @@
   {
     "id": "private-rpc-propagation",
     "file": "src/rpc/port-file.ts",
-    "old": "error instanceof PrivateFileError && error.code !== 'ENOENT'",
-    "new": "Boolean(false) /* NON-VACUITY BREAK */",
+    "old": "    } catch (error) {\n      if (error instanceof PrivateFileError && error.code !== 'ENOENT')\n        throw error\n    }\n  }\n  if (live.length === 0) return null",
+    "new": "    } catch (error) {\n      if (Boolean(false) /* NON-VACUITY BREAK */)\n        throw error\n    }\n  }\n  if (live.length === 0) return null",
     "testFile": "./test/windows/common-auth.mjs",
     "test": "foreign grant on a port token is a typed refusal not discovery fallback",
     "windowsOnly": true,

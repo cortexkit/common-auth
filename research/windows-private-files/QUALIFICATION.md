@@ -155,8 +155,26 @@ in `windows-private-files-evidence/logger-append/`.
 
 The Windows writer assertion now also appends 2500 lines, explicitly drains and
 closes, rotates a private log over 5 MiB, and independently inspects/denial-probes
-both active and rotated files. The Windows rerun is required before declaring
-this append revision qualified.
+both active and rotated files. [Run 38492178391](https://github.com/cortexkit/common-auth/actions/runs/38492178391)
+on append implementation `f6e765678e3b742f0ef61a6cd2cd0296ea950e7b` passed all
+seven real tests under Node 24 and both Bun versions on all three Windows
+runners, including active/rotated-log ACL inspection and second-user denial;
+regular CI also passed, as relayed by the operator. Its mutation phase stopped
+at the logger's multiline LF anchor in a CRLF checkout, after earlier controls
+had replayed. That is a harness failure, not a skipped or failed product
+assertion, and the full workflow must be rerun successfully before delivery.
+
+The harness now uses the same line-ending-normalized, unique-anchor replacement
+helper as `bun scripts/check-windows-mutation-anchors.mjs`. That local check
+validates all fourteen registered anchors against committed source as-is and
+CRLF-converted source, using the original LF anchors in both cases (28 checks).
+Three duplicate multi-replacement rows now use unique contexts without changing
+their test contracts. The runner captures and restores the original byte arrays
+in `finally`, checks byte equality independently of Git's EOL normalization, and
+still stages live sources and checks non-empty applied/empty restored diffs.
+The checker passed on Bun 1.3.14 and 1.4.2; corrupting the logger anchor or disabling
+CRLF normalization each failed only its named checker test on both runtimes.
+Evidence is retained in `windows-private-files-evidence/harness-eol/`.
 
 ## Limits and remaining adoption
 
