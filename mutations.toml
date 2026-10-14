@@ -1104,13 +1104,15 @@ id = 'fs-lock-release-is-owner-fenced'
 guards = "release removes the lock only while it still carries this owner's id, never a successor's lock"
 file = 'src/fs/refresh-file-lock.ts'
 old = '''
-            const owner = await readOwner()
-            if (owner?.ownerId !== ownerId) return
-            if (options.onStep) await options.onStep('release-owner-confirmed')'''
+            if (owner?.ownerId !== ownerId) {
+              removalConfirmed = true
+              return
+            }'''
 new = '''
-            const owner = await readOwner()
-            void owner
-            if (options.onStep) await options.onStep('release-owner-confirmed')'''
+            if (Boolean(false) /* NON-VACUITY BREAK */) {
+              removalConfirmed = true
+              return
+            }'''
 test_file = 'test/fs/refresh-file-lock.test.ts'
 runner = "command"
 command = ["bun", "test", "test/fs/refresh-file-lock.test.ts", "-t", "{test}"]
@@ -1158,8 +1160,12 @@ expect_message = '/ENOENT: no such file or directory, open .*tokens\.json\.refre
 id = 'fs-lock-stale-lock-is-reclaimed'
 guards = 'an expired lock is removed under the eviction marker and recreated, so a crashed holder cannot block the lock forever'
 file = 'src/fs/refresh-file-lock.ts'
-old = 'await removeLeaseObject(lockPath)'
-new = '/* NON-VACUITY BREAK: retain the expired lease instead of reclaiming it */'
+old = '''
+        await removeLeaseObject(lockPath)
+        // Fence check 3'''
+new = '''
+        /* NON-VACUITY BREAK: retain the expired lease instead of reclaiming it */
+        // Fence check 3'''
 test_file = 'test/fs/with-lock.test.ts'
 runner = "command"
 command = ["bun", "test", "test/fs/with-lock.test.ts", "-t", "{test}"]
