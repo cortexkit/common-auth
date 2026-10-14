@@ -92,7 +92,7 @@ jobs:
           npm install --global opencode-ai
           if ($LASTEXITCODE) { throw 'OpenCode install failed' }
       - name: Time 10 real Windows process listings
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: |
           node test/setup/windows-process-timing.mjs

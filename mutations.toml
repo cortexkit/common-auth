@@ -92,6 +92,20 @@ expect_red = ['^setup\sprocess\sfence\sinspection\sfailures\scarry\ssafe\sstep\s
 expect_message = 'timedOut'
 
 [[control]]
+id = 'setup-windows-cim-budget'
+guards = 'Cold Windows CIM startup has its own product latency budget while inspections past it still refuse'
+file = 'src/setup/process-fence.ts'
+old = 'const WINDOWS_CIM_TIMEOUT_MS = 45_000'
+new = 'const WINDOWS_CIM_TIMEOUT_MS = 15_000 /* NON-VACUITY BREAK */'
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/fence.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\sWindows\sCIM\suses\sa\s45\ssecond\sone-shot\sbudget\sand\sstill\srefuses\spast\sit$']
+expect_message = 'cannot prove hosts are stopped'
+
+[[control]]
 id = 'setup-windows-cmd-path'
 guards = 'Windows npm batch launchers count as installed without a successful direct exec'
 file = 'src/setup/detect.ts'
