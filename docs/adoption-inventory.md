@@ -53,6 +53,99 @@ Component legend: 1 rpc, 2 tui-build, 3 tui-preferences, 4 fs, 5 logger, 6 sideb
 
 ## Adoption inputs: public exports and parameters
 
+### ./setup
+
+`@cortexkit/common-auth/setup` is a Node-compatible ESM subpath, not a plugin
+bin. Each plugin's later adoption supplies its own Node bin and calls
+`await runSetup(plugin, process.argv.slice(3))` after dispatching `setup`.
+No reference-tree import or prompt dependency is required.
+
+The minimal `SetupPlugin` contract is:
+
+```ts
+import type { SetupPlugin } from '@cortexkit/common-auth/setup'
+
+const plugin: SetupPlugin = {
+  packages: { opencode: '@cortexkit/opencode-example-auth', pi: '@cortexkit/pi-example-auth' },
+  version: '1.2.3', // The plugin's concrete published version, not a range.
+  displayName: 'Example Auth',
+  slashCommand: '/example',
+  vault: {
+    connectionFile, // Resolve provider-specific environment overrides in the plugin.
+    hosts: {
+      opencode: { name: 'example-auth-opencode', paths: { stateDir, host: 'opencode' } },
+      pi: { name: 'example-auth-pi', paths: { stateDir, host: 'pi', override: piTokenPath, cwd } },
+    },
+  },
+  signInLocal: async (host) => { /* provider login and local-custody checks */ },
+  beforeRegister: async (host, mode) => { /* optional provider activation and custody checks */ },
+  migrate: async (host) => { /* provider-specific migration */ },
+}
+```
+
+`vault.hosts[host].paths` is exactly the input to `/claustrum`'s
+`hostEnrollmentPaths`, with separate host identities and enrollment files.
+Setup proves availability by finding `ck` on PATH and handshaking the supplied
+connection file within two seconds. Connect uses the existing enrollment manager,
+prints the `ck auth enroll approve` command, and polls for up to five minutes;
+pending requests survive for a later rerun. Enrollment does not grant a
+provider's account permissions or switch its serving store: provider-specific
+grants, Pi auth-slot consent, migration-path overlap checks and exclusive
+vault-mode policy remain in the callbacks. `signInLocal` must reject non-local
+custody before initiating login, as the existing plugins do. Callbacks are never
+called during a dry run.
+
+The shared flow detects and reports hosts, offers a toggle multiselect with
+found hosts preselected, fences running OpenCode/LiteCode/Pi processes, chooses
+vault or local sign-in, runs `beforeRegister(host, mode)`, registers, migrates,
+and prints a next step. The fence is checked again between side effects and
+before atomic config publication. Failed/malformed process inspection refuses;
+process diagnostics retain only recognized executable names, not arguments.
+
+Flags: `--yes`, `--dry-run`, `--claustrum`, `--no-claustrum`, `--login`, and
+`--opencode=1|2|both`. `--yes` selects found hosts but does **not** implicitly
+authorize vault enrollment. `--login` chooses local sign-in and conflicts with
+`--claustrum`; the two Claustrum flags also conflict. Without a TTY, `--yes` is
+required. A Pi agent folder counts as installed but registration still requires
+its CLI on PATH. Dry runs print exact shared config paths and contents,
+enrollment paths, the Pi install command, and which opaque plugin callbacks
+would run. Temporary, isolated version-probe profiles are removed; the user's
+profile and callback-owned files are not changed.
+
+OpenCode uses `OPENCODE_CONFIG_DIR`, else `XDG_CONFIG_HOME/opencode`, else
+`~/.config/opencode` on **all** OSes. A config folder alone, an AFT Desktop
+marker, or either CLI on PATH proves installation, independently of the version
+probe's success. Windows PATH lookup prefers `.exe`, `.cmd`, `.bat` to npm's
+extensionless POSIX shim, and version/install batch launches use fixed arguments
+through `cmd.exe /d /s /c`. Shell-expanding launcher paths or arguments refuse.
+Pi honors `PI_CODING_AGENT_DIR`, including `~` and `file://` overrides.
+
+Generation inference never starts OpenCode: it reads npm launcher targets and
+owning package metadata, shared targets and the `opencode2` name. An unclassified
+CLI, config-only or Desktop-only installation infers v2 from an existing plural
+`plugins` key; otherwise it defaults to v1. Conflicting v1/v2 evidence prompts
+interactively and refuses with `--yes` unless the generation flag is supplied.
+The flag overrides inference everywhere. OpenCode 2.0.22's real-host placement
+guard proves a V1-root/`./server` package registered only under `plugin` loads
+the server entry and fires a model hook. Consequently `both` uses the single
+compatible `plugin` registration plus TUI config, not two config roots.
+
+V1 writes `plugin` in OpenCode and TUI config; v2 writes `plugins` in OpenCode
+config only. Existing `.jsonc` is preferred to `.json`; absent files get a
+minimal schema config. JSONC edits preserve unrelated comments and whitespace,
+replace any version of the package, preserve tuple/object options, remove
+duplicates and remove the package's entry from the alternate key. Other
+plugins' entries are never removed. The shared `/fs` module stages and atomically
+publishes each config so readers never see a partially written file. Pi is
+registered by its resolved `pi install npm:<package>@<version>` command.
+
+`runSetup` returns `{ hosts, dryRun, mode, detection }` and throws on refusal;
+the bin owns exit codes. Optional `SetupIO` provides the existing menu terminal,
+environment, platform/home/cwd and injectable filesystem, command runner,
+process fence, enrollment connection and polling delay for tests. The subpath
+also exports detection, registration and fence helpers and their types; it
+does not depend on a Bun runtime, OpenTUI or a provider plugin.
+
 All ten subpaths are ESM, with `dist/<subpath>/index.js` and adjacent `index.d.ts` targets. Since 0.1.1, `/fs` also exports the try-once lock underneath `withLock`, `acquireRefreshFileLock({name, ttlMs, path, now?, renew?, renewIntervalMs?, onStep?})`, which returns a `{release, assertOwned}` handle or `null` when the lock is held, and `isLostMarkerRaceError`. It is for callers that hold a lock across several steps or poll rather than wait; openai-auth's refresh leases use it. The adopting plugin supplies its file paths, directory prefixes, registry key, preferences key, logger channels and schema/merge policy.
 
 ### ./rpc

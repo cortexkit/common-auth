@@ -12,6 +12,10 @@
     "test/fixtures/*"
   ],
   "exports": {
+    "./setup": {
+      "types": "./dist/setup/index.d.ts",
+      "import": "./dist/setup/index.js"
+    },
     "./rpc": {
       "types": "./dist/rpc/index.d.ts",
       "import": "./dist/rpc/index.js"

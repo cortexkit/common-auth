@@ -157,6 +157,7 @@ async function runScenario(
     receiptOnWire?: boolean
     apiKey?: string
     gateOnPlaceholder?: boolean
+    singularPackage?: boolean
     /**
      * Leave the provider without a configured key and sign in with the test
      * plugin's vault method through `opencode auth login` before the turns;
@@ -191,7 +192,9 @@ async function runScenario(
       : {}),
   })
   const config = {
-    plugins: [pluginDir],
+    ...(options.singularPackage
+      ? { plugin: [join(scratch, 'dual-plugin')] }
+      : { plugins: [pluginDir] }),
     providers: {
       [PROVIDER]: {
         // Normally use the placeholder returned by the plugin's login; the
@@ -406,6 +409,19 @@ function expectRecipeFired(result: ScenarioResult) {
 }
 
 describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
+  test('singular plugin loads the server entry of a dual entry package', async () => {
+    const result = await runScenario('http', [{ account: 'A' }], {
+      singularPackage: true,
+    })
+    verify(result, () => {
+      expect(result.exits).toEqual([0])
+      expect(events(result.plugin, 'setup')).toHaveLength(1)
+      expect(events(result.plugin, 'legacy-root')).toEqual([])
+      expect(events(result.plugin, 'select').length).toBeGreaterThan(0)
+      expect(pick(primaries(result.wire), 'identity')).toEqual(['A'])
+    })
+  }, 120_000)
+
   test('a real host API key bypasses placeholder gated auth', async () => {
     const result = await runScenario('http', [{ account: 'A' }], {
       apiKey: 'sk-loopback-host-key',
@@ -554,6 +570,30 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
     })
     if (!build.success)
       throw new Error(`plugin bundle failed: ${build.logs.join('\n')}`)
+    const dualDir = join(scratch, 'dual-plugin')
+    mkdirSync(dualDir, { recursive: true })
+    writeFileSync(
+      join(dualDir, 'package.json'),
+      JSON.stringify({
+        name: 'common-auth-dual-fixture',
+        version: '1.0.0',
+        type: 'module',
+        exports: { '.': './legacy.js', './server': './server.js' },
+      }),
+    )
+    writeFileSync(
+      join(dualDir, 'legacy.js'),
+      `import { appendFileSync } from 'node:fs'; export default async function () { appendFileSync(process.env.COMMON_AUTH_E2E_PLUGIN_LOG, JSON.stringify({event:'legacy-root'})+'\\n'); return {} }`,
+    )
+    const dualBuild = await Bun.build({
+      entrypoints: [fileURLToPath(new URL('./plugin.ts', import.meta.url))],
+      outdir: dualDir,
+      naming: 'server.js',
+      target: 'node',
+      format: 'esm',
+    })
+    if (!dualBuild.success)
+      throw new Error(`dual plugin bundle failed: ${dualBuild.logs.join('\n')}`)
   }, 300_000)
 
   afterAll(async () => {
