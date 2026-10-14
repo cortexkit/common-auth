@@ -9,11 +9,12 @@ import { createLogger } from '../logger/index.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
+import type { InsulaUsageTransport } from './insula.js'
 
 export type ClaustrumScopedClient = Pick<
   ClaustrumClient,
   'listScoped' | 'getScoped' | 'reportAuthFailureScoped' | 'close'
->
+> & { insula?: InsulaUsageTransport }
 
 /** The two credential types a plugin's family can hold; routing differs by type. */
 export type VaultCredentialType = 'oauth' | 'api_key'

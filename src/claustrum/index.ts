@@ -8,6 +8,7 @@ import {
   type ClaustrumClientOptions,
 } from '@cortexkit/claustrum-client'
 import type { ClaustrumScopedClient } from './custody.js'
+import { insulaUsageTransport } from './insula.js'
 
 export {
   ClaustrumCredentialError,
@@ -75,6 +76,13 @@ export {
   isCustodyPlaceholder,
   isCustodyPlaceholderValue,
 } from './host-slot.js'
+export type {
+  InsulaQuotaContext,
+  InsulaQuotaOptions,
+  InsulaUsageEntry,
+  InsulaUsageTransport,
+  InsulaUsageWindow,
+} from './insula.js'
 export {
   acceptAccount,
   type DeclinedAccount,
@@ -109,8 +117,9 @@ export {
  * on the request path. `connectionFile` is required: this library
  * reads no environment, so the plugin resolves the vault's connection file.
  */
-export function connectClaustrumScopedClient(
+export async function connectClaustrumScopedClient(
   options: ClaustrumClientOptions & { connectionFile: string },
 ): Promise<ClaustrumScopedClient> {
-  return ClaustrumClient.connect(options)
+  const client = await ClaustrumClient.connect(options)
+  return Object.assign(client, { insula: insulaUsageTransport(options) })
 }

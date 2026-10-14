@@ -89,6 +89,10 @@ export interface MockDaemon {
   proposals: Array<{ name?: string; hash?: string }>
   polls: number
   lists: number
+  insula?: { response: Wire; refusal?: string; hang?: 'open' | 'usage' }
+  usageGets: number
+  insulaOpens: number
+  onInsulaClose?: () => void
   onReport?: (report: MockReport) => void
   approve(requestId: string, token?: string, generation?: number): void
   deny(requestId: string): void
@@ -110,6 +114,8 @@ export async function startMockDaemon(input: {
   listScopedResult?: Wire
   /** Exact get_scoped wire results, without generated payload or identity fields. */
   getScopedResults?: Record<string, Wire>
+  /** Optional insula route; response is { result: entries, completeProviders?, pending? }. */
+  insula?: { response: Wire; refusal?: string; hang?: 'open' | 'usage' }
 }): Promise<MockDaemon> {
   const category = input.category ?? 'test-native'
   const adapter = input.refreshAdapter ?? 'test-provider'
@@ -134,6 +140,9 @@ export async function startMockDaemon(input: {
     proposals: [],
     polls: 0,
     lists: 0,
+    insula: input.insula,
+    usageGets: 0,
+    insulaOpens: 0,
     approve(requestId, token = 'ab'.repeat(32), generation = 1) {
       const entry = enrollments.get(requestId)
       if (!entry) throw new Error(`unknown request ${requestId}`)
@@ -276,12 +285,16 @@ export async function startMockDaemon(input: {
   }
 
   const server = createServer((socket) => {
+    let insulaSocket = false
     sockets.add(socket)
-    socket.once('close', () => sockets.delete(socket))
+    socket.once('close', () => {
+      sockets.delete(socket)
+      if (insulaSocket) state.onInsulaClose?.()
+    })
     socket.on('error', () => {})
     let buffer = Buffer.alloc(0)
     let phase: 'hello' | 'auth' | 'frames' = 'hello'
-    let routeChannel: number | undefined
+    const routes = new Map<number, string>()
 
     socket.on('data', (chunk) => {
       buffer = Buffer.concat([
@@ -336,18 +349,55 @@ export async function startMockDaemon(input: {
           method?: string
           op?: string
           params?: Wire
+          target?: { module_id?: string }
         }
         if (header.channel === 0) {
-          if (request.op === 'route.open') routeChannel = 7
-          writeResponse(socket, header, { route_channel: 7, route_epoch: 1 })
+          if (request.op === 'route.open') {
+            const moduleId = request.target?.module_id ?? 'claustrum'
+            if (moduleId === 'insula') {
+              insulaSocket = true
+              state.insulaOpens++
+              if (state.insula?.hang === 'open') continue
+              const refusal =
+                state.insula?.refusal ??
+                (!state.insula ? 'unknown_module' : undefined)
+              if (refusal) {
+                writeResponse(
+                  socket,
+                  header,
+                  { code: refusal },
+                  subc.FrameType.Error,
+                )
+                continue
+              }
+            }
+            const channel = moduleId === 'insula' ? 8 : 7
+            routes.set(channel, moduleId)
+            writeResponse(socket, header, {
+              route_channel: channel,
+              route_epoch: 1,
+            })
+          } else {
+            writeResponse(socket, header, { result: [] })
+          }
           continue
         }
-        if (header.channel !== routeChannel) {
+        if (!routes.has(header.channel)) {
           writeResponse(
             socket,
             header,
             { code: 'unknown_channel' },
             subc.FrameType.Error,
+          )
+          continue
+        }
+        if (routes.get(header.channel) === 'insula') {
+          state.usageGets++
+          if (state.insula?.hang === 'usage') continue
+          writeResponse(
+            socket,
+            header,
+            state.insula?.response ?? error('module_removed'),
           )
           continue
         }

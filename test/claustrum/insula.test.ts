@@ -1,0 +1,556 @@
+import { expect } from 'bun:test'
+import { join } from 'node:path'
+import {
+  ClaustrumConsumer,
+  connectClaustrumScopedClient,
+  type InsulaUsageEntry,
+} from '../../src/claustrum/index.ts'
+import {
+  mergeQuotaObservation,
+  type QuotaObservation,
+} from '../../src/quota/index.ts'
+import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { cleanupDirs, family, tempDir, writeToken } from './helpers.ts'
+import { type MockDaemon, startMockDaemon } from './mock-daemon.ts'
+
+const { afterEach, test } = lifetimeHooks()
+const consumers: Array<{ close(): void }> = []
+const daemons: MockDaemon[] = []
+afterEach(async () => {
+  for (const consumer of consumers.splice(0)) consumer.close()
+  await Promise.all(daemons.splice(0).map((daemon) => daemon.stop()))
+  await cleanupDirs()
+})
+
+const NOW = Date.parse('2026-09-30T12:00:00Z')
+function entry(overrides: Record<string, unknown> = {}) {
+  return {
+    provider: 'codex',
+    account: ' account-work ',
+    source: 'vault',
+    fetchedAt: new Date(NOW - 1_000).toISOString(),
+    usage: { primary: { usedPercent: 20, rawUsedPercent: 80 } },
+    ...overrides,
+  }
+}
+
+async function scenario(entries = [entry()], refusal?: string) {
+  const dir = await tempDir('insula-')
+  const daemon = await startMockDaemon({
+    directory: dir,
+    credentials: {
+      'oauth:test:work': {
+        payload: 'access',
+        account_id: 'account-work',
+        record_version: 1,
+        expires_at_ms: NOW + 3_600_000,
+      },
+      'oauth:test:other': {
+        payload: 'other',
+        account_id: 'account-other',
+        record_version: 1,
+        expires_at_ms: NOW + 3_600_000,
+      },
+    },
+    insula: {
+      response: { result: entries, completeProviders: ['codex'], pending: 0 },
+      refusal,
+    },
+  })
+  daemons.push(daemon)
+  const tokenPath = await writeToken(dir)
+  let now = NOW
+  let active = true
+  const seen: Array<{
+    entry: InsulaUsageEntry
+    fetchedAt: number
+    source?: string
+  }> = []
+  const create = (project: string, token = tokenPath) => {
+    const consumer = new ClaustrumConsumer({
+      rosterPath: join(dir, `${project}-roster.json`),
+      tokenPath: token,
+      family,
+      connect: () =>
+        connectClaustrumScopedClient({
+          connectionFile: daemon.connectionFile,
+          identity: { project_root: dir, harness: 'test', session: project },
+        }),
+      isCustodyActive: () => active,
+      now: () => now,
+      insula: {
+        provider: 'codex',
+        normalize: (value, context): QuotaObservation | undefined => {
+          seen.push({ entry: value, ...context })
+          const window = value.usage?.primary
+          if (!window) return undefined
+          return {
+            checkedAt: context.fetchedAt,
+            readings: [
+              {
+                label: 'session',
+                usedPercent: window.rawUsedPercent ?? window.usedPercent,
+              },
+            ],
+          }
+        },
+      },
+    })
+    consumers.push(consumer)
+    return consumer
+  }
+  const consumer = create('first')
+  await consumer.refresh()
+  const receipt = await consumer.authorize(
+    consumer
+      .snapshot()!
+      .rows.find((row) => row.accountIdentity === 'account-work')!.routeId,
+  )
+  const polls: string[] = []
+  const poll = async (target = consumer, served = receipt) => {
+    const cached = await target.cachedInsulaQuota(served)
+    if (cached !== undefined) return cached
+    polls.push(served.assertedAccountIdentity ?? 'unknown')
+    return { checkedAt: now, readings: [{ label: 'session', usedPercent: 30 }] }
+  }
+  return {
+    dir,
+    daemon,
+    consumer,
+    receipt,
+    polls,
+    poll,
+    seen,
+    create,
+    tokenPath,
+    setNow: (value: number) => {
+      now = value
+    },
+    setActive: (value: boolean) => {
+      active = value
+    },
+  }
+}
+
+test('current insula quota skips the own poll and retains source reading time', async () => {
+  const s = await scenario()
+  await s.consumer.refreshInsulaQuota()
+  const reading = await s.poll()
+  expect(s.polls).toEqual([])
+  expect(reading).toEqual({
+    checkedAt: NOW - 1_000,
+    readings: [{ label: 'session', usedPercent: 80 }],
+  })
+  expect(s.seen[0]?.source).toBe('vault')
+  const merged = mergeQuotaObservation(undefined, {
+    checkedAt: NOW,
+    readings: [{ label: 'session', usedPercent: 90 }],
+  })
+  expect(mergeQuotaObservation(merged, reading)).toEqual(merged)
+})
+
+test('route lookup hits a receipt-bound roster account without authorizing on the background path', async () => {
+  const s = await scenario()
+  s.daemon.credentials['oauth:test:work']!.wire = { account_id: undefined }
+  const consumer = s.create('bound')
+  await consumer.refresh()
+  const row = consumer
+    .snapshot()!
+    .rows.find((row) => row.credentialId === 'oauth:test:work')!
+  expect(row.accountIdentity).toBeUndefined()
+  const receipt = await consumer.authorize(row.routeId)
+  expect(
+    await consumer.recordQuota(
+      row.routeId,
+      { checkedAt: NOW, readings: [] },
+      receipt,
+    ),
+  ).toBe(true)
+  expect(
+    consumer.snapshot()!.rows.find((value) => value.routeId === row.routeId)
+      ?.accountIdentity,
+  ).toBe('account-work')
+  await consumer.refreshInsulaQuota()
+  const gets = s.daemon.gets.length
+  const usageGets = s.daemon.usageGets
+  expect(await consumer.cachedInsulaQuotaForRoute(row.routeId)).toEqual({
+    checkedAt: NOW - 1_000,
+    readings: [{ label: 'session', usedPercent: 80 }],
+  })
+  expect(s.daemon.gets).toHaveLength(gets)
+  expect(s.daemon.usageGets).toBe(usageGets)
+})
+
+test('route lookup misses an unbound roster account without authorizing', async () => {
+  const s = await scenario()
+  s.daemon.credentials['oauth:test:work']!.wire = { account_id: undefined }
+  const consumer = s.create('unbound')
+  await consumer.refresh()
+  await consumer.refreshInsulaQuota()
+  const row = consumer
+    .snapshot()!
+    .rows.find((value) => value.credentialId === 'oauth:test:work')!
+  const gets = s.daemon.gets.length
+  expect(await consumer.cachedInsulaQuotaForRoute(row.routeId)).toBeUndefined()
+  expect(s.daemon.gets).toHaveLength(gets)
+  expect(s.daemon.usageGets).toBe(1)
+})
+
+test('route lookup misses after a peer commits a known account replacement', async () => {
+  const s = await scenario()
+  await s.consumer.refreshInsulaQuota()
+  const row = s.consumer
+    .snapshot()!
+    .rows.find((value) => value.accountIdentity === 'account-work')!
+  expect(await s.consumer.cachedInsulaQuotaForRoute(row.routeId)).toBeDefined()
+  const peer = new ClaustrumConsumer({
+    rosterPath: join(s.dir, 'first-roster.json'),
+    tokenPath: s.tokenPath,
+    family,
+    connect: () =>
+      connectClaustrumScopedClient({
+        connectionFile: s.daemon.connectionFile,
+        identity: {
+          project_root: s.dir,
+          harness: 'test',
+          session: 'replacement-peer',
+        },
+      }),
+    now: () => NOW,
+  })
+  consumers.push(peer)
+  s.daemon.credentials['oauth:test:work']!.account_id = 'replacement-account'
+  await peer.refresh()
+  const replacement = peer
+    .snapshot()!
+    .rows.find((value) => value.accountIdentity === 'replacement-account')!
+  expect(replacement.routeId).not.toBe(row.routeId)
+  expect(
+    s.consumer.snapshot()!.rows.find((value) => value.routeId === row.routeId)
+      ?.accountIdentity,
+  ).toBe('account-work')
+  const gets = s.daemon.gets.length
+  expect(
+    await s.consumer.cachedInsulaQuotaForRoute(row.routeId),
+  ).toBeUndefined()
+  expect(
+    await s.consumer.cachedInsulaQuotaForRoute(replacement.routeId),
+  ).toBeUndefined()
+  expect(s.daemon.gets).toHaveLength(gets)
+  expect(s.daemon.usageGets).toBe(1)
+})
+
+test('a pending insula deadline does not keep an otherwise idle host process alive', async () => {
+  const started = Date.now()
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      '-e',
+      `
+    import { insulaUsageTransport } from ${JSON.stringify(new URL('../../src/claustrum/insula.ts', import.meta.url).href)}
+    const transport = insulaUsageTransport({
+      connectionFile: '/unused',
+      identity: { project_root: '/unused', harness: 'test', session: 'idle' },
+      connector: () => { console.log('connector entered'); return new Promise(() => {}) },
+    })
+    void transport.getUsage().catch(() => {})
+  `,
+    ],
+    { stdout: 'pipe', stderr: 'pipe' },
+  )
+  try {
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    expect(code).toBe(0)
+    expect(stdout).toContain('connector entered')
+    expect(stderr).toBe('')
+    expect(Date.now() - started).toBeLessThan(2_000)
+  } finally {
+    child.kill()
+  }
+})
+
+test.each([
+  ['stale', entry({ stale: false })],
+  ['old', entry({ fetchedAt: new Date(NOW - 240_000).toISOString() })],
+  [
+    'degraded',
+    entry({
+      errorClass: 'credential_rejected',
+      error: 'not a freshness signal',
+    }),
+  ],
+  [
+    'wrong account_id',
+    entry({ account: 'different', accountInfo: { email: 'account-work' } }),
+  ],
+  [
+    'email-only',
+    entry({ account: undefined, accountInfo: { email: 'account-work' } }),
+  ],
+  ['wrong provider', entry({ provider: 'claude' })],
+  ['missing timestamp', entry({ fetchedAt: undefined })],
+  ['malformed timestamp', entry({ fetchedAt: 'not-a-date' })],
+] as const)(
+  '%s insula quota falls back to the own poll',
+  async (_kind, value) => {
+    const s = await scenario([value])
+    await s.consumer.refreshInsulaQuota()
+    await s.poll()
+    expect(s.polls).toEqual(['account-work'])
+    expect(s.seen).toEqual([])
+  },
+)
+
+test.each([{ completeProviders: [] }, { completeProviders: ['codex'] }])(
+  'missing insula account falls back only for that account with completeProviders %j',
+  async ({ completeProviders }) => {
+    const s = await scenario()
+    s.daemon.insula!.response.completeProviders = completeProviders
+    await s.consumer.refreshInsulaQuota()
+    await s.poll()
+    const other = await s.consumer.authorize(
+      s.consumer
+        .snapshot()!
+        .rows.find((row) => row.accountIdentity === 'account-other')!.routeId,
+    )
+    await s.poll(s.consumer, other)
+    expect(s.polls).toEqual(['account-other'])
+  },
+)
+
+test.each([
+  'unknown_module',
+  'module_removed',
+  'module_warming',
+  'target_unavailable',
+  'module_reloading',
+  'capability_denied',
+])(
+  'insula refusal %s falls back immediately without retry',
+  async (refusal) => {
+    const s = await scenario([entry()], refusal)
+    await s.consumer.refreshInsulaQuota()
+    await s.poll()
+    expect(s.polls).toEqual(['account-work'])
+    expect(s.daemon.insulaOpens).toBe(1)
+    expect(s.daemon.usageGets).toBe(0)
+  },
+)
+
+test('insula refusal invalidates a previously current cache', async () => {
+  const s = await scenario()
+  await s.consumer.refreshInsulaQuota()
+  s.daemon.insula!.refusal = 'module_removed'
+  s.setNow(NOW + 60_000)
+  await s.consumer.refreshInsulaQuota()
+  await s.poll()
+  expect(s.polls).toEqual(['account-work'])
+})
+
+test('several projects share one insula usage.get per minute and release independently', async () => {
+  const s = await scenario()
+  const second = s.create('second')
+  const third = s.create('third')
+  await Promise.all([second.refresh(), third.refresh()])
+  await Promise.all([
+    s.consumer.refreshInsulaQuota(),
+    second.refreshInsulaQuota(),
+    third.refreshInsulaQuota(),
+  ])
+  expect(s.daemon.usageGets).toBe(1)
+  s.consumer.close()
+  s.setNow(NOW + 59_999)
+  await second.refreshInsulaQuota()
+  await s.poll(second)
+  expect(s.daemon.usageGets).toBe(1)
+  expect(s.polls).toEqual([])
+  s.setNow(NOW + 60_000)
+  await third.refreshInsulaQuota()
+  expect(s.daemon.usageGets).toBe(2)
+})
+
+test('on demand takes only cached insula quota and ages it by the injected clock', async () => {
+  const s = await scenario()
+  await s.poll()
+  expect(s.daemon.usageGets).toBe(0)
+  await s.consumer.refreshInsulaQuota()
+  await s.poll()
+  expect(s.polls).toEqual(['account-work'])
+  s.setNow(NOW + 239_000)
+  await s.poll()
+  expect(s.polls).toEqual(['account-work', 'account-work'])
+  expect(s.daemon.usageGets).toBe(1)
+})
+
+test('standalone and not enrolled consumers never call insula', async () => {
+  const s = await scenario()
+  s.setActive(false)
+  await s.consumer.refreshInsulaQuota()
+  await s.poll()
+  s.setActive(true)
+  const unenrolled = s.create('unenrolled', join(s.dir, 'absent-token.json'))
+  await unenrolled.refreshInsulaQuota()
+  await s.poll(unenrolled)
+  expect(s.polls).toEqual(['account-work', 'account-work'])
+  expect(s.daemon.insulaOpens).toBe(0)
+})
+
+test('parsed or expected receipt identity is not a vault account_id for insula', async () => {
+  const s = await scenario()
+  await s.consumer.refreshInsulaQuota()
+  await s.poll(s.consumer, {
+    ...s.receipt,
+    assertedAccountIdentity: undefined,
+    accountIdentitySource: 'parsed',
+  })
+  expect(s.polls).toEqual(['unknown'])
+})
+
+test.each(['open', 'usage'] as const)(
+  'hung insula %s falls back within the whole-call deadline and closes its socket',
+  async (hang) => {
+    const s = await scenario()
+    s.daemon.insula!.hang = hang
+    const closed = new Promise<void>((resolve) => {
+      s.daemon.onInsulaClose = resolve
+    })
+    const started = Date.now()
+    await s.consumer.refreshInsulaQuota()
+    await s.poll()
+    expect(Date.now() - started).toBeLessThan(4_500)
+    expect(s.polls).toEqual(['account-work'])
+    await closed
+    expect(s.daemon.insulaOpens).toBe(1)
+    expect(s.daemon.usageGets).toBe(hang === 'usage' ? 1 : 0)
+  },
+)
+
+test('different enrollment token paths never share insula cache or minute budget', async () => {
+  const s = await scenario()
+  await s.consumer.refreshInsulaQuota()
+  const otherDir = await tempDir('insula-principal-')
+  const other = s.create('other-principal', await writeToken(otherDir))
+  await other.refresh()
+  await s.poll(other)
+  expect(s.polls).toEqual(['account-work'])
+  await other.refreshInsulaQuota()
+  await s.poll(other)
+  expect(s.polls).toEqual(['account-work'])
+  expect(s.daemon.usageGets).toBe(2)
+})
+
+test('closing the last project does not reset the insula minute budget', async () => {
+  const s = await scenario()
+  await s.consumer.refreshInsulaQuota()
+  s.consumer.close()
+  const replacement = s.create('replacement')
+  await replacement.refreshInsulaQuota()
+  await s.poll(replacement)
+  expect(s.polls).toEqual(['account-work'])
+  expect(s.daemon.usageGets).toBe(1)
+  s.setNow(NOW + 60_000)
+  await replacement.refreshInsulaQuota()
+  await s.poll(replacement)
+  expect(s.polls).toEqual(['account-work'])
+  expect(s.daemon.usageGets).toBe(2)
+})
+
+test('insula module errors and malformed envelopes fall back without caching a reading', async () => {
+  for (const response of [
+    { error: { code: 'unavailable' } },
+    { result: {} },
+    { result: [entry()], error: { code: 'refused' } },
+  ]) {
+    const s = await scenario()
+    s.daemon.insula!.response = response
+    await s.consumer.refreshInsulaQuota()
+    await s.poll()
+    expect(s.polls).toEqual(['account-work'])
+  }
+})
+
+test('the existing consumer tick drives insula without a separate timer', async () => {
+  const s = await scenario()
+  let scheduled = 0
+  const consumer = new ClaustrumConsumer({
+    rosterPath: join(s.dir, 'tick-roster.json'),
+    tokenPath: s.tokenPath,
+    family,
+    connect: () =>
+      connectClaustrumScopedClient({
+        connectionFile: s.daemon.connectionFile,
+        identity: { project_root: s.dir, harness: 'test', session: 'tick' },
+      }),
+    now: () => NOW,
+    insula: { provider: 'codex', normalize: () => undefined },
+    setTimeoutImpl: (() => {
+      scheduled++
+      done()
+      return { unref() {} }
+    }) as unknown as typeof setTimeout,
+    clearTimeoutImpl: (() => {}) as typeof clearTimeout,
+  })
+  consumers.push(consumer)
+  let done!: () => void
+  const tick = new Promise<void>((resolve) => {
+    done = resolve
+  })
+  consumer.start()
+  await tick
+  expect(scheduled).toBe(1)
+  expect(s.daemon.usageGets).toBe(1)
+})
+
+test('a plugin normalizer may refuse an antigravity echo using source and fetchedAt', async () => {
+  const s = await scenario([
+    entry({ provider: 'antigravity', source: 'plugin' }),
+  ])
+  let now = NOW
+  const consumer = new ClaustrumConsumer({
+    rosterPath: join(s.dir, 'echo-roster.json'),
+    tokenPath: s.tokenPath,
+    family,
+    connect: () =>
+      connectClaustrumScopedClient({
+        connectionFile: s.daemon.connectionFile,
+        identity: { project_root: s.dir, harness: 'test', session: 'echo' },
+      }),
+    now: () => now,
+    insula: {
+      provider: 'antigravity',
+      normalize: (_entry, context) =>
+        context.source === 'vault' || context.fetchedAt > NOW
+          ? { checkedAt: context.fetchedAt }
+          : undefined,
+    },
+  })
+  consumers.push(consumer)
+  await consumer.refreshInsulaQuota()
+  await s.poll(consumer)
+  expect(s.polls).toEqual(['account-work'])
+  s.daemon.insula!.response = {
+    result: [entry({ provider: 'antigravity', source: 'vault' })],
+  }
+  now += 60_000
+  await consumer.refreshInsulaQuota()
+  await s.poll(consumer)
+  expect(s.polls).toEqual(['account-work'])
+  expect(s.daemon.usageGets).toBe(2)
+  s.daemon.insula!.response = {
+    result: [
+      entry({
+        provider: 'antigravity',
+        source: 'plugin',
+        fetchedAt: new Date(NOW + 50_000).toISOString(),
+      }),
+    ],
+  }
+  now += 60_000
+  await consumer.refreshInsulaQuota()
+  await s.poll(consumer)
+  expect(s.polls).toEqual(['account-work'])
+})

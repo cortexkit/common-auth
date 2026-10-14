@@ -5378,3 +5378,135 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/posix-parents.t
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^POSIX\sstore\swrites\sbelow\sa\sgroup-writable\sancestor\sowned\sby\sanother\suid$']
 expect_message = 'Private file refused at safe-parent'
+
+# --- Optional insula background quota ---
+
+[[control]]
+id = 'insula-account-id-join'
+guards = 'only the exact trimmed insula account joins the vault-served account_id, never a different account with matching display metadata'
+file = 'src/claustrum/insula.ts'
+old = 'entry.account.trim() !== accountId'
+new = 'false /* NON-VACUITY BREAK: accept a different account. */'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^wrong\saccount_id\sinsula\squota\sfalls\sback\sto\sthe\sown\spoll$']
+expect_message = 'account-work'
+
+[[control]]
+id = 'insula-provider-join'
+guards = 'accounts in another insula provider namespace cannot suppress the plugin own poll'
+file = 'src/claustrum/insula.ts'
+old = 'entry.provider !== provider ||'
+new = '/* NON-VACUITY BREAK: ignore the provider namespace. */'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^wrong\sprovider\sinsula\squota\sfalls\sback\sto\sthe\sown\spoll$']
+expect_message = 'account-work'
+
+[[control]]
+id = 'insula-fetched-at-age'
+guards = 'a reading four minutes old falls back even when the usage.get response just arrived'
+file = 'src/claustrum/insula.ts'
+old = 'now - fetchedAt >= MAX_AGE'
+new = 'false /* NON-VACUITY BREAK: ignore producer reading age. */'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^old\sinsula\squota\sfalls\sback\sto\sthe\sown\spoll$']
+expect_message = 'account-work'
+
+[[control]]
+id = 'insula-stale-is-not-current'
+guards = 'the presence of stale prevents suppressing the own poll even with a young fetchedAt'
+file = 'src/claustrum/insula.ts'
+old = 'entry.stale !== undefined ||'
+new = '/* NON-VACUITY BREAK: ignore stale. */'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^stale\sinsula\squota\sfalls\sback\sto\sthe\sown\spoll$']
+expect_message = 'account-work'
+
+[[control]]
+id = 'insula-degraded-is-not-current'
+guards = 'errorClass is a degraded verdict and cannot become current merely because usage and a young timestamp remain'
+file = 'src/claustrum/insula.ts'
+old = 'entry.errorClass !== undefined ||'
+new = '/* NON-VACUITY BREAK: ignore errorClass. */'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^degraded\sinsula\squota\sfalls\sback\sto\sthe\sown\spoll$']
+expect_message = 'account-work'
+
+[[control]]
+id = 'insula-refusal-fallback'
+guards = 'a refused insula route immediately clears even a current cache, so the plugin own poll runs'
+file = 'src/claustrum/insula.ts'
+old = '''        // Refusal is absence, even if the previous reading was still young.
+        this.#entries = []'''
+new = '        // NON-VACUITY BREAK: keep the previously current cache on refusal.'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^insula\srefusal\sinvalidates\sa\spreviously\scurrent\scache$']
+expect_message = 'account-work'
+
+[[control]]
+id = 'insula-once-per-minute'
+guards = 'several projects sharing one principal cannot perform another usage.get before the minute boundary'
+file = 'src/claustrum/insula.ts'
+old = 'now - lastAttempt < MINUTE'
+new = 'now - lastAttempt < 1 /* NON-VACUITY BREAK: forget the minute bound. */'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^several\sprojects\sshare\sone\sinsula\susage.get\sper\sminute\sand\srelease\sindependently$']
+expect_message = '/Expected: 1\s+Received: 2/'
+
+[[control]]
+id = 'insula-route-lookup-observes-peer-replacement'
+guards = 'background route lookup reads the committed roster so a peer known-account replacement cannot keep the old route matched to insula'
+file = 'src/claustrum/consumer.ts'
+old = '''      const roster = await readVaultRoster(this.#options.rosterPath)
+      const row = roster?.rows.find((entry) => entry.routeId === routeId)'''
+new = '''      // NON-VACUITY BREAK: ignore peer replacements and use the old local snapshot.
+      const roster = this.#roster
+      const row = roster?.rows.find((entry) => entry.routeId === routeId)'''
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^route\slookup\smisses\safter\sa\speer\scommits\sa\sknown\saccount\sreplacement$']
+expect_message = 'error: expect(received).toBeUndefined()'
+
+[[control]]
+id = 'insula-deadline-does-not-hold-host-open'
+guards = 'the whole-call deadline timer is unreferenced so an optional pending insula lookup cannot hold an otherwise idle host process open'
+file = 'src/claustrum/insula.ts'
+old = '        timer.unref?.()'
+new = '        // NON-VACUITY BREAK: retain the timer reference at shutdown.'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^a\spending\sinsula\sdeadline\sdoes\snot\skeep\san\sotherwise\sidle\shost\sprocess\salive$']
+expect_message = 'Expected: < 2000'
