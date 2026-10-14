@@ -161,7 +161,7 @@ are implemented as follows:
 | Refresh lease | Secure acquire/renewal stages, the eviction-marker directory and its owner file; verify reads and retain ownership/lifetime fences. Acquisition access/sharing errors reject rather than implying another owner won; release access/sharing errors reject rather than reporting the lease released. |
 | RPC token | Verify-and-read tokens; secure staging even without `secureDir`. `secureDir: true` declares a dedicated parent for permission migration, not a shared/custom directory. |
 | Sidebar | Secure its private parent and use the shared writer; `secureDir: true` opts a dedicated root into migration. |
-| Logger | Ordered asynchronous sink, verified reads and private replacement/rotation. Hosts await `flushLogs()` before shutdown; existing shared parents refuse. |
+| Logger | Ordered asynchronous append sink under a verified protected private parent; retain the handle for automatic flushes, close before verified rotation/path changes, and discard it on IO errors. Hosts await `flushLogs()` to drain and close before shutdown; existing shared parents refuse. |
 | Dump | Dedicated private directory, exclusive private artifacts and secure baseline/response staging; unverified parents refuse rather than silently losing a dump. |
 | Enrollment | Handle-based token/status reads, safe Windows namespace checks, private directory creation and pending-state publication. Only the default dedicated state root is permission-migrated; override parents must already verify. No incidental token deletion. |
 | Pi slot | Handle-based auth/stash reads and private staging. `privateParents: true` declares dedicated parents for permission migration; custom parents must already verify. File-only Windows durability is explicit. |
@@ -324,14 +324,21 @@ already completed before the extension's first opportunity to enter vault mode.
 ### ./logger
 
 On Windows `flushLogs()` returns a promise and hosts **must await it before
-shutdown**, rather than registering only a synchronous process-exit hook. Each
-instance serializes its sink operations, securing before writing and rotating.
-Because the published primitive has no append-handle operation, the Windows
-sink securely replaces the complete bounded log instead of reopening a verified
-pathname to append. Explicit flushes reject with typed, content-free errors;
-timer-triggered failures are retained for a later flush to report. The log must
-live under a private dedicated directory; no shared/custom log parent is
-silently chmodded. POSIX keeps the existing synchronous append and exit behavior.
+shutdown** to drain the queue and close the append handle, rather than registering
+only a synchronous process-exit hook. Each instance serializes its sink operations,
+verifies the protected owner-only parent, and securely creates or verifies its
+log file before opening it with `fs.open(file, 'a')`. Other ordinary users cannot
+create, replace or link entries in that parent between verification and open;
+the owner and administrators are outside the threat model. Automatic 500 ms or
+50-line flushes retain the handle and append only new bytes, without reading or
+replacing the whole log. Rotation retains verified replace-in-place operations;
+rotation, configure/path changes and open/append errors discard the handle, and
+its next open requires fresh verification. Explicit flushes close the handle
+after draining, so a later logging session opens it again. Explicit flushes reject
+with typed, content-free errors; timer-triggered failures are retained for a later
+flush to report. The log must live under a private dedicated directory; no
+shared/custom log parent is silently chmodded. POSIX keeps the existing
+synchronous append and exit behavior.
 Windows preferences watchers likewise have no synchronous secret-read baseline:
 they read asynchronously through the backend and surface refusals via `onError`
 (or a content-free warning when it is not supplied).

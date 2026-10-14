@@ -4,8 +4,11 @@
 
 [Windows private-files run 38483433873](https://github.com/cortexkit/common-auth/actions/runs/38483433873)
 succeeded on implementation commit `8747613155dd833542c593a44b6572e92eea9723`.
-The final delivery adds documentation, comment clarification and retargeted
-legacy mutation anchors; it does not change that implementation's behavior.
+That run qualified the initial private-file adoption. The subsequent logger-cost
+revision retains a verified append handle instead of rewriting the whole log;
+its new Windows run is recorded below when available. Documentation, comment
+clarification and retargeted legacy mutation anchors also follow that initial
+implementation.
 The regular CI run on the same implementation commit also succeeded, as relayed
 by the operator who pushed the verification branch. No push was made from the
 editing worktree.
@@ -124,6 +127,36 @@ The catalogue passed `ckdev-mutate check` (runner 0.12.0, Bun 1.3.14): all 320
 controls' anchors and exact test names verified. The new deadline/release-error
 catalogue anchors were also made context-specific; each was observed red alone
 on Bun 1.4.2 and restored. Neither the production guards nor their tests changed.
+
+## Logger append-cost revision
+
+Automatic Windows flushes now retain one verified append handle, check only its
+size metadata for rotation, and append new bytes. Explicit `flushLogs()` drains
+and closes it; a changed configured/provider path, rotation or IO error discards
+the handle, and the next open verifies the protected parent and private file.
+The design supersession explains why this write-only pathname open is safe
+against other ordinary users without weakening handle-based secret reads.
+
+The isolated fake-backend regression ran 50 automatic flushes (2500 lines),
+including a same-path reconfiguration: zero additional backend reads, private
+stage creations or replacements after the first flush, one open, and one close
+at explicit shutdown flushing. Three further tests cover rotation, refusal
+before open, and path/error recovery without leaked handles. Reintroducing
+whole-file rewriting made only the named cost regression fail on Bun 1.3.14 and
+1.4.2: 49 unexpected backend reads after the first flush. These counters prove
+portable sink behavior, not Windows ACL enforcement.
+
+The full Linux suites passed with 1527 pass, 13 opt-in placement skips and zero
+failures (1540 tests, 123 files, 7315 assertions); the provenance check matched
+all 1440 cells. After removing two new non-null assertions, the final build,
+TypeScript 7.0.2 typecheck and Biome 2.5.14 lint passed with only the two original
+warnings, and all 48 logger tests passed on Bun 1.4.2. Revision evidence is kept
+in `windows-private-files-evidence/logger-append/`.
+
+The Windows writer assertion now also appends 2500 lines, explicitly drains and
+closes, rotates a private log over 5 MiB, and independently inspects/denial-probes
+both active and rotated files. The Windows rerun is required before declaring
+this append revision qualified.
 
 ## Limits and remaining adoption
 

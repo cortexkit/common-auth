@@ -4940,3 +4940,20 @@ runner = "command"
 command = ['sh', '-c', 'git diff --stat; bun test test/fs/windows-watchdog.test.mjs -t "$1"', 'sh', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ["Windows watchdog cancels the caller wait and kills its own helper"]
+
+[[control]]
+id = "private-logger-append"
+guards = "steady Windows logger flushes append new bytes without reading or replacing the existing log"
+file = "src/logger/engine.ts"
+old = '''    await privateOperation(file, 'log-append', () =>
+      handle.appendFile(text, 'utf8'),
+    )'''
+new = '''    const rewrite = await import('../fs/private-files.js'); /* NON-VACUITY BREAK */
+    await rewrite.writePrivateAtomic(file, (await rewrite.readPrivateText(file)) + text);
+    await privateOperation(file, 'log-append', () => handle.appendFile('', 'utf8'))'''
+test_file = "test/logger/windows-append.test.ts"
+runner = "command"
+command = ['sh', '-c', 'git diff --stat; bun test test/logger/windows-append.test.ts -t "$1"', 'sh', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["Windows logger steady flushes append without reading or rewriting the log"]
+expect_message = "steady flushes must not read the log"

@@ -287,6 +287,23 @@ test('real writers have independently inspected ACLs and deny a standard second 
     )
     const log = await readFile(logPath, 'utf8')
     assert.ok(log.indexOf('ordered one') < log.indexOf('ordered two'))
+    for (let batch = 0; batch < 50; batch++)
+      for (let line = 0; line < 50; line++)
+        logger.createLogger('qualification').info(`append ${batch} ${line}`)
+    await pending('persistent logger append and close', () =>
+      logger.flushLogs(),
+    )
+    const appendedLog = await readFile(logPath, 'utf8')
+    assert.equal(appendedLog.split('\n').length - 1, 2502)
+    await writeJsonAtomic(logPath, null, {
+      serialize: () => `${appendedLog}${'x'.repeat(5 * 1024 * 1024)}`,
+    })
+    logger.createLogger('qualification').info('after rotation')
+    await pending('verified logger rotation and close', () =>
+      logger.flushLogs(),
+    )
+    assert.ok((await readFile(`${logPath}.1`, 'utf8')).startsWith(appendedLog))
+    assert.ok((await readFile(logPath, 'utf8')).includes('after rotation'))
     const dumper = createDumper({ dir: join(root, 'dumps'), enabled: true })
     const dump = await pending('dump artifacts', () =>
       dumper.dump({
@@ -378,6 +395,7 @@ test('real writers have independently inspected ACLs and deny a standard second 
       port,
       sidebarPath,
       logPath,
+      `${logPath}.1`,
       ...Object.values(dump.files),
       response,
       authPath,

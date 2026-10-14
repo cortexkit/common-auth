@@ -1492,3 +1492,12 @@ The helper retains a 30 s takeover threshold for async Pi writers, renews every 
 | pi-slot | Stale takeover and bounded fresh-lock refusal | proper-lockfile 4.1.2 protocol above | stale lock uses mkdir takeover and fresh lock times out unchanged |
 | pi-slot | Mtime heartbeat, replacement detection, no compromised-lock removal | proper-lockfile 4.1.2 protocol above | holder renews mtime and detects a replaced lock |
 | pi-slot | Pi embedding keeps the Windows native dependency external, with no unrelated external runtime imports | new (neither copy) | published import graph permits only node builtins, common auth files and external Windows private-files |
+
+## Windows logger append sink
+
+| component | behaviour | origin | test |
+| --- | --- | --- | --- |
+| logger | Windows automatic flushes retain one verified append handle and do not read or replace existing log bytes | new (neither copy) | Windows logger steady flushes append without reading or rewriting the log |
+| logger | Windows rotation closes append handles and retains verified replace-in-place publication | new (neither copy) | Windows logger rotation retains verified replacement and closes handles |
+| logger | Windows logger verification refuses before opening or appending | new (neither copy) | Windows logger refuses before opening an unverified file |
+| logger | Windows path changes and IO failures discard handles and require verification before reopening | new (neither copy) | Windows logger reopens after path changes and IO errors without leaking handles |

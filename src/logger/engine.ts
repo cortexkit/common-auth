@@ -5,14 +5,15 @@ import {
   renameSync,
   statSync,
 } from 'node:fs'
-import { dirname } from 'node:path'
+import { type FileHandle, open } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import {
+  createPrivateBytes,
   ensurePrivateDirectory,
-  readPrivateText,
+  privateOperation,
   replaceWindowsFile,
   verifyPrivate,
   windowsPrivateFiles,
-  writePrivateAtomic,
 } from '../fs/private-files.js'
 import type { CaptureSink } from './capture-sink.js'
 import { createRedactor, type RedactionOptions } from './redact.js'
@@ -124,37 +125,81 @@ function rotateIfNeeded(f: string) {
   }
 }
 
-async function flushWindowsFile(file: string, text: string): Promise<void> {
+interface WindowsLogFile {
+  file?: string
+  handle?: FileHandle
+}
+
+async function closeWindowsFile(sink: WindowsLogFile): Promise<void> {
+  const { file, handle } = sink
+  sink.file = undefined
+  sink.handle = undefined
+  if (file && handle)
+    await privateOperation(file, 'log-close', () => handle.close())
+}
+
+async function openWindowsFile(
+  sink: WindowsLogFile,
+  file: string,
+): Promise<FileHandle> {
   await ensurePrivateDirectory(dirname(file))
-  let previous = ''
   try {
-    previous = await readPrivateText(file, true)
+    await verifyPrivate(file, 'file', true)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-  if (Buffer.byteLength(previous) >= MAX_BYTES) {
-    for (let i = ROTATE_KEEP - 1; i >= 0; i--) {
-      const source = i === 0 ? file : `${file}.${i}`
-      const target = `${file}.${i + 1}`
-      try {
-        await verifyPrivate(source, 'file', true)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-        throw error
-      }
-      try {
-        await verifyPrivate(target, 'file', true)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      }
-      await replaceWindowsFile(source, target)
-      await verifyPrivate(target, 'file')
+    try {
+      await createPrivateBytes(file, '')
+    } catch (creationError) {
+      if ((creationError as NodeJS.ErrnoException).code !== 'EEXIST')
+        throw creationError
+      await verifyPrivate(file, 'file', true)
     }
-    previous = ''
   }
-  // The backend has no append-handle API. Securely replace the complete log
-  // rather than reopening a verified pathname to append through an unchecked handle.
-  await writePrivateAtomic(file, previous + text)
+  // The parent's verified protected owner-only DACL denies other ordinary users the ability to create, replace or link entries between verification and fs.open.
+  // This protects against other ordinary users, not the owner or administrators, whose ability to change that namespace is outside our threat model.
+  sink.handle = await privateOperation(file, 'log-open', () => open(file, 'a'))
+  sink.file = file
+  return sink.handle
+}
+
+async function flushWindowsFile(
+  sink: WindowsLogFile,
+  file: string,
+  text: string,
+): Promise<void> {
+  file = resolve(file)
+  try {
+    if (sink.file !== file) await closeWindowsFile(sink)
+    let handle = sink.handle ?? (await openWindowsFile(sink, file))
+    const info = await privateOperation(file, 'log-stat', () => handle.stat())
+    if (info.size >= MAX_BYTES) {
+      await closeWindowsFile(sink)
+      for (let i = ROTATE_KEEP - 1; i >= 0; i--) {
+        const source = i === 0 ? file : `${file}.${i}`
+        const target = `${file}.${i + 1}`
+        try {
+          await verifyPrivate(source, 'file', true)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+          throw error
+        }
+        try {
+          await verifyPrivate(target, 'file', true)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+        await replaceWindowsFile(source, target)
+        await verifyPrivate(target, 'file')
+      }
+      handle = await openWindowsFile(sink, file)
+    }
+    await privateOperation(file, 'log-append', () =>
+      handle.appendFile(text, 'utf8'),
+    )
+  } catch (error) {
+    await closeWindowsFile(sink).catch(() => {})
+    throw error
+  }
 }
 
 function safeSerialize(data: unknown): string {
@@ -190,8 +235,19 @@ function createEngine(options?: LoggerOptions): Engine {
   let timer: ReturnType<typeof setTimeout> | undefined
   let orderedSink: Promise<void> = Promise.resolve()
   let sinkError: unknown
+  const windowsFile: WindowsLogFile = {}
+
+  function queueWindows(operation: () => Promise<void>): Promise<void> {
+    const next = orderedSink.then(operation)
+    orderedSink = next.catch((error: unknown) => {
+      sinkError = error
+    })
+    return next
+  }
 
   function configure(next: LoggerOptions): void {
+    if (windowsPrivateFiles && next.file !== logFileSource)
+      void queueWindows(() => closeWindowsFile(windowsFile)).catch(() => {})
     logFileSource = next.file
     initLevelSource = next.level
     redactor = createRedactor(next)
@@ -219,14 +275,15 @@ function createEngine(options?: LoggerOptions): Engine {
     return 'info'
   }
 
-  function flushLogs() {
+  function flushLogs(close = true) {
     if (timer) {
       clearTimeout(timer)
       timer = undefined
     }
     if (!buffer.length) {
       if (windowsPrivateFiles)
-        return orderedSink.then(() => {
+        return queueWindows(async () => {
+          if (close) await closeWindowsFile(windowsFile)
           if (sinkError) throw sinkError
         })
       return
@@ -236,17 +293,25 @@ function createEngine(options?: LoggerOptions): Engine {
       file = logFilePath()
     } catch {
       buffer = []
+      if (windowsPrivateFiles && close)
+        return queueWindows(() => closeWindowsFile(windowsFile))
       return
     }
     const text = buffer.join('')
     buffer = []
-    if (!file) return
+    if (!file) {
+      if (windowsPrivateFiles && close)
+        return queueWindows(() => closeWindowsFile(windowsFile))
+      return
+    }
     if (windowsPrivateFiles) {
-      const next = orderedSink.then(() => flushWindowsFile(file, text))
-      orderedSink = next.catch((error: unknown) => {
-        sinkError = error
+      return queueWindows(async () => {
+        try {
+          await flushWindowsFile(windowsFile, file, text)
+        } finally {
+          if (close) await closeWindowsFile(windowsFile)
+        }
       })
-      return next
     }
     try {
       rotateIfNeeded(file)
@@ -261,7 +326,7 @@ function createEngine(options?: LoggerOptions): Engine {
     if (!timer)
       timer = setTimeout(() => {
         timer = undefined
-        const flushed = flushLogs()
+        const flushed = flushLogs(false)
         if (flushed instanceof Promise) void flushed.catch(() => {})
       }, 500)
   }
@@ -300,7 +365,7 @@ function createEngine(options?: LoggerOptions): Engine {
       if (logFileSource === undefined) return
       buffer.push(line)
       if (buffer.length >= 50) {
-        const flushed = flushLogs()
+        const flushed = flushLogs(false)
         if (flushed instanceof Promise) void flushed.catch(() => {})
       } else schedule()
     } catch {
@@ -319,6 +384,8 @@ function createEngine(options?: LoggerOptions): Engine {
   }
 
   function reset() {
+    if (windowsPrivateFiles)
+      void queueWindows(() => closeWindowsFile(windowsFile)).catch(() => {})
     sinkError = undefined
     buffer = []
     if (timer) {

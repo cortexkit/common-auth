@@ -23,6 +23,17 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > points and ownership takeover, and verify the result by handle. Shared/custom
 > parents are never repaired implicitly. Tightening is reported once per path
 > per process with a historical-exposure/rotation warning, never contents.
+>
+> **Windows logger append decision:** after verifying the protected owner-only
+> parent and creating/verifying its log file, common-auth opens an append handle
+> with `fs.open(file, 'a')`. This supersedes the blanket pathname-reopen prohibition
+> for this write-only sink: other ordinary users cannot create, replace or link
+> entries in that verified private parent; the owner and administrators are
+> outside the threat model. Secret reads still use the backend's same-handle
+> verify-and-read contract. Automatic flushes reuse the append handle; rotation,
+> path changes and IO failures discard it and require verification before the
+> next open. Explicit `flushLogs()` drains the ordered queue and closes the handle
+> for shutdown. The sink never reads/replaces the whole log on steady flushes.
 
 > **Implementation qualification:** common-auth's Windows writers passed the
 > three-runner Node/Bun matrix in [run 38483433873](https://github.com/cortexkit/common-auth/actions/runs/38483433873).
@@ -81,7 +92,7 @@ The inventory below distinguishes direct mode sites from consumers of the shared
 | [`src/fs/refresh-file-lock.ts:161,167,183,196,252`][CA-lease] | Renewal temp, initial lease, missing-parent retry, eviction-marker owner file. Secure lock/marker parents as well as files; metadata integrity matters even without secret bytes. |
 | [`src/rpc/port-file.ts:133,135,143,146`][CA-rpc] | `secureDir` directory creation/tightening and bearer-token staging file. Token files require a private staging boundary even when `secureDir` was not requested; do not privatize an arbitrary shared parent silently. |
 | [`src/sidebar-file/sidebar-file.ts:220,222`][CA-sidebar] | Private parent and optional existing-parent tightening; JSON files inherit shared-writer protection. |
-| [`src/logger/engine.ts:96,108,113,197,198`][CA-logger] | Existing/rotated log chmod and append creation. Replace synchronous request-path sink work with an ordered async queue; secure before append, not afterward. |
+| [`src/logger/engine.ts:96,108,113,197,198`][CA-logger] | Existing/rotated log chmod and append creation. Windows uses an ordered async append sink under a verified private parent; secure before opening, retain the handle for automatic flushes, and close it before verified rotation or explicit shutdown flushing. |
 | [`src/dump/index.ts:342,345,599,601,655`][CA-dump] | Staged baseline replacement, private dump directory and exclusive artifacts; prompts may be sensitive. |
 | [`src/claustrum/enrollment.ts:336,503,512,537,540`][CA-enrollment] | Secret read mask, enrollment directory creation/remediation and pending-state temp file. Replace ancestor checks at 472–487 with Windows namespace validation; Unix remediation text is not a Windows fix. |
 | [`src/pi-slot/slot.ts:172,368,446,448`][CA-pi] | Exact-0600 auth-file read, auth/stash private-parent creation and exact-0700 stash-directory check. Windows uses the same descriptor policy, not exact synthetic modes. |

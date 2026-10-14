@@ -88,6 +88,14 @@
     "test": "Windows atomic stage stays in the verified destination directory"
   },
   {
+    "id": "private-logger-append",
+    "file": "src/logger/engine.ts",
+    "old": "    await privateOperation(file, 'log-append', () =>\n      handle.appendFile(text, 'utf8'),\n    )",
+    "new": "    const rewrite = await import('../fs/private-files.js'); /* NON-VACUITY BREAK */\n    await rewrite.writePrivateAtomic(file, (await rewrite.readPrivateText(file)) + text);\n    await privateOperation(file, 'log-append', () => handle.appendFile('', 'utf8'))",
+    "testFile": "test/logger/windows-append.test.ts",
+    "test": "Windows logger steady flushes append without reading or rewriting the log"
+  },
+  {
     "id": "private-watchdog-cancellation",
     "file": "test/windows/watchdog.mjs",
     "old": "state.abort.abort()",
