@@ -228,12 +228,22 @@ describe('stale lock identity', () => {
     await writeFile(lockPath(), 'legacy')
     await utimes(lockPath(), new Date(now - 20_000), new Date(now - 20_000))
     const gate = barrier()
+    let paused = false
     const contender = start(async (step) => {
-      if (step === 'stale-lock-confirmed') await gate.park()
+      if (step === 'stale-lock-confirmed') {
+        paused = true
+        await gate.park()
+      }
+      if (step === 'lock-read-ready' && paused)
+        throw new Error('retry observed')
+    }).catch((error: unknown) => {
+      if (error instanceof Error && error.message === 'retry observed')
+        return null
+      throw error
     })
     await observed(hooks.lifetime, gate.entered)
     await writeFile(lockPath(), 'replacement legacy')
-    await utimes(lockPath(), new Date(now + 10_000), new Date(now + 10_000))
+    await utimes(lockPath(), new Date(now - 15_000), new Date(now - 15_000))
     gate.resume()
     expect(await contender).toBeNull()
     expect(await readFile(lockPath(), 'utf8')).toBe('replacement legacy')

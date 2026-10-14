@@ -658,13 +658,16 @@ export async function acquireRefreshFileLock(options: {
         // The onStep callback can pause while another contender renames
         // our marker, so verify ownership again after the callback.
         if (!(await ownsEvictionMarker())) return null
+        // Do not await a callback between this ownership check and the lock read.
         const current = await readLockState(false)
         if (!sameStaleLock(observed.identity, current)) continue
         // The final read and removal are not atomic. While this stale file
         // exists, wx cannot create a successor; the marker excludes other
         // evictors and release/renewal. An expired holder cannot renew: renewal
         // rechecks expiry and marker ownership immediately before publishing.
-        // Thus cooperating lock users cannot replace the file in this window.
+        // With the marker still owned, cooperating users cannot replace it in
+        // this window. Arbitrary suspension across marker expiry or filesystem
+        // changes still need a kernel lock for an atomic guarantee.
         await removeLeaseObject(lockPath)
         // Fence check 3: re-verify ownership after removing the stale lock.
         if (!(await ownsEvictionMarker())) return null
