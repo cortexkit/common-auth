@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, open, unlink } from 'node:fs/promises'
+import { lstat, mkdir, open, unlink } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { writeJsonAtomic } from '../fs/atomic-write.js'
@@ -32,7 +32,7 @@ export class PiSlotError extends Error {
 }
 
 export interface PiSlotOptions {
-  /** Retained for compatibility; existing parents are verified, never repaired. Missing parents are created owner-only. */
+  /** Windows checks safe ancestry and creates missing parents owner-only, regardless of this option. POSIX keeps its existing directory policy. */
   privateParents?: boolean
   authPath: string
   provider: string
@@ -390,7 +390,8 @@ export function createPiSlot(
       if (compromised) throw new PiSlotError('lock-compromised')
     }
     try {
-      await ensurePrivateDirectory(dirname(authPath))
+      if (windowsPrivateFiles) await ensurePrivateDirectory(dirname(authPath))
+      else await mkdir(dirname(authPath), { recursive: true, mode: 0o700 })
       const deadline = Date.now() + timeout
       let retry = 0
       while (!release) {
@@ -469,7 +470,14 @@ export function createPiSlot(
         if (stash && digest(auth.entry) !== stash.sha256)
           throw new PiSlotError('conflict')
         if (!stash) {
-          await ensurePrivateDirectory(dirname(stashPath))
+          if (windowsPrivateFiles)
+            await ensurePrivateDirectory(dirname(stashPath))
+          else {
+            await mkdir(dirname(stashPath), { recursive: true, mode: 0o700 })
+            const dir = await lstat(dirname(stashPath))
+            if (!dir.isDirectory() || (dir.mode & 0o777) !== 0o700)
+              throw new PiSlotError('unsafe-path')
+          }
           const saved: Stash = {
             version: 1,
             provider,

@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { open, rename, rm } from 'node:fs/promises'
+import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
-  ensurePrivateDirectory,
   PrivateFileError,
   type PrivateWriteOutcome,
   verifyPrivate,
@@ -65,7 +64,7 @@ export async function writeJsonAtomicTracked(
       },
     )
   }
-  await ensurePrivateDirectory(dirname(path))
+  await mkdir(dirname(path), { recursive: true })
   const tempPath = `${path}.${(options.stageName ?? randomUUID)()}.tmp`
   let handle: Awaited<ReturnType<typeof open>> | undefined
   let created = false

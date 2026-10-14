@@ -25,12 +25,14 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > per process with a historical-exposure/rotation warning, never contents.
 >
 > **2026-10-14 safe-parent update (private-files 0.2.1):** existing containing
-> directories now use `verifySafeParent` on both platforms, rather than the
-> owner-only secret-file template. Missing dedicated components are still
-> created owner-only; an existing config/home/parent directory is never
-> tightened. The published README states: "A user-owned 0775 config directory
-> passes when its effective group has no other members or other primary-group
-> users." Enrollment delegates its ancestor checks to that same policy.
+> directories use `verifySafeParent` on Windows, rather than the owner-only
+> secret-file template. Missing dedicated components are still created
+> owner-only; an existing Windows config/home/parent directory is never tightened.
+> **Windows: safe-parent everywhere. POSIX: unchanged from 0.14.2; only enrollment checks ancestry.**
+> POSIX uses the original mkdir/chmod calls, including tightening sidebar,
+> managed RPC, dump and enrollment directories. Enrollment retains its POSIX
+> realpath/stat traversal, Ubuntu private-group exception and sticky-ancestor
+> acceptance; no POSIX production path imports private-files.
 > On Windows the parent may grant control to the token user, SYSTEM,
 > Administrators and TrustedInstaller, but no other ordinary principal may
 > plant or replace entries. Ancestors are checked for rights to replace the
@@ -130,13 +132,13 @@ The inventory below distinguishes direct mode sites from consumers of the shared
 | common-auth direct sites | Adoption |
 | --- | --- |
 | [`src/fs/atomic-write.ts:45,53`][CA-atomic] | All private JSON staging files; `writeJsonAtomic` and tracked variant. |
-| [`src/fs/refresh-file-lock.ts:161,167,183,196,252`][CA-lease] | Renewal temp, initial lease, missing-parent retry, eviction-marker owner file. Verify existing lock/marker parents with the shared safe-parent rule, create missing directories owner-only and keep files owner-only; metadata integrity matters even without secret bytes. |
-| [`src/rpc/port-file.ts:133,135,143,146`][CA-rpc] | Bearer-token staging and owner-only directory creation. Existing RPC parents use the safe-parent rule on both platforms and are never tightened, irrespective of `secureDir`. |
-| [`src/sidebar-file/sidebar-file.ts:220,222`][CA-sidebar] | Safe existing parents are verified without tightening; missing parents are created owner-only. JSON files inherit shared-writer protection and owned legacy files may be permission-migrated. |
+| [`src/fs/refresh-file-lock.ts:161,167,183,196,252`][CA-lease] | Renewal temp, initial lease, missing-parent retry, eviction-marker owner file. Windows verifies safe ancestry and creates missing directories owner-only. POSIX retains its original mkdir calls and performs no ancestry check; files remain owner-only. |
+| [`src/rpc/port-file.ts:133,135,143,146`][CA-rpc] | Bearer-token staging. Windows verifies safe parents without tightening, irrespective of `secureDir`. POSIX tightens the directory to 0700 when `secureDir` is true and preserves override permissions otherwise. |
+| [`src/sidebar-file/sidebar-file.ts:220,222`][CA-sidebar] | Windows verifies existing parents without tightening and creates missing parents owner-only. POSIX creates missing parents with 0700 and tightens existing parents unless `secureDir` is false; chmod failure warns without rejecting the queued write. |
 | [`src/logger/engine.ts:96,108,113,197,198`][CA-logger] | Existing/rotated log chmod and append creation. Windows uses an ordered async append sink under a verified private parent; secure before opening, retain the handle for automatic flushes, and close it before verified rotation or explicit shutdown flushing. |
-| [`src/dump/index.ts:342,345,599,601,655`][CA-dump] | Staged baseline replacement, private dump directory and exclusive artifacts; prompts may be sensitive. |
-| [`src/claustrum/enrollment.ts:336,503,512,537,540`][CA-enrollment] | Secret read mask, owner-only creation of missing enrollment directories and pending-state staging. All existing containing directories and ancestors use the shared safe-parent rule on both platforms; owned legacy files may migrate in default or override parents that pass it. |
-| [`src/pi-slot/slot.ts:172,368,446,448`][CA-pi] | Exact-0600 POSIX auth-file reads and owner-only creation of missing auth/stash parents. Existing stash parents use the safe-parent rule, not exact-0700 directory permissions. Windows files keep the published owner-only descriptor/read policy. |
+| [`src/dump/index.ts:342,345,599,601,655`][CA-dump] | Staged baseline replacement, private dump directory and exclusive artifacts; prompts may be sensitive. POSIX tightens its dump directory to 0700. Windows verifies safe ancestry without tightening existing directories. |
+| [`src/claustrum/enrollment.ts:336,503,512,537,540`][CA-enrollment] | Windows uses the shared safe-parent rule, private reads and pending-state stages; trusted legacy files may migrate in safe parents. POSIX retains owner-only reads, 0700 directory tightening and its original enrollment-only ancestry rule, including private-group and sticky exceptions. |
+| [`src/pi-slot/slot.ts:172,368,446,448`][CA-pi] | Exact-0600 POSIX auth-file reads and original mkdir calls; existing POSIX stash directories must be exactly 0700 and are refused rather than tightened. Windows checks safe ancestry and uses the published owner-only descriptor/read policy. |
 
 Common-auth's shared writer additionally covers [`store/mutate.ts:467,518`][CA-mutate], [`store/settings.ts:171`][CA-settings], [`tui-prefs/tui-preferences.ts:102`][CA-tui], [`sidebar-file/sidebar-file.ts:162`][CA-sidebar], [`pi-slot/slot.ts:276`][CA-pi], and [`claustrum/roster.ts:519`][CA-roster]. Their lock users adopt the secured lease primitive without an API bypass.
 

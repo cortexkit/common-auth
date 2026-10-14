@@ -1,20 +1,21 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
+  chmod,
   lstat,
+  mkdir,
   open,
   readdir,
   rename,
   unlink,
   writeFile,
 } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   createPrivateBytes,
   ensurePrivateDirectory,
   PrivateFileError,
   readPrivateText,
   verifyPrivate,
-  verifySafeDirectory,
   windowsPrivateFiles,
   writePrivateAtomic,
 } from '../fs/private-files.js'
@@ -250,7 +251,7 @@ export async function sweepDumpDirectory(
   const empty = { removed: 0, freedBytes: 0 }
   if (!(maxBytes > 0)) return empty
   try {
-    await verifyPrivate(dir, 'directory')
+    if (windowsPrivateFiles) await verifyPrivate(dir, 'directory')
     if ((await lstat(dir)).isSymbolicLink()) return empty
     const protectedPaths = new Set(
       (options.protectedPaths ?? []).map((path) => resolve(path)),
@@ -352,7 +353,6 @@ async function replaceFile(
       stagePath: `${path}.${stageName ? stageName() : randomBytes(12).toString('hex')}.partial`,
     })
   }
-  await verifySafeDirectory(dirname(path))
   for (let attempt = 0; ; attempt += 1) {
     const staging = `${path}.${stageName ? stageName() : randomBytes(12).toString('hex')}.partial`
     let created = false
@@ -622,7 +622,12 @@ export function createDumper(options: DumpOptions): Dumper {
     const baselineKey = hashText(`${input.channel}\u0000${session}`)
 
     try {
-      await ensurePrivateDirectory(dir)
+      if (windowsPrivateFiles) await ensurePrivateDirectory(dir)
+      else {
+        await mkdir(dir, { recursive: true, mode: 0o700 })
+        // mkdir's mode does not apply to a directory that already exists.
+        await chmod(dir, 0o700)
+      }
 
       let previous = previousBodies.get(baselineKey)
       let baselineSource: 'memory' | 'disk' | undefined =

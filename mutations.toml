@@ -1902,8 +1902,8 @@ expect_message = '/Expected: false\s+Received: true/'
 id = 'claustrum-private-group-refuses-other-member'
 guards = 'a group-writable enrollment ancestor is accepted only when the group lists no member other than the effective user'
 file = 'src/claustrum/enrollment.ts'
-old = 'await verifySafeDirectory(parent, ancestorPolicyOptions(options))'
-new = '/* NON-VACUITY BREAK: bypass the shared private-group policy */'
+old = "members.split(',').every((member) => member === name)"
+new = 'true /* NON-VACUITY BREAK: accept another explicit group member */'
 test_file = 'test/claustrum/enrollment-ancestors.test.ts'
 runner = "command"
 command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "{test}"]
@@ -1916,8 +1916,8 @@ expect_message = 'Received promise that resolved'
 id = 'claustrum-private-group-refuses-other-primary-user'
 guards = 'a group-writable enrollment ancestor is refused when another user has that group as its primary group'
 file = 'src/claustrum/enrollment.ts'
-old = 'await verifySafeDirectory(parent, ancestorPolicyOptions(options))'
-new = '/* NON-VACUITY BREAK: bypass the shared private-group policy */'
+old = '!users.some((user) => Number(user[2]) !== uid && Number(user[3]) === gid)'
+new = 'true /* NON-VACUITY BREAK: accept another primary-group user */'
 test_file = 'test/claustrum/enrollment-ancestors.test.ts'
 runner = "command"
 command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "{test}"]
@@ -1947,7 +1947,7 @@ command = ["bun", "test", "test/claustrum/enrollment-ancestors.test.ts", "-t", "
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/enrollment-ancestors.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^authorizes\swith\san\sowner-only\stoken\sbelow\sa\snon-private\swritable\sancestor$']
-expect_message = 'Claustrum enrollment parent refused'
+expect_message = 'Claustrum enrollment path has a writable ancestor'
 
 # --- sidebar RPC: port files, proxy bypass, request limits ---
 
@@ -5353,13 +5353,28 @@ expect_message = 'Received promise that resolved'
 
 [[control]]
 id = 'private-ubuntu-parent-exception'
-guards = 'Ubuntu private-group 0775 config parents use the shared safe-parent rule, not owner-only directory permissions'
+guards = 'POSIX enrollment accepts Ubuntu private-group 0775 ancestors without requiring owner-only directory permissions'
 file = 'src/claustrum/enrollment.ts'
-old = 'await verifySafeDirectory(parent, ancestorPolicyOptions(options))'
-new = "await (await import('@cortexkit/private-files')).verifyPrivatePath(parent, 'directory') /* NON-VACUITY BREAK */"
+old = '!privateGroup'
+new = 'true /* NON-VACUITY BREAK: refuse even a proven private group */'
 test_file = 'test/claustrum/enrollment-ancestors.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/claustrum/enrollment-ancestors.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/enrollment-ancestors.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^Ubuntu\sumask\s0002\sconfig\slayout\spasses\sthe\sshared\ssafe-parent\spolicy\sunchanged$']
+expect_red = ['^Ubuntu\sumask\s0002\sconfig\slayout\spasses\senrollment\sancestry\sunchanged$']
+
+[[control]]
+id = 'posix-store-no-ancestor-policy'
+guards = 'POSIX store writes below a foreign-owned group-writable ancestor without loading or consulting the Windows ancestry policy'
+file = 'src/fs/atomic-write.ts'
+old = 'await mkdir(dirname(path), { recursive: true })'
+new = '''await mkdir(dirname(path), { recursive: true })
+  await (await import('./private-files.js')).verifySafeDirectory(dirname(path)) /* NON-VACUITY BREAK */'''
+test_file = 'test/store/posix-parents.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/store/posix-parents.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/posix-parents.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^POSIX\sstore\swrites\sbelow\sa\sgroup-writable\sancestor\sowned\sby\sanother\suid$']
+expect_message = 'Private file refused at safe-parent'

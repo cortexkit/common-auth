@@ -5,7 +5,6 @@ import {
   chmod,
   mkdir,
   mkdtemp,
-  readFile as readFileAsync,
   realpath,
   rm,
   stat,
@@ -22,7 +21,6 @@ import {
   ClaustrumScopedCustody,
   getClaustrumEnrollmentPaths,
 } from '../../src/claustrum/index.ts'
-import { setSafeParentOptionsForTest } from '../../src/fs/private-files.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 
 import { family } from './helpers.ts'
@@ -53,17 +51,13 @@ async function fixture(
   return { root, parent, options: { passwdPath, groupPath } }
 }
 
-async function refuses(
-  f: Awaited<ReturnType<typeof fixture>>,
-  reason = 'writable-by-others',
-) {
+async function refuses(f: Awaited<ReturnType<typeof fixture>>) {
   await expect(refuseWritableAncestor(f.parent, f.options)).rejects.toThrow(
-    `Claustrum enrollment parent refused: ${f.parent} (${reason}).`,
+    `Claustrum enrollment path has a writable ancestor: ${f.parent}. Another user could replace it. Run: chmod g-w,o-w ${f.parent}`,
   )
 }
 
 afterEach(async () => {
-  setSafeParentOptionsForTest(undefined)
   await Promise.all(
     dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   )
@@ -80,7 +74,7 @@ posixTest(
   },
 )
 posixTest(
-  'Ubuntu umask 0002 config layout passes the shared safe-parent policy unchanged',
+  'Ubuntu umask 0002 config layout passes enrollment ancestry unchanged',
   async () => {
     const f = await fixture()
     const previous = process.umask(0o002)
@@ -135,7 +129,7 @@ posixTest(
     const f = await fixture(`tester:x:${uid + 1}:${gid}::/:/bin/sh\n`)
     const mock = spyOn(process, 'geteuid').mockReturnValue(uid + 1)
     try {
-      await refuses(f, 'wrong-owner')
+      await refuses(f)
     } finally {
       mock.mockRestore()
     }
@@ -161,7 +155,7 @@ posixTest(
     await refuses(f)
   },
 )
-posixTest('refuses a sticky world-writable containing directory', async () => {
+posixTest('accepts a sticky world-writable ancestor', async () => {
   const f = await fixture()
   // Bun 1.3.14's fs.chmod drops bits above 0o777 (the directory stays 0777),
   // so set the sticky bit with chmod(1). Its stat reports the bit correctly,
@@ -169,7 +163,7 @@ posixTest('refuses a sticky world-writable containing directory', async () => {
   const set = spawnSync('chmod', ['1777', f.parent])
   expect(set.status).toBe(0)
   expect((await stat(f.parent)).mode & 0o7777).toBe(0o1777)
-  await refuses(f)
+  await refuseWritableAncestor(f.parent, f.options)
 })
 posixTest(
   'refuses a group-writable ancestor when its uid is absent',
@@ -348,22 +342,6 @@ posixTest(
   'persists a pending Connect secret below a private group-writable ancestor',
   async () => {
     const f = await fixture()
-    // Connect also takes the ceremony lock, whose own parent check takes no
-    // policy options, so the simulated account files are installed for every
-    // safe-parent check in this test. Without this, the test would depend on
-    // the host's real group being private.
-    setSafeParentOptionsForTest({
-      fs: {
-        readFile: (path: string) =>
-          readFileAsync(
-            path === '/etc/passwd'
-              ? f.options.passwdPath
-              : path === '/etc/group'
-                ? f.options.groupPath
-                : path,
-          ),
-      },
-    })
     const paths = getClaustrumEnrollmentPaths(
       join(f.parent, 'private', 'enrollment.json'),
     )

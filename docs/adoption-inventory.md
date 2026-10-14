@@ -112,7 +112,9 @@ A floor (`@opentui/core` and `@opentui/solid` `>=0.5.11`, `@cortexkit/claustrum-
 
 #### Windows owner-only persistence
 
-`@cortexkit/private-files@^0.1.0` is a **runtime dependency**, not an optional
+Windows: safe-parent everywhere. POSIX: unchanged from 0.14.2; only enrollment checks ancestry.
+
+`@cortexkit/private-files@^0.2.1` is a **runtime dependency**, not an optional
 peer. Only the Windows branch dynamically imports it; its own loader selects
 the published x64/ARM64 N-API prebuild. Unsupported volumes, ambiguous/local
 namespaces, reparse points, unsafe ancestors, unavailable native loading and
@@ -121,8 +123,10 @@ failed descriptor verification refuse without falling back to mode bits.
 `code`, optional `win32Code`/`reason`, `published`, `fileDurable`,
 `durabilityConfirmed`, rename `attempts`/`elapsedMs` and an optional private
 `orphanPath`. Its message contains remediation, never file contents. POSIX secret-file
-bytes, modes and atomic replacement are unchanged; existing parents now use the
-shared safe-parent policy, as do synchronous logger flushes.
+bytes, modes, atomic replacement and directory syscalls are unchanged from 0.14.2.
+POSIX paths do not import private-files or check ancestry; enrollment alone retains
+its original realpath/stat ancestor walk, including the Ubuntu private-group rule
+and sticky-ancestor acceptance. POSIX logger flushes remain synchronous.
 
 Reads use the backend's same-handle verify-and-read, not verify-then-Node-open.
 The exact published read policy (including elevated owners and file inheritance
@@ -138,12 +142,16 @@ Sharing/access errors are never acquisition, release or contention success.
 Only demonstrated exclusive collisions and missing-object Win32 codes are
 normalized; original errors remain available as the cause.
 
-Existing containing directories use `verifySafeParent` on both platforms,
-not the owner-only secret-file template. Safe real config parents can retain
-SYSTEM/Administrators/user inheritance on Windows or a proven user-private-group
-0775 layout on POSIX. Missing directories are created owner-only; no existing
-parent, dedicated root or sibling is implicitly tightened. `secureDir` and
-`privateParents` are retained for compatibility, not permission-repair opt-ins.
+On Windows, existing containing directories use `verifySafeParent`, not the
+owner-only secret-file template. Safe real config parents can retain
+SYSTEM/Administrators/user inheritance. Missing directories are created
+owner-only; no existing parent, dedicated root or sibling is implicitly tightened.
+Windows retains `secureDir` and `privateParents` for compatibility, not as
+permission-repair opt-ins. On POSIX, sidebar parents are tightened unless
+`secureDir: false`, RPC directories are tightened when `secureDir: true`, and
+dump and enrollment directories are tightened to 0700. Atomic JSON and lease
+locks retain their original mkdir calls without ancestry checks; Pi retains its
+0700 stash-directory requirement without tightening an existing stash parent.
 
 Only the specific secret file paths common-auth owns can be permission-migrated
 after their parent passes that policy. Published `private-files@0.2.1` accepts the
@@ -238,9 +246,9 @@ On Windows Pi explicitly opts into file-only durability: the stash's bytes are
 file-flushed and its rename is published before the slot is changed. There is
 no directory metadata guarantee: **a crash between the stash rename and its
 directory metadata reaching disk could lose the stash on Windows.** This is not
-a claim about NTFS journal ordering. `privateParents: true` declares auth/stash
-parents application-dedicated for current-owner permission migration; omit it
-for custom/shared parents, which must already verify or refuse with remediation.
+a claim about NTFS journal ordering. Windows checks safe auth/stash ancestry
+regardless of `privateParents`; it never tightens an existing parent. Specific
+trusted secret files may be permission-migrated after that check.
 Real Windows CI exercises stash enter/inspect/exit, ACLs and second-user denial.
 
 `openPiSlot({authPath, provider, stashPath, placeholderKey, lockTimeoutMs?})`

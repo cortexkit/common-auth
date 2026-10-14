@@ -402,7 +402,7 @@ describe('rpc-server', () => {
     expect(await readdir(root)).toEqual(['fixture-cafebabecafebabe'])
   })
 
-  test('verifies an existing managed RPC directory without tightening its permissions', async () => {
+  test('creates a managed RPC directory with 0700 permissions', async () => {
     dir = await makeTempDir('fixture-rpcsrv-')
     const managedDir = join(dir, 'managed', 'rpc')
     await mkdir(managedDir, { recursive: true, mode: 0o755 })
@@ -416,7 +416,7 @@ describe('rpc-server', () => {
     })
     stop = server.stop
 
-    expect((await stat(managedDir)).mode & 0o777).toBe(0o755)
+    expect((await stat(managedDir)).mode & 0o777).toBe(0o700)
   })
 
   test('does not chmod a foreign RPC override directory', async () => {

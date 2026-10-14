@@ -859,7 +859,7 @@ describe('ClaustrumEnrollmentManager', () => {
         },
       }),
     )
-    await expect(instance.reconcile()).rejects.toThrow('writable-by-others')
+    await expect(instance.reconcile()).rejects.toThrow('writable ancestor:')
     expect(proposed).toBe(false)
   })
 
@@ -1296,7 +1296,7 @@ test('classifies enrollment refusals as (code, disposition) with the producer co
 })
 
 test.skipIf(process.platform === 'win32')(
-  'keeps secret files owner-only and creates private parents without tightening existing safe ones',
+  'keeps the token owner-only in an owner-only directory, tightening a group-readable one',
   async () => {
     const root = await mkdtemp(join(tmpdir(), 'claustrum-enrollment-'))
     tempDirs.push(root)
@@ -1321,9 +1321,7 @@ test.skipIf(process.platform === 'win32')(
           }),
         }),
       ).reconcile()
-      expect((await stat(dirname(paths.tokenPath))).mode & 0o777).toBe(
-        paths === created ? 0o700 : 0o755,
-      )
+      expect((await stat(dirname(paths.tokenPath))).mode & 0o777).toBe(0o700)
       expect((await stat(paths.tokenPath)).mode & 0o777).toBe(0o600)
       expect((await stat(paths.statePath)).mode & 0o777).toBe(0o600)
     }

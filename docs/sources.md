@@ -155,8 +155,8 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | sidebar-file | Rejects the failed operation but keeps the write queue usable | reference/openai-auth/packages/opencode/src/sidebar-state.ts | rejects the failed operation but keeps the write queue usable |
 | sidebar-file | Merge rechecks new bytes and never writes the first result | reference/openai-auth/packages/opencode/src/sidebar-state.ts | merge rechecks new bytes and never writes the first result |
 | sidebar-file | Merge retries three times then performs one final merge and write | reference/openai-auth/packages/opencode/src/sidebar-state.ts | merge retries three times then performs one final merge and write |
-| sidebar-file | Existing safe parents are checked without tightening their 0755 mode | new (neither copy) | supplied safe parent is verified without tightening its 0755 mode |
-| sidebar-file | An existing safe parent never invokes permission repair | new (neither copy) | existing safe parent never invokes permission repair |
+| sidebar-file | Supplied parent is hardened from 0755 to 0700 | new (neither copy) | supplied parent is hardened from 0755 to 0700 |
+| sidebar-file | EPERM chmod warns once and still resolves the queued write | new (neither copy) | EPERM chmod warns once and still resolves the queued write |
 | sidebar-file | Lost ownership before commit rejects the queue and leaves target and staging unchanged | new (neither copy) | lost ownership before commit rejects the queue and leaves target and staging unchanged |
 | sidebar-file | Sidebar lock TTL is observed before commit | new (neither copy) | sidebar lock TTL is observed before commit |
 | sidebar-file | Sidebar lock renews with unchanged owner and private mode | new (neither copy) | sidebar lock renews with unchanged owner and private mode |
@@ -267,7 +267,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | rpc | Stalled socket is reclaimed | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | destroys a socket that stalls part-way through sending a request |
 | rpc | Failed sweep does not block startup | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | starts when the state sweep fails |
 | rpc | Startup sweeps stale project state | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | startup sweeps stale project state outside the active directory |
-| rpc | Existing managed RPC parents are verified without tightening permissions | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | verifies an existing managed RPC directory without tightening its permissions |
+| rpc | secureDir true hardens RPC directory to 0700 | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | creates a managed RPC directory with 0700 permissions |
 | rpc | secureDir false preserves existing override permissions | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | does not chmod a foreign RPC override directory |
 | rpc | Slow apply survives the default inactivity period | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | default timeout lets a slow apply handler respond before the socket is destroyed |
 | rpc | Sessionless HTTP delivers both scopes, filters acknowledged IDs and prunes nothing | new (neither copy) | sessionless HTTP oracle retains every notice, filters acknowledged IDs and warns once |
@@ -834,7 +834,7 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | cachekeep | A session now routed to another account is dropped, not warmed | new (neither copy) | skips the warm and drops the target when the session now routes to another account |
 | cachekeep | A matching active account, or none reported, warms the captured account | new (neither copy) | warms when the active account matches or the plugin reports none |
 | cachekeep | An active-account lookup that throws backs off without sending | new (neither copy) | backs off when the active account cannot be resolved |
-| dump | Writes body, metadata and redacted request files, 0600 in a newly created 0700 directory | openai dump | dumps final HTTP body and redacted request metadata when enabled |
+| dump | Writes body, metadata and redacted request files, 0600 in a 0700 directory | openai dump | dumps final HTTP body and redacted request metadata when enabled |
 | dump | The first dump after a restart diffs against the dump on disk | openai dump | recovers a diff baseline from disk after a restart |
 | dump | The disk baseline is the newest earlier dump of the key | anthropic dump | seeds a direct-request diff from the latest same-session dump after restart |
 | dump | A dump with another phase of the same channel is a baseline | anthropic dump | recognizes a tagged prewarm as the latest same-session restart baseline |
@@ -849,7 +849,7 @@ The cachekeep and dump rows come from openai-auth `main` at b7ceb56 (`packages/o
 | dump | Tool schemas keep a parameter named api_key while their strings are scrubbed | openai dump | keeps tool schemas intact while scrubbing credentials inside them |
 | dump | The diff is computed on the redacted text | openai dump | diffs the redacted text so offsets index the dumped file |
 | dump | Dumps switch on and off at runtime | anthropic dump "request dumps return response handles only when enabled" | setEnabled switches dumps at runtime without recreating the dumper |
-| dump | An existing safe dump directory is verified without tightening its mode | openai dump | verifies an existing safe dump directory without tightening its mode |
+| dump | An existing dump directory is tightened to 0700 | openai dump | tightens an existing dump directory to 0700 |
 | dump | The plugin summary is computed on the redacted body | new (neither copy) | stores the plugin body summary computed on the redacted body |
 | dump | A failed dump returns nothing and logs a warning | openai dump | a failed dump returns nothing and logs instead of throwing |
 | dump | A failed dump hands back no dump, so no response artifact can be attached to it | anthropic-auth packages/core/src/dump.ts (77e4c900), packages/core/src/tests/dump.test.ts | failed request dumps return no handle or orphan response artifact |
@@ -1094,7 +1094,7 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | claustrum | Each host gets its own token and state under the plugin state directory | anthropic-auth/packages/core/src/claustrum-enrollment.ts | OpenCode and Pi resolve separate owner-only enrollment paths from the same state root |
 | claustrum | Host overrides resolve absolute and relative paths per host | anthropic-auth/packages/core/src/claustrum-enrollment.ts | host-specific overrides resolve absolute and project-relative enrollment paths without crossing hosts |
 | claustrum | Enrollment refusals classify as (code, disposition) | new (neither copy) | classifies enrollment refusals as (code, disposition) with the producer code winning |
-| claustrum | Secret files stay 0600; new parents are 0700, existing safe parents stay unchanged | new (neither copy) | keeps secret files owner-only and creates private parents without tightening existing safe ones |
+| claustrum | Token 0600 in a 0700 directory, tightened when looser | new (neither copy) | keeps the token owner-only in an owner-only directory, tightening a group-readable one |
 | claustrum | Every dispatch is authorized and the token reread | anthropic-auth/packages/core/src/claustrum-scoped.ts | authorizes every dispatch and rereads the consumer token |
 | claustrum | No credential reuse after a refusal | anthropic-auth/packages/core/src/claustrum-scoped.ts | does not reuse a successful credential when the next get refuses |
 | claustrum | Invalid or changed served credentials are refused | anthropic-auth/packages/core/src/claustrum-scoped.ts | refuses invalid or changed serving identity {"credentialId":"other"} |
@@ -1321,7 +1321,7 @@ The claustrum rows carry anthropic-auth titles from `packages/core/src/tests/cla
 | claustrum | refuses a group-writable ancestor owned by another uid | new (neither copy) | refuses a group-writable ancestor owned by another uid |
 | claustrum | refuses a group-writable ancestor with another gid | new (neither copy) | refuses a group-writable ancestor with another gid |
 | claustrum | refuses a world-writable ancestor even with a private group | new (neither copy) | refuses a world-writable ancestor even with a private group |
-| claustrum | A sticky world-writable containing directory refuses; sticky ancestors require the published private-child rule | new (neither copy) | refuses a sticky world-writable containing directory |
+| claustrum | accepts a sticky world-writable ancestor | new (neither copy) | accepts a sticky world-writable ancestor |
 | claustrum | refuses a group-writable ancestor when its uid is absent | new (neither copy) | refuses a group-writable ancestor when its uid is absent |
 | claustrum | refuses malformed account records rather than assuming a private group | new (neither copy) | refuses malformed account records rather than assuming a private group |
 | claustrum | authorizes with an owner-only token below a non-private writable ancestor | new (neither copy) | authorizes with an owner-only token below a non-private writable ancestor |
@@ -1503,4 +1503,5 @@ The helper retains a 30 s takeover threshold for async Pi writers, renews every 
 | logger | Windows path changes and IO failures discard handles and require verification before reopening | new (neither copy) | Windows logger reopens after path changes and IO errors without leaking handles |
 | fs | Existing safe parents need neither owner-only directory permissions nor repair | new (neither copy) | safe existing parents do not require owner-only permissions or repair |
 | fs | In-place secret permission repair refuses a writable parent before invoking the backend | new (neither copy) | in-place securing refuses writable parents before backend repair |
-| claustrum | Ubuntu umask 0002 private-group config parents remain 0775 and pass the shared policy | new (neither copy) | Ubuntu umask 0002 config layout passes the shared safe-parent policy unchanged |
+| claustrum | Ubuntu umask 0002 private-group ancestors remain 0775 and pass enrollment ancestry | new (neither copy) | Ubuntu umask 0002 config layout passes enrollment ancestry unchanged |
+| store | POSIX writes accept a group-writable foreign-owned ancestor without an ancestry walk | new (neither copy) | POSIX store writes below a group-writable ancestor owned by another uid |
