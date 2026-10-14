@@ -58,7 +58,7 @@ Component legend: 1 rpc, 2 tui-build, 3 tui-preferences, 4 fs, 5 logger, 6 sideb
 `@cortexkit/common-auth/setup` is a Node-compatible ESM subpath, not a plugin
 bin. Each plugin's later adoption supplies its own Node bin and calls
 `await runSetup(plugin, process.argv.slice(3))` after dispatching `setup`.
-No reference-tree import or prompt dependency is required.
+No prompt-library dependency is required.
 The `/setup` subpath requires the `@cortexkit/claustrum-client` peer (the package's
 supported floor is `>=0.6.2`), including for local sign-in and dry runs. Its
 Claustrum imports are static so plugin bundlers keep the setup code in the entry
@@ -102,11 +102,12 @@ vault-mode policy remain in the callbacks. `signInLocal` must reject non-local
 custody before initiating login, as the existing plugins do. Callbacks are never
 called during a dry run.
 
-The shared flow detects and reports hosts, offers a toggle multiselect with
-found hosts preselected, fences running OpenCode/LiteCode/Pi processes, chooses
-vault or local sign-in, runs `beforeRegister(host, mode)`, registers, migrates,
-and prints a next step. The fence is checked again between side effects and
-before atomic config publication. Failed/malformed process inspection refuses on
+The shared flow detects and reports hosts and offers a toggle multiselect with
+found hosts preselected. A real run refuses while OpenCode, LiteCode or Pi is
+running; a dry run only reports the running processes. In a real run, setup then
+chooses vault or local sign-in, runs `beforeRegister(host, mode)`, registers,
+migrates, and prints a next step. The process check runs again between side
+effects and before atomic config publication. Failed/malformed process inspection refuses on
 a real run; a dry run only reports active hosts or inspection failure and proceeds
 with its no-mutation plan. Windows uses `tasklist /FO CSV /NH` and accepts its idle
 PID 0 row, with PowerShell CIM command-line inspection for other Node/Bun processes
@@ -127,10 +128,10 @@ profile and callback-owned files are not changed.
 
 OpenCode uses `OPENCODE_CONFIG_DIR`, else `XDG_CONFIG_HOME/opencode`, else
 `~/.config/opencode` on **all** OSes. A config folder alone, an AFT Desktop
-marker, or either CLI on PATH proves installation, independently of the version
-probe's success. Windows PATH lookup prefers `.exe`, `.cmd`, `.bat` to npm's
-extensionless POSIX shim, and version/install batch launches use fixed arguments
-through `cmd.exe /d /s /c`. Shell-expanding launcher paths or arguments refuse.
+marker, or `opencode` or `opencode2` on PATH proves installation, independently of
+the version probe's success. Windows PATH lookup prefers `.exe`, `.cmd`, `.bat`
+to npm's extensionless POSIX shim, and version/install batch launches use fixed
+arguments through `cmd.exe /d /s /c`. Shell-expanding launcher paths or arguments refuse.
 Pi honors `PI_CODING_AGENT_DIR`, including `~` and `file://` overrides.
 
 Generation inference never starts OpenCode: it reads npm launcher targets and
@@ -138,9 +139,10 @@ owning package metadata, shared targets and the `opencode2` name. An unclassifie
 CLI, config-only or Desktop-only installation infers v2 from an existing plural
 `plugins` key; otherwise it defaults to v1. Conflicting v1/v2 evidence prompts
 interactively and refuses with `--yes` unless the generation flag is supplied.
-The flag overrides inference everywhere. OpenCode 2.0.22's real-host placement
-guard proves a V1-root/`./server` package registered only under `plugin` loads
-the server entry and fires a model hook. Consequently `both` uses the single
+The flag overrides inference everywhere. An end-to-end test against OpenCode
+2.0.22 uses a package whose root exports the OpenCode 1 plugin, with a `./server`
+entry for OpenCode 2. Registered only under `plugin`, the package's server entry
+loads and fires a model hook in OpenCode 2. Consequently `both` uses the single
 compatible `plugin` registration plus TUI config, not two config roots.
 
 V1 writes `plugin` in OpenCode and TUI config; v2 writes `plugins` in OpenCode
