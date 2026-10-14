@@ -123,6 +123,23 @@ describe('setup flow', () => {
     ).rejects.toThrow('Please quit')
   })
 
+  test('a dry run without a terminal plans the --yes path instead of refusing', async () => {
+    const io = fakeIO()
+    io.folders.add('/home/test/.config/opencode')
+    const term = terminal()
+    const result = await runSetup(plugin(), ['--dry-run'], {
+      ...io,
+      terminal: term,
+    })
+    expect(result.dryRun).toBe(true)
+    expect(result.hosts).toEqual(['opencode'])
+    expect(term.lines.join('')).toContain('Would write')
+    expect(io.files.size).toBe(0)
+    await expect(
+      runSetup(plugin(), [], { ...io, terminal: terminal() }),
+    ).rejects.toThrow('Setup requires a TTY or --yes.')
+  })
+
   test('a Pi folder without the pi CLI is skipped and never blocks OpenCode', async () => {
     const io = fakeIO()
     io.folders.add('/home/test/.config/opencode')

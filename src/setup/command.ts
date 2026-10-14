@@ -113,9 +113,12 @@ export async function runSetup(
   const found = (['opencode', 'pi'] as const).filter(
     (host) => detection[host].installed && !(host === 'pi' && piWithoutCli),
   )
-  if (!options.yes && !isInteractive(terminal))
+  // A dry run changes nothing, so without a terminal it plans the --yes path
+  // instead of refusing; scripts and CI can preview setup with --dry-run alone.
+  const assumeYes = options.yes || (options.dryRun && !isInteractive(terminal))
+  if (!assumeYes && !isInteractive(terminal))
     throw new Error('Setup requires a TTY or --yes.')
-  const hosts: SetupHost[] = options.yes
+  const hosts: SetupHost[] = assumeYes
     ? found
     : ((await selectSetupHosts(terminal, found)) ?? [])
   let generation: OpenCodeGeneration =
@@ -128,7 +131,7 @@ export async function runSetup(
     !options.opencode &&
     detection.opencode.generation === 'ambiguous'
   ) {
-    if (options.yes || !isInteractive(terminal))
+    if (assumeYes || !isInteractive(terminal))
       throw new Error(AMBIGUOUS_OPENCODE_MESSAGE)
     const choice = await select<OpenCodeGeneration>(
       terminal,
@@ -194,7 +197,7 @@ export async function runSetup(
     options.claustrum ||
     (!options.login &&
       !options.noClaustrum &&
-      !options.yes &&
+      !assumeYes &&
       detection.claustrum.available &&
       (await confirm(terminal, 'Connect these hosts to the Claustrum vault?')))
   const mode = useVault ? 'claustrum' : 'local'

@@ -5694,3 +5694,17 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sa\sPi\sfolder\swithout\sthe\spi\sCLI\sis\sskipped\sand\snever\sblocks\sOpenCode$']
 expect_message = 'Received'
+
+[[control]]
+id = 'setup-dry-run-without-terminal-plans'
+guards = 'a dry run without a terminal plans the --yes path instead of refusing, since it changes nothing'
+file = 'src/setup/command.ts'
+old = 'options.yes || (options.dryRun && !isInteractive(terminal))'
+new = 'options.yes /* NON-VACUITY BREAK: refuse a non-interactive dry run. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sa\sdry\srun\swithout\sa\sterminal\splans\sthe\s--yes\spath\sinstead\sof\srefusing$']
+expect_message = 'Setup requires a TTY or --yes.'
