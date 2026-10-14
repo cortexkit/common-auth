@@ -7,7 +7,6 @@ import {
 } from 'node:fs'
 import { type FileHandle, open } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { verifySafeParentSync } from '@cortexkit/private-files'
 import {
   createPrivateBytes,
   ensurePrivateDirectory,
@@ -315,11 +314,6 @@ function createEngine(options?: LoggerOptions): Engine {
       })
     }
     try {
-      const parent = verifySafeParentSync(dirname(resolve(file)))
-      if (!parent.ok)
-        throw new Error(
-          `Log parent refused: ${parent.level ?? parent.path} (${parent.reason})`,
-        )
       rotateIfNeeded(file)
       if (existsSync(file)) chmodPrivate(file)
       appendFileSync(file, text, { encoding: 'utf8', mode: 0o600 })

@@ -17,6 +17,16 @@ export async function checkPrivateFilesExternal(root = 'dist') {
         ) {
           throw new Error(`private-files native loader was inlined: ${path}`)
         }
+        // Plugins embed sidebar, logger and RPC modules in their TUI renderers.
+        // A static import would make every renderer resolve and load
+        // private-files at startup on every platform, so the package may only
+        // be reached through the lazy import() that runs when a private-file
+        // operation first needs it.
+        if (
+          /(?:from|import)\s*['"]@cortexkit\/private-files['"]/.test(source)
+        ) {
+          throw new Error(`private-files must be imported lazily: ${path}`)
+        }
         imports += [
           ...source.matchAll(/import\(['"]@cortexkit\/private-files['"]\)/g),
         ].length

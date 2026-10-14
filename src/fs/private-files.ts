@@ -78,12 +78,24 @@ export async function privateOperation<T>(
   }
 }
 
+// Tests that simulate account files (a user-private group) need every
+// safe-parent check to see them, including checks made deep inside the lock
+// layer, which takes no policy options. Production never sets this.
+let safeParentOptionsForTest: PosixOwnerOnlyPathAsyncOptions | undefined
+/** Tests only: policy options used by safe-parent checks that pass none. */
+export function setSafeParentOptionsForTest(
+  options?: PosixOwnerOnlyPathAsyncOptions,
+): void {
+  safeParentOptionsForTest = options
+}
+
 /** Existing containing directories use the shared entry-integrity policy, not secret-file permissions. */
 export async function verifySafeDirectory(
   path: string,
   options?: PosixOwnerOnlyPathAsyncOptions,
 ): Promise<void> {
   path = resolve(path)
+  options ??= safeParentOptionsForTest
   await privateOperation(path, 'safe-parent', async () => {
     const result = await (await loadBackend()).verifySafeParent(path, options)
     if (result.ok === false) {

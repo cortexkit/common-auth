@@ -18,6 +18,13 @@ test('external fence rejects an inlined native loader and a missing import', asy
     await expect(checkPrivateFilesExternal(root)).rejects.toThrow(
       'native loader was inlined',
     )
+    await writeFile(
+      join(root, 'index.js'),
+      "import { verifySafeParentSync } from '@cortexkit/private-files'\nimport('@cortexkit/private-files')",
+    )
+    await expect(checkPrivateFilesExternal(root)).rejects.toThrow(
+      'must be imported lazily',
+    )
     await writeFile(join(root, 'index.js'), 'export const inlined = true')
     await expect(checkPrivateFilesExternal(root)).rejects.toThrow(
       'retain the external',

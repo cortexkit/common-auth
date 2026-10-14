@@ -5,6 +5,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readFile as readFileAsync,
   realpath,
   rm,
   stat,
@@ -21,6 +22,7 @@ import {
   ClaustrumScopedCustody,
   getClaustrumEnrollmentPaths,
 } from '../../src/claustrum/index.ts'
+import { setSafeParentOptionsForTest } from '../../src/fs/private-files.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 
 import { family } from './helpers.ts'
@@ -61,6 +63,7 @@ async function refuses(
 }
 
 afterEach(async () => {
+  setSafeParentOptionsForTest(undefined)
   await Promise.all(
     dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   )
@@ -345,6 +348,22 @@ posixTest(
   'persists a pending Connect secret below a private group-writable ancestor',
   async () => {
     const f = await fixture()
+    // Connect also takes the ceremony lock, whose own parent check takes no
+    // policy options, so the simulated account files are installed for every
+    // safe-parent check in this test. Without this, the test would depend on
+    // the host's real group being private.
+    setSafeParentOptionsForTest({
+      fs: {
+        readFile: (path: string) =>
+          readFileAsync(
+            path === '/etc/passwd'
+              ? f.options.passwdPath
+              : path === '/etc/group'
+                ? f.options.groupPath
+                : path,
+          ),
+      },
+    })
     const paths = getClaustrumEnrollmentPaths(
       join(f.parent, 'private', 'enrollment.json'),
     )

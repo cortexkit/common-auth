@@ -677,7 +677,10 @@ export class ClaustrumEnrollmentManager {
   }
 
   async reconcile(): Promise<ClaustrumEnrollmentStatus> {
-    await ensurePrivateDirectory(dirname(this.#paths.statePath))
+    await ensurePrivateDirectory(
+      dirname(this.#paths.statePath),
+      this.#ancestorOptions,
+    )
     const lock = await acquireRefreshFileLock({
       name: 'ceremony',
       path: this.#paths.statePath,
@@ -818,7 +821,10 @@ export class ClaustrumEnrollmentManager {
         }
         // The vault returns the token exactly once: it reaches disk before the
         // pending metadata (and its secret) is replaced.
-        await ensurePrivateDirectory(dirname(this.#paths.tokenPath))
+        await ensurePrivateDirectory(
+          dirname(this.#paths.tokenPath),
+          this.#ancestorOptions,
+        )
         await refuseWritableAncestor(
           dirname(this.#paths.tokenPath),
           this.#ancestorOptions,
