@@ -9,7 +9,11 @@ import { defaultCommandRunner } from './command-runner.js'
 import { detectHosts } from './detect.js'
 import { connectSetupHost } from './enroll.js'
 import { setupPaths } from './paths.js'
-import { assertHostsStopped, createProcessFence } from './process-fence.js'
+import {
+  assertHostsStopped,
+  createProcessFence,
+  ProcessFenceViolationError,
+} from './process-fence.js'
 import { selectSetupHosts } from './prompts.js'
 import {
   planOpenCodeRegistration,
@@ -144,7 +148,26 @@ export async function runSetup(
     io.fence ??
     createProcessFence(io.runner ?? defaultCommandRunner, { platform })
   const stopped = () => assertHostsStopped(fence, env)
-  await stopped()
+  if (options.dryRun) {
+    try {
+      const active = await fence.listRunningHosts(env)
+      const names = new Set(
+        new ProcessFenceViolationError(active).activeHosts.map((host) =>
+          host.command.toLowerCase() === 'pi' ? 'Pi' : 'OpenCode',
+        ),
+      )
+      for (const name of names)
+        printLine(
+          terminal,
+          `${name} is running; setup will ask you to quit it.`,
+        )
+    } catch {
+      printLine(
+        terminal,
+        'Process inspection failed; real setup will require successful inspection and stopped OpenCode/Pi hosts.',
+      )
+    }
+  } else await stopped()
   if (options.claustrum && !detection.claustrum.available)
     throw new Error(
       'Claustrum is not available. Start ck or use --no-claustrum for local sign-in.',

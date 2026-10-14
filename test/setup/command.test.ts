@@ -19,6 +19,58 @@ async function profile() {
 }
 
 describe('setup flow', () => {
+  test('dry run reports running hosts instead of refusing', async () => {
+    const io = fakeIO()
+    io.folders.add('/home/test/.config/opencode')
+    io.fence = {
+      async listRunningHosts() {
+        return [
+          { pid: 99, command: 'opencode --secret hidden' },
+          { pid: 100, command: 'pi' },
+        ]
+      },
+    }
+    const term = terminal()
+    const result = await runSetup(plugin(), ['--yes', '--dry-run'], {
+      ...io,
+      terminal: term,
+    })
+    expect(result.dryRun).toBe(true)
+    expect(term.lines.join('')).toContain(
+      'OpenCode is running; setup will ask you to quit it.',
+    )
+    expect(term.lines.join('')).toContain(
+      'Pi is running; setup will ask you to quit it.',
+    )
+    expect(term.lines.join('')).not.toContain('hidden')
+    expect(term.lines.join('')).toContain('Would write')
+    await expect(
+      runSetup(plugin(), ['--yes'], { ...io, terminal: terminal() }),
+    ).rejects.toThrow('Please quit')
+  })
+
+  test('dry run reports inspection failure and still plans without changing files', async () => {
+    const io = fakeIO()
+    io.folders.add('/home/test/.config/opencode')
+    io.fence = {
+      async listRunningHosts() {
+        throw new Error('hidden inspection stderr')
+      },
+    }
+    const term = terminal()
+    const result = await runSetup(plugin(), ['--yes', '--dry-run'], {
+      ...io,
+      terminal: term,
+    })
+    expect(result.dryRun).toBe(true)
+    expect(term.lines.join('')).toContain(
+      'Process inspection failed; real setup will require successful inspection',
+    )
+    expect(term.lines.join('')).not.toContain('hidden')
+    expect(term.lines.join('')).toContain('Would write')
+    expect(io.files.size).toBe(0)
+  })
+
   test('dry run prints every shared write but calls no mutation callbacks', async () => {
     const root = await profile()
     const term = terminal()

@@ -22,6 +22,34 @@ prebuild = [
 
 # --- auth-plugin setup: OpenCode/Pi discovery and package registration ---
 [[control]]
+id = 'setup-windows-runtime-pi'
+guards = 'Pi entry scripts are recognized behind Node and Bun image names'
+file = 'src/setup/process-fence.ts'
+old = "PI_SCRIPT_PATTERN.test(command) ? 'pi' : null"
+new = "false /* NON-VACUITY BREAK */ ? 'pi' : null"
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/fence.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\sWindows\sinspects\sNode\sand\sBun\scommand\slines\sfor\shost\sentry\sscripts$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'setup-windows-idle-pid'
+guards = 'Windows tasklist idle PID zero is accepted before filtering host processes'
+file = 'src/setup/process-fence.ts'
+old = 'pid < 0'
+new = 'pid <= 0 /* NON-VACUITY BREAK */'
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/fence.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\sWindows\sidle\sPID\szero\sand\scurrent\sruntime\sprocess\sare\svalid\slisting\srows$']
+expect_message = 'cannot prove hosts are stopped'
+
+[[control]]
 id = 'setup-windows-cmd-path'
 guards = 'Windows npm batch launchers count as installed without a successful direct exec'
 file = 'src/setup/detect.ts'

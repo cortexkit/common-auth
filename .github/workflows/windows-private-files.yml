@@ -46,6 +46,12 @@ jobs:
           if ($LASTEXITCODE) { throw 'Build failed' }
           npm install --global opencode-ai
           if ($LASTEXITCODE) { throw 'OpenCode install failed' }
+      - name: Node real Windows process listing and Node/Bun Pi process fencing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node test/setup/windows-processes.mjs
+          if ($LASTEXITCODE) { throw 'Real Windows process inspection failed' }
       - name: Node setup dry run and real idempotent registration in a fresh profile
         shell: pwsh
         run: |

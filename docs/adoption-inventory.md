@@ -99,7 +99,13 @@ The shared flow detects and reports hosts, offers a toggle multiselect with
 found hosts preselected, fences running OpenCode/LiteCode/Pi processes, chooses
 vault or local sign-in, runs `beforeRegister(host, mode)`, registers, migrates,
 and prints a next step. The fence is checked again between side effects and
-before atomic config publication. Failed/malformed process inspection refuses;
+before atomic config publication. Failed/malformed process inspection refuses on
+a real run; a dry run only reports active hosts or inspection failure and proceeds
+with its no-mutation plan. Windows uses `tasklist /FO CSV /NH` and accepts its idle
+PID 0 row, with PowerShell CIM command-line inspection for other Node/Bun processes
+so npm Pi/OpenCode entry scripts are recognized as hosts. The exported
+`listSetupProcesses` returns the unfiltered snapshot (including the current
+process) for inspection tests; callers must not print its command-line arguments.
 process diagnostics retain only recognized executable names, not arguments.
 
 Flags: `--yes`, `--dry-run`, `--claustrum`, `--no-claustrum`, `--login`, and

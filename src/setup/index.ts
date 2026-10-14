@@ -8,6 +8,7 @@ export {
 export {
   assertHostsStopped,
   createProcessFence,
+  listSetupProcesses,
   ProcessFenceViolationError,
   ProcessInspectionError,
 } from './process-fence.js'
