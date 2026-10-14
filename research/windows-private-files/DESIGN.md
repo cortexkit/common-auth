@@ -36,7 +36,7 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > for shutdown. The sink never reads/replaces the whole log on steady flushes.
 
 > **Implementation qualification:** common-auth's Windows writers passed the
-> three-runner Node/Bun matrix in [run 38483433873](https://github.com/cortexkit/common-auth/actions/runs/38483433873).
+> three-runner Node/Bun matrix in [run 38497115986](https://github.com/cortexkit/common-auth/actions/runs/38497115986).
 > See [QUALIFICATION.md](QUALIFICATION.md) for the tested scope, mutation evidence
 > and limits. Sections below describe the pre-implementation research decision;
 > the dated published-contract update above states which policy details changed.

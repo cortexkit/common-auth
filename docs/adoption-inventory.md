@@ -196,11 +196,15 @@ pending await, interrupts the caller's wait and kills its owned helpers. Native
 IO itself is not cancellable; timed-out private fixtures are retained, and the
 runner exits unsuccessfully after reporting rather than waiting indefinitely.
 
-**Qualified result:** [run 38483433873](https://github.com/cortexkit/common-auth/actions/runs/38483433873)
-passed on implementation commit `8747613155dd833542c593a44b6572e92eea9723`:
-seven real tests on each runner/runtime, and all 13 guard mutations CAUGHT on
-both Bun versions on all three runners. The all-skipped count control also
-refused. See [qualification and limits](../research/windows-private-files/QUALIFICATION.md)
+**Qualified result:** [run 38497115986](https://github.com/cortexkit/common-auth/actions/runs/38497115986)
+passed on implementation/harness commit `9044ba1c033b8764c4d6c13eace5311bbb33e9ee`:
+seven real tests on each runner/runtime, and all 14 deliberately disabled guards
+were CAUGHT: each change caused its corresponding named test to fail on both
+Bun versions on all three runners, including the logger rewrite-cost control.
+The all-skipped count control also refused. The job provisions and warms one
+standard-user profile before the suites, then reuses its masked credential while
+retaining a fresh public-read positive control for every denial; cleanup is an
+always-run required gate. Per-probe timeouts were not increased. See [qualification and limits](../research/windows-private-files/QUALIFICATION.md)
 for evidence paths and what this result does **not** establish. This qualifies
 the tested local-NTFS combinations, not arbitrary Windows volumes or consumers'
 direct writers.

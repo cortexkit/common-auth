@@ -2,19 +2,24 @@
 
 ## Qualified implementation and evidence
 
-[Windows private-files run 38483433873](https://github.com/cortexkit/common-auth/actions/runs/38483433873)
-succeeded on implementation commit `8747613155dd833542c593a44b6572e92eea9723`.
-That run qualified the initial private-file adoption. The subsequent logger-cost
-revision retains a verified append handle instead of rewriting the whole log;
-its new Windows run is recorded below when available. Documentation, comment
-clarification and retargeted legacy mutation anchors also follow that initial
-implementation.
-The regular CI run on the same implementation commit also succeeded, as relayed
-by the operator who pushed the verification branch. No push was made from the
-editing worktree.
+[Windows private-files run 38497115986](https://github.com/cortexkit/common-auth/actions/runs/38497115986)
+fully succeeded on `9044ba1c033b8764c4d6c13eace5311bbb33e9ee`: all three Windows
+jobs and all nine real runtime suites passed. Deliberately disabling guards
+caused their named tests alone to fail in all 84 replays, and disabling all real
+assertions made the wrapper refuse in all six skipped-suite controls. This is the current qualification,
+including retained logger append handles, verified rotation, line-ending-safe
+mutation replay and one warmed standard-user account per job. The final delivery
+adds documentation only after this tested revision. Regular CI also passed, as
+relayed by the operator who pushed the verification branch; the editing worktree
+did not push.
+
+The initial adoption passed [run 38483433873](https://github.com/cortexkit/common-auth/actions/runs/38483433873)
+on `8747613155dd833542c593a44b6572e92eea9723`. Later append/harness qualification
+runs and their limitations are recorded below as history, not current blockers.
 
 The qualification uses the published `@cortexkit/private-files@0.1.0` runtime
-package and its prebuild loader, not an inlined or locally rebuilt native module.
+package and its loader, which selects the published native binary for the host
+architecture. No inlined loader or locally rebuilt native module was substituted.
 
 | Runner | Architecture | Filesystem / reported Windows version | Node 24.21.0 | Bun 1.3.14 | Bun 1.4.2 |
 | --- | --- | --- | --- | --- | --- |
@@ -29,7 +34,7 @@ seven assertions made the wrapper refuse on both Bun versions on every runner.
 Artifacts uploaded by that run are named
 `windows-private-files-{windows-latest,windows-2022,windows-11-arm}`. A copy is
 retained in the delivery worktree's ignored
-`windows-private-files-evidence/run-38483433873/`, outside `dist/` and all other
+`windows-private-files-evidence/run-38497115986/`, outside `dist/` and all other
 regenerable build directories. Each artifact contains:
 
 - `suite-node-v24.21.0-real.log` and `suite-bun-{1.3.14,1.4.2}-real.log`;
@@ -48,13 +53,14 @@ The seven tests in `test/windows/common-auth.mjs` exercise:
    sidebar, ordered log flush, dump baseline/body/metadata/response, Pi auth and
    stash, and refresh lease acquire/contention/renewal/release run through the
    built common-auth entry points. PowerShell/.NET, independently of the addon,
-   inspects owners and every ACE on 18 file/directory objects, plus the transient
+   inspects owners and every ACE on 19 file/directory objects, including the active
+   and rotated logs, plus the transient
    eviction-marker directory and its owner file. Each object's DACL grants only
    the process user with the expected file/directory inheritance flags.
 2. **Standard-user denial with a positive control.** An ephemeral non-admin user
    must launch successfully, report its own non-admin identity and read the
    deliberately public control. It is then denied directory enumeration and
-   direct reads of 11 known-name private files. A launch failure or unreadable
+   direct reads of 12 known-name private files. A launch failure or unreadable
    public control is not a denial pass. Migration receives a separate denial
    probe after permission repair.
 3. **Within-budget sharing recovery.** A helper holds the destination without
@@ -83,27 +89,30 @@ processes on watchdog expiry. Native IO itself is not cancellable.
 
 ## Guard mutation evidence
 
-Each runner reports **13/13 CAUGHT on Bun 1.3.14 and 13/13 CAUGHT on Bun 1.4.2**:
+Each runner reports **14/14 CAUGHT on Bun 1.3.14 and 14/14 CAUGHT on Bun 1.4.2**:
 CAUGHT means deliberately disabling a guard made its named test fail, after that
-test passed with the guard intact. There were 78 guard replays in total, plus six
+test passed with the guard intact. There were 84 guard replays in total, plus six
 all-skipped count controls. The new guards
 cover refusal predicates, migration owner/reparse exclusions, elapsed deadlines,
 native error retry filtering, per-attempt ownership fences, publication outcome
 honesty, stage ownership cleanup, lease acquisition/release classification,
 external packaging, RPC refusal propagation, same-directory staging and watchdog
-cancellation.
+cancellation, and the logger's no-whole-file-rewrite cost contract.
 
 Every replay first passes its sole named test, stages the live source and checks
-an empty unstaged diff, removes or neutralizes a guard (marked
-`NON-VACUITY BREAK`) with a non-empty diff, and
-requires that same test alone to fail. Restoration uses the staged source,
-touches the restored file and requires an empty diff. The JSON records each
+an empty unstaged diff, deliberately removes or neutralizes a guard (marked
+`NON-VACUITY BREAK` to identify the intentional test-only fault) with a non-empty
+diff, and requires that same test alone to fail. Restoration writes the captured
+original bytes, verifies byte equality, touches the restored file and requires
+an empty diff. The JSON records each
 applied/restored stat pair; red logs name exactly one failed test, with no
-collateral failure. `windows-private-files-evidence/evidence-review.json.log`
-records a read-only audit of all nine suite records, nine second-user records,
-78 red logs/stat pairs and six count controls.
+collateral failure. A read-only audit verified required suite totals, successful
+standard-user public-read controls plus private denial, sole expected failures
+in all 84 red logs, non-empty applied/empty restored stat pairs, and all six count
+controls. Its successful record is
+`windows-private-files-evidence/evidence-review-final.json.log`.
 
-## Portable regression verification
+## Portable regression verification (initial adoption)
 
 Linux full suites on both Bun versions passed: **1523 pass, 13 skip, 0 fail**,
 1536 tests across 122 files and 7303 assertions per run. The 13 skips belong to
@@ -134,8 +143,10 @@ Automatic Windows flushes now retain one verified append handle, check only its
 size metadata for rotation, and append new bytes. Explicit `flushLogs()` drains
 and closes it; a changed configured/provider path, rotation or IO error discards
 the handle, and the next open verifies the protected parent and private file.
-The design supersession explains why this write-only pathname open is safe
-against other ordinary users without weakening handle-based secret reads.
+The [design supersession](DESIGN.md) permits this write-only pathname open because
+other ordinary users cannot create, replace or link entries in the verified
+protected owner-only parent; the owner and administrators are outside the threat
+model. Handle-based secret reads are unchanged.
 
 The isolated fake-backend regression ran 50 automatic flushes (2500 lines),
 including a same-path reconfiguration: zero additional backend reads, private
@@ -144,7 +155,12 @@ at explicit shutdown flushing. Three further tests cover rotation, refusal
 before open, and path/error recovery without leaked handles. Reintroducing
 whole-file rewriting made only the named cost regression fail on Bun 1.3.14 and
 1.4.2: 49 unexpected backend reads after the first flush. These counters prove
-portable sink behavior, not Windows ACL enforcement.
+portable sink behavior, not Windows ACL enforcement. In the Windows mutation
+artifacts, the same rewrite control instead fails the sole named test when its
+child does not complete within the existing 10-second test-process budget
+(exit 143); it does not reach the read-counter assertion. The direct 49-versus-0
+counter evidence comes from the Linux runs, while real Windows suites verify
+the unmutated append/rotation/ACL behavior.
 
 The full Linux suites passed with 1527 pass, 13 opt-in placement skips and zero
 failures (1540 tests, 123 files, 7315 assertions); the provenance check matched
@@ -162,7 +178,7 @@ runners, including active/rotated-log ACL inspection and second-user denial;
 regular CI also passed, as relayed by the operator. Its mutation phase stopped
 at the logger's multiline LF anchor in a CRLF checkout, after earlier controls
 had replayed. That is a harness failure, not a skipped or failed product
-assertion, and the full workflow must be rerun successfully before delivery.
+assertion. The final fully green run supersedes this harness failure.
 
 The harness now uses the same line-ending-normalized, unique-anchor replacement
 helper as `bun scripts/check-windows-mutation-anchors.mjs`. That local check
@@ -190,7 +206,40 @@ two-minute cleanup step removes only the provisioned account and verifies remova
 setup and cleanup outcomes are mandatory workflow gates. Portable structural
 checks cover reuse, budgets, masking and cleanup, with named red controls for
 missing profile loading, missing masking and conditional cleanup. They do not
-prove Windows logon timing; the final workflow rerun remains required.
+prove Windows logon timing. The final run above successfully exercised the new
+account lifecycle without changing probe limits.
+
+## Final profile warmup and runtime timing
+
+The job-level warmup recorded these account-creation and credentialed first-logon
+costs (rounded seconds, relayed from the workflow log):
+
+| Runner | Account creation | Profile warmup / first logon |
+| --- | --- | --- |
+| windows-latest | 0.8 s | 17.3 s |
+| windows-2022 | 3.2 s | 22.7 s |
+| windows-11-arm | 2.7 s | 39.8 s |
+
+Separating first logon from per-probe work resolved the observed qualification
+timeout in the final run; the timings show substantial setup cost, not a universal
+profile-creation latency bound or proof that no other delay contributed earlier.
+Real runtime suites took 11–15 seconds on x64 and about 112 seconds on ARM.
+Every denial still ran its public-read positive control, and account cleanup
+passed. Existing 30-second child and 45-second helper limits stayed unchanged.
+
+## Final portable gates
+
+After the final implementation and harness changes, full Linux suites on Bun
+1.3.14 and Bun 1.4.2 each passed **1532 pass, 13 skip, 0 fail**: 1545 tests across
+125 files, with 7358 assertions. The skips remain the opt-in real OpenCode 2
+placement suite. Both source-provenance checks matched all 1440 documented test
+cells in `docs/sources.md` against passing test names in the respective JUnit
+reports. `ckdev-mutate check` (runner 0.12.0) passed on both Bun versions, verifying all 321 catalogue
+controls' anchors and exact test names; its frozen-install/build prerequisites
+also passed and checked the external native-loader fence. TypeScript 7.0.2
+and Biome 2.5.14 gates passed with only the two previously recorded warnings.
+Final stdout/stderr records are kept under
+`windows-private-files-evidence/final-portable/`, outside build directories.
 
 ## Limits and remaining adoption
 
