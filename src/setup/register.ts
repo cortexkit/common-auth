@@ -7,8 +7,8 @@ import {
   parse,
   parseTree,
 } from 'jsonc-parser'
-import { writeJsonAtomic } from '../fs/index.js'
 import { defaultCommandRunner, runResolvedCommand } from './command-runner.js'
+import { writeHostConfigAtomic } from './config-write.js'
 import { defaultSetupFileSystem } from './detect.js'
 import { setupPaths } from './paths.js'
 import type { OpenCodeGeneration, SetupIO, SetupPlugin } from './types.js'
@@ -167,8 +167,7 @@ export async function registerOpenCode(
   for (const write of writes) {
     if (!write.changed) continue
     await beforeWrite?.()
-    await writeJsonAtomic(write.path, write.content, {
-      serialize: (content) => String(content),
+    await writeHostConfigAtomic(write.path, write.content, {
       beforeRename: beforeWrite,
     })
   }

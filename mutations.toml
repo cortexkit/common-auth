@@ -22,6 +22,20 @@ prebuild = [
 
 # --- auth-plugin setup: OpenCode/Pi discovery and package registration ---
 [[control]]
+id = 'setup-config-not-private'
+guards = 'Ordinary host config registration preserves its mode instead of using the secret-file writer'
+file = 'src/setup/register.ts'
+old = "import { writeHostConfigAtomic } from './config-write.js'"
+new = "import { writeJsonAtomic as writeHostConfigAtomic } from '../fs/index.js' // NON-VACUITY BREAK"
+test_file = 'test/setup/register.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/register.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/register.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sregistration\sconfig\sregistration\snever\sapplies\sprivate\swriter\spermissions$']
+expect_message = 'Received: 384'
+
+[[control]]
 id = 'setup-windows-runtime-pi'
 guards = 'Pi entry scripts are recognized behind Node and Bun image names'
 file = 'src/setup/process-fence.ts'

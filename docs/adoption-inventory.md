@@ -141,8 +141,13 @@ config only. Existing `.jsonc` is preferred to `.json`; absent files get a
 minimal schema config. JSONC edits preserve unrelated comments and whitespace,
 replace any version of the package, preserve tuple/object options, remove
 duplicates and remove the package's entry from the alternate key. Other
-plugins' entries are never removed. The shared `/fs` module stages and atomically
-publishes each config so readers never see a partially written file. Pi is
+plugins' entries are never removed. Setup's ordinary-config writer stages and
+atomically replaces each config so readers never see a partially written file.
+Existing POSIX file modes are preserved; Windows configs inherit the parent
+folder's ACL without a protected DACL. Sharing-related Windows rename failures
+retry for about two seconds, rechecking that OpenCode/Pi are stopped before each attempt.
+Actual enrollment and credential secrets still use their private writers; setup
+does not weaken their permissions. Pi is
 registered by its resolved `pi install npm:<package>@<version>` command.
 
 `runSetup` returns `{ hosts, dryRun, mode, detection }` and throws on refusal;

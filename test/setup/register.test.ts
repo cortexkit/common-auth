@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'jsonc-parser'
@@ -24,6 +32,25 @@ async function profile() {
 }
 
 describe('setup registration', () => {
+  test.skipIf(process.platform === 'win32')(
+    'config registration never applies private writer permissions',
+    async () => {
+      const root = await profile()
+      const file = join(root, 'opencode.jsonc')
+      await writeFile(file, '{}\n')
+      await chmod(file, 0o644)
+      await registerOpenCode(
+        planOpenCodeRegistration(plugin(root), '2', {
+          env: { OPENCODE_CONFIG_DIR: root },
+        }),
+      )
+      expect((await stat(file)).mode & 0o777).toBe(0o644)
+      expect(parse(await readFile(file, 'utf8')).plugins).toEqual([
+        '@cortexkit/opencode-test-auth@1.2.3',
+      ])
+    },
+  )
+
   test('creates schema config and TUI atomically and is idempotent', async () => {
     const root = await profile()
     const io = { env: { OPENCODE_CONFIG_DIR: root } }

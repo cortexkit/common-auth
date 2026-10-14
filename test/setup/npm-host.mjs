@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -59,7 +65,19 @@ try {
   )
   check(!existsSync(config), 'dry run creates no config')
   run(['--yes'])
+  const beforeSecond = readFileSync(config, 'utf8')
+  const statBeforeSecond = statSync(config, { bigint: true })
   run(['--yes'])
+  check(
+    readFileSync(config, 'utf8') === beforeSecond,
+    'second run preserves config bytes',
+  )
+  const statAfterSecond = statSync(config, { bigint: true })
+  check(
+    statAfterSecond.mtimeNs === statBeforeSecond.mtimeNs &&
+      statAfterSecond.ino === statBeforeSecond.ino,
+    'second run does not rewrite the config',
+  )
   const value = parse(readFileSync(config, 'utf8'))
   assert.deepEqual(value.plugin, ['@cortexkit/opencode-setup-fixture@1.0.0'])
   checks++
@@ -67,6 +85,33 @@ try {
     !value.plugins?.length,
     'plugin is not registered a second time under plugins',
   )
+  if (process.platform === 'win32') {
+    const acl = spawnSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        fileURLToPath(new URL('./verify-config-acl.ps1', import.meta.url)),
+      ],
+      {
+        env: {
+          ...env,
+          COMMON_AUTH_SETUP_CONFIG_DIR: join(root, '.config', 'opencode'),
+        },
+        encoding: 'utf8',
+      },
+    )
+    process.stdout.write(acl.stdout ?? '')
+    assert.equal(
+      acl.status,
+      0,
+      `Inherited config ACL checks failed: ${acl.stderr}`,
+    )
+    checks++
+  }
   console.log(
     `${process.version} ${process.platform}/${process.arch}: ${checks} setup checks passed`,
   )
