@@ -59,6 +59,13 @@ Component legend: 1 rpc, 2 tui-build, 3 tui-preferences, 4 fs, 5 logger, 6 sideb
 bin. Each plugin's later adoption supplies its own Node bin and calls
 `await runSetup(plugin, process.argv.slice(3))` after dispatching `setup`.
 No reference-tree import or prompt dependency is required.
+The `/setup` subpath requires the `@cortexkit/claustrum-client` peer (the package's
+supported floor is `>=0.6.2`), including for local sign-in and dry runs. Its
+Claustrum imports are static so plugin bundlers keep the setup code in the entry
+bundle rather than emit lazy chunks that a running host could lose when `dist`
+is rebuilt. The three adopting auth plugins already depend on this peer.
+The peer remains optional in package-wide metadata for consumers of subpaths
+that do not use Claustrum; `/setup` consumers must install it.
 
 The minimal `SetupPlugin` contract is:
 

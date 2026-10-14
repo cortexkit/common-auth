@@ -10,6 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'jsonc-parser'
+import { connectClaustrumEnrollmentClient } from '../claustrum/enrollment.js'
 import { defaultCommandRunner, runResolvedCommand } from './command-runner.js'
 import { setupPaths } from './paths.js'
 import type {
@@ -215,9 +216,7 @@ export async function detectHosts(
   let available = false
   if (ck && fs.exists(plugin.vault.connectionFile)) {
     try {
-      const connect =
-        io.connect ??
-        (await import('../claustrum/index.js')).connectClaustrumEnrollmentClient
+      const connect = io.connect ?? connectClaustrumEnrollmentClient
       const client = await connect({
         connectionFile: plugin.vault.connectionFile,
         handshakeTimeoutMs: 2000,

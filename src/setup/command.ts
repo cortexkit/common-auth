@@ -5,6 +5,7 @@ import {
   printLine,
   processTerminal,
 } from '../auth-menu/terminal.js'
+import { hostEnrollmentPaths } from '../claustrum/enrollment.js'
 import { defaultCommandRunner } from './command-runner.js'
 import { detectHosts } from './detect.js'
 import { connectSetupHost } from './enroll.js'
@@ -191,7 +192,6 @@ export async function runSetup(
     )
     for (const host of hosts) {
       if (useVault) {
-        const { hostEnrollmentPaths } = await import('../claustrum/index.js')
         const paths = hostEnrollmentPaths(plugin.vault.hosts[host].paths)
         printLine(
           terminal,

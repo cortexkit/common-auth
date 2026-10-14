@@ -1,5 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { writeEnrollmentTokenFile } from '@cortexkit/claustrum-client'
 import { type MenuTerminal, printLine } from '../auth-menu/terminal.js'
+import {
+  ClaustrumEnrollmentManager,
+  connectClaustrumEnrollmentClient,
+  hostEnrollmentPaths,
+} from '../claustrum/enrollment.js'
 import {
   ProcessFenceViolationError,
   ProcessInspectionError,
@@ -14,11 +20,6 @@ export async function connectSetupHost(
   terminal: MenuTerminal,
   fence: () => Promise<void>,
 ): Promise<void> {
-  const {
-    ClaustrumEnrollmentManager,
-    connectClaustrumEnrollmentClient,
-    hostEnrollmentPaths,
-  } = await import('../claustrum/index.js')
   const { name, paths: input } = plugin.vault.hosts[host]
   const paths = hostEnrollmentPaths(input)
   await fence()
@@ -44,9 +45,6 @@ export async function connectSetupHost(
       },
       writeTokenFile: async (path, file) => {
         await fence()
-        const { writeEnrollmentTokenFile } = await import(
-          '@cortexkit/claustrum-client'
-        )
         await writeEnrollmentTokenFile(path, file)
       },
     })

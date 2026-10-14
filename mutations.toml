@@ -22,6 +22,20 @@ prebuild = [
 
 # --- auth-plugin setup: OpenCode/Pi discovery and package registration ---
 [[control]]
+id = 'setup-static-claustrum'
+guards = 'Setup Claustrum imports remain static so plugin rebuilds cannot strand a running host on a removed lazy chunk'
+file = 'src/setup/detect.ts'
+old = 'const connect = io.connect ?? connectClaustrumEnrollmentClient'
+new = "const connect = io.connect ?? (await import('../claustrum/enrollment.js')).connectClaustrumEnrollmentClient /* NON-VACUITY BREAK */"
+test_file = 'test/setup/bundle.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/bundle.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/bundle.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\skeeps\sClaustrum\simports\sstatic\sand\sbundles\swithout\slazy\schunks$']
+expect_message = 'dynamic-import'
+
+[[control]]
 id = 'setup-config-not-private'
 guards = 'Ordinary host config registration preserves its mode instead of using the secret-file writer'
 file = 'src/setup/register.ts'
