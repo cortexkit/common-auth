@@ -240,6 +240,52 @@ test('route lookup misses after a peer commits a known account replacement', asy
   expect(s.daemon.usageGets).toBe(1)
 })
 
+test('an account quota write lands on its bound route without a vault call and is visible at once', async () => {
+  const s = await scenario()
+  const row = s.consumer
+    .snapshot()!
+    .rows.find((value) => value.accountIdentity === 'account-work')!
+  const gets = s.daemon.gets.length
+  const lists = s.daemon.lists
+  expect(
+    await s.consumer.recordAccountQuota(row.routeId, 'account-work', {
+      checkedAt: NOW - 1_000,
+      readings: [{ label: 'session', usedPercent: 80 }],
+    }),
+  ).toBe(true)
+  expect(
+    s.consumer.snapshot()!.rows.find((value) => value.routeId === row.routeId)
+      ?.quota,
+  ).toBeDefined()
+  expect(s.daemon.gets).toHaveLength(gets)
+  expect(s.daemon.lists).toBe(lists)
+})
+
+test('an account quota write is refused for another account or an unbound route', async () => {
+  const s = await scenario()
+  s.daemon.credentials['oauth:test:work']!.wire = { account_id: undefined }
+  const consumer = s.create('account-fence')
+  await consumer.refresh()
+  const unbound = consumer
+    .snapshot()!
+    .rows.find((value) => value.credentialId === 'oauth:test:work')!
+  expect(unbound.accountIdentity).toBeUndefined()
+  const reading = { checkedAt: NOW, readings: [] }
+  expect(
+    await consumer.recordAccountQuota(unbound.routeId, 'account-work', reading),
+  ).toBe(false)
+  const bound = consumer
+    .snapshot()!
+    .rows.find((value) => value.accountIdentity !== undefined)!
+  expect(
+    await consumer.recordAccountQuota(bound.routeId, 'someone-else', reading),
+  ).toBe(false)
+  expect(
+    consumer.snapshot()!.rows.find((value) => value.routeId === bound.routeId)
+      ?.quota,
+  ).toEqual(bound.quota)
+})
+
 test('a pending insula deadline does not keep an otherwise idle host process alive', async () => {
   const started = Date.now()
   const child = Bun.spawn(

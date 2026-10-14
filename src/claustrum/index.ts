@@ -100,6 +100,7 @@ export {
   projectVaultRoster,
   type QuotaReceipt,
   readVaultRoster,
+  recordVaultAccountQuota,
   recordVaultQuota,
   refreshVaultRoster,
   resolveVaultPrimary,

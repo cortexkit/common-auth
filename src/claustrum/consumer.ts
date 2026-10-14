@@ -20,6 +20,7 @@ import {
   declineVaultRoute,
   type QuotaReceipt,
   readVaultRoster,
+  recordVaultAccountQuota,
   recordVaultQuota,
   refreshVaultRoster,
   type VaultRosterFile,
@@ -491,6 +492,28 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       ...(attempt.expectedAccountIdentity !== undefined && {
         expectedAccountIdentity: attempt.expectedAccountIdentity,
       }),
+    })
+    if (kept) this.#roster = await readVaultRoster(this.#options.rosterPath)
+    return kept
+  }
+
+  /**
+   * Store a background observation that belongs to an account rather than to
+   * a served credential (an insula reading from `cachedInsulaQuotaForRoute`).
+   * It lands only while the route is still bound to that known account, so no
+   * credential fetch is needed and a replaced account's reading is dropped.
+   * The in-memory roster is reloaded from the file, without a vault call.
+   */
+  async recordAccountQuota(
+    routeId: string,
+    accountIdentity: string,
+    observation: QuotaObservation,
+  ): Promise<boolean> {
+    this.#assertOpen()
+    const kept = await recordVaultAccountQuota(this.#options.rosterPath, {
+      routeId,
+      accountIdentity,
+      observation,
     })
     if (kept) this.#roster = await readVaultRoster(this.#options.rosterPath)
     return kept

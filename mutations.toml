@@ -5510,3 +5510,18 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^a\spending\sinsula\sdeadline\sdoes\snot\skeep\san\sotherwise\sidle\shost\sprocess\salive$']
 expect_message = 'Expected: < 2000'
+
+[[control]]
+id = 'insula-account-quota-fenced-on-account'
+guards = 'a background account reading lands only on a route still bound to that exact known account'
+file = 'src/claustrum/roster.ts'
+old = '''      row.accountIdentity === undefined ||
+      row.accountIdentity !== input.accountIdentity'''
+new = '''      false /* NON-VACUITY BREAK: write any account's reading. */'''
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^an\saccount\squota\swrite\sis\srefused\sfor\sanother\saccount\sor\san\sunbound\sroute$']
+expect_message = 'Expected: false'
