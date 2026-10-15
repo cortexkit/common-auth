@@ -5819,3 +5819,16 @@ command = ['bun', 'test', 'test/setup/fence.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sprocess\sfence\sruntime\soptions\swith\svalues\sare\snot\smistaken\sfor\sthe\shost\sscript$']
+
+[[control]]
+id = 'setup-context-carries-pi-agent-dir'
+guards = "setup callbacks get Pi's own agent folder from PI_CODING_AGENT_DIR, so a plugin never inspects or writes the wrong Pi auth.json"
+file = 'src/setup/command.ts'
+old = '      piAgentDir: detection.pi.directory,'
+new = "      piAgentDir: detection.opencode.directory /* NON-VACUITY BREAK */,"
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ["^setup\\sflow\\scallbacks\\sget\\sPi's\\sown\\sagent\\sfolder\\sfrom\\sPI_CODING_AGENT_DIR,\\snot\\sa\\splugin\\spath$"]

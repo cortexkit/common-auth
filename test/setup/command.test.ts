@@ -270,12 +270,35 @@ describe('setup flow', () => {
       opencodeGeneration: '2',
       mode: 'local',
       hosts: ['opencode'],
+      piAgentDir: join(root, '.pi', 'agent'),
     }
     expect(seen).toEqual([
       ['login', context],
       ['before', context],
       ['migrate', context],
     ])
+  })
+
+  test("callbacks get Pi's own agent folder from PI_CODING_AGENT_DIR, not a plugin path", async () => {
+    const io = fakeIO()
+    io.folders.add('/home/test/.config/opencode')
+    io.folders.add('/home/test/pi-native')
+    io.files.set('/bin/pi', '')
+    io.env = {
+      ...io.env,
+      PI_CODING_AGENT_DIR: '~/pi-native',
+      PI_AGENT_DIR: '/home/test/decoy',
+    }
+    const p = plugin()
+    let seen: string | undefined
+    p.beforeSignIn = async (_host, context) => {
+      seen = context.piAgentDir
+      throw new Error('stop')
+    }
+    await expect(
+      runSetup(p, ['--yes', '--login'], { ...io, terminal: terminal() }),
+    ).rejects.toThrow('stop')
+    expect(seen).toBe('/home/test/pi-native')
   })
 
   test('the first beforeSignIn sees every selected host before any host changes', async () => {

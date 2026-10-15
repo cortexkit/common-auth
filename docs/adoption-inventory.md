@@ -106,7 +106,9 @@ Since 0.17.0 each callback also receives a `SetupCallbackContext`:
 `{ opencodeGeneration: '1' | '2' | 'both', mode: 'local' | 'claustrum', hosts }`:
 the generation being registered after `--opencode` or the interactive choice,
 and every host this run sets up, so the first `beforeSignIn` can check
-conditions across all of them before any host changes.
+conditions across all of them before any host changes. It also carries `piAgentDir`, Pi's agent folder resolved the way Pi does
+(`PI_CODING_AGENT_DIR` with `~` expanded, else `~/.pi/agent`): Pi's own
+`auth.json` is there, so plugins use it instead of their own path settings.
 OpenCode 2 does not read OpenCode 1's login file, so a plugin signs in the way
 the registered generation expects. Callbacks written for 0.16.0 that ignore the
 argument keep working.

@@ -23,6 +23,12 @@ export interface SetupCallbackContext {
    * do not overlap) before any host is changed.
    */
   hosts: readonly SetupHost[]
+  /**
+   * Pi's agent folder, resolved the way Pi itself does (`PI_CODING_AGENT_DIR`,
+   * with `~` expanded, else `~/.pi/agent`). Pi's own `auth.json` lives here;
+   * use it rather than a plugin path setting, which can point elsewhere.
+   */
+  piAgentDir: string
 }
 
 /** Provider login, credential migration and vault activation stay in plugin callbacks. */
