@@ -129,6 +129,15 @@ describe('quota counters', () => {
     },
   )
 
+  test('decoding returns a valid map as the same object', () => {
+    const map = {
+      limits: [],
+      counters: { resetCredits: { value: 1, checkedAt: 2 } },
+    }
+    expect(decodeQuotaMap(map)).toBe(map)
+    expect(decodeQuotaMap({ limits: [] })).toEqual({ limits: [] })
+  })
+
   test('decoding still refuses malformed limits and budget', () => {
     expect(decodeQuotaMap({ limits: 'bad', counters: {} })).toBeUndefined()
     expect(decodeQuotaMap({ limits: [], budget: {} })).toBeUndefined()

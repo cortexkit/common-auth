@@ -5832,3 +5832,16 @@ command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ["^setup\\sflow\\scallbacks\\sget\\sPi's\\sown\\sagent\\sfolder\\sfrom\\sPI_CODING_AGENT_DIR,\\snot\\sa\\splugin\\spath$"]
+
+[[control]]
+id = 'quota-decode-keeps-valid-map-identity'
+guards = 'a valid stored quota map keeps its object identity through decoding, as before counters existed, so identity-based change detection in plugins is unaffected'
+file = 'src/quota/map.ts'
+old = '  if (isQuotaMap(value)) return value'
+new = '  if (isQuotaMap(value)) return { ...value } /* NON-VACUITY BREAK */'
+test_file = 'test/quota/counters.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/counters.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/counters.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^quota\scounters\sdecoding\sreturns\sa\svalid\smap\sas\sthe\ssame\sobject$']
