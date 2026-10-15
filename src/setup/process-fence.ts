@@ -11,16 +11,43 @@ import type {
 // deadline: 45 s is about three times the worst measured cold start.
 const WINDOWS_CIM_TIMEOUT_MS = 45_000
 
-const HOST_PATTERN =
-  /(?:^|[/\\])(opencode|litecode|opencode2|pi)(?:\.(?:exe|cmd|bat|m?js))?(?=$|\s|")/i
+const HOSTS = new Set(['opencode', 'litecode', 'opencode2', 'pi'])
+const RUNTIMES = new Set(['node', 'bun'])
 const PI_SCRIPT_PATTERN =
-  /(?:^|[/\\])pi-coding-agent[/\\]dist[/\\](?:(?:bundle|bun)[/\\])?cli\.m?js(?=$|\s|")/i
+  /(?:^|[/\\])pi-coding-agent[/\\]dist[/\\](?:(?:bundle|bun)[/\\])?cli\.m?js$/i
 
-function hostName(command: string): string | null {
-  return (
-    HOST_PATTERN.exec(command)?.[1] ??
-    (PI_SCRIPT_PATTERN.test(command) ? 'pi' : null)
+/** Splits a command line into arguments, keeping double-quoted ones whole. */
+function commandArguments(command: string): string[] {
+  return [...command.matchAll(/"([^"]*)"|(\S+)/g)].map(
+    (match) => match[1] ?? match[2] ?? '',
   )
+}
+
+function executableName(argument: string): string {
+  return (argument.split(/[/\\]/).pop() ?? '')
+    .toLowerCase()
+    .replace(/\.(?:exe|cmd|bat|m?js)$/, '')
+}
+
+/**
+ * Names the host a process runs, judged by what it executes: the program
+ * itself, or the script a Node or Bun runtime was started with. Any other
+ * argument is ignored, so a shell whose command line merely mentions an
+ * `opencode` folder (`bash -c "cd …/opencode && …"`) is not a running host.
+ * `ps` prints arguments unquoted, so a program path containing spaces is not
+ * recognized on macOS or Linux; installed OpenCode and Pi paths contain none.
+ */
+function hostName(command: string): string | null {
+  const [program, ...rest] = commandArguments(command)
+  if (program === undefined) return null
+  const name = executableName(program)
+  if (HOSTS.has(name)) return name
+  if (!RUNTIMES.has(name)) return null
+  const script = rest.find((argument) => !argument.startsWith('-'))
+  if (script === undefined) return null
+  const scriptName = executableName(script)
+  if (HOSTS.has(scriptName)) return scriptName
+  return PI_SCRIPT_PATTERN.test(script) ? 'pi' : null
 }
 
 export interface ProcessInspectionStep {

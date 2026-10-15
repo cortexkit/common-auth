@@ -5780,3 +5780,16 @@ command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sbeforeSignIn\sruns\sfirst\sand\sa\srefusal\sstops\sthe\shost\sbefore\sanything\schanges$']
+
+[[control]]
+id = 'setup-fence-judges-the-executable'
+guards = 'the process fence judges what a process executes, so a shell command line that mentions an opencode folder does not block setup'
+file = 'src/setup/process-fence.ts'
+old = '  if (!RUNTIMES.has(name)) return null'
+new = '  if (!RUNTIMES.has(name)) return rest.map(executableName).find((n) => HOSTS.has(n)) ?? null /* NON-VACUITY BREAK */'
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/fence.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\sa\sshell\swhose\scommand\sline\smentions\san\sopencode\sfolder\sis\snot\sa\srunning\shost$']

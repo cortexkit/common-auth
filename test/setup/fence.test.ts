@@ -371,6 +371,34 @@ describe('setup process fence', () => {
     }
   })
 
+  test('a shell whose command line mentions an opencode folder is not a running host', async () => {
+    const fence = createProcessFence(
+      {
+        async run() {
+          return {
+            exitCode: 0,
+            stdout: [
+              '1 /bin/bash -c cd /work/packages/opencode && bun test src',
+              '2 bash -c cd /home/runner/opencode && bun run build',
+              '5 sh -c bun test /work/opencode --cwd /work/pi',
+              '6 bun test /work/packages/opencode',
+              '7 node /usr/lib/node_modules/opencode-ai/bin/opencode --token secret',
+            ].join('\n'),
+            stderr: '',
+          }
+        },
+      },
+      { platform: 'linux' },
+    )
+    expect(await fence.listRunningHosts()).toEqual([
+      {
+        pid: 7,
+        command:
+          'node /usr/lib/node_modules/opencode-ai/bin/opencode --token secret',
+      },
+    ])
+  })
+
   test('unrelated processes and setup itself do not trigger the fence', async () => {
     const fence = createProcessFence(
       {
