@@ -5738,3 +5738,19 @@ command = ['sh', '-c', 'git diff --stat; bun test test/quota/counters.test.ts -t
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/counters.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^quota\scounters\san\sabsent\scounter\sname\sleaves\sthe\sstored\scount\salone$']
+
+[[control]]
+id = 'setup-callbacks-receive-chosen-generation'
+guards = 'plugin callbacks receive the OpenCode generation setup registers, so OpenCode 2 sign-in does not go to OpenCode 1 login storage'
+file = 'src/setup/command.ts'
+old = '''      opencodeGeneration: generation,
+      mode,'''
+new = '''      opencodeGeneration: '1' /* NON-VACUITY BREAK: ignore the chosen generation. */,
+      mode,'''
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\scallbacks\sreceive\sthe\sOpenCode\sgeneration\schosen\swith\s--opencode\sand\sthe\smode$']
+expect_message = 'opencodeGeneration'

@@ -24,6 +24,7 @@ import {
 } from './register.js'
 import type {
   OpenCodeGeneration,
+  SetupCallbackContext,
   SetupHost,
   SetupIO,
   SetupPlugin,
@@ -237,17 +238,21 @@ export async function runSetup(
         `Would migrate ${host} using the plugin callback (provider-specific writes).`,
       )
   } else {
+    const context: SetupCallbackContext = {
+      opencodeGeneration: generation,
+      mode,
+    }
     for (const host of hosts) {
       await stopped()
       if (useVault) await connectSetupHost(plugin, host, io, terminal, stopped)
-      else await plugin.signInLocal(host)
+      else await plugin.signInLocal(host, context)
       await stopped()
-      await plugin.beforeRegister?.(host, mode)
+      await plugin.beforeRegister?.(host, mode, context)
       await stopped()
       if (host === 'opencode') await registerOpenCode(writes, stopped)
       else await registerPi(plugin, detection.pi.executable as string, io)
       await stopped()
-      await plugin.migrate(host)
+      await plugin.migrate(host, context)
     }
   }
   printLine(

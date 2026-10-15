@@ -243,6 +243,37 @@ describe('setup flow', () => {
     expect(term.lines.join('')).toContain('start OpenCode and run /test-auth')
   })
 
+  test('callbacks receive the OpenCode generation chosen with --opencode and the mode', async () => {
+    const root = await profile()
+    const p = plugin(root)
+    const seen: unknown[] = []
+    p.signInLocal = async (_host, context) => {
+      seen.push(['login', context])
+    }
+    p.beforeRegister = async (_host, _mode, context) => {
+      seen.push(['before', context])
+    }
+    p.migrate = async (_host, context) => {
+      seen.push(['migrate', context])
+    }
+    await runSetup(p, ['--yes', '--login', '--opencode=2'], {
+      terminal: terminal(),
+      home: root,
+      env: { PATH: '', OPENCODE_CONFIG_DIR: root },
+      fence: {
+        async listRunningHosts() {
+          return []
+        },
+      },
+    })
+    const context = { opencodeGeneration: '2', mode: 'local' }
+    expect(seen).toEqual([
+      ['login', context],
+      ['before', context],
+      ['migrate', context],
+    ])
+  })
+
   test('fence refuses before local sign-in registration or migration', async () => {
     const root = await profile()
     const p = plugin(root)

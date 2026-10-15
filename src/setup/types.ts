@@ -8,6 +8,17 @@ export type SetupHost = 'opencode' | 'pi'
 export type OpenCodeGeneration = '1' | '2' | 'both'
 export type SetupEnvironment = Record<string, string | undefined>
 
+/**
+ * What setup decided before calling a plugin callback. The OpenCode generation
+ * is the one being registered, after `--opencode` or the interactive choice, so
+ * a plugin can sign in the way that generation expects (OpenCode 2 does not
+ * read OpenCode 1's login file).
+ */
+export interface SetupCallbackContext {
+  opencodeGeneration: OpenCodeGeneration
+  mode: 'local' | 'claustrum'
+}
+
 /** Provider login, credential migration and vault activation stay in plugin callbacks. */
 export interface SetupPlugin {
   packages: { opencode: string; pi: string }
@@ -21,10 +32,14 @@ export interface SetupPlugin {
       { name: string; paths: Parameters<typeof hostEnrollmentPaths>[0] }
     >
   }
-  signInLocal(host: SetupHost): Promise<void>
-  migrate(host: SetupHost): Promise<void>
+  signInLocal(host: SetupHost, context: SetupCallbackContext): Promise<void>
+  migrate(host: SetupHost, context: SetupCallbackContext): Promise<void>
   /** Reject mixed local/vault credentials and activate provider-specific vault access before registration. */
-  beforeRegister?(host: SetupHost, mode: 'local' | 'claustrum'): Promise<void>
+  beforeRegister?(
+    host: SetupHost,
+    mode: 'local' | 'claustrum',
+    context: SetupCallbackContext,
+  ): Promise<void>
 }
 
 export interface CommandResult {

@@ -84,9 +84,9 @@ const plugin: SetupPlugin = {
       pi: { name: 'example-auth-pi', paths: { stateDir, host: 'pi', override: piTokenPath, cwd } },
     },
   },
-  signInLocal: async (host) => { /* provider login and local-custody checks */ },
-  beforeRegister: async (host, mode) => { /* optional provider activation and custody checks */ },
-  migrate: async (host) => { /* provider-specific migration */ },
+  signInLocal: async (host, context) => { /* provider login and local-custody checks */ },
+  beforeRegister: async (host, mode, context) => { /* optional provider activation and custody checks */ },
+  migrate: async (host, context) => { /* provider-specific migration */ },
 }
 ```
 
@@ -101,6 +101,13 @@ grants, Pi auth-slot consent, migration-path overlap checks and exclusive
 vault-mode policy remain in the callbacks. `signInLocal` must reject non-local
 custody before initiating login, as the existing plugins do. Callbacks are never
 called during a dry run.
+
+Since 0.17.0 each callback also receives a `SetupCallbackContext`:
+`{ opencodeGeneration: '1' | '2' | 'both', mode: 'local' | 'claustrum' }`, the
+generation being registered after `--opencode` or the interactive choice.
+OpenCode 2 does not read OpenCode 1's login file, so a plugin signs in the way
+the registered generation expects. Callbacks written for 0.16.0 that ignore the
+argument keep working.
 
 The shared flow detects and reports hosts and offers a toggle multiselect with
 found hosts preselected. A real run refuses while OpenCode, LiteCode or Pi is

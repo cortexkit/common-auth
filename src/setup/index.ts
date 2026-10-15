@@ -26,6 +26,7 @@ export type {
   HostDetection,
   OpenCodeGeneration,
   ProcessFence,
+  SetupCallbackContext,
   SetupDetection,
   SetupEnvironment,
   SetupFileSystem,
