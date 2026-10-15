@@ -234,6 +234,30 @@ describe('setup process fence', () => {
     }
   })
 
+  test('a Windows preview never starts PowerShell and only counts Node and Bun', async () => {
+    const files: string[] = []
+    const fence = createProcessFence(
+      {
+        async run(file) {
+          files.push(file)
+          return {
+            exitCode: 0,
+            stdout:
+              '"node.exe","111","Console","1","30 K"\n"bun.exe","112","Console","1","20 K"\n"opencode.exe","113","Console","1","20 K"\n',
+            stderr: '',
+          }
+        },
+      },
+      { platform: 'win32' },
+    )
+    const preview = await fence.previewRunningHosts?.()
+    expect(files).toEqual(['tasklist.exe'])
+    expect(preview).toEqual({
+      hosts: [{ pid: 113, command: 'opencode.exe' }],
+      uncheckedRuntimes: 2,
+    })
+  })
+
   test('Windows runtime inspection failures and unavailable command lines fail closed', async () => {
     for (const result of [
       { exitCode: 1, stdout: '', stderr: 'sensitive' },

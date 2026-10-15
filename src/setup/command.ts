@@ -170,7 +170,15 @@ export async function runSetup(
   printLine(terminal, 'Checking that OpenCode and Pi are not running…')
   if (options.dryRun) {
     try {
-      const active = await fence.listRunningHosts(env)
+      const preview = fence.previewRunningHosts
+        ? await fence.previewRunningHosts(env)
+        : { hosts: await fence.listRunningHosts(env), uncheckedRuntimes: 0 }
+      const active = preview.hosts
+      if (preview.uncheckedRuntimes > 0)
+        printLine(
+          terminal,
+          'Node or Bun programs are running; a real run checks whether any of them is OpenCode or Pi.',
+        )
       const names = new Set(
         new ProcessFenceViolationError(active).activeHosts.map((host) =>
           host.command.toLowerCase() === 'pi' ? 'Pi' : 'OpenCode',

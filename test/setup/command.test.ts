@@ -319,6 +319,27 @@ describe('setup flow', () => {
     expect(io.files.size).toBe(1)
   })
 
+  test('a dry run previews running hosts without the full inspection', async () => {
+    const io = fakeIO()
+    io.folders.add('/home/test/.config/opencode')
+    const term = terminal()
+    await runSetup(plugin(), ['--yes', '--login', '--dry-run'], {
+      ...io,
+      terminal: term,
+      fence: {
+        async listRunningHosts() {
+          throw new Error('a dry run must not run the full inspection')
+        },
+        async previewRunningHosts() {
+          return { hosts: [], uncheckedRuntimes: 1 }
+        },
+      },
+    })
+    expect(term.lines.join('')).toContain(
+      'Node or Bun programs are running; a real run checks whether any of them is OpenCode or Pi.',
+    )
+  })
+
   test('beforeSignIn runs first and a refusal stops the host before anything changes', async () => {
     const root = await profile()
     const p = plugin(root)

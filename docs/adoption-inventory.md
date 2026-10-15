@@ -113,6 +113,12 @@ OpenCode 2 does not read OpenCode 1's login file, so a plugin signs in the way
 the registered generation expects. Callbacks written for 0.16.0 that ignore the
 argument keep working.
 
+A dry run changes nothing, so it previews running hosts with
+`previewRunningHosts`: on Windows that skips the PowerShell query for Node and
+Bun command lines, because PowerShell writes a startup cache into the user's
+profile, and only reports how many Node or Bun programs are running. A real
+run does the full inspection.
+
 The process fence names a host from the program a process runs, or the script
 a Node or Bun runtime was started with (skipping runtime options and their
 values, and `bun run`); other arguments never count. `ps` prints arguments

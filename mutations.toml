@@ -5845,3 +5845,31 @@ command = ['bun', 'test', 'test/quota/counters.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/counters.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^quota\scounters\sdecoding\sreturns\sa\svalid\smap\sas\sthe\ssame\sobject$']
+
+[[control]]
+id = 'setup-dry-run-skips-powershell'
+guards = 'a Windows dry run never starts PowerShell, which writes a startup cache into the user profile; it only counts Node and Bun programs'
+file = 'src/setup/process-fence.ts'
+old = '    if (windows && runtimes.length && options.inspectRuntimes !== false) {'
+new = '    if (windows && runtimes.length) { /* NON-VACUITY BREAK */'
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/fence.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\sa\sWindows\spreview\snever\sstarts\sPowerShell\sand\sonly\scounts\sNode\sand\sBun$']
+
+[[control]]
+id = 'setup-dry-run-uses-preview'
+guards = 'a dry run previews hosts instead of running the full inspection, so it changes nothing'
+file = 'src/setup/command.ts'
+old = """      const preview = fence.previewRunningHosts
+        ? await fence.previewRunningHosts(env)"""
+new = """      const preview = false
+        ? { hosts: [], uncheckedRuntimes: 0 } /* NON-VACUITY BREAK */"""
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sa\sdry\srun\spreviews\srunning\shosts\swithout\sthe\sfull\sinspection$']

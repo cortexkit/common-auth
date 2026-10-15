@@ -159,6 +159,8 @@ export async function listSetupProcesses(
     platform?: string
     env?: SetupEnvironment
     onStep?: (details: ProcessInspectionStep) => void
+    /** False skips the Windows PowerShell query for Node and Bun command lines. */
+    inspectRuntimes?: boolean
   } = {},
 ): Promise<Array<{ pid: number; command: string }>> {
   const windows = (options.platform ?? process.platform) === 'win32'
@@ -239,7 +241,7 @@ export async function listSetupProcesses(
       (entry) =>
         entry.pid !== process.pid && /^(?:node|bun)\.exe$/i.test(entry.command),
     )
-    if (windows && runtimes.length) {
+    if (windows && runtimes.length && options.inspectRuntimes !== false) {
       const details = await inspect(
         'CIM',
         'powershell.exe',
@@ -286,12 +288,31 @@ export function createProcessFence(
   runner: CommandRunner = defaultCommandRunner,
   options: { platform?: string } = {},
 ): ProcessFence {
+  const isHost = (entry: { pid: number; command: string }) =>
+    entry.pid !== process.pid && hostName(entry.command) !== null
   return {
     async listRunningHosts(env?: SetupEnvironment) {
       return (await listSetupProcesses(runner, { ...options, env })).filter(
-        (entry) =>
-          entry.pid !== process.pid && hostName(entry.command) !== null,
+        isHost,
       )
+    },
+    async previewRunningHosts(env?: SetupEnvironment) {
+      const processes = await listSetupProcesses(runner, {
+        ...options,
+        env,
+        inspectRuntimes: false,
+      })
+      const windows = (options.platform ?? process.platform) === 'win32'
+      return {
+        hosts: processes.filter(isHost),
+        uncheckedRuntimes: windows
+          ? processes.filter(
+              (entry) =>
+                entry.pid !== process.pid &&
+                /^(?:node|bun)\.exe$/i.test(entry.command),
+            ).length
+          : 0,
+      }
     },
   }
 }
