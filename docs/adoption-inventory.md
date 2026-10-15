@@ -103,8 +103,10 @@ custody before initiating login, as the existing plugins do. Callbacks are never
 called during a dry run.
 
 Since 0.17.0 each callback also receives a `SetupCallbackContext`:
-`{ opencodeGeneration: '1' | '2' | 'both', mode: 'local' | 'claustrum' }`, the
-generation being registered after `--opencode` or the interactive choice.
+`{ opencodeGeneration: '1' | '2' | 'both', mode: 'local' | 'claustrum', hosts }`:
+the generation being registered after `--opencode` or the interactive choice,
+and every host this run sets up, so the first `beforeSignIn` can check
+conditions across all of them before any host changes.
 OpenCode 2 does not read OpenCode 1's login file, so a plugin signs in the way
 the registered generation expects. Callbacks written for 0.16.0 that ignore the
 argument keep working.

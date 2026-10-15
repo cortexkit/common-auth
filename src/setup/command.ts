@@ -243,6 +243,7 @@ export async function runSetup(
     const context: SetupCallbackContext = {
       opencodeGeneration: generation,
       mode,
+      hosts: Object.freeze([...hosts]),
     }
     for (const host of hosts) {
       await stopped()

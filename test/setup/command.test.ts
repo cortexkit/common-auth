@@ -266,12 +266,34 @@ describe('setup flow', () => {
         },
       },
     })
-    const context = { opencodeGeneration: '2', mode: 'local' }
+    const context = {
+      opencodeGeneration: '2',
+      mode: 'local',
+      hosts: ['opencode'],
+    }
     expect(seen).toEqual([
       ['login', context],
       ['before', context],
       ['migrate', context],
     ])
+  })
+
+  test('the first beforeSignIn sees every selected host before any host changes', async () => {
+    const io = fakeIO()
+    io.folders.add('/home/test/.config/opencode')
+    io.folders.add('/home/test/.pi/agent')
+    io.files.set('/bin/pi', '')
+    const p = plugin()
+    const seen: Array<{ host: string; hosts: readonly string[] }> = []
+    p.beforeSignIn = async (host, context) => {
+      seen.push({ host, hosts: context.hosts })
+      throw new Error('Storage paths overlap.')
+    }
+    await expect(
+      runSetup(p, ['--yes', '--login'], { ...io, terminal: terminal() }),
+    ).rejects.toThrow('Storage paths overlap.')
+    expect(seen).toEqual([{ host: 'opencode', hosts: ['opencode', 'pi'] }])
+    expect(io.files.size).toBe(1)
   })
 
   test('beforeSignIn runs first and a refusal stops the host before anything changes', async () => {

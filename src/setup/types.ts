@@ -17,6 +17,12 @@ export type SetupEnvironment = Record<string, string | undefined>
 export interface SetupCallbackContext {
   opencodeGeneration: OpenCodeGeneration
   mode: 'local' | 'claustrum'
+  /**
+   * Every host this run sets up, in order, so the first `beforeSignIn` can
+   * check conditions across all of them (for example that their storage paths
+   * do not overlap) before any host is changed.
+   */
+  hosts: readonly SetupHost[]
 }
 
 /** Provider login, credential migration and vault activation stay in plugin callbacks. */
