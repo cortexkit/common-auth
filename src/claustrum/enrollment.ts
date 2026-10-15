@@ -642,7 +642,12 @@ export async function readClaustrumEnrollmentStatus(
   return statusFromState(state)
 }
 
-/** Resolve the host's account mode from its enrollment files without writing. */
+/**
+ * Resolve the host's account mode from its enrollment files. It never changes
+ * their contents or the host's mode. On Windows, reading them may create a
+ * missing private state folder and tighten an enrollment file's permissions to
+ * owner-only, as every private-file read there does.
+ */
 export async function enrollmentAuthority(
   paths: ClaustrumEnrollmentPaths,
   proposedName: string,
