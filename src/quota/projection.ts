@@ -10,8 +10,10 @@
 import {
   ALL_SCOPE,
   type CreditBudgetReading,
+  type QuotaCounter,
   type QuotaEntry,
   type QuotaMap,
+  readQuotaCounters,
 } from './map.js'
 
 export interface ProjectedLimit {
@@ -47,6 +49,7 @@ export interface ProjectedQuota {
   checkedAt?: number
   /** Present only when the stored budget is a reading, not cleared. */
   budget?: ProjectedBudget
+  counters?: Record<string, QuotaCounter>
 }
 
 function project(entry: QuotaEntry): ProjectedLimit {
@@ -141,11 +144,13 @@ export function projectQuota(
       : undefined
   const budget =
     map?.budget?.kind === 'reading' ? projectBudget(map.budget) : undefined
+  const counters = readQuotaCounters(map?.counters)
   return {
     scope,
     limits,
     ...(checkedAt === undefined ? {} : { checkedAt }),
     ...(budget === undefined ? {} : { budget }),
+    ...(counters === undefined ? {} : { counters }),
   }
 }
 

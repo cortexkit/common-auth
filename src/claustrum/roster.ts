@@ -6,7 +6,7 @@ import {
 } from '../fs/index.js'
 import { readPrivateText, windowsPrivateFiles } from '../fs/private-files.js'
 import {
-  isQuotaMap,
+  decodeQuotaMap,
   mergeQuotaObservation,
   type QuotaMap,
   type QuotaObservation,
@@ -351,6 +351,7 @@ function optionalString(value: unknown): boolean {
 }
 
 function decodeRow(value: unknown): VaultRosterRow | undefined {
+  const quota = isRecord(value) ? decodeQuotaMap(value.quota) : undefined
   if (
     !isRecord(value) ||
     typeof value.routeId !== 'string' ||
@@ -366,12 +367,15 @@ function decodeRow(value: unknown): VaultRosterRow | undefined {
     (value.aliases !== undefined &&
       (!Array.isArray(value.aliases) ||
         !value.aliases.every((alias) => typeof alias === 'string'))) ||
-    (value.quota !== undefined && !isQuotaMap(value.quota)) ||
+    (value.quota !== undefined && quota === undefined) ||
     (value.stale !== undefined && value.stale !== true) ||
     (value.unclaimed !== undefined && value.unclaimed !== true)
   )
     return undefined
-  return value as unknown as VaultRosterRow
+  return {
+    ...value,
+    ...(quota === undefined ? {} : { quota }),
+  } as unknown as VaultRosterRow
 }
 
 const SKIPPED_REASONS: ReadonlySet<string> = new Set<SkippedVaultReason>([

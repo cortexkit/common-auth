@@ -51,3 +51,36 @@ test('the store persists observations through the quota codec and admission read
   })
   expect(verdict.admitted.map((candidate) => candidate.id)).toEqual(['a'])
 })
+
+test('the store round trips counters and drops malformed counts without losing the row', async () => {
+  const store = s.open({ quota: quotaCodec })
+  await store.add({ id: 'a', credential: oauth('r-a') })
+  await store.recordQuota(
+    'a',
+    { credentialEpoch: 1 },
+    {
+      checkedAt: 100,
+      counters: { resetCredits: { value: 5, checkedAt: 200 } },
+    },
+  )
+  const reopened = s.open({ quota: quotaCodec })
+  const first = await reopened.read()
+  if (first.status !== 'ready') throw new Error('expected ready')
+  expect((first.rows[0]?.quota as QuotaMap | undefined)?.counters).toEqual({
+    resetCredits: { value: 5, checkedAt: 200 },
+  })
+  const config = await s.config()
+  config.commonAuthPool.rows.a.quota.counters.bad = {
+    value: -1,
+    checkedAt: 300,
+  }
+  await s.writeConfig(config)
+  const bytes = await s.bytes()
+  const read = await reopened.read()
+  if (read.status !== 'ready') throw new Error('expected ready')
+  expect(read.rows).toHaveLength(1)
+  expect((read.rows[0]?.quota as QuotaMap | undefined)?.counters).toEqual({
+    resetCredits: { value: 5, checkedAt: 200 },
+  })
+  expect(await s.bytes()).toEqual(bytes)
+})

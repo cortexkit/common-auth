@@ -16,8 +16,10 @@ import {
   ALL_SCOPE,
   type CreditBudgetEntry,
   entryTime,
+  isQuotaCounters,
   isQuotaMap,
   limitKey,
+  type QuotaCounter,
   type QuotaEntry,
   type QuotaMap,
 } from './map.js'
@@ -58,6 +60,8 @@ export interface QuotaObservation {
   coverage?: ObservedPair[]
   /** Absent means the observation says nothing about the budget. */
   budget?: ObservedBudget
+  /** Each named count uses its own time, independently of limits and budget. */
+  counters?: Record<string, QuotaCounter>
 }
 
 /** Thrown by `mergeQuotaObservation` when either argument is malformed. */
@@ -138,7 +142,10 @@ export function isQuotaObservation(value: unknown): value is QuotaObservation {
     read.add(key)
   }
   if (!coverage.every(isObservedPair)) return false
-  return value.budget === undefined || isObservedBudget(value.budget)
+  return (
+    (value.budget === undefined || isObservedBudget(value.budget)) &&
+    (value.counters === undefined || isQuotaCounters(value.counters))
+  )
 }
 
 function compareEntries(left: QuotaEntry, right: QuotaEntry): number {
@@ -155,6 +162,20 @@ function mergeBudget(
   if (observed === undefined) return stored
   if (stored !== undefined && checkedAt < stored.checkedAt) return stored
   return { ...observed, checkedAt }
+}
+
+function mergeCounters(
+  stored: Record<string, QuotaCounter> | undefined,
+  observed: Record<string, QuotaCounter> | undefined,
+): Record<string, QuotaCounter> | undefined {
+  const counters = new Map(Object.entries(stored ?? {}))
+  for (const [name, counter] of Object.entries(observed ?? {})) {
+    const existing = counters.get(name)
+    if (existing === undefined || counter.checkedAt >= existing.checkedAt) {
+      counters.set(name, counter)
+    }
+  }
+  return counters.size === 0 ? undefined : Object.fromEntries(counters)
 }
 
 /**
@@ -217,11 +238,18 @@ export function mergeQuotaObservation(
   }
 
   // Keys this module does not recognise are carried over untouched.
-  const { limits: _limits, budget: _budget, ...unknownKeys } = base
+  const {
+    limits: _limits,
+    budget: _budget,
+    counters: _counters,
+    ...unknownKeys
+  } = base
   const budget = mergeBudget(base.budget, observation.budget, at)
+  const counters = mergeCounters(base.counters, observation.counters)
   return {
     ...unknownKeys,
     limits: [...entries.values()].sort(compareEntries),
     ...(budget === undefined ? {} : { budget }),
+    ...(counters === undefined ? {} : { counters }),
   }
 }

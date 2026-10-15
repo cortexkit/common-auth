@@ -57,6 +57,8 @@ export type StoredCredential =
 /** Quota codec supplied by `/quota`: the store never interprets the map itself. */
 export interface QuotaCodec {
   validate(value: unknown): boolean
+  /** Normalize persisted quota before validation, when the codec supports it. */
+  decode?(value: unknown): unknown
   merge(stored: unknown | undefined, observation: unknown): unknown
 }
 
@@ -757,7 +759,9 @@ function parseEntry(raw: unknown, codec: QuotaCodec): ParsedEntry | undefined {
     return undefined
   if ('disabledReason' in raw && typeof raw.disabledReason !== 'string')
     return undefined
-  if ('quota' in raw && !codec.validate(raw.quota)) return undefined
+  const quota =
+    'quota' in raw && codec.decode ? codec.decode(raw.quota) : raw.quota
+  if ('quota' in raw && !codec.validate(quota)) return undefined
   if ('staged' in raw && !parseReservation(raw.staged)) return undefined
   return {
     credentialEpoch: epoch,
@@ -765,7 +769,7 @@ function parseEntry(raw: unknown, codec: QuotaCodec): ParsedEntry | undefined {
     ...(typeof raw.disabledReason === 'string'
       ? { disabledReason: raw.disabledReason }
       : {}),
-    ...('quota' in raw ? { quota: raw.quota } : {}),
+    ...('quota' in raw ? { quota } : {}),
   }
 }
 

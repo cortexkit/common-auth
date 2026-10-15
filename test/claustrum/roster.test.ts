@@ -922,6 +922,83 @@ test('a quota observation must name the served credential and account, and an ab
   ).toBe(true)
 })
 
+test('roster reads drop malformed counters without losing quota or the row', async () => {
+  const { path } = await fixture()
+  const first = await refreshVaultRoster({ path, custody: inventory([work]) })
+  if (!first) throw new Error('expected roster')
+  const quota = {
+    limits: [
+      {
+        scope: 'all',
+        label: '5h',
+        kind: 'reading' as const,
+        checkedAt: 100,
+        usedPercent: 10,
+      },
+    ],
+    counters: {
+      resetCredits: { value: 4, checkedAt: 100 },
+      negative: { value: -1, checkedAt: 100 },
+      fractional: { value: 0.5, checkedAt: 100 },
+      missingTime: { value: 2 },
+      badTime: { value: 2, checkedAt: '100' },
+      missingValue: { checkedAt: 100 },
+    },
+  }
+  await writeFile(
+    path,
+    JSON.stringify({
+      ...first,
+      rows: first.rows.map((row) => ({ ...row, quota })),
+    }),
+  )
+  const before = await readFile(path, 'utf8')
+  const loaded = await readVaultRoster(path)
+  expect(loaded?.rows).toHaveLength(1)
+  expect(loaded?.rows[0]?.quota).toEqual({
+    limits: quota.limits,
+    counters: { resetCredits: { value: 4, checkedAt: 100 } },
+  })
+  expect(await readFile(path, 'utf8')).toBe(before)
+})
+
+test('counter-free roster quota writes keep the legacy file bytes', async () => {
+  const { path } = await fixture()
+  const first = await refreshVaultRoster({ path, custody: inventory([work]) })
+  if (!first) throw new Error('expected roster')
+  const row = rowFor(first, 'provider-work')
+  expect(
+    await recordVaultQuota(path, {
+      routeId: row.routeId,
+      ...receiptFor(work),
+      observation: {
+        checkedAt: 100,
+        readings: [{ label: 'primary', usedPercent: 20 }],
+        budget: { kind: 'cleared' },
+      },
+    }),
+  ).toBe(true)
+  const legacyQuota = {
+    limits: [
+      {
+        scope: 'all',
+        label: 'primary',
+        kind: 'reading',
+        checkedAt: 100,
+        usedPercent: 20,
+      },
+    ],
+    budget: { kind: 'cleared', checkedAt: 100 },
+  }
+  const expected = {
+    ...first,
+    rows: first.rows.map((entry) => ({ ...entry, quota: legacyQuota })),
+  }
+  expect(await readFile(path, 'utf8')).toBe(
+    `${JSON.stringify(expected, null, 2)}\n`,
+  )
+})
+
 test('a reading with a proven account on a row that has never had one binds that account, so a later list naming another account inherits no quota', async () => {
   const { path } = await fixture()
   const anonymous = unclaimed(work)

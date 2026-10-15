@@ -76,10 +76,17 @@ export interface CreditBudgetCleared {
 
 export type CreditBudgetEntry = CreditBudgetReading | CreditBudgetCleared
 
+export interface QuotaCounter {
+  value: number
+  checkedAt: number
+}
+
 export interface QuotaMap {
   limits: QuotaEntry[]
   /** Absent means no observation has reported on the budget yet. */
   budget?: CreditBudgetEntry
+  /** Provider-named counts, each with its own observation time. */
+  counters?: Record<string, QuotaCounter>
 }
 
 export function emptyQuotaMap(): QuotaMap {
@@ -163,6 +170,44 @@ export function isCreditBudgetEntry(
   )
 }
 
+function isQuotaCounter(value: unknown): value is QuotaCounter {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.value) &&
+    Number.isInteger(value.value) &&
+    value.value >= 0 &&
+    isFiniteNumber(value.checkedAt)
+  )
+}
+
+export function isQuotaCounters(
+  value: unknown,
+): value is Record<string, QuotaCounter> {
+  return isRecord(value) && Object.values(value).every(isQuotaCounter)
+}
+
+/** Keep usable counters without letting one malformed count hide a quota map. */
+export function readQuotaCounters(
+  value: unknown,
+): Record<string, QuotaCounter> | undefined {
+  if (!isRecord(value)) return undefined
+  const entries = Object.entries(value).filter(([, entry]) =>
+    isQuotaCounter(entry),
+  )
+  return entries.length === 0
+    ? undefined
+    : (Object.fromEntries(entries) as Record<string, QuotaCounter>)
+}
+
+/** Decode persisted quota, dropping malformed counters but not limit evidence. */
+export function decodeQuotaMap(value: unknown): QuotaMap | undefined {
+  if (!isRecord(value)) return undefined
+  const { counters: rawCounters, ...rest } = value
+  if (!isQuotaMap(rest)) return undefined
+  const counters = readQuotaCounters(rawCounters)
+  return { ...rest, ...(counters === undefined ? {} : { counters }) }
+}
+
 /**
  * True when `value` is a well-formed quota map. Unrecognised top-level keys
  * are tolerated (and preserved by merge) so a newer writer's additions
@@ -178,5 +223,8 @@ export function isQuotaMap(value: unknown): value is QuotaMap {
     if (seen.has(key)) return false
     seen.add(key)
   }
-  return optional(value, 'budget', isCreditBudgetEntry)
+  return (
+    optional(value, 'budget', isCreditBudgetEntry) &&
+    optional(value, 'counters', isQuotaCounters)
+  )
 }

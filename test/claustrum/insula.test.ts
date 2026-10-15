@@ -1,9 +1,11 @@
 import { expect } from 'bun:test'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   ClaustrumConsumer,
   connectClaustrumScopedClient,
   type InsulaUsageEntry,
+  recordVaultQuota,
 } from '../../src/claustrum/index.ts'
 import {
   mergeQuotaObservation,
@@ -259,6 +261,49 @@ test('an account quota write lands on its bound route without a vault call and i
   ).toBeDefined()
   expect(s.daemon.gets).toHaveLength(gets)
   expect(s.daemon.lists).toBe(lists)
+})
+
+test('account and served-vault counter writes persist for a second consumer', async () => {
+  const s = await scenario()
+  const path = join(s.dir, 'first-roster.json')
+  const routeId = s.consumer
+    .snapshot()!
+    .rows.find((row) => row.accountIdentity === 'account-work')!.routeId
+  const counter = { resetCredits: { value: 4, checkedAt: NOW - 1_000 } }
+  expect(
+    await s.consumer.recordAccountQuota(routeId, 'account-work', {
+      checkedAt: NOW,
+      counters: counter,
+    }),
+  ).toBe(true)
+  expect(
+    JSON.parse(await readFile(path, 'utf8')).rows.find(
+      (row: { routeId: string }) => row.routeId === routeId,
+    ).quota.counters,
+  ).toEqual(counter)
+  const peer = s.create('first')
+  await peer.refresh()
+  expect(
+    peer.snapshot()!.rows.find((row) => row.routeId === routeId)?.quota
+      ?.counters,
+  ).toEqual(counter)
+  const newer = { resetCredits: { value: 2, checkedAt: NOW } }
+  expect(
+    await recordVaultQuota(path, {
+      ...s.receipt,
+      routeId,
+      observation: { checkedAt: NOW - 2_000, counters: newer },
+    }),
+  ).toBe(true)
+  expect(
+    JSON.parse(await readFile(path, 'utf8')).rows.find(
+      (row: { routeId: string }) => row.routeId === routeId,
+    ).quota.counters,
+  ).toEqual(newer)
+  await peer.refresh()
+  expect(
+    peer.routingRows().find((row) => row.id === routeId)?.quota?.counters,
+  ).toEqual(newer)
 })
 
 test('an account quota write is refused for another account or an unbound route', async () => {

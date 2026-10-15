@@ -14,6 +14,7 @@ export type {
   CreditBudgetEntry,
   CreditBudgetReading,
   QuotaAbsentEntry,
+  QuotaCounter,
   QuotaEntry,
   QuotaMap,
   QuotaReadingEntry,
@@ -22,6 +23,7 @@ export type {
 export {
   ALL_SCOPE,
   DEFAULT_REQUIRED_LABELS,
+  decodeQuotaMap,
   emptyQuotaMap,
   isQuotaMap,
 } from './map.js'

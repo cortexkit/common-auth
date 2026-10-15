@@ -1,8 +1,10 @@
-import { isQuotaMap } from './map.js'
+import { decodeQuotaMap, isQuotaMap } from './map.js'
 import { mergeQuotaObservation } from './merge.js'
 
 export interface QuotaCodec {
   readonly validate: (value: unknown) => boolean
+  /** Normalize persisted data before validation; older codecs may omit this. */
+  readonly decode?: (value: unknown) => unknown
   readonly merge: (stored: unknown, observation: unknown) => unknown
 }
 
@@ -14,5 +16,6 @@ export interface QuotaCodec {
  */
 export const quotaCodec: QuotaCodec = Object.freeze({
   validate: isQuotaMap,
+  decode: decodeQuotaMap,
   merge: mergeQuotaObservation,
 })

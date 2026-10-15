@@ -5708,3 +5708,33 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sa\sdry\srun\swithout\sa\sterminal\splans\sthe\s--yes\spath\sinstead\sof\srefusing$']
 expect_message = 'Setup requires a TTY or --yes.'
+
+# --- timestamped quota counters ---
+[[control]]
+id = 'quota-counters-newest-wins'
+guards = 'An older counter cannot overwrite a newer per-name count, independent of observation time'
+file = 'src/quota/merge.ts'
+old = 'if (existing === undefined || counter.checkedAt >= existing.checkedAt) {'
+new = 'if (true /* NON-VACUITY BREAK */) {'
+test_file = 'test/quota/counters.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/counters.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/counters.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^quota\scounters\sthe\snewest\scounter\swins\sin\seither\sarrival\sorder\susing\sits\sown\stimestamp$']
+
+[[control]]
+id = 'quota-counters-absent-name-retained'
+guards = 'A partial observation cannot erase a counter whose name it did not report'
+file = 'src/quota/merge.ts'
+old = 'const counters = new Map(Object.entries(stored ?? {}))'
+new = '''const counters = new Map(Object.entries(stored ?? {}))
+  for (const name of counters.keys()) {
+    if (observed !== undefined && !Object.hasOwn(observed, name)) counters.delete(name) // NON-VACUITY BREAK
+  }'''
+test_file = 'test/quota/counters.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/counters.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/counters.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^quota\scounters\san\sabsent\scounter\sname\sleaves\sthe\sstored\scount\salone$']

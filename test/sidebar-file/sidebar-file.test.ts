@@ -7,6 +7,11 @@ import {
   lockPathFor,
 } from '../../src/fs/index.js'
 import {
+  decodeQuotaMap,
+  mergeQuotaObservation,
+  projectQuota,
+} from '../../src/quota/index.js'
+import {
   createSidebarFile,
   type SidebarWriteResult,
 } from '../../src/sidebar-file/index.js'
@@ -77,6 +82,25 @@ test('writes state atomically and cleans up temp files', async () => {
   expect(JSON.parse(bytes)).toEqual(value)
   expect((await fs.stat(target)).mode & 0o777).toBe(0o600)
   expect(await fs.readdir(dir)).toEqual(['state.json'])
+})
+
+test('a sidebar file carries quota counters through read and projection', async () => {
+  const file = () =>
+    createSidebarFile({
+      path: target,
+      defaultValue: { limits: [] },
+      normalize: (value) => decodeQuotaMap(value) ?? { limits: [] },
+    })
+  const map = mergeQuotaObservation(undefined, {
+    checkedAt: 100,
+    counters: { resetCredits: { value: 3, checkedAt: 200 } },
+  })
+  await file().write(map)
+  expect(projectQuota(await file().read()).counters).toEqual({
+    resetCredits: { value: 3, checkedAt: 200 },
+  })
+  await file().write(mergeQuotaObservation(undefined, { checkedAt: 300 }))
+  expect(await fs.readFile(target, 'utf8')).toBe('{"limits":[]}')
 })
 
 test('5 concurrent writes with different lastUpdated values — last-chained state wins', async () => {
