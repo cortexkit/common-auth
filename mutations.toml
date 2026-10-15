@@ -5806,3 +5806,16 @@ command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sthe\sfirst\sbeforeSignIn\ssees\severy\sselected\shost\sbefore\sany\shost\schanges$']
+
+[[control]]
+id = 'setup-fence-skips-runtime-option-values'
+guards = 'a host started with a value-taking runtime option (node --require x opencode) is still recognized, so setup cannot run beside it'
+file = 'src/setup/process-fence.ts'
+old = "      if (!argument.includes('=') && VALUE_OPTIONS.has(argument)) index++"
+new = "      void VALUE_OPTIONS /* NON-VACUITY BREAK: treat option values as the script. */"
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/fence.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sprocess\sfence\sruntime\soptions\swith\svalues\sare\snot\smistaken\sfor\sthe\shost\sscript$']

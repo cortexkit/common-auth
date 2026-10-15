@@ -399,6 +399,30 @@ describe('setup process fence', () => {
     ])
   })
 
+  test('runtime options with values are not mistaken for the host script', async () => {
+    const lines = [
+      '11 node --require /tmp/preload.cjs /tmp/opencode',
+      '12 node --import /tmp/preload.mjs /tmp/opencode',
+      '13 node -r /tmp/preload.cjs /tmp/pi',
+      '14 bun --preload /tmp/p.ts run /tmp/opencode',
+      '15 node --env-file=.env /tmp/opencode',
+      '16 node -- /tmp/opencode',
+      '17 node -e require("/tmp/opencode")',
+      '18 bun test /work/packages/opencode',
+    ]
+    const fence = createProcessFence(
+      {
+        async run() {
+          return { exitCode: 0, stdout: `${lines.join('\n')}\n`, stderr: '' }
+        },
+      },
+      { platform: 'linux' },
+    )
+    expect((await fence.listRunningHosts()).map((host) => host.pid)).toEqual([
+      11, 12, 13, 14, 15, 16,
+    ])
+  })
+
   test('unrelated processes and setup itself do not trigger the fence', async () => {
     const fence = createProcessFence(
       {

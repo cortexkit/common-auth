@@ -111,6 +111,13 @@ OpenCode 2 does not read OpenCode 1's login file, so a plugin signs in the way
 the registered generation expects. Callbacks written for 0.16.0 that ignore the
 argument keep working.
 
+The process fence names a host from the program a process runs, or the script
+a Node or Bun runtime was started with (skipping runtime options and their
+values, and `bun run`); other arguments never count. `ps` prints arguments
+unquoted, so on macOS and Linux a program or script path containing spaces is
+not recognized. npm and Bun install OpenCode and Pi under paths without spaces;
+Windows reads quoted command lines and has no such limit.
+
 The optional `beforeSignIn(host, context)` runs on a real run for each host
 after the host, mode and generation are chosen and before the vault ceremony
 or `signInLocal`, while nothing has changed yet. Rejecting stops setup for that
