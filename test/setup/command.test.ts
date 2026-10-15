@@ -274,6 +274,48 @@ describe('setup flow', () => {
     ])
   })
 
+  test('beforeSignIn runs first and a refusal stops the host before anything changes', async () => {
+    const root = await profile()
+    const p = plugin(root)
+    const order: string[] = []
+    p.beforeSignIn = async (host, context) => {
+      order.push(`consent:${host}:${context.mode}`)
+      throw new Error('Consent was not given.')
+    }
+    p.signInLocal = async () => {
+      order.push('login')
+    }
+    p.migrate = async () => {
+      order.push('migrate')
+    }
+    const io = {
+      terminal: terminal(),
+      home: root,
+      env: { PATH: '', OPENCODE_CONFIG_DIR: root },
+      fence: {
+        async listRunningHosts() {
+          return []
+        },
+      },
+    }
+    await expect(runSetup(p, ['--yes', '--login'], io)).rejects.toThrow(
+      'Consent was not given.',
+    )
+    expect(order).toEqual(['consent:opencode:local'])
+    expect(await readdir(root)).toEqual([])
+
+    const dry = terminal()
+    order.length = 0
+    await runSetup(p, ['--yes', '--login', '--dry-run'], {
+      ...io,
+      terminal: dry,
+    })
+    expect(order).toEqual([])
+    expect(dry.lines.join('')).toContain(
+      'Would run beforeSignIn(opencode, local).',
+    )
+  })
+
   test('fence refuses before local sign-in registration or migration', async () => {
     const root = await profile()
     const p = plugin(root)

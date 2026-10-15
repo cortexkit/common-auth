@@ -32,6 +32,13 @@ export interface SetupPlugin {
       { name: string; paths: Parameters<typeof hostEnrollmentPaths>[0] }
     >
   }
+  /**
+   * Runs for each host on a real run after the host, mode and generation are
+   * chosen and before the vault ceremony or `signInLocal`, while nothing has
+   * changed yet. Rejecting stops setup for that host, so a plugin can ask for
+   * consent or check preconditions before any credential or authority change.
+   */
+  beforeSignIn?(host: SetupHost, context: SetupCallbackContext): Promise<void>
   signInLocal(host: SetupHost, context: SetupCallbackContext): Promise<void>
   migrate(host: SetupHost, context: SetupCallbackContext): Promise<void>
   /** Reject mixed local/vault credentials and activate provider-specific vault access before registration. */

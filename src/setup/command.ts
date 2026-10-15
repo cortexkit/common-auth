@@ -212,6 +212,8 @@ export async function runSetup(
       'Dry run: no registrations, enrollment, sign-in or migration will be performed.',
     )
     for (const host of hosts) {
+      if (plugin.beforeSignIn)
+        printLine(terminal, `Would run beforeSignIn(${host}, ${mode}).`)
       if (useVault) {
         const paths = hostEnrollmentPaths(plugin.vault.hosts[host].paths)
         printLine(
@@ -243,6 +245,8 @@ export async function runSetup(
       mode,
     }
     for (const host of hosts) {
+      await stopped()
+      await plugin.beforeSignIn?.(host, context)
       await stopped()
       if (useVault) await connectSetupHost(plugin, host, io, terminal, stopped)
       else await plugin.signInLocal(host, context)

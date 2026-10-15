@@ -15,9 +15,9 @@
 import {
   ALL_SCOPE,
   type CreditBudgetEntry,
+  decodeQuotaMap,
   entryTime,
   isQuotaCounters,
-  isQuotaMap,
   limitKey,
   type QuotaCounter,
   type QuotaEntry,
@@ -188,13 +188,16 @@ export function mergeQuotaObservation(
   stored: unknown,
   observation: unknown,
 ): QuotaMap {
-  if (stored !== undefined && !isQuotaMap(stored)) {
+  // Decode the stored map the way reads do, so a malformed counter that reads
+  // already hide is dropped here too instead of refusing every later write.
+  const decoded = stored === undefined ? undefined : decodeQuotaMap(stored)
+  if (stored !== undefined && decoded === undefined) {
     throw new QuotaCodecError('stored quota map is malformed')
   }
   if (!isQuotaObservation(observation)) {
     throw new QuotaCodecError('quota observation is malformed')
   }
-  const base: QuotaMap = stored ?? { limits: [] }
+  const base: QuotaMap = decoded ?? { limits: [] }
   const at = observation.checkedAt
   const entries = new Map<string, QuotaEntry>()
   for (const entry of base.limits) {

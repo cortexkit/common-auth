@@ -109,6 +109,15 @@ OpenCode 2 does not read OpenCode 1's login file, so a plugin signs in the way
 the registered generation expects. Callbacks written for 0.16.0 that ignore the
 argument keep working.
 
+The optional `beforeSignIn(host, context)` runs on a real run for each host
+after the host, mode and generation are chosen and before the vault ceremony
+or `signInLocal`, while nothing has changed yet. Rejecting stops setup for that
+host with no enrollment, authority change or registration; use it for consent
+(for example before moving an existing Pi login aside) or other preconditions.
+A dry run prints it instead of calling it. Provider category grants belong in
+`beforeRegister(host, 'claustrum', context)`: the shared vault Connect runs
+only the enrollment ceremony.
+
 The shared flow detects and reports hosts and offers a toggle multiselect with
 found hosts preselected. A real run refuses while OpenCode, LiteCode or Pi is
 running; a dry run only reports the running processes. In a real run, setup then

@@ -84,3 +84,35 @@ test('the store round trips counters and drops malformed counts without losing t
   })
   expect(await s.bytes()).toEqual(bytes)
 })
+
+test('a later quota write drops a malformed stored counter instead of refusing', async () => {
+  const store = s.open({ quota: quotaCodec })
+  await store.add({ id: 'a', credential: oauth('r-a') })
+  await store.recordQuota(
+    'a',
+    { credentialEpoch: 1 },
+    {
+      checkedAt: 100,
+      counters: { resetCredits: { value: 5, checkedAt: 200 } },
+    },
+  )
+  const config = await s.config()
+  config.commonAuthPool.rows.a.quota.counters.bad = {
+    value: -1,
+    checkedAt: 300,
+  }
+  await s.writeConfig(config)
+  // Reads already hide the bad counter; a write must not be refused for it.
+  await store.recordQuota(
+    'a',
+    { credentialEpoch: 1 },
+    {
+      checkedAt: 400,
+      counters: { resetCredits: { value: 4, checkedAt: 400 } },
+    },
+  )
+  const stored = (await s.config()).commonAuthPool.rows.a.quota
+  expect(stored.counters).toEqual({
+    resetCredits: { value: 4, checkedAt: 400 },
+  })
+})

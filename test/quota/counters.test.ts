@@ -111,6 +111,13 @@ describe('quota counters', () => {
       expect(() =>
         mergeQuotaObservation(undefined, { checkedAt: 1, counters }),
       ).toThrow(QuotaCodecError)
+      // A stored map with the bad counter merges like its decoded view.
+      expect(
+        mergeQuotaObservation(
+          { limits: [], counters },
+          { checkedAt: 5, counters: { good: { value: 3, checkedAt: 5 } } },
+        ).counters,
+      ).toEqual({ good: { value: 3, checkedAt: 5 } })
     },
   )
 

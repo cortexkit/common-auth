@@ -5754,3 +5754,29 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\scallbacks\sreceive\sthe\sOpenCode\sgeneration\schosen\swith\s--opencode\sand\sthe\smode$']
 expect_message = 'opencodeGeneration'
+
+[[control]]
+id = 'quota-merge-decodes-stored-counters'
+guards = 'a malformed stored counter that reads hide cannot make every later quota write refuse'
+file = 'src/quota/merge.ts'
+old = 'const decoded = stored === undefined ? undefined : decodeQuotaMap(stored)'
+new = 'const decoded = stored === undefined ? undefined : (decodeQuotaMap({ limits: [] }) && (stored as QuotaMap)) /* NON-VACUITY BREAK */'
+test_file = 'test/store/quota-codec.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/store/quota-codec.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-codec.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^a\slater\squota\swrite\sdrops\sa\smalformed\sstored\scounter\sinstead\sof\srefusing$']
+
+[[control]]
+id = 'setup-before-sign-in-runs-first'
+guards = 'a plugin can refuse a host (for example missing consent) before any enrollment, sign-in or registration happens'
+file = 'src/setup/command.ts'
+old = '      await plugin.beforeSignIn?.(host, context)'
+new = '      void 0 /* NON-VACUITY BREAK: skip beforeSignIn. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sbeforeSignIn\sruns\sfirst\sand\sa\srefusal\sstops\sthe\shost\sbefore\sanything\schanges$']
