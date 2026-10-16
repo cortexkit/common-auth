@@ -541,6 +541,48 @@ describe('setup flow', () => {
     ).rejects.toThrow('not available')
   })
 
+  for (const [name, key] of [
+    ['Escape', '\x1b'],
+    ['Ctrl-C', '\x03'],
+  ] as const) {
+    test(`${name} at the vault question stops setup before anything changes`, async () => {
+      const io = fakeIO()
+      io.files.set('/bin/opencode', '')
+      io.files.set('/bin/ck', '')
+      io.files.set('/fixture/connection.json', '{}')
+      io.connect = async () => ({
+        close() {},
+        async enrollPropose() {
+          throw new Error('unexpected')
+        },
+        async enrollPoll() {
+          throw new Error('unexpected')
+        },
+      })
+      const before = new Map(io.files)
+      const called: string[] = []
+      const p = plugin()
+      p.beforeSignIn = async () => {
+        called.push('beforeSignIn')
+      }
+      p.signInLocal = async () => {
+        called.push('signInLocal')
+      }
+      p.migrate = async () => {
+        called.push('migrate')
+      }
+      const term = terminal(['\x1b[B\x1b[B\r', key])
+      const result = await runSetup(p, [], { ...io, terminal: term })
+      expect(result.hosts).toEqual([])
+      expect(called).toEqual([])
+      expect(io.files).toEqual(before)
+      expect(term.lines.join('')).toContain(
+        'Setup cancelled. Nothing was changed.',
+      )
+      expect(term.raw).toBe(false)
+    })
+  }
+
   test('vault dry run prints enrollment paths without proposing or writing', async () => {
     const io = fakeIO()
     io.files.set('/bin/opencode', '')

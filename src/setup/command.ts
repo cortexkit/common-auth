@@ -1,4 +1,3 @@
-import { confirm } from '../auth-menu/confirm.js'
 import { select } from '../auth-menu/select.js'
 import {
   isInteractive,
@@ -202,13 +201,31 @@ export async function runSetup(
     throw new Error(
       'Claustrum is not available. Start ck or use --no-claustrum for local sign-in.',
     )
-  const useVault =
-    options.claustrum ||
-    (!options.login &&
-      !options.noClaustrum &&
-      !assumeYes &&
-      detection.claustrum.available &&
-      (await confirm(terminal, 'Connect these hosts to the Claustrum vault?')))
+  let useVault = Boolean(options.claustrum)
+  if (
+    !useVault &&
+    !options.login &&
+    !options.noClaustrum &&
+    !assumeYes &&
+    detection.claustrum.available &&
+    isInteractive(terminal)
+  ) {
+    // Not `confirm`: it reads Escape and Ctrl-C as "No", and "No" here means
+    // a local sign-in. Cancelling must stop setup before anything changes.
+    const choice = await select<boolean>(
+      terminal,
+      [
+        { label: 'No', value: false },
+        { label: 'Yes', value: true },
+      ],
+      { message: 'Connect these hosts to the Claustrum vault?' },
+    )
+    if (choice === null) {
+      printLine(terminal, 'Setup cancelled. Nothing was changed.')
+      return { hosts: [], dryRun: options.dryRun, mode: 'local', detection }
+    }
+    useVault = choice === true
+  }
   const mode = useVault ? 'claustrum' : 'local'
   // Validate every config before login or enrollment can change credential state.
   const writes = hosts.includes('opencode')

@@ -5873,3 +5873,16 @@ command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sa\sdry\srun\spreviews\srunning\shosts\swithout\sthe\sfull\sinspection$']
+
+[[control]]
+id = 'setup-vault-question-cancel-stops'
+guards = 'cancelling the vault question (Escape or Ctrl-C) stops setup before any sign-in, registration or migration, instead of reading as a local sign-in'
+file = 'src/setup/command.ts'
+old = '    if (choice === null) {'
+new = "    if ((choice as unknown) === 'never') { /* NON-VACUITY BREAK */"
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sCtrl-C\sat\sthe\svault\squestion\sstops\ssetup\sbefore\sanything\schanges$']

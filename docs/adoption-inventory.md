@@ -113,6 +113,10 @@ OpenCode 2 does not read OpenCode 1's login file, so a plugin signs in the way
 the registered generation expects. Callbacks written for 0.16.0 that ignore the
 argument keep working.
 
+Cancelling any setup question (Escape or Ctrl-C) stops setup with no change;
+at the vault question that is distinct from an explicit "No", which chooses
+local sign-in.
+
 A dry run changes nothing, so it previews running hosts with
 `previewRunningHosts`: on Windows that skips the PowerShell query for Node and
 Bun command lines, because PowerShell writes a startup cache into the user's
