@@ -6,7 +6,6 @@ import {
   rename,
   rm,
   stat,
-  writeFile,
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
@@ -21,6 +20,23 @@ import {
   writePrivateAtomic,
 } from './private-files.js'
 import { LockOwnershipError, lockPathFor } from './with-lock.js'
+
+/**
+ * Create a new owner-only file and write `text` into it, failing with EEXIST if
+ * the file already exists. Writing through the handle rather than path-based
+ * `writeFile(path, …, { flag: 'wx' })` matters: Bun's path form also truncates
+ * the file it has just created, and on some Linux filesystems (XFS under load)
+ * that redundant ftruncate stalls for hundreds of milliseconds, inside every
+ * lock acquisition.
+ */
+async function createExclusiveText(path: string, text: string): Promise<void> {
+  const handle = await open(path, 'wx', 0o600)
+  try {
+    await handle.writeFile(text, 'utf8')
+  } finally {
+    await handle.close()
+  }
+}
 
 const setRefreshLockRenewalTimeout = globalThis.setTimeout.bind(globalThis)
 const clearRefreshLockRenewalTimeout = globalThis.clearTimeout.bind(globalThis)
@@ -246,12 +262,7 @@ export async function acquireRefreshFileLock(options: {
   async function createLease() {
     const bytes = `${JSON.stringify({ ownerId, expiresAt: now() + options.ttlMs })}\n`
     if (windowsPrivateFiles) await createPrivateBytes(lockPath, bytes)
-    else
-      await writeFile(lockPath, bytes, {
-        encoding: 'utf8',
-        mode: 0o600,
-        flag: 'wx',
-      })
+    else await createExclusiveText(lockPath, bytes)
   }
   async function leaseContention(error: unknown): Promise<boolean> {
     const code = (error as NodeJS.ErrnoException).code
@@ -413,12 +424,7 @@ export async function acquireRefreshFileLock(options: {
     try {
       const bytes = `${JSON.stringify({ ownerId: evictOwnerId, createdAt: now() })}\n`
       if (windowsPrivateFiles) await createPrivateBytes(evictOwnerPath, bytes)
-      else
-        await writeFile(evictOwnerPath, bytes, {
-          encoding: 'utf8',
-          mode: 0o600,
-          flag: 'wx',
-        })
+      else await createExclusiveText(evictOwnerPath, bytes)
     } catch (error) {
       // A competing contender can rename our just-created marker directory
       // away between the mkdir above and this write (the stale-marker steal
