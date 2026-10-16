@@ -7,6 +7,7 @@ import {
   QUOTA_STALE_AFTER_MS,
   quotaTextParts,
   quotaWindowName,
+  quotaWindowParts,
 } from '../../src/quota/index.js'
 import {
   absent,
@@ -145,6 +146,157 @@ describe('shared quota wording', () => {
       '5h 0% left',
       'credits spent, resets 2d',
     ])
+  })
+
+  test('quotaTextParts stays in parity with structured window parts across fixtures', () => {
+    const fixtures = [
+      {
+        name: 'compact fresh windows, future resets and budget',
+        quota: projectQuota(openai),
+        form: 'compact' as const,
+        expected: ['5h 58% left', '7d 90% left', 'credits 75% left'],
+      },
+      {
+        name: 'full fresh windows, future resets and budget',
+        quota: projectQuota(openai),
+        form: 'full' as const,
+        expected: [
+          '5h 58% left, resets 2h',
+          '7d 90% left, resets 3d',
+          'credits 75% left',
+        ],
+      },
+      {
+        name: 'compact stale reading with a missing length',
+        quota: projectQuota(
+          quotaMap([reading('primary', 42, { checkedAt: now - 3 * HOUR })]),
+        ),
+        form: 'compact' as const,
+        expected: ['primary 58% left', 'checked 3h ago'],
+      },
+      {
+        name: 'full past reset and missing length',
+        quota: projectQuota(
+          quotaMap([reading('primary', 42, { resetsAt: at(-HOUR) })]),
+        ),
+        form: 'full' as const,
+        expected: ['primary 58% left'],
+      },
+      {
+        name: 'full spent budget with future reset',
+        quota: projectQuota(quotaMap([], spentBudget(at(2 * 24 * HOUR)))),
+        form: 'full' as const,
+        expected: ['credits spent, resets 2d'],
+      },
+      {
+        name: 'compact budget without a remaining percentage',
+        quota: projectQuota(
+          quotaMap([], {
+            kind: 'reading',
+            checkedAt: now,
+            reached: false,
+            limit: 2500,
+            used: 1000,
+            remaining: 1500,
+          }),
+        ),
+        form: 'compact' as const,
+        expected: ['credits available'],
+      },
+    ]
+
+    for (const fixture of fixtures) {
+      const options = { now, form: fixture.form }
+      const structured = quotaWindowParts(fixture.quota, options)
+      const rebuilt = [
+        ...structured.windows.map((part) => {
+          const reset =
+            fixture.form === 'full' && part.resetIn
+              ? `, resets ${part.resetIn}`
+              : ''
+          return `${part.kind === 'budget' ? '' : `${part.name} `}${part.figure}${reset}`
+        }),
+        ...(structured.age === undefined ? [] : [structured.age]),
+      ]
+
+      expect(rebuilt, fixture.name).toEqual(fixture.expected)
+      expect(quotaTextParts(fixture.quota, options), fixture.name).toEqual(
+        fixture.expected,
+      )
+      expect(formatQuota(fixture.quota, options), fixture.name).toBe(
+        fixture.expected.join(' · '),
+      )
+    }
+  })
+
+  test('structured parts expose the figures, percentages, and future reset spans', () => {
+    expect(quotaWindowParts(projectQuota(openai), { now }).windows).toEqual([
+      {
+        kind: 'window',
+        name: '5h',
+        figure: '58% left',
+        remainingPercent: 58,
+        resetIn: '2h',
+        checkedAt: now,
+        resetSinceReading: false,
+      },
+      {
+        kind: 'window',
+        name: '7d',
+        figure: '90% left',
+        remainingPercent: 90,
+        resetIn: '3d',
+        checkedAt: now,
+        resetSinceReading: false,
+      },
+      {
+        kind: 'budget',
+        name: 'credits',
+        figure: 'credits 75% left',
+        remainingPercent: 75,
+        checkedAt: now,
+        resetSinceReading: false,
+      },
+    ])
+  })
+
+  test('a reset at now counts as since reading, but a reset before it does not', () => {
+    const checkedAt = now - 3 * HOUR
+    const equalToNow = projectQuota(
+      quotaMap([reading('primary', 42, { checkedAt, resetsAt: at(0) })]),
+    )
+    const beforeReading = projectQuota(
+      quotaMap([
+        reading('primary', 42, { checkedAt, resetsAt: at(-4 * HOUR) }),
+      ]),
+    )
+
+    const partsAtNow = quotaWindowParts(equalToNow, { now }).windows[0]
+    expect(partsAtNow).toMatchObject({ resetSinceReading: true })
+    expect(partsAtNow).not.toHaveProperty('resetIn')
+    expect(quotaWindowParts(beforeReading, { now }).windows[0]).toMatchObject({
+      resetSinceReading: false,
+    })
+  })
+
+  test('age is included only when the stale threshold is exceeded', () => {
+    const atThreshold = projectQuota(
+      quotaMap([
+        reading('primary', 42, {
+          checkedAt: now - QUOTA_STALE_AFTER_MS,
+        }),
+      ]),
+    )
+    const overThreshold = projectQuota(
+      quotaMap([
+        reading('primary', 42, {
+          checkedAt: now - QUOTA_STALE_AFTER_MS - 1,
+        }),
+      ]),
+    )
+
+    expect(quotaWindowParts(atThreshold, { now }).age).toBeUndefined()
+    expect(quotaWindowParts(overThreshold, { now }).age).toBe('checked 15m ago')
   })
 
   test('a window stored without a length falls back to its label', () => {

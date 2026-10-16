@@ -4365,6 +4365,48 @@ expect_red = ['^shared\squota\swording\swindows\sare\snamed\sby\stheir\slength\s
 expect_message = 'error: expect('
 
 [[control]]
+id = 'quota-text-parts-match-structured-windows'
+guards = 'quotaTextParts keeps the established wording by formatting quotaWindowParts rather than deriving a parallel representation'
+file = 'src/quota/format.ts'
+old = "const reset = full && part.resetIn ? `, resets ${part.resetIn}` : ''"
+new = "const reset = '' /* NON-VACUITY BREAK */"
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/quota/format.test.ts", "{test}"]
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^shared\squota\swording\squotaTextParts\sstays\sin\sparity\swith\sstructured\swindow\sparts\sacross\sfixtures$']
+expect_message = 'resets 2h'
+
+[[control]]
+id = 'quota-reset-since-reading-boundary'
+guards = 'a reset at the reading time is not new, while a reset at now has arrived since the reading'
+file = 'src/quota/format.ts'
+old = 'Number.isFinite(at) && at > checkedAt && at <= now,'
+new = 'Number.isFinite(at) && at > checkedAt && at < now, /* NON-VACUITY BREAK */'
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/quota/format.test.ts", "{test}"]
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^shared\squota\swording\sa\sreset\sat\snow\scounts\sas\ssince\sreading,\sbut\sa\sreset\sbefore\sit\sdoes\snot$']
+expect_message = 'resetSinceReading'
+
+[[control]]
+id = 'quota-age-threshold-is-strict'
+guards = 'the age marker appears only when the oldest shown reading is strictly older than the stale threshold'
+file = 'src/quota/format.ts'
+old = 'if (age > (options.staleAfterMs ?? QUOTA_STALE_AFTER_MS)) {'
+new = 'if (age >= (options.staleAfterMs ?? QUOTA_STALE_AFTER_MS)) { /* NON-VACUITY BREAK */'
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/quota/format.test.ts", "{test}"]
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^shared\squota\swording\sage\sis\sincluded\sonly\swhen\sthe\sstale\sthreshold\sis\sexceeded$']
+expect_message = 'checked 15m ago'
+
+[[control]]
 id = 'commands-seam-carries-row-group'
 guards = 'an item group crosses the command seam, so a renderer can draw the header instead of an unlabelled run of rows'
 file = 'src/commands/seam.ts'
