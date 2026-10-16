@@ -162,6 +162,34 @@ expect_red = ['^setup\sregistration\sreplaces\solder\spackage\sentries\sand\srem
 expect_message = 'toEqual'
 
 [[control]]
+id = 'setup-command-error-redacts-stderr'
+guards = 'Pi install diagnostics scrub credentials from the captured stderr tail'
+file = 'src/setup/command-error.ts'
+old = 'const redacted = redact(details.stderrTail)'
+new = 'const redacted = details.stderrTail /* NON-VACUITY BREAK */'
+test_file = 'test/setup/register.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/register.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/register.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sregistration\sPi\sinstall\serror\spreserves\sits\smessage\sand\sredacts\sstderr\scredentials$']
+expect_message = 'abc123secret'
+
+[[control]]
+id = 'setup-command-error-bounds-stderr'
+guards = 'Captured Pi install stderr keeps only the final 4 KiB'
+file = 'src/setup/command-runner.ts'
+old = 'export const STDERR_TAIL_MAX_BYTES = 4 * 1024'
+new = 'export const STDERR_TAIL_MAX_BYTES = 8 * 1024 /* NON-VACUITY BREAK */'
+test_file = 'test/setup/register.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/register.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/register.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sregistration\sPi\sinstall\serror\skeeps\sonly\sthe\sfinal\s4\sKiB\sof\sstderr$']
+expect_message = 'toBeLessThanOrEqual'
+
+[[control]]
 id = 'setup-process-fence'
 guards = 'Active hosts refuse setup rather than racing migration and credential writes'
 file = 'src/setup/process-fence.ts'

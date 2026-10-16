@@ -7,6 +7,8 @@ import {
   parse,
   parseTree,
 } from 'jsonc-parser'
+
+import { SetupCommandError } from './command-error.js'
 import { defaultCommandRunner, runResolvedCommand } from './command-runner.js'
 import { writeHostConfigAtomic } from './config-write.js'
 import { defaultSetupFileSystem } from './detect.js'
@@ -186,8 +188,10 @@ export async function registerPi(
     ['install', `npm:${plugin.packages.pi}@${plugin.version}`],
     env,
   )
-  if (result.exitCode !== 0)
-    throw new Error(
-      'Pi install failed; run pi install after checking your npm connection.',
-    )
+  if (result.exitCode !== 0 || result.timedOut)
+    throw new SetupCommandError({
+      exitCode: result.spawnError ? null : result.exitCode,
+      signal: result.signal ?? null,
+      stderrTail: result.stderr,
+    })
 }

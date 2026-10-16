@@ -11,10 +11,13 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse } from 'jsonc-parser'
+
+import { defaultCommandRunner } from '../../src/setup/command-runner.js'
 import {
   planOpenCodeRegistration,
   registerOpenCode,
   registerPi,
+  SetupCommandError,
   updatePluginConfig,
 } from '../../src/setup/index.js'
 import { fakeIO, plugin } from './helpers.js'
@@ -29,6 +32,12 @@ async function profile() {
   const root = await mkdtemp(join(tmpdir(), 'common-auth-setup-register-'))
   roots.push(root)
   return root
+}
+
+function expectSetupCommandError(
+  value: unknown,
+): asserts value is SetupCommandError {
+  expect(value).toBeInstanceOf(SetupCommandError)
 }
 
 describe('setup registration', () => {
@@ -195,6 +204,104 @@ describe('setup registration', () => {
     expect(() =>
       updatePluginConfig('{"plugins":{}}', 'plugins', 'test', '1.0.0'),
     ).toThrow('must be an array')
+  })
+
+  test('Pi install error preserves its message and redacts stderr credentials', async () => {
+    const result = await registerPi(plugin(), '/bin/pi', {
+      runner: {
+        run: (_file, _args, options) =>
+          defaultCommandRunner.run(
+            process.execPath,
+            [
+              '-e',
+              `process.stdout.write('stdout must not be exposed'); process.stderr.write('registry 403: Bearer abc123secret sk-abcdef0123456789'); process.exitCode = 1`,
+            ],
+            options,
+          ),
+      },
+    }).catch((error: unknown) => error)
+    expectSetupCommandError(result)
+    expect(result).toMatchObject({
+      message:
+        'Pi install failed; run pi install after checking your npm connection.',
+      step: 'pi-install',
+      exitCode: 1,
+      signal: null,
+    })
+    for (const field of ['step', 'exitCode', 'signal', 'stderrTail'] as const)
+      expect(Object.hasOwn(result, field)).toBe(true)
+    expect(result.stderrTail).toContain('registry 403')
+    expect(result.stderrTail).not.toContain('abc123secret')
+    expect(result.stderrTail).not.toContain('abcdef0123456789')
+    expect(result.stderrTail.match(/\*\*\*REDACTED\*\*\*/g)).toHaveLength(2)
+    expect(result.stderrTail).not.toContain('stdout must not be exposed')
+  })
+
+  test('Pi install error keeps only the final 4 KiB of stderr', async () => {
+    const result = await registerPi(plugin(), '/bin/pi', {
+      runner: {
+        run: (_file, _args, options) =>
+          defaultCommandRunner.run(
+            process.execPath,
+            [
+              '-e',
+              `process.stderr.write('x'.repeat(1024 * 1024) + 'TAIL-MARKER'); process.exitCode = 1`,
+            ],
+            options,
+          ),
+      },
+    }).catch((error: unknown) => error)
+    expectSetupCommandError(result)
+    expect(Buffer.byteLength(result.stderrTail, 'utf8')).toBeLessThanOrEqual(
+      4 * 1024,
+    )
+    expect(result.stderrTail).toEndWith('TAIL-MARKER')
+  })
+
+  test('Pi install error does not split multibyte stderr characters', async () => {
+    const result = await registerPi(plugin(), '/bin/pi', {
+      runner: {
+        run: (_file, _args, options) =>
+          defaultCommandRunner.run(
+            process.execPath,
+            [
+              '-e',
+              `process.stderr.write('é' + 'a'.repeat(4095)); process.exitCode = 1`,
+            ],
+            options,
+          ),
+      },
+    }).catch((error: unknown) => error)
+    expectSetupCommandError(result)
+    expect(result.stderrTail).toBe('a'.repeat(4095))
+    expect(result.stderrTail).not.toContain('�')
+  })
+
+  test('Pi install spawn failure has a null exit code', async () => {
+    const root = await profile()
+    const result = await registerPi(plugin(), join(root, 'missing-pi')).catch(
+      (error: unknown) => error,
+    )
+    expectSetupCommandError(result)
+    expect(result.exitCode).toBeNull()
+    expect(result.stderrTail).toBe('')
+  })
+
+  test('Pi install timeout is reported as a command error', async () => {
+    const result = await registerPi(plugin(), '/bin/pi', {
+      runner: {
+        run: (_file, _args, options) =>
+          defaultCommandRunner.run(
+            process.execPath,
+            ['-e', 'setInterval(() => {}, 1000)'],
+            { ...options, timeoutMs: 100 },
+          ),
+      },
+    }).catch((error: unknown) => error)
+    expectSetupCommandError(result)
+    expect(result.step).toBe('pi-install')
+    expect(result.exitCode).toBe(1)
+    expect(result.signal).toBe('SIGTERM')
   })
 
   test('Pi install uses resolved cmd launcher with versioned npm package', async () => {

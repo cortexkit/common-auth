@@ -1,4 +1,5 @@
 export { AMBIGUOUS_OPENCODE_MESSAGE, runSetup } from './command.js'
+export { SetupCommandError } from './command-error.js'
 export {
   detectHosts,
   detectOpenCodeGeneration,

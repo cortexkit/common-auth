@@ -195,6 +195,11 @@ retry for about two seconds, rechecking that OpenCode/Pi are stopped before each
 Actual enrollment and credential secrets still use their private writers; setup
 does not weaken their permissions. Pi is
 registered by its resolved `pi install npm:<package>@<version>` command.
+On install failure, the `./setup` subpath exports `SetupCommandError` with
+`step`, `exitCode`, `signal`, and a `stderrTail` capped at 4 KiB of UTF-8 and
+scrubbed by the shared credential redactor; its user-facing message is unchanged.
+Common-auth writes no diagnostic file, so a plugin chooses whether and where to
+retain the error details.
 
 `runSetup` returns `{ hosts, dryRun, mode, detection }` and throws on refusal;
 the bin owns exit codes. Optional `SetupIO` provides the existing menu terminal,

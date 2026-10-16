@@ -1,43 +1,122 @@
-import { execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import type { CommandResult, CommandRunner, SetupEnvironment } from './types.js'
+
+export const STDERR_TAIL_MAX_BYTES = 4 * 1024
+const STDOUT_MAX_BYTES = 1024 * 1024
+
+class ByteTail {
+  private readonly buffer = Buffer.alloc(STDERR_TAIL_MAX_BYTES)
+  private start = 0
+  private length = 0
+
+  push(chunk: Buffer): void {
+    if (chunk.length >= STDERR_TAIL_MAX_BYTES) {
+      chunk.copy(this.buffer, 0, chunk.length - STDERR_TAIL_MAX_BYTES)
+      this.start = 0
+      this.length = STDERR_TAIL_MAX_BYTES
+      return
+    }
+
+    const overflow = Math.max(
+      0,
+      this.length + chunk.length - STDERR_TAIL_MAX_BYTES,
+    )
+    this.start = (this.start + overflow) % STDERR_TAIL_MAX_BYTES
+    this.length -= overflow
+    const writeAt = (this.start + this.length) % STDERR_TAIL_MAX_BYTES
+    const firstLength = Math.min(chunk.length, STDERR_TAIL_MAX_BYTES - writeAt)
+    chunk.copy(this.buffer, writeAt, 0, firstLength)
+    if (firstLength < chunk.length) chunk.copy(this.buffer, 0, firstLength)
+    this.length += chunk.length
+  }
+
+  toString(): string {
+    const bytes = Buffer.alloc(this.length)
+    const firstLength = Math.min(
+      this.length,
+      STDERR_TAIL_MAX_BYTES - this.start,
+    )
+    this.buffer.copy(bytes, 0, this.start, this.start + firstLength)
+    if (firstLength < this.length)
+      this.buffer.copy(bytes, firstLength, 0, this.length - firstLength)
+    let start = 0
+    while (start < bytes.length) {
+      const byte = bytes[start]
+      if (byte === undefined || (byte & 0xc0) !== 0x80) break
+      start++
+    }
+    return bytes.subarray(start).toString('utf8')
+  }
+}
 
 export const defaultCommandRunner: CommandRunner = {
   run(file, args, options = {}) {
     return new Promise((resolve) => {
       const started = performance.now()
       const timeoutMs = options.timeoutMs ?? 15_000
-      execFile(
-        file,
-        [...args],
-        {
+      const stderr = new ByteTail()
+      let stdout: Buffer | undefined
+      let stdoutLength = 0
+      let outputExceeded = false
+      let spawnError = false
+      let timedOut = false
+      let child: ReturnType<typeof spawn>
+      try {
+        child = spawn(file, [...args], {
           env: options.env ?? process.env,
-          timeout: timeoutMs,
           windowsHide: true,
           windowsVerbatimArguments: options.windowsVerbatimArguments,
-          maxBuffer: 1024 * 1024,
-        },
-        (error, stdout, stderr) => {
-          const durationMs = performance.now() - started
-          resolve({
-            exitCode: error
-              ? typeof error.code === 'number'
-                ? error.code
-                : 1
-              : 0,
-            stdout: String(stdout ?? ''),
-            stderr: String(stderr ?? ''),
-            signal: error?.signal ?? null,
-            // Buffer-limit and spawn errors have string codes, not timeout kills.
-            timedOut:
-              error?.killed === true &&
-              typeof error.code !== 'string' &&
-              error.signal === 'SIGTERM' &&
-              durationMs >= timeoutMs &&
-              timeoutMs > 0,
-            durationMs,
-          })
-        },
-      )
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+      } catch {
+        resolve({
+          exitCode: 1,
+          stdout: '',
+          stderr: '',
+          spawnError: true,
+          signal: null,
+          timedOut: false,
+          durationMs: performance.now() - started,
+        })
+        return
+      }
+
+      const timer =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              timedOut = true
+              child.kill('SIGTERM')
+            }, timeoutMs)
+          : undefined
+      child.stdout?.on('data', (chunk: Buffer) => {
+        const remaining = STDOUT_MAX_BYTES - stdoutLength
+        const length = Math.min(remaining, chunk.length)
+        if (length > 0) {
+          stdout ??= Buffer.alloc(STDOUT_MAX_BYTES)
+          chunk.copy(stdout, stdoutLength, 0, length)
+          stdoutLength += length
+        }
+        if (chunk.length > remaining) {
+          outputExceeded = true
+          child.kill('SIGTERM')
+        }
+      })
+      child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+      child.once('error', () => {
+        spawnError = true
+      })
+      child.once('close', (code, signal) => {
+        if (timer) clearTimeout(timer)
+        resolve({
+          exitCode: spawnError ? 1 : outputExceeded ? 1 : (code ?? 1),
+          stdout: stdout?.subarray(0, stdoutLength).toString('utf8') ?? '',
+          stderr: stderr.toString(),
+          ...(spawnError ? { spawnError: true } : {}),
+          signal: signal ?? null,
+          timedOut,
+          durationMs: performance.now() - started,
+        })
+      })
     })
   },
 }
