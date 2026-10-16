@@ -1,12 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import {
-  mkdir,
-  open,
-  readFile,
-  rename,
-  rm,
-  stat,
-} from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   createPrivateBytes,
