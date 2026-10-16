@@ -193,5 +193,6 @@ export async function registerPi(
       exitCode: result.spawnError ? null : result.exitCode,
       signal: result.signal ?? null,
       stderrTail: result.stderr,
+      stderrTruncated: result.stderrTruncated ?? false,
     })
 }

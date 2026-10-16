@@ -245,7 +245,7 @@ describe('setup registration', () => {
             process.execPath,
             [
               '-e',
-              `process.stderr.write('x'.repeat(1024 * 1024) + 'TAIL-MARKER'); process.exitCode = 1`,
+              `process.stderr.write('x'.repeat(1024 * 1024) + '\\nTAIL-MARKER'); process.exitCode = 1`,
             ],
             options,
           ),
@@ -258,7 +258,21 @@ describe('setup registration', () => {
     expect(result.stderrTail).toEndWith('TAIL-MARKER')
   })
 
-  test('Pi install error does not split multibyte stderr characters', async () => {
+  test('SetupCommandError does not split multibyte stderr characters', () => {
+    const result = new SetupCommandError({
+      exitCode: 1,
+      signal: null,
+      stderrTail: `${'a'.repeat(4095)}é`,
+    })
+    expect(result.stderrTail).toBe(`${'a'.repeat(4094)}é`)
+    expect(Buffer.byteLength(result.stderrTail, 'utf8')).toBeLessThanOrEqual(
+      4 * 1024,
+    )
+  })
+
+  test('Pi install error drops a partial credential line at the stderr boundary', async () => {
+    const token =
+      'Bearer SUPERSECRET_BOUNDARY_CREDENTIAL_1234567890123456789012345678901234567890'
     const result = await registerPi(plugin(), '/bin/pi', {
       runner: {
         run: (_file, _args, options) =>
@@ -266,15 +280,33 @@ describe('setup registration', () => {
             process.execPath,
             [
               '-e',
-              `process.stderr.write('é' + 'a'.repeat(4095)); process.exitCode = 1`,
+              `process.stderr.write('x'.repeat(4050) + ${JSON.stringify(token)} + '\\nregistry 403: ' + 'x'.repeat(4010)); process.exitCode = 1`,
             ],
             options,
           ),
       },
     }).catch((error: unknown) => error)
     expectSetupCommandError(result)
-    expect(result.stderrTail).toBe('a'.repeat(4095))
-    expect(result.stderrTail).not.toContain('�')
+    expect(result.stderrTail).toStartWith('registry 403:')
+    expect(result.stderrTail).not.toContain('UPERSECRET_BOUNDARY_CREDENTIAL_')
+  })
+
+  test('Pi install error drops a truncated tail without a newline', async () => {
+    const result = await registerPi(plugin(), '/bin/pi', {
+      runner: {
+        run: (_file, _args, options) =>
+          defaultCommandRunner.run(
+            process.execPath,
+            [
+              '-e',
+              `process.stderr.write('x'.repeat(4096) + 'SECRET-FRAGMENT'); process.exitCode = 1`,
+            ],
+            options,
+          ),
+      },
+    }).catch((error: unknown) => error)
+    expectSetupCommandError(result)
+    expect(result.stderrTail).toBe('')
   })
 
   test('Pi install spawn failure has a null exit code', async () => {

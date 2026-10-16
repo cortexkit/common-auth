@@ -16,6 +16,16 @@ function utf8Tail(value: string): string {
   return bytes.subarray(start).toString('utf8')
 }
 
+function dropPartialLine(tail: string): string {
+  const newline = tail.indexOf('\n')
+  return newline < 0 ? '' : tail.slice(newline + 1)
+}
+
+/**
+ * Keeps the Pi install refusal message stable while exposing safe process details.
+ * A clipped tail can start inside a credential, so discard its first line—or
+ * the whole tail if it has no newline—before redacting.
+ */
 export class SetupCommandError extends Error {
   readonly step = 'pi-install'
   readonly exitCode: number | null
@@ -26,12 +36,16 @@ export class SetupCommandError extends Error {
     exitCode: number | null
     signal: string | null
     stderrTail: string
+    stderrTruncated?: boolean
   }) {
     super(PI_INSTALL_ERROR_MESSAGE)
     this.name = 'SetupCommandError'
     this.exitCode = details.exitCode
     this.signal = details.signal
-    const redacted = redact(details.stderrTail)
+    const tail = details.stderrTruncated
+      ? dropPartialLine(details.stderrTail)
+      : details.stderrTail
+    const redacted = redact(tail)
     this.stderrTail = utf8Tail(typeof redacted === 'string' ? redacted : '')
   }
 }

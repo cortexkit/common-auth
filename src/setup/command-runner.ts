@@ -8,9 +8,16 @@ class ByteTail {
   private readonly buffer = Buffer.alloc(STDERR_TAIL_MAX_BYTES)
   private start = 0
   private length = 0
+  private truncated = false
+
+  get didTruncate(): boolean {
+    return this.truncated
+  }
 
   push(chunk: Buffer): void {
     if (chunk.length >= STDERR_TAIL_MAX_BYTES) {
+      if (chunk.length > STDERR_TAIL_MAX_BYTES || this.length > 0)
+        this.truncated = true
       chunk.copy(this.buffer, 0, chunk.length - STDERR_TAIL_MAX_BYTES)
       this.start = 0
       this.length = STDERR_TAIL_MAX_BYTES
@@ -21,6 +28,7 @@ class ByteTail {
       0,
       this.length + chunk.length - STDERR_TAIL_MAX_BYTES,
     )
+    if (overflow > 0) this.truncated = true
     this.start = (this.start + overflow) % STDERR_TAIL_MAX_BYTES
     this.length -= overflow
     const writeAt = (this.start + this.length) % STDERR_TAIL_MAX_BYTES
@@ -55,7 +63,7 @@ export const defaultCommandRunner: CommandRunner = {
       const started = performance.now()
       const timeoutMs = options.timeoutMs ?? 15_000
       const stderr = new ByteTail()
-      let stdout: Buffer | undefined
+      const stdout: Buffer[] = []
       let stdoutLength = 0
       let outputExceeded = false
       let spawnError = false
@@ -92,8 +100,7 @@ export const defaultCommandRunner: CommandRunner = {
         const remaining = STDOUT_MAX_BYTES - stdoutLength
         const length = Math.min(remaining, chunk.length)
         if (length > 0) {
-          stdout ??= Buffer.alloc(STDOUT_MAX_BYTES)
-          chunk.copy(stdout, stdoutLength, 0, length)
+          stdout.push(chunk.subarray(0, length))
           stdoutLength += length
         }
         if (chunk.length > remaining) {
@@ -109,8 +116,9 @@ export const defaultCommandRunner: CommandRunner = {
         if (timer) clearTimeout(timer)
         resolve({
           exitCode: spawnError ? 1 : outputExceeded ? 1 : (code ?? 1),
-          stdout: stdout?.subarray(0, stdoutLength).toString('utf8') ?? '',
+          stdout: Buffer.concat(stdout, stdoutLength).toString('utf8'),
           stderr: stderr.toString(),
+          stderrTruncated: stderr.didTruncate,
           ...(spawnError ? { spawnError: true } : {}),
           signal: signal ?? null,
           timedOut,

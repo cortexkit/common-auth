@@ -165,8 +165,8 @@ expect_message = 'toEqual'
 id = 'setup-command-error-redacts-stderr'
 guards = 'Pi install diagnostics scrub credentials from the captured stderr tail'
 file = 'src/setup/command-error.ts'
-old = 'const redacted = redact(details.stderrTail)'
-new = 'const redacted = details.stderrTail /* NON-VACUITY BREAK */'
+old = 'const redacted = redact(tail)'
+new = 'const redacted = tail /* NON-VACUITY BREAK */'
 test_file = 'test/setup/register.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/setup/register.test.ts -t "$1"', 'sh', '{test}']
@@ -188,6 +188,34 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/register.test.t
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sregistration\sPi\sinstall\serror\skeeps\sonly\sthe\sfinal\s4\sKiB\sof\sstderr$']
 expect_message = 'toBeLessThanOrEqual'
+
+[[control]]
+id = 'setup-command-error-drops-partial-line'
+guards = 'A truncated Pi install tail discards the line that may begin inside a credential'
+file = 'src/setup/command-error.ts'
+old = "return newline < 0 ? '' : tail.slice(newline + 1)"
+new = 'return tail /* NON-VACUITY BREAK */'
+test_file = 'test/setup/register.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/register.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/register.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sregistration\sPi\sinstall\serror\sdrops\sa\spartial\scredential\sline\sat\sthe\sstderr\sboundary$']
+expect_message = 'toStartWith'
+
+[[control]]
+id = 'setup-command-runner-bounds-stdout'
+guards = 'Setup child stdout retention is capped at one MiB'
+file = 'src/setup/command-runner.ts'
+old = 'const length = Math.min(remaining, chunk.length)'
+new = 'const length = chunk.length /* NON-VACUITY BREAK */'
+test_file = 'test/setup/command-runner.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/command-runner.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command-runner.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\scommand\srunner\sstdout\sbeyond\sthe\scap\sfails\sthe\schild\sand\skeeps\sonly\scapped\soutput$']
+expect_message = 'toBe'
 
 [[control]]
 id = 'setup-process-fence'
