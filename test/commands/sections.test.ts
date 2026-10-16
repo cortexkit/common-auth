@@ -223,7 +223,7 @@ describe('command menu sections', () => {
     expect(quota.items[0]).toMatchObject({
       id: 'a',
       status: '5h 58% left · 7d 90% left · credits 75% left',
-      detail: '5h 58% left, resets 2h · 7d 90% left · credits 75% left',
+      detail: '5h 58% left, resets 1h30m · 7d 90% left · credits 75% left',
     })
     const all = await apply(menu, notes().invocation, {
       sectionId: 'quota',

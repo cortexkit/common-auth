@@ -5928,3 +5928,16 @@ command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sCtrl-C\sat\sthe\svault\squestion\sstops\ssetup\sbefore\sanything\schanges$']
+
+[[control]]
+id = 'quota-reset-span-two-units-never-later'
+guards = 'a reset span shows its two largest whole units, floored, so it is never shown later than the real reset'
+file = 'src/quota/format.ts'
+old = '    const hours = Math.floor(minutes / 60)'
+new = '    const hours = Math.round(minutes / 60) /* NON-VACUITY BREAK */'
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^shared\squota\swording\sa\sreset\sshows\sits\stwo\slargest\sunits\sand\sis\snever\sshown\slater\sthan\sit\sis$']

@@ -65,16 +65,22 @@ export interface QuotaParts {
 }
 
 /**
- * A length or a time span in its largest whole-ish unit: `45m`, `5h`, `3d`.
- * Spans under an hour are minutes, under a day hours, otherwise days, each
- * rounded to the nearest unit and never shown as zero.
+ * A time span in at most its two largest units: `45m`, `2h29m`, `5h`, `3d23h`,
+ * `7d`. The span is rounded to whole minutes (never zero) and each larger unit
+ * is whole, never rounded up, so a reset is never shown later than it is. A
+ * zero second unit is left out.
  */
 function shortSpan(ms: number): string {
   const minutes = Math.max(1, Math.round(ms / 60_000))
   if (minutes < 60) return `${minutes}m`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  return `${Math.max(1, Math.round(minutes / 1440))}d`
+  if (minutes < 1440) {
+    const hours = Math.floor(minutes / 60)
+    const rest = minutes % 60
+    return rest === 0 ? `${hours}h` : `${hours}h${rest}m`
+  }
+  const days = Math.floor(minutes / 1440)
+  const hours = Math.floor((minutes % 1440) / 60)
+  return hours === 0 ? `${days}d` : `${days}d${hours}h`
 }
 
 /** A stored window length in minutes as its exact name: `5h`, `7d`, `90m`. */
