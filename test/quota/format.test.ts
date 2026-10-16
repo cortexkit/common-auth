@@ -74,8 +74,10 @@ describe('shared quota wording', () => {
     expect(resetIn(3 * 24 * HOUR + 23 * HOUR + 50 * MINUTE)).toBe('3d23h')
     expect(resetIn(5 * HOUR)).toBe('5h')
     expect(resetIn(24 * HOUR + 30 * MINUTE)).toBe('1d')
-    expect(resetIn(59 * MINUTE + 40_000)).toBe('1h')
+    expect(resetIn(59 * MINUTE + 40_000)).toBe('59m')
+    expect(resetIn(2 * HOUR + 29 * MINUTE + 40_000)).toBe('2h29m')
     expect(resetIn(45 * MINUTE)).toBe('45m')
+    expect(resetIn(30_000)).toBe('1m')
   })
 
   test('a reset under an hour away is in minutes and a passed reset is left out', () => {

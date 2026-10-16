@@ -66,12 +66,12 @@ export interface QuotaParts {
 
 /**
  * A time span in at most its two largest units: `45m`, `2h29m`, `5h`, `3d23h`,
- * `7d`. The span is rounded to whole minutes (never zero) and each larger unit
- * is whole, never rounded up, so a reset is never shown later than it is. A
- * zero second unit is left out.
+ * `7d`. Every unit is rounded down, so a reset is never shown later than it is;
+ * the one exception is a span under a minute, which reads `1m` rather than
+ * zero. A zero second unit is left out.
  */
 function shortSpan(ms: number): string {
-  const minutes = Math.max(1, Math.round(ms / 60_000))
+  const minutes = Math.max(1, Math.floor(ms / 60_000))
   if (minutes < 60) return `${minutes}m`
   if (minutes < 1440) {
     const hours = Math.floor(minutes / 60)

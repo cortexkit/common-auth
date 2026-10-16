@@ -5941,3 +5941,16 @@ command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^shared\squota\swording\sa\sreset\sshows\sits\stwo\slargest\sunits\sand\sis\snever\sshown\slater\sthan\sit\sis$']
+
+[[control]]
+id = 'quota-span-minutes-round-down'
+guards = 'a span rounds its minutes down, so a reset 2h29m40s away reads 2h29m and never later than real'
+file = 'src/quota/format.ts'
+old = '  const minutes = Math.max(1, Math.floor(ms / 60_000))'
+new = '  const minutes = Math.max(1, Math.round(ms / 60_000)) /* NON-VACUITY BREAK */'
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^shared\squota\swording\sa\sreset\sshows\sits\stwo\slargest\sunits\sand\sis\snever\sshown\slater\sthan\sit\sis$']
