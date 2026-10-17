@@ -6060,7 +6060,7 @@ command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sa\sfailure\sbefore\sany\senrollment\sstep\sleaves\sthe\serror\sunchanged$']
-expect_message = 'OpenCode: not connected'
+expect_message = 'not-enrolled'
 
 [[control]]
 id = 'setup-enrollment-never-inspects-the-thrown-value'
