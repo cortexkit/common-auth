@@ -78,12 +78,14 @@ export {
   isCustodyPlaceholder,
   isCustodyPlaceholderValue,
 } from './host-slot.js'
-export type {
-  InsulaQuotaContext,
-  InsulaQuotaOptions,
-  InsulaUsageEntry,
-  InsulaUsageTransport,
-  InsulaUsageWindow,
+export {
+  acquireInsulaQuotaSource,
+  type InsulaQuotaContext,
+  type InsulaQuotaOptions,
+  type InsulaQuotaSource,
+  type InsulaUsageEntry,
+  type InsulaUsageTransport,
+  type InsulaUsageWindow,
 } from './insula.js'
 export {
   acceptAccount,

@@ -2,6 +2,7 @@ import { expect } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+  acquireInsulaQuotaSource,
   ClaustrumConsumer,
   connectClaustrumScopedClient,
   type InsulaUsageEntry,
@@ -644,4 +645,51 @@ test('a plugin normalizer may refuse an antigravity echo using source and fetche
   await consumer.refreshInsulaQuota()
   await s.poll(consumer)
   expect(s.polls).toEqual(['account-work'])
+})
+
+// A plugin whose vault mode runs on ClaustrumScopedCustody reads insula through
+// the public source alone, with no ClaustrumConsumer: the same freshness gate
+// and the same one-call-per-minute budget, and no scoped credential call.
+test('the public insula source serves a plugin without a ClaustrumConsumer', async () => {
+  const dir = await tempDir('insula-reader-')
+  const daemon = await startMockDaemon({
+    directory: dir,
+    credentials: {},
+    insula: {
+      response: {
+        result: [
+          entry(),
+          entry({ account: 'account-stale', stale: true }),
+          entry({
+            account: 'account-old',
+            fetchedAt: new Date(NOW - 4 * 60_000).toISOString(),
+          }),
+        ],
+      },
+    },
+  })
+  daemons.push(daemon)
+  const tokenPath = await writeToken(dir)
+  const client = await connectClaustrumScopedClient({
+    connectionFile: daemon.connectionFile,
+    identity: { project_root: dir, harness: 'test', session: 'reader' },
+  })
+  consumers.push(client)
+  const first = acquireInsulaQuotaSource(client.insula!, tokenPath)
+  const second = acquireInsulaQuotaSource(client.insula!, tokenPath)
+  try {
+    expect(second.source).toBe(first.source)
+    await first.source.refresh(NOW)
+    await second.source.refresh(NOW + 1_000)
+    expect(daemon.usageGets).toBe(1)
+    const hit = first.source.current('codex', 'account-work', NOW)
+    expect(hit?.context.fetchedAt).toBe(NOW - 1_000)
+    expect(hit?.entry.usage?.primary?.rawUsedPercent).toBe(80)
+    expect(first.source.current('codex', 'account-stale', NOW)).toBeUndefined()
+    expect(first.source.current('codex', 'account-old', NOW)).toBeUndefined()
+    expect(first.source.current('claude', 'account-work', NOW)).toBeUndefined()
+  } finally {
+    first.release()
+    second.release()
+  }
 })
