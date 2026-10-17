@@ -6021,6 +6021,34 @@ test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sCtrl-C\sat\sthe\svault\squestion\sstops\ssetup\sbefore\sanything\schanges$']
 
 [[control]]
+id = 'setup-enrollment-report-is-recorded'
+guards = 'a setup failure reports each host as setup recorded it (a host never asked is not connected), not from a fresh probe of its files after the failure'
+file = 'src/setup/command.ts'
+old = "    let outcome = recorded.get(host) ?? 'not-enrolled'"
+new = "    let outcome: SetupEnrollmentOutcome = 'unknown' /* NON-VACUITY BREAK: ignore the record and probe every host. */"
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sa\sfailure\safter\sOpenCode\senrolled\sand\sbefore\sPi\snames\sthe\sconnected\shost$']
+expect_message = 'Pi: unknown, check with ck auth status'
+
+[[control]]
+id = 'setup-no-enrollment-lines-before-enrollment'
+guards = 'a setup failure before any host enrollment began keeps its error unchanged, with no per-host vault lines'
+file = 'src/setup/command.ts'
+old = '      if (enrollment.size === 0) throw error'
+new = '      if (false as boolean) throw error /* NON-VACUITY BREAK: report hosts before any enrollment. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sa\sfailure\sbefore\sany\senrollment\sstep\sleaves\sthe\serror\sunchanged$']
+expect_message = 'OpenCode: not connected'
+
+[[control]]
 id = 'quota-reset-span-two-units-never-later'
 guards = 'a reset span shows its two largest whole units, floored, so it is never shown later than the real reset'
 file = 'src/quota/format.ts'

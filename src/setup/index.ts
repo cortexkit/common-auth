@@ -1,5 +1,5 @@
 export { AMBIGUOUS_OPENCODE_MESSAGE, runSetup } from './command.js'
-export { SetupCommandError } from './command-error.js'
+export { SetupCommandError, setupEnrollment } from './command-error.js'
 export {
   detectHosts,
   detectOpenCodeGeneration,
@@ -29,9 +29,11 @@ export type {
   ProcessFence,
   SetupCallbackContext,
   SetupDetection,
+  SetupEnrollmentOutcome,
   SetupEnvironment,
   SetupFileSystem,
   SetupHost,
+  SetupHostEnrollment,
   SetupIO,
   SetupPlugin,
   SetupResult,

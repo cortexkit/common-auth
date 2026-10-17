@@ -1,12 +1,24 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { writeEnrollmentTokenFile } from '@cortexkit/claustrum-client'
 import { parse } from 'jsonc-parser'
+import type { ClaustrumEnrollmentConnection } from '../../src/claustrum/index.js'
 import {
   AMBIGUOUS_OPENCODE_MESSAGE,
+  ProcessFenceViolationError,
   ProcessInspectionError,
   runSetup,
+  type SetupHostEnrollment,
+  setupEnrollment,
 } from '../../src/setup/index.js'
 import { fakeIO, plugin, terminal } from './helpers.js'
 
@@ -20,6 +32,36 @@ async function profile() {
   const root = await mkdtemp(join(tmpdir(), 'common-auth-setup-flow-'))
   roots.push(root)
   return root
+}
+
+/** A vault that approves every proposal on the first poll. */
+function approvingVault(onPoll?: () => void): ClaustrumEnrollmentConnection {
+  let name = ''
+  return {
+    close() {},
+    async enrollPropose(input) {
+      name = input.name
+      return { requestId: `request-${name}` }
+    },
+    async enrollPoll() {
+      onPoll?.()
+      return {
+        status: 'approved',
+        token: 'f'.repeat(64),
+        tokenGeneration: 1,
+        name,
+      }
+    },
+  }
+}
+
+async function rejection(promise: Promise<unknown>): Promise<Error> {
+  try {
+    await promise
+  } catch (error) {
+    return error as Error
+  }
+  throw new Error('setup did not fail')
 }
 
 describe('setup flow', () => {
@@ -550,9 +592,11 @@ describe('setup flow', () => {
       io.files.set('/bin/opencode', '')
       io.files.set('/bin/ck', '')
       io.files.set('/fixture/connection.json', '{}')
+      let proposals = 0
       io.connect = async () => ({
         close() {},
         async enrollPropose() {
+          proposals++
           throw new Error('unexpected')
         },
         async enrollPoll() {
@@ -575,6 +619,8 @@ describe('setup flow', () => {
       const result = await runSetup(p, [], { ...io, terminal: term })
       expect(result.hosts).toEqual([])
       expect(called).toEqual([])
+      // Cancelling enrolls nothing: no host was proposed to the vault.
+      expect(proposals).toBe(0)
       expect(io.files).toEqual(before)
       expect(term.lines.join('')).toContain(
         'Setup cancelled. Nothing was changed.',
@@ -691,5 +737,139 @@ describe('setup flow', () => {
       }),
     ).rejects.toThrow('Invalid OpenCode config')
     expect(calls).toBe(0)
+  })
+
+  test('a failure after OpenCode enrolled and before Pi names the connected host', async () => {
+    const root = await profile()
+    const p = plugin(root)
+    const io = fakeIO()
+    io.env = { PATH: '/bin', OPENCODE_CONFIG_DIR: join(root, 'config') }
+    io.files.set('/bin/opencode', '')
+    io.files.set('/bin/pi', '')
+    io.files.set('/bin/ck', '')
+    io.files.set(p.vault.connectionFile, '{}')
+    io.connect = async () => approvingVault()
+    io.wait = async () => {}
+    // Pi's enrollment state cannot be read, so a probe after the failure could
+    // not say Pi is not connected. Setup never asked Pi to enroll, and the
+    // report has to come from that record.
+    await mkdir(join(root, 'vault'), { recursive: true, mode: 0o700 })
+    await writeFile(join(root, 'vault', 'pi-enrollment-state.json'), 'junk', {
+      mode: 0o600,
+    })
+    const refusal = new Error('Pi consent declined.')
+    p.beforeSignIn = async (host) => {
+      if (host === 'pi') throw refusal
+    }
+    const error = await rejection(
+      runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: terminal() }),
+    )
+    expect(error).toBe(refusal)
+    expect(error.message).toBe(
+      'Pi consent declined.\nOpenCode: connected to the vault\nPi: not connected',
+    )
+    expect(setupEnrollment(error)).toEqual([
+      { host: 'opencode', outcome: 'enrolled' },
+      { host: 'pi', outcome: 'not-enrolled' },
+    ] satisfies SetupHostEnrollment[])
+  })
+
+  for (const [name, before, line, outcome] of [
+    ['no token', 'none', 'OpenCode: not connected', 'not-enrolled'],
+    [
+      'a token from an earlier run',
+      'token',
+      'OpenCode: connected to the vault',
+      'enrolled',
+    ],
+    [
+      'an unreadable token',
+      'junk',
+      'OpenCode: unknown, check with ck auth status',
+      'unknown',
+    ],
+  ] as const) {
+    test(`a failure during the enrollment wait is settled by the token file: ${name}`, async () => {
+      const root = await profile()
+      const p = plugin(root)
+      const io = fakeIO()
+      io.env = { PATH: '/bin', OPENCODE_CONFIG_DIR: join(root, 'config') }
+      io.files.set('/bin/opencode', '')
+      io.files.set('/bin/ck', '')
+      io.files.set(p.vault.connectionFile, '{}')
+      const tokenPath = join(root, 'vault', 'opencode-enrollment.json')
+      await mkdir(join(root, 'vault'), { recursive: true, mode: 0o700 })
+      if (before === 'token')
+        await writeEnrollmentTokenFile(tokenPath, {
+          token: 'a'.repeat(64),
+          token_generation: 1,
+        })
+      if (before === 'junk') await writeFile(tokenPath, 'junk', { mode: 0o600 })
+      // OpenCode starts while setup waits for approval, so the fence stops
+      // setup in the middle of the enrollment.
+      let running = false
+      const host = { pid: 99, command: 'opencode' }
+      io.fence = {
+        async listRunningHosts() {
+          return running ? [host] : []
+        },
+      }
+      let connections = 0
+      io.connect = async () => {
+        // The first connection is detection's availability check; the second
+        // one starts the enrollment.
+        if (++connections === 2 && before !== 'none') running = true
+        return {
+          close() {},
+          async enrollPropose() {
+            return { requestId: 'request-1' }
+          },
+          async enrollPoll() {
+            running = true
+            return { status: 'pending' }
+          },
+        }
+      }
+      io.wait = async () => {}
+      const error = await rejection(
+        runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: terminal() }),
+      )
+      expect(error).toBeInstanceOf(ProcessFenceViolationError)
+      expect(error.message).toBe(
+        `${new ProcessFenceViolationError([host]).message}\n${line}`,
+      )
+      expect(setupEnrollment(error)).toEqual([{ host: 'opencode', outcome }])
+    })
+  }
+
+  test('a failure before any enrollment step leaves the error unchanged', async () => {
+    const root = await profile()
+    const p = plugin(root)
+    const io = fakeIO()
+    io.env = { PATH: '/bin', OPENCODE_CONFIG_DIR: join(root, 'config') }
+    io.files.set('/bin/opencode', '')
+    io.files.set('/bin/pi', '')
+    io.files.set('/bin/ck', '')
+    io.files.set(p.vault.connectionFile, '{}')
+    let proposals = 0
+    io.connect = async () => ({
+      ...approvingVault(),
+      async enrollPropose() {
+        proposals++
+        return { requestId: 'request-1' }
+      },
+    })
+    const refusal = new Error('Consent declined.')
+    p.beforeSignIn = async () => {
+      throw refusal
+    }
+    const error = await rejection(
+      runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: terminal() }),
+    )
+    expect(error).toBe(refusal)
+    expect(error.message).toBe('Consent declined.')
+    expect(setupEnrollment(error)).toBeUndefined()
+    expect(Object.hasOwn(error, 'enrollment')).toBe(false)
+    expect(proposals).toBe(0)
   })
 })

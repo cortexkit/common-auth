@@ -9,6 +9,19 @@ export type OpenCodeGeneration = '1' | '2' | 'both'
 export type SetupEnvironment = Record<string, string | undefined>
 
 /**
+ * What a setup run recorded about one host's vault enrollment when it failed:
+ * `enrolled` once approval landed and the token was written, `not-enrolled`
+ * when the host was never asked or its enrollment was refused or gave up
+ * waiting, and `unknown` when setup failed while the enrollment was still in
+ * flight and the host's token file could not settle it.
+ */
+export type SetupEnrollmentOutcome = 'enrolled' | 'not-enrolled' | 'unknown'
+export interface SetupHostEnrollment {
+  host: SetupHost
+  outcome: SetupEnrollmentOutcome
+}
+
+/**
  * What setup decided before calling a plugin callback. The OpenCode generation
  * is the one being registered, after `--opencode` or the interactive choice, so
  * a plugin can sign in the way that generation expects (OpenCode 2 does not

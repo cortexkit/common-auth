@@ -4,10 +4,14 @@ import {
   printLine,
   processTerminal,
 } from '../auth-menu/terminal.js'
-import { hostEnrollmentPaths } from '../claustrum/enrollment.js'
+import {
+  enrollmentAuthority,
+  hostEnrollmentPaths,
+} from '../claustrum/enrollment.js'
+import { attachSetupEnrollment } from './command-error.js'
 import { defaultCommandRunner } from './command-runner.js'
 import { detectHosts } from './detect.js'
-import { connectSetupHost } from './enroll.js'
+import { connectSetupHost, HostNotEnrolledError } from './enroll.js'
 import { setupPaths } from './paths.js'
 import {
   assertHostsStopped,
@@ -24,7 +28,9 @@ import {
 import type {
   OpenCodeGeneration,
   SetupCallbackContext,
+  SetupEnrollmentOutcome,
   SetupHost,
+  SetupHostEnrollment,
   SetupIO,
   SetupPlugin,
   SetupResult,
@@ -76,6 +82,34 @@ function validatePlugin(plugin: SetupPlugin) {
         'Setup requires lowercase vault names containing only letters, digits and dashes.',
       )
   }
+}
+
+/**
+ * Turn what setup recorded into one outcome per selected host, in setup order.
+ * A host setup never reached was never asked to enroll. Only a host whose
+ * enrollment was in flight when setup failed is checked on disk, by reading its
+ * token file once; if that read fails it stays `unknown`.
+ */
+async function enrollmentReport(
+  plugin: SetupPlugin,
+  hosts: readonly SetupHost[],
+  recorded: ReadonlyMap<SetupHost, SetupEnrollmentOutcome>,
+): Promise<SetupHostEnrollment[]> {
+  const report: SetupHostEnrollment[] = []
+  for (const host of hosts) {
+    let outcome = recorded.get(host) ?? 'not-enrolled'
+    if (outcome === 'unknown') {
+      const { name, paths } = plugin.vault.hosts[host]
+      const authority = await enrollmentAuthority(
+        hostEnrollmentPaths(paths),
+        name,
+      ).catch(() => 'unreadable' as const)
+      if (authority === 'vault') outcome = 'enrolled'
+      else if (authority === 'local') outcome = 'not-enrolled'
+    }
+    report.push({ host, outcome })
+  }
+  return report
 }
 
 export async function runSetup(
@@ -271,19 +305,40 @@ export async function runSetup(
       hosts: Object.freeze([...hosts]),
       piAgentDir: detection.pi.directory,
     }
-    for (const host of hosts) {
-      await stopped()
-      await plugin.beforeSignIn?.(host, context)
-      await stopped()
-      if (useVault) await connectSetupHost(plugin, host, io, terminal, stopped)
-      else await plugin.signInLocal(host, context)
-      await stopped()
-      await plugin.beforeRegister?.(host, mode, context)
-      await stopped()
-      if (host === 'opencode') await registerOpenCode(writes, stopped)
-      else await registerPi(plugin, detection.pi.executable as string, io)
-      await stopped()
-      await plugin.migrate(host, context)
+    // Each host's vault enrollment as it happens. A host the operator approved
+    // stays enrolled if a later step fails, so a failure reports this record.
+    const enrollment = new Map<SetupHost, SetupEnrollmentOutcome>()
+    try {
+      for (const host of hosts) {
+        await stopped()
+        await plugin.beforeSignIn?.(host, context)
+        await stopped()
+        if (useVault) {
+          enrollment.set(host, 'unknown')
+          try {
+            await connectSetupHost(plugin, host, io, terminal, stopped)
+          } catch (error) {
+            if (error instanceof HostNotEnrolledError)
+              enrollment.set(host, 'not-enrolled')
+            throw error
+          }
+          enrollment.set(host, 'enrolled')
+        } else await plugin.signInLocal(host, context)
+        await stopped()
+        await plugin.beforeRegister?.(host, mode, context)
+        await stopped()
+        if (host === 'opencode') await registerOpenCode(writes, stopped)
+        else await registerPi(plugin, detection.pi.executable as string, io)
+        await stopped()
+        await plugin.migrate(host, context)
+      }
+    } catch (error) {
+      // Before any enrollment began nothing is connected: the error is unchanged.
+      if (enrollment.size === 0) throw error
+      throw attachSetupEnrollment(
+        error,
+        await enrollmentReport(plugin, hosts, enrollment),
+      )
     }
   }
   printLine(
