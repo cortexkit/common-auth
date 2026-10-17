@@ -83,6 +83,12 @@ export interface MockDaemon {
   proposals: Array<{ name?: string; hash?: string }>
   polls: number
   lists: number
+  /**
+   * The caller's grants, sent by list_scoped as `grants` (their count) and
+   * `grant_tuples`, as claustrum 0.10.0 vaults do. Undefined omits both
+   * fields, as an older vault does. Mutable, so a later list can differ.
+   */
+  grants?: MockGrant[]
   insula?: { response: Wire; refusal?: string; hang?: 'open' | 'usage' }
   usageGets: number
   insulaOpens: number
@@ -95,6 +101,13 @@ export interface MockDaemon {
 
 type Wire = Record<string, unknown>
 
+/** One grant tuple in list_scoped's wire form. */
+export interface MockGrant {
+  selector_kind: string
+  selector: string
+  operation: string
+}
+
 function error(code: string, errorClass = 'permanent'): Wire {
   return { error: { code, class: errorClass } }
 }
@@ -106,6 +119,11 @@ export async function startMockDaemon(input: {
   refreshAdapter?: string
   /** Exact list_scoped wire result, without generated inventory fields. */
   listScopedResult?: Wire
+  /**
+   * Grants list_scoped reports until a test changes `MockDaemon.grants`;
+   * undefined omits the grant fields, as an older vault does.
+   */
+  grants?: MockGrant[]
   /** Exact get_scoped wire results, without generated payload or identity fields. */
   getScopedResults?: Record<string, Wire>
   /** Optional insula route; response is { result: entries, completeProviders?, pending? }. */
@@ -134,6 +152,7 @@ export async function startMockDaemon(input: {
     proposals: [],
     polls: 0,
     lists: 0,
+    grants: input.grants,
     insula: input.insula,
     usageGets: 0,
     insulaOpens: 0,
@@ -188,7 +207,14 @@ export async function startMockDaemon(input: {
         ),
       )
       .digest('hex')
-    return { result: { credentials: rows, view } }
+    const grants = state.grants
+    return {
+      result: {
+        credentials: rows,
+        view,
+        ...(grants && { grants: grants.length, grant_tuples: grants }),
+      },
+    }
   }
 
   function handle(method: string | undefined, params: Wire): Wire {

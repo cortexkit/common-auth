@@ -2058,6 +2058,20 @@ expect_red = ['^a\sscoped\ssend\sreceipt\scarries\sonly\sthe\svault-served\sproj
 expect_message = '/Expected: "vault-project"\s+Received: undefined/'
 
 [[control]]
+id = 'claustrum-absent-grants-mean-unknown'
+guards = 'a vault list reply without grant fields leaves the consumer grant reach unknown, so a plugin never tells a user they hold no grant when the vault simply did not say'
+file = 'src/claustrum/custody.ts'
+old = 'if (grants === undefined || grantTuples === undefined) return undefined'
+new = 'if (grants === undefined || grantTuples === undefined) return { grants: 0, tuples: [] } // NON-VACUITY BREAK: read absent grant fields as zero grants'
+test_file = 'test/claustrum/grant-reach.test.ts'
+runner = "command"
+command = ["bun", "test", "test/claustrum/grant-reach.test.ts", "-t", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/grant-reach.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\svault\sthat\ssends\sno\sgrant\sfields\sleaves\sthe\sgrant\sreach\sunknown,\snot\szero$']
+expect_message = 'toBeUndefined'
+
+[[control]]
 id = 'claustrum-reports-only-401'
 guards = 'only a 401 is reported to the vault; 429, 402 and 5xx are never reported as authentication failures'
 file = 'src/claustrum/custody.ts'

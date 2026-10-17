@@ -9,7 +9,12 @@ import {
   decideScopedRetryAfter401,
   isScopedCredentialRotation,
 } from '../../src/claustrum/index.ts'
-import { captureLogger, family, inventoryRow } from './helpers.ts'
+import {
+  captureLogger,
+  family,
+  inventoryRow,
+  unknownGrants,
+} from './helpers.ts'
 
 const identity = {
   credentialId: 'oauth:test:work',
@@ -31,7 +36,7 @@ function fixture(
   const logs = captureLogger()
   let token = '01'.repeat(32)
   const client: ClaustrumScopedClient = {
-    listScoped: async () => ({ rows: [row], view: 'view-1' }),
+    listScoped: async () => ({ rows: [row], view: 'view-1', ...unknownGrants }),
     getScoped: async (input) => {
       gets.push(input)
       return {
@@ -401,6 +406,7 @@ describe('scoped discovery', () => {
   test('filters by native protocol, not model vendor or credential ID spelling', async () => {
     const { custody } = fixture({
       listScoped: async () => ({
+        ...unknownGrants,
         view: 'changed',
         rows: [
           row,
@@ -440,12 +446,14 @@ describe('scoped discovery', () => {
         credentialType: 'api_key',
       },
     ]
-    const off = fixture({ listScoped: async () => ({ rows, view: 'v' }) })
+    const off = fixture({
+      listScoped: async () => ({ rows, view: 'v', ...unknownGrants }),
+    })
     expect(
       (await off.custody.discover()).credentials.map((c) => c.credentialId),
     ).toEqual([row.id])
     const on = fixture(
-      { listScoped: async () => ({ rows, view: 'v' }) },
+      { listScoped: async () => ({ rows, view: 'v', ...unknownGrants }) },
       { family: { ...family, apiKeys: true } },
     )
     expect(
@@ -462,6 +470,7 @@ describe('scoped discovery', () => {
   test('retains non-active inventory rows for reconciliation, not dispatch', async () => {
     const { custody } = fixture({
       listScoped: async () => ({
+        ...unknownGrants,
         view: 'changed',
         rows: [{ ...row, state: 'needs_reauth' }],
       }),
@@ -474,6 +483,7 @@ describe('scoped discovery', () => {
   test('an absent identity is no claim, and a malformed record is skipped instead of refusing the inventory', async () => {
     const f = fixture({
       listScoped: async () => ({
+        ...unknownGrants,
         view: 'changed',
         rows: [
           { ...row, accountId: undefined },
@@ -544,7 +554,7 @@ describe('scoped boundary failures', () => {
       client: {
         listScoped: async () => {
           called = true
-          return { rows: [], view: 'empty' }
+          return { rows: [], view: 'empty', ...unknownGrants }
         },
         getScoped: async () => {
           throw new Error('unexpected')

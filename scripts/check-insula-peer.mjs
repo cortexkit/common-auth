@@ -22,7 +22,7 @@ try {
   if (!archive) throw new Error('pack produced no archive')
   await writeFile(join(scratch, 'package.json'), JSON.stringify({
     name: 'insula-peer-consumer', private: true, type: 'module',
-    dependencies: { '@cortexkit/common-auth': `file:./${archive}`, '@cortexkit/claustrum-client': '0.9.0' },
+    dependencies: { '@cortexkit/common-auth': `file:./${archive}`, '@cortexkit/claustrum-client': '0.10.0' },
   }))
   run(['install', '--ignore-scripts'], scratch)
   const instances = new Set()
@@ -51,7 +51,7 @@ try {
     }
     console.log('PASS: packed /claustrum imports and exposes the insula quota API')
   `], scratch)
-  console.log('PASS: fresh claustrum-client 0.9.0 consumer installs exactly one subc-client (2 packaging checks)')
+  console.log('PASS: fresh claustrum-client 0.10.0 consumer installs exactly one subc-client (2 packaging checks)')
 } finally {
   await rm(scratch, { recursive: true, force: true })
 }

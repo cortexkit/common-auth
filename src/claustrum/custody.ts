@@ -65,6 +65,42 @@ export interface SkippedVaultRecord {
   readonly reason: SkippedVaultReason
 }
 
+/**
+ * One grant this consumer's enrollment holds, as the vault's list reply names
+ * it: for example `{ selectorKind: 'category', selector: 'openai-native',
+ * operation: 'read' }`. `selectorKind` is `exact` (the selector is a credential
+ * id) or `category` (a bare category name); both open strings.
+ */
+export interface VaultGrantTuple {
+  readonly selectorKind: string
+  readonly selector: string
+  readonly operation: string
+}
+
+/**
+ * What this consumer is granted, independent of what those grants currently
+ * reach. It is what tells two empty listings apart: no rows with `grants === 0`
+ * means no grant at all (the fix is `ck auth grant`), while no rows with
+ * `grants > 0` means a grant that reaches no credential, usually logins that
+ * lack the category (`ck auth reclassify --from-registry`); `tuples` names the
+ * selector that matched nothing. Never written to the roster file.
+ */
+export interface VaultGrantReach {
+  /** How many grants the consumer holds, deposit grants excluded. */
+  readonly grants: number
+  readonly tuples: readonly VaultGrantTuple[]
+}
+
+/**
+ * The grant fields of `listScoped`'s reply. claustrum-client 0.10.0 decodes
+ * them (and refuses malformed values); older clients, and any client talking
+ * to a vault too old to send them, leave them undefined.
+ */
+interface ListedGrantReach {
+  readonly grants?: number
+  readonly grantTuples?: readonly VaultGrantTuple[]
+}
+
 export interface VaultInventory {
   /**
    * The vault's change cursor: a digest over exactly what this consumer can see
@@ -74,6 +110,11 @@ export interface VaultInventory {
   readonly view: string
   readonly credentials: readonly VaultCredential[]
   readonly skipped: readonly SkippedVaultRecord[]
+  /**
+   * The consumer's grants, as the vault's list reply named them. Undefined means unknown
+   * (the vault or client predates the fields), never zero grants.
+   */
+  readonly grantReach?: VaultGrantReach
 }
 
 export interface ClaustrumScopedIdentity {
@@ -240,6 +281,27 @@ function credentialTypeOf(
   if (row.credentialType === 'api_key' && family.apiKeys)
     return row.refreshAdapter === undefined ? 'api_key' : undefined
   return undefined
+}
+
+/**
+ * The grants named in the vault's list reply, or undefined when it names none.
+ * Both fields must be present: a reply carrying only one of them is treated as
+ * unknown rather than completed with a guess. claustrum-client already refuses
+ * a malformed value, so nothing here validates it again.
+ */
+function grantReachOf(
+  listed: ListedGrantReach & { readonly view: string },
+): VaultGrantReach | undefined {
+  const { grants, grantTuples } = listed
+  if (grants === undefined || grantTuples === undefined) return undefined
+  return Object.freeze({
+    grants,
+    tuples: Object.freeze(
+      grantTuples.map(({ selectorKind, selector, operation }) =>
+        Object.freeze({ selectorKind, selector, operation }),
+      ),
+    ),
+  })
 }
 
 /**
@@ -413,10 +475,12 @@ export class ClaustrumScopedCustody {
     }
     for (const record of skipped)
       this.#logger.warn('skipped malformed vault record', record)
+    const grantReach = grantReachOf(inventory)
     return {
       view: inventory.view,
       credentials: Object.freeze(credentials),
       skipped: Object.freeze(skipped),
+      ...(grantReach && { grantReach }),
     }
   }
 
