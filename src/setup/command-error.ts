@@ -32,12 +32,6 @@ export class SetupCommandError extends Error {
   readonly exitCode: number | null
   readonly signal: string | null
   readonly stderrTail: string
-  /**
-   * Set when the install failed after vault enrollment began for any host:
-   * which hosts this run connected to the vault. See `setupEnrollment`.
-   */
-  declare readonly enrollment?: readonly SetupHostEnrollment[]
-
   constructor(details: {
     exitCode: number | null
     signal: string | null
@@ -64,44 +58,50 @@ const OUTCOME_TEXT = {
   unknown: 'unknown, check with ck auth status',
 } as const
 
+/** The line setup prints for one host's outcome, e.g. `Pi: not connected`. */
+export function setupEnrollmentLine({
+  host,
+  outcome,
+}: SetupHostEnrollment): string {
+  return `${HOST_LABELS[host]}: ${OUTCOME_TEXT[outcome]}`
+}
+
+// Outcomes recorded against the value a failed `runSetup` threw. A WeakMap
+// keeps the thrown value itself untouched: setup never reads, rewrites or
+// stringifies what a step or plugin callback threw, so a getter, a proxy or a
+// frozen error behaves exactly as it would without setup in between, and
+// callers that classify errors by message see the original text.
+const recordedEnrollment = new WeakMap<object, readonly SetupHostEnrollment[]>()
+
 /**
- * Record on a setup failure which hosts are connected to the vault. A host the
- * operator approved stays enrolled after setup fails, so the error says so: the
- * thrown error keeps its identity, class and message text, gains one line per
- * host after that text, and carries the same outcomes as its `enrollment`
- * field. A thrown value that is not an `Error` becomes an `Error` with its
- * text as the message.
+ * Remember which hosts a failed setup left connected to the vault, against the
+ * thrown value. Only objects can carry a record; a thrown primitive is left as
+ * it is, and the printed lines are then the only report.
  */
-export function attachSetupEnrollment(
+export function recordSetupEnrollment(
   failure: unknown,
   enrollment: readonly SetupHostEnrollment[],
-): Error {
-  const error = failure instanceof Error ? failure : new Error(String(failure))
-  const lines = enrollment.map(
-    ({ host, outcome }) => `${HOST_LABELS[host]}: ${OUTCOME_TEXT[outcome]}`,
+): void {
+  if (
+    (typeof failure !== 'object' && typeof failure !== 'function') ||
+    !failure
   )
-  error.message = [error.message, ...lines].join('\n')
-  Object.defineProperty(error, 'enrollment', {
-    value: Object.freeze(
-      enrollment.map((entry) => Object.freeze({ ...entry })),
-    ),
-    enumerable: true,
-  })
-  return error
+    return
+  recordedEnrollment.set(
+    failure,
+    Object.freeze(enrollment.map((entry) => Object.freeze({ ...entry }))),
+  )
 }
 
 /**
- * The per-host vault enrollment outcomes a failed `runSetup` recorded, or
- * `undefined` when setup failed before any host's enrollment began (or the
- * value is not such an error).
+ * The per-host vault enrollment outcomes a failed `runSetup` recorded for the
+ * value it threw, or `undefined` when setup failed before any host's enrollment
+ * began, or the value is not one setup threw (or is not an object).
  */
 export function setupEnrollment(
   error: unknown,
 ): readonly SetupHostEnrollment[] | undefined {
-  if (!(error instanceof Error) || !Object.hasOwn(error, 'enrollment'))
+  if ((typeof error !== 'object' && typeof error !== 'function') || !error)
     return undefined
-  const value = (error as { enrollment?: unknown }).enrollment
-  return Array.isArray(value)
-    ? (value as readonly SetupHostEnrollment[])
-    : undefined
+  return recordedEnrollment.get(error)
 }

@@ -761,12 +761,15 @@ describe('setup flow', () => {
     p.beforeSignIn = async (host) => {
       if (host === 'pi') throw refusal
     }
+    const term = terminal()
     const error = await rejection(
-      runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: terminal() }),
+      runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: term }),
     )
     expect(error).toBe(refusal)
-    expect(error.message).toBe(
-      'Pi consent declined.\nOpenCode: connected to the vault\nPi: not connected',
+    // The thrown error is untouched; the outcome is printed and recorded.
+    expect(error.message).toBe('Pi consent declined.')
+    expect(term.lines.join('')).toContain(
+      'OpenCode: connected to the vault\nPi: not connected',
     )
     expect(setupEnrollment(error)).toEqual([
       { host: 'opencode', outcome: 'enrolled' },
@@ -831,13 +834,13 @@ describe('setup flow', () => {
         }
       }
       io.wait = async () => {}
+      const term = terminal()
       const error = await rejection(
-        runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: terminal() }),
+        runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: term }),
       )
       expect(error).toBeInstanceOf(ProcessFenceViolationError)
-      expect(error.message).toBe(
-        `${new ProcessFenceViolationError([host]).message}\n${line}`,
-      )
+      expect(error.message).toBe(new ProcessFenceViolationError([host]).message)
+      expect(term.lines.join('')).toContain(line)
       expect(setupEnrollment(error)).toEqual([{ host: 'opencode', outcome }])
     })
   }
@@ -863,13 +866,95 @@ describe('setup flow', () => {
     p.beforeSignIn = async () => {
       throw refusal
     }
+    const term = terminal()
     const error = await rejection(
-      runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: terminal() }),
+      runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: term }),
     )
     expect(error).toBe(refusal)
     expect(error.message).toBe('Consent declined.')
     expect(setupEnrollment(error)).toBeUndefined()
-    expect(Object.hasOwn(error, 'enrollment')).toBe(false)
+    expect(term.lines.join('')).not.toContain('connected')
     expect(proposals).toBe(0)
   })
+
+  const hostileThrows: ReadonlyArray<
+    readonly [string, (touches: string[]) => unknown]
+  > = [
+    [
+      'a proxy that records every touch',
+      (touches) =>
+        new Proxy(
+          {},
+          {
+            get(_, key) {
+              touches.push(`get ${String(key)}`)
+              return undefined
+            },
+            getOwnPropertyDescriptor(_, key) {
+              touches.push(`descriptor ${String(key)}`)
+              return undefined
+            },
+            getPrototypeOf() {
+              touches.push('prototype')
+              return null
+            },
+            set(_, key) {
+              touches.push(`set ${String(key)}`)
+              return false
+            },
+            defineProperty(_, key) {
+              touches.push(`define ${String(key)}`)
+              return false
+            },
+          },
+        ),
+    ],
+    [
+      'an error whose message is a getter without a setter',
+      (touches) => {
+        const error = new Error('placeholder')
+        Object.defineProperty(error, 'message', {
+          get() {
+            touches.push('get message')
+            return 'Getter failure.'
+          },
+        })
+        return error
+      },
+    ],
+    ['a thrown string', () => 'plain refusal'],
+    ['a thrown null', () => null],
+  ]
+  for (const [name, make] of hostileThrows) {
+    test(`a failure after enrollment rethrows ${name} untouched`, async () => {
+      const root = await profile()
+      const p = plugin(root)
+      const io = fakeIO()
+      io.env = { PATH: '/bin', OPENCODE_CONFIG_DIR: join(root, 'config') }
+      io.files.set('/bin/opencode', '')
+      io.files.set('/bin/pi', '')
+      io.files.set('/bin/ck', '')
+      io.files.set(p.vault.connectionFile, '{}')
+      io.connect = async () => approvingVault()
+      io.wait = async () => {}
+      const touches: string[] = []
+      const thrown = make(touches)
+      p.beforeSignIn = async (host) => {
+        if (host === 'pi') throw thrown
+      }
+      const term = terminal()
+      let caught: unknown = 'not thrown'
+      try {
+        await runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: term })
+      } catch (error) {
+        caught = error
+      }
+      // The same value comes back, and setup never inspected it.
+      expect(caught === thrown).toBe(true)
+      expect(touches).toEqual([])
+      expect(term.lines.join('')).toContain(
+        'OpenCode: connected to the vault\nPi: not connected',
+      )
+    })
+  }
 })

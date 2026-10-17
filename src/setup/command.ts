@@ -8,7 +8,7 @@ import {
   enrollmentAuthority,
   hostEnrollmentPaths,
 } from '../claustrum/enrollment.js'
-import { attachSetupEnrollment } from './command-error.js'
+import { recordSetupEnrollment, setupEnrollmentLine } from './command-error.js'
 import { defaultCommandRunner } from './command-runner.js'
 import { detectHosts } from './detect.js'
 import { connectSetupHost, HostNotEnrolledError } from './enroll.js'
@@ -334,12 +334,19 @@ export async function runSetup(
         await plugin.migrate(host, context)
       }
     } catch (error) {
-      // Before any enrollment began nothing is connected: the error is unchanged.
+      // Before any enrollment began nothing is connected: nothing to report.
       if (enrollment.size === 0) throw error
-      throw attachSetupEnrollment(
-        error,
-        await enrollmentReport(plugin, hosts, enrollment),
-      )
+      // A host the operator approved stays enrolled after a later step fails.
+      // Print which hosts are connected and record it for `setupEnrollment`,
+      // then rethrow the original value untouched. Reporting must never
+      // replace the failure, so its own errors are ignored.
+      try {
+        const report = await enrollmentReport(plugin, hosts, enrollment)
+        recordSetupEnrollment(error, report)
+        for (const entry of report)
+          printLine(terminal, setupEnrollmentLine(entry))
+      } catch {}
+      throw error
     }
   }
   printLine(

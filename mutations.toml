@@ -6063,6 +6063,19 @@ expect_red = ['^setup\sflow\sa\sfailure\sbefore\sany\senrollment\sstep\sleaves\s
 expect_message = 'OpenCode: not connected'
 
 [[control]]
+id = 'setup-enrollment-never-inspects-the-thrown-value'
+guards = 'reporting the vault outcome after a setup failure never reads, rewrites or stringifies the thrown value'
+file = 'src/setup/command.ts'
+old = '        recordSetupEnrollment(error, report)'
+new = '        recordSetupEnrollment(error, report); void String(error) /* NON-VACUITY BREAK: stringify the thrown value. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sa\sfailure\safter\senrollment\srethrows\sa\sproxy\sthat\srecords\severy\stouch\suntouched$']
+
+[[control]]
 id = 'quota-reset-span-two-units-never-later'
 guards = 'a reset span shows its two largest whole units, floored, so it is never shown later than the real reset'
 file = 'src/quota/format.ts'

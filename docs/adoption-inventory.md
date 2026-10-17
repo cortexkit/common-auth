@@ -203,17 +203,20 @@ Common-auth writes no diagnostic file, so a plugin chooses whether and where to
 retain the error details.
 
 Since 0.19.0, when a vault-mode setup fails after enrollment began for any
-host, the thrown error says which hosts are connected to the vault, because an
-approved host stays enrolled when a later step fails. The error is the same
-object of the same class as before (a `SetupCommandError`, a
-`ProcessFenceViolationError`, a plugin callback's own error and so on; a thrown
-non-`Error` value becomes an `Error` with its text as the message); its message
-keeps its text byte for byte and gains one line per selected host, in setup
-order: `OpenCode: connected to the vault`, `Pi: not connected` or
-`Pi: unknown, check with ck auth status`. The same outcomes are on its
-`enrollment` field as `{ host, outcome }` entries (`SetupHostEnrollment`, with
-`outcome` `'enrolled' | 'not-enrolled' | 'unknown'`); `setupEnrollment(error)`
-reads them from any thrown value and returns `undefined` when there are none.
+host, setup says which hosts are connected to the vault, because an approved
+host stays enrolled when a later step fails. It prints one line per selected
+host to the setup terminal, in setup order: `OpenCode: connected to the vault`,
+`Pi: not connected` or `Pi: unknown, check with ck auth status`. It then
+rethrows the original thrown value untouched: the same value, never read,
+rewritten, wrapped or stringified, so a getter, a proxy, a thrown string or an
+error classified by its exact message behaves exactly as without setup in
+between. When the thrown value is an object, `setupEnrollment(error)` returns
+the same outcomes as `{ host, outcome }` entries (`SetupHostEnrollment`, with
+`outcome` `'enrolled' | 'not-enrolled' | 'unknown'`), kept beside the value
+rather than on it; for a thrown primitive, or when there are none, it returns
+`undefined`, and the printed lines are the only report. A failure while
+working out or printing the report is ignored, so it never replaces the
+original failure.
 The outcomes are what setup recorded while it ran: `enrolled` once approval
 landed and the token was written, `not-enrolled` for a host setup never asked
 or whose enrollment the vault refused, could not be reached for, or never
@@ -224,7 +227,7 @@ connected, and an unreadable result stays `unknown`. A host is never re-probed
 otherwise, so a host setup did not reach reads `not connected` even if an
 earlier run enrolled it. A failure before any enrollment began, a local-mode
 failure, a cancelled vault question and a successful setup are unchanged: no
-lines and no `enrollment` field.
+lines and no record.
 
 `runSetup` returns `{ hosts, dryRun, mode, detection }` and throws on refusal;
 the bin owns exit codes. Optional `SetupIO` provides the existing menu terminal,
