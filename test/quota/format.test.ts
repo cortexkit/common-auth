@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import type { ProjectedLimit, ProjectedQuota } from '../../src/quota/index.js'
 import {
   formatQuota,
+  isQuotaStale,
   NO_LIMITS_REPORTED,
   NO_QUOTA_READING,
   projectQuota,
@@ -323,9 +325,380 @@ describe('shared quota wording', () => {
     expect(quotaWindowParts(overThreshold, { now }).age).toBe('checked 15m ago')
   })
 
+  test('the full and compact forms keep their exact wording across a range of inputs', () => {
+    // Pins every existing form byte for byte, so adding another form cannot
+    // change what the dialogs and sidebars already show.
+    const budgetWithoutPercent = {
+      kind: 'reading' as const,
+      checkedAt: now,
+      reached: false,
+      limit: 2500,
+      used: 1000,
+      remaining: 1500,
+    }
+    const inputs = [
+      { name: 'no projection', quota: undefined },
+      { name: 'empty map', quota: projectQuota(quotaMap([])) },
+      {
+        name: 'only an absence record',
+        quota: projectQuota(quotaMap([absent('primary', now)])),
+      },
+      { name: 'openai row with budget', quota: projectQuota(openai) },
+      {
+        name: 'stale, out-of-range and fractional figures',
+        quota: projectQuota(
+          quotaMap([
+            reading('primary', 7.6, {
+              windowMinutes: 300,
+              checkedAt: now - 3 * HOUR,
+              resetsAt: at(-HOUR),
+            }),
+            reading('secondary', 130, {
+              windowMinutes: 10_080,
+              resetsAt: at(26 * HOUR),
+            }),
+            reading('tertiary', -20, { windowMinutes: 90 }),
+          ]),
+        ),
+      },
+      {
+        name: 'spent budget beside a scoped window',
+        quota: projectQuota(
+          quotaMap(
+            [
+              reading('five_hour', 20, { windowMinutes: 300 }),
+              reading('seven_day_opus', 60, {
+                scope: 'opus',
+                windowMinutes: 10_080,
+                resetsAt: at(4 * 24 * HOUR),
+              }),
+            ],
+            spentBudget(at(2 * 24 * HOUR)),
+          ),
+          'opus',
+        ),
+      },
+      {
+        name: 'budget without a percentage',
+        quota: projectQuota(quotaMap([], budgetWithoutPercent)),
+      },
+    ]
+    const rendered = inputs.map(({ name, quota }) => ({
+      name,
+      compact: formatQuota(quota, { now, form: 'compact' }),
+      full: formatQuota(quota, { now, form: 'full' }),
+    }))
+    expect(rendered).toEqual([
+      {
+        name: 'no projection',
+        compact: NO_QUOTA_READING,
+        full: NO_QUOTA_READING,
+      },
+      { name: 'empty map', compact: NO_QUOTA_READING, full: NO_QUOTA_READING },
+      {
+        name: 'only an absence record',
+        compact: NO_LIMITS_REPORTED,
+        full: NO_LIMITS_REPORTED,
+      },
+      {
+        name: 'openai row with budget',
+        compact: '5h 58% left · 7d 90% left · credits 75% left',
+        full: '5h 58% left, resets 2h · 7d 90% left, resets 3d · credits 75% left',
+      },
+      {
+        name: 'stale, out-of-range and fractional figures',
+        compact: '90m 100% left · 5h 92% left · 7d 0% left · checked 3h ago',
+        full: '90m 100% left · 5h 92% left · 7d 0% left, resets 1d2h · checked 3h ago',
+      },
+      {
+        name: 'spent budget beside a scoped window',
+        compact: '5h 80% left · seven_day_opus 40% left · credits spent',
+        full: '5h 80% left · seven_day_opus 40% left, resets 4d · credits spent, resets 2d',
+      },
+      {
+        name: 'budget without a percentage',
+        compact: 'credits available',
+        full: 'credits available',
+      },
+    ])
+  })
+
   test('a window stored without a length falls back to its label', () => {
     // A snapshot written before lengths were recorded has none to show.
     const map = quotaMap([reading('primary', 42)])
     expect(formatQuota(projectQuota(map), { now })).toBe('primary 58% left')
+  })
+})
+
+// A projected limit built by hand, so one row can carry windows of several
+// model scopes at once (a projection for one scope keeps only that scope).
+function limit(
+  scope: string,
+  label: string,
+  remainingPercent: number,
+  windowMinutes?: number,
+  extra: Partial<ProjectedLimit> = {},
+): ProjectedLimit {
+  return {
+    scope,
+    label,
+    kind: 'reading',
+    checkedAt: now,
+    usedPercent: 100 - remainingPercent,
+    remainingPercent,
+    ...(windowMinutes === undefined ? {} : { windowMinutes }),
+    ...extra,
+  }
+}
+
+function row(
+  limits: ProjectedLimit[],
+  budget?: ProjectedQuota['budget'],
+): ProjectedQuota {
+  return {
+    scope: 'all',
+    limits,
+    ...(budget === undefined ? {} : { budget }),
+  }
+}
+
+const narrow = (quota: ProjectedQuota | undefined) =>
+  formatQuota(quota, { now, form: 'narrow' })
+
+const fiveHour = (remaining: number) =>
+  limit('all', 'five_hour', remaining, 300)
+const sevenDay = (remaining: number) =>
+  limit('all', 'seven_day', remaining, 10_080)
+
+describe('narrow quota wording', () => {
+  test('each window reads its name and percent, with left once at the end', () => {
+    expect(narrow(row([sevenDay(66), fiveHour(92)]))).toBe(
+      '5h 92% · 7d 66% left',
+    )
+    expect(narrow(row([sevenDay(80)]))).toBe('7d 80% left')
+    expect(narrow(projectQuota(openai))).toBe('5h 58% · 7d 90% · cr 75% left')
+  })
+
+  test('a model-scoped window follows the account-wide ones under its abbreviated model name', () => {
+    expect(
+      narrow(
+        row([
+          limit('fable', 'seven_day_fable', 98, 10_080),
+          sevenDay(66),
+          fiveHour(92),
+        ]),
+      ),
+    ).toBe('5h 92% · 7d 66% · Fa 98% left')
+    // A scoped window shorter than the account-wide ones still reads after them.
+    expect(
+      narrow(row([sevenDay(66), limit('mythos', 'mythos_hour', 40, 60)])),
+    ).toBe('7d 66% · My 40% left')
+    // A namespaced scope is named by the model after its namespace.
+    expect(
+      narrow(row([limit('model:claude-opus-4', 'opus_week', 50, 10_080)])),
+    ).toBe('Cl 50% left')
+  })
+
+  test('scoped names that would collide are each extended one letter at a time until they differ', () => {
+    const fabric = (remaining: number) =>
+      limit('fabric', 'fabric_week', remaining, 10_080)
+    const fable = (remaining: number) =>
+      limit('fable', 'fable_week', remaining, 10_080)
+    expect(narrow(row([fiveHour(90), fable(20), fabric(70)]))).toBe(
+      '5h 90% · Fabl 20% left',
+    )
+    expect(narrow(row([fiveHour(90), fable(70), fabric(20)]))).toBe(
+      '5h 90% · Fabr 20% left',
+    )
+    // A name that runs out of letters stays whole; the longer one extends.
+    expect(narrow(row([limit('fa', 'fa_week', 30, 10_080), fable(60)]))).toBe(
+      'Fa 30% left',
+    )
+    expect(narrow(row([limit('fa', 'fa_week', 60, 10_080), fable(30)]))).toBe(
+      'Fab 30% left',
+    )
+    // Windows of the same model share its name; that is not a collision.
+    expect(
+      narrow(
+        row([
+          limit('fable', 'fable_day', 50, 1440),
+          fable(40),
+          limit('mythos', 'mythos_week', 90, 10_080),
+        ]),
+      ),
+    ).toBe('Fa 40% left')
+  })
+
+  test('only the tightest model-scoped window shows, the first in display order on a tie', () => {
+    const scoped = [
+      limit('fable', 'fable_week', 55, 10_080),
+      limit('mythos', 'mythos_week', 30, 10_080),
+      limit('opus', 'opus_day', 80, 1440),
+    ]
+    expect(narrow(row([fiveHour(92), sevenDay(66), ...scoped]))).toBe(
+      '5h 92% · 7d 66% · My 30% left',
+    )
+    // Equal remaining: the shorter window reads first in display order.
+    expect(
+      narrow(
+        row([
+          limit('mythos', 'mythos_week', 30, 10_080),
+          limit('opus', 'opus_day', 30, 1440),
+        ]),
+      ),
+    ).toBe('Op 30% left')
+    // Equal remaining and length: the scopes' order decides.
+    expect(
+      narrow(
+        row([
+          limit('mythos', 'mythos_week', 30, 10_080),
+          limit('fable', 'fable_week', 30, 10_080),
+        ]),
+      ),
+    ).toBe('Fa 30% left')
+    // Tightness compares the unrounded figure: 30.4 is tighter than 30.6
+    // even though both round to 30.
+    expect(
+      narrow(
+        row([
+          limit('fable', 'fable_week', 30.6, 10_080),
+          limit('mythos', 'mythos_week', 30.4, 10_080),
+        ]),
+      ),
+    ).toBe('My 30% left')
+  })
+
+  test('a credit budget and scoped windows compete for one slot after the account-wide windows', () => {
+    const fable = (remaining: number) =>
+      limit('fable', 'fable_week', remaining, 10_080)
+    const budget = (remainingPercent: number, reached = false) => ({
+      checkedAt: now,
+      reached,
+      remainingPercent,
+    })
+    // Budget tighter than the scoped window: only the budget shows.
+    expect(
+      narrow(row([fiveHour(38), sevenDay(59), fable(80)], budget(22))),
+    ).toBe('5h 38% · 7d 59% · cr 22% left')
+    // Scoped window tighter than the budget: only the scoped window shows.
+    expect(
+      narrow(row([fiveHour(38), sevenDay(59), fable(22)], budget(75))),
+    ).toBe('5h 38% · 7d 59% · Fa 22% left')
+    // A tie goes to the scoped window, compared before rounding.
+    expect(narrow(row([fiveHour(38), fable(40)], budget(40)))).toBe(
+      '5h 38% · Fa 40% left',
+    )
+    expect(narrow(row([fiveHour(38), fable(40.4)], budget(40)))).toBe(
+      '5h 38% · cr 40% left',
+    )
+    // A spent budget counts as 0% left, whatever percentage it carries.
+    expect(narrow(row([fable(3)], budget(10, true)))).toBe('cr 0% left')
+    // A budget without a percentage never takes the slot.
+    expect(
+      narrow(
+        row([fiveHour(38), fable(90)], { checkedAt: now, reached: false }),
+      ),
+    ).toBe('5h 38% · Fa 90% left')
+    // Among scoped windows, collision-extended names still apply.
+    expect(
+      narrow(
+        row(
+          [fiveHour(38), fable(50), limit('fabric', 'fabric_week', 20, 10_080)],
+          budget(30),
+        ),
+      ),
+    ).toBe('5h 38% · Fabr 20% left')
+  })
+
+  test('the percentage is the compact figure: remaining, rounded and clamped', () => {
+    const quota = row([
+      limit('all', 'primary', 92.4, 300),
+      limit('all', 'secondary', -30, 10_080),
+      limit('all', 'tertiary', 100.5, 90),
+    ])
+    expect(formatQuota(quota, { now, form: 'compact' })).toBe(
+      '90m 100% left · 5h 92% left · 7d 0% left',
+    )
+    expect(narrow(quota)).toBe('90m 100% · 5h 92% · 7d 0% left')
+  })
+
+  test('a credit budget reads cr with its percentage, cr 0% when spent, and is left out without one', () => {
+    const budget = (
+      fields: Partial<NonNullable<ProjectedQuota['budget']>>,
+    ) => ({
+      checkedAt: now,
+      reached: false,
+      ...fields,
+    })
+    // With no scoped window, the budget alone takes the slot.
+    expect(
+      narrow(row([fiveHour(92)], budget({ remainingPercent: 33.5 }))),
+    ).toBe('5h 92% · cr 34% left')
+    expect(
+      narrow(
+        row([fiveHour(92)], budget({ reached: true, remainingPercent: 4 })),
+      ),
+    ).toBe('5h 92% · cr 0% left')
+    expect(narrow(row([fiveHour(92)], budget({ reached: true })))).toBe(
+      '5h 92% · cr 0% left',
+    )
+    expect(narrow(row([fiveHour(92)], budget({})))).toBe('5h 92% left')
+    // With nothing else to show, the budget keeps compact's wording rather
+    // than leaving the line empty.
+    expect(narrow(row([], budget({})))).toBe('credits available')
+  })
+
+  test('a stale reading adds no age; isQuotaStale reports it so the line can be dimmed', () => {
+    const checked = (checkedAt: number) =>
+      row([limit('all', 'primary', 58, 300, { checkedAt })])
+    const stale = checked(now - 3 * HOUR)
+    const fresh = checked(now - QUOTA_STALE_AFTER_MS)
+    expect(formatQuota(stale, { now, form: 'compact' })).toBe(
+      '5h 58% left · checked 3h ago',
+    )
+    expect(narrow(stale)).toBe('5h 58% left')
+    expect(isQuotaStale(stale, { now })).toBe(true)
+    expect(isQuotaStale(fresh, { now })).toBe(false)
+    expect(isQuotaStale(checked(now - QUOTA_STALE_AFTER_MS - 1), { now })).toBe(
+      true,
+    )
+    expect(isQuotaStale(stale, { now, staleAfterMs: 4 * HOUR })).toBe(false)
+    expect(isQuotaStale(undefined, { now })).toBe(false)
+  })
+
+  test('a window that reset since the reading keeps its figure, as compact does', () => {
+    const quota = row([
+      limit('all', 'primary', 10, 300, {
+        checkedAt: now - 10 * MINUTE,
+        resetsAt: at(-MINUTE),
+      }),
+    ])
+    expect(quotaWindowParts(quota, { now }).windows[0]).toMatchObject({
+      resetSinceReading: true,
+    })
+    expect(formatQuota(quota, { now, form: 'compact' })).toBe('5h 10% left')
+    expect(narrow(quota)).toBe('5h 10% left')
+  })
+
+  test('with nothing reported narrow says what compact says', () => {
+    expect(narrow(undefined)).toBe(NO_QUOTA_READING)
+    expect(narrow(projectQuota(quotaMap([])))).toBe(NO_QUOTA_READING)
+    expect(narrow(projectQuota(quotaMap([absent('primary', now)])))).toBe(
+      NO_LIMITS_REPORTED,
+    )
+    expect(quotaTextParts(undefined, { now, form: 'narrow' })).toEqual([])
+  })
+
+  test('quotaTextParts gives the narrow pieces that join into the narrow line', () => {
+    const quota = row([sevenDay(66), fiveHour(92)], {
+      checkedAt: now - HOUR,
+      reached: false,
+      remainingPercent: 75,
+    })
+    expect(quotaTextParts(quota, { now, form: 'narrow' })).toEqual([
+      '5h 92%',
+      '7d 66%',
+      'cr 75% left',
+    ])
   })
 })

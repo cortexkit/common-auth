@@ -8,6 +8,7 @@ export type {
 } from './format.js'
 export {
   formatQuota,
+  isQuotaStale,
   NO_LIMITS_REPORTED,
   NO_QUOTA_READING,
   QUOTA_STALE_AFTER_MS,

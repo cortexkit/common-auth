@@ -6102,3 +6102,32 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command-runner-
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^a\scommand\sthat\snever\sstarts\ssettles\son\sits\sspawn\serror\swithout\sa\sclose\sevent$']
 expect_message = 'hung'
+
+# --- narrow quota form (formatQuota form 'narrow': one short line per account) ---
+[[control]]
+id = 'quota-narrow-left-once'
+guards = 'The narrow quota line says left once, after its last piece, not after every window'
+file = 'src/quota/format.ts'
+old = 'index === pieces.length - 1 ? `${piece} left` : piece,'
+new = '`${piece} left`, // NON-VACUITY BREAK: say left after every piece'
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/format.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^narrow\squota\swording\seach\swindow\sreads\sits\sname\sand\spercent,\swith\sleft\sonce\sat\sthe\send$']
+expect_message = 'left · 7d 66% left'
+
+[[control]]
+id = 'quota-narrow-stale-flag'
+guards = 'isQuotaStale reports a reading the compact form would mark with its age, so a narrow line without the age can still be dimmed'
+file = 'src/quota/format.ts'
+old = 'return scopedWindowParts(quota, options).age !== undefined'
+new = "return scopedWindowParts(quota, options).age === 'NON-VACUITY BREAK: never stale'"
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/format.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^narrow\squota\swording\sa\sstale\sreading\sadds\sno\sage;\sisQuotaStale\sreports\sit\sso\sthe\sline\scan\sbe\sdimmed$']
+expect_message = 'Received: false'
