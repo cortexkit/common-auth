@@ -36,6 +36,8 @@ export {
   type SkippedVaultRecord,
   type VaultCredential,
   type VaultCredentialType,
+  type VaultGrantReach,
+  type VaultGrantTuple,
   type VaultInventory,
 } from './custody.js'
 export {

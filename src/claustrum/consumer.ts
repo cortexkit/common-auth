@@ -10,6 +10,7 @@ import {
   ClaustrumScopedCustody,
   decideScopedRetryAfter401,
   type IdentityParser,
+  type VaultGrantReach,
 } from './custody.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
@@ -98,6 +99,11 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #connecting?: Promise<ClaustrumScopedCustody>
   #refreshing?: Promise<VaultRosterFile | undefined>
   #roster?: VaultRosterFile
+  /**
+   * The grants named by this instance's latest discovery, with the view that
+   * discovery committed. Memory only: the roster file never carries it.
+   */
+  #grantReach?: { readonly view: string; readonly reach: VaultGrantReach }
   #timer?: ReturnType<typeof setTimeout>
   #started = false
   #insula?: ReturnType<typeof acquireInsulaQuotaSource>
@@ -188,6 +194,22 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     return this.#roster
   }
 
+  /**
+   * What this consumer is granted, from its latest discovery, without any I/O.
+   * It explains an empty roster: `grants === 0` means no grant at all, while
+   * `grants > 0` means a grant that reaches no credential (`tuples` names its
+   * selector). Undefined means unknown, never zero: the vault or client is too
+   * old to send it, nothing was discovered yet, or the roster now in memory is
+   * a different view than the one this instance discovered (a peer process
+   * held the discovery lease and its newer roster was served instead).
+   */
+  grantReach(): VaultGrantReach | undefined {
+    const latest = this.#grantReach
+    return latest && this.#roster?.view === latest.view
+      ? latest.reach
+      : undefined
+  }
+
   /** Rows for `/routing`, from the last committed roster. */
   routingRows(): RoutingRow[] {
     return vaultRoutingRows(this.#roster)
@@ -199,6 +221,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     this.#refreshing = (async () => {
       if (!(await this.#active())) {
         this.#roster = undefined
+        this.#grantReach = undefined
         this.#custody?.close()
         this.#custody = undefined
         this.#insula?.release()
@@ -206,9 +229,17 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
         return undefined
       }
       const custody = await this.#getCustody()
+      // Capture the inventory so its grant fields can be kept beside the roster;
+      // the roster file itself never stores them.
+      let discovered: Awaited<ReturnType<typeof custody.discover>> | undefined
       const roster = await refreshVaultRoster({
         path: this.#options.rosterPath,
-        custody,
+        custody: {
+          discover: async (signal) => {
+            discovered = await custody.discover(signal)
+            return discovered
+          },
+        },
         isActive: () => this.#active(),
         signal: this.#shutdown.signal,
         projection: () => ({
@@ -221,6 +252,13 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#assertOpen()
       const changed = roster?.view !== this.#roster?.view
       this.#roster = roster
+      // Each discovery replaces the previous value, including with unknown. A
+      // refresh that served a peer's roster discovered nothing and leaves it;
+      // grantReach() hides it once the roster's view no longer matches.
+      if (discovered && roster?.view !== undefined)
+        this.#grantReach = discovered.grantReach
+          ? { view: roster.view, reach: discovered.grantReach }
+          : undefined
       // Notify on view changes only: subscribers rewrite shared state on each
       // notification, and the poll runs every few seconds.
       if (roster && changed) this.#options.onRoster?.(roster)
@@ -531,5 +569,6 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     this.#insula?.release()
     this.#insula = undefined
     this.#roster = undefined
+    this.#grantReach = undefined
   }
 }

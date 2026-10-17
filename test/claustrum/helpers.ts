@@ -1,5 +1,6 @@
-import { rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
 import type { ClaustrumFamily } from '../../src/claustrum/index.ts'
 import { makeTempDir } from '../fixtures/scratch.ts'
@@ -83,3 +84,41 @@ export async function writeToken(
   })
   return path
 }
+
+/**
+ * The grant fields claustrum-client 0.10.0 added to `listScoped`'s reply, as
+ * they are when the vault is too old to send them (unknown). Spread into a
+ * fake reply so it type-checks against both 0.10.0 and 0.6.2, the oldest
+ * client the peer dependency accepts, where the fields do not exist.
+ */
+export const unknownGrants = {
+  grants: undefined,
+  grantTuples: undefined,
+} as const
+
+/**
+ * Whether the installed claustrum-client decodes `listScoped`'s grant fields
+ * (0.10.0 and later). `check:claustrum-floor` also runs these tests against
+ * 0.6.2, the oldest client the peer dependency accepts, which ignores the
+ * fields, so a vault that sends them still reads as unknown there.
+ */
+export const clientDecodesGrants = await (async () => {
+  let directory = dirname(
+    fileURLToPath(import.meta.resolve('@cortexkit/claustrum-client')),
+  )
+  for (;;) {
+    const manifest = await readFile(join(directory, 'package.json'), 'utf8')
+      .then((text) => JSON.parse(text) as { name?: string; version?: string })
+      .catch(() => undefined)
+    if (manifest?.name === '@cortexkit/claustrum-client') {
+      const [major = 0, minor = 0] = (manifest.version ?? '')
+        .split('.')
+        .map(Number)
+      return major > 0 || minor >= 10
+    }
+    const parent = dirname(directory)
+    if (parent === directory)
+      throw new Error('cannot find the claustrum-client package manifest')
+    directory = parent
+  }
+})()

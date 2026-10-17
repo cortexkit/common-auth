@@ -23,7 +23,7 @@ import {
 } from '../../src/claustrum/index.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 
-import { family } from './helpers.ts'
+import { family, unknownGrants } from './helpers.ts'
 
 const hooks = lifetimeHooks()
 const { afterEach, test } = hooks
@@ -196,7 +196,11 @@ posixTest(
       tokenPath,
       family,
       client: {
-        listScoped: async () => ({ rows: [], view: 'view-1' }),
+        listScoped: async () => ({
+          rows: [],
+          view: 'view-1',
+          ...unknownGrants,
+        }),
         getScoped: async () => ({
           credentialId: 'oauth:test:work',
           accountId: 'account-1',

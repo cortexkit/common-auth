@@ -16,6 +16,7 @@ import {
   family,
   inventoryRow,
   tempDir,
+  unknownGrants,
   writeToken,
 } from './helpers.ts'
 
@@ -47,7 +48,7 @@ async function fixture() {
   const client: ClaustrumScopedClient = {
     listScoped: async () => {
       lists++
-      return { rows, view: 'v' }
+      return { rows, view: 'v', ...unknownGrants }
     },
     getScoped: async (input) => {
       gets.push(input)
@@ -352,7 +353,7 @@ test('onRoster fires only when the discovery view changes', async () => {
     ...f.options,
     connect: async () => ({
       ...f.client,
-      listScoped: async () => ({ rows: f.rows, view }),
+      listScoped: async () => ({ rows: f.rows, view, ...unknownGrants }),
     }),
     onRoster: (roster) => {
       seen.push(roster.view ?? '')
@@ -384,7 +385,7 @@ test('two project runtimes sharing storage serve the persisted roster while a pe
         peerLists++
         entered.resolve()
         await release.promise
-        return { rows: f.rows, view: 'new-view' }
+        return { rows: f.rows, view: 'new-view', ...unknownGrants }
       },
     }),
   })

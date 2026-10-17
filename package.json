@@ -140,7 +140,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
-    "@cortexkit/claustrum-client": "0.9.0",
+    "@cortexkit/claustrum-client": "0.10.0",
     "@cortexkit/subc-client": "0.16.1",
     "@earendil-works/pi-coding-agent": "1.0.4",
     "@opencode/plugin": "2.0.21",
