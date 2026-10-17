@@ -54,7 +54,6 @@ it('contended events distinguish live owners from stale takeovers and successful
   const refused = deferred()
   const events: LockEvent[] = []
   const contender = acquirePoolLock(spec, POOL_LOCK_DEFAULTS, {
-    now: Date.now,
     onLockEvent: (event) => {
       events.push(event)
       if (event.type === 'contended') refused.resolve()
@@ -78,7 +77,6 @@ it('contended events distinguish live owners from stale takeovers and successful
     JSON.stringify({ ownerId: 'stale', expiresAt: 0 }),
   )
   const takeover = await acquirePoolLock(spec, POOL_LOCK_DEFAULTS, {
-    now: Date.now,
     onLockEvent: (event) => {
       events.push(event)
     },
@@ -95,7 +93,6 @@ it('throwing lock event observers cannot affect contention acquisition or releas
   })
   const refused = deferred()
   const contender = acquirePoolLock(spec, POOL_LOCK_DEFAULTS, {
-    now: Date.now,
     onLockEvent: (event) => {
       if (event.type === 'contended') refused.resolve()
       throw new Error('observer failure')
@@ -104,9 +101,7 @@ it('throwing lock event observers cannot affect contention acquisition or releas
   await blocked(hooks.lifetime, contender, refused.promise)
   await holder?.release()
   await (await observed(hooks.lifetime, contender)).release()
-  const next = await acquirePoolLock(spec, POOL_LOCK_DEFAULTS, {
-    now: Date.now,
-  })
+  const next = await acquirePoolLock(spec, POOL_LOCK_DEFAULTS, {})
   await next.release()
 })
 
@@ -120,7 +115,6 @@ it('lock event observer promises are not awaited', async () => {
   })
   const refused = deferred()
   const contender = acquirePoolLock(spec, POOL_LOCK_DEFAULTS, {
-    now: Date.now,
     onLockEvent: (event) => {
       if (event.type === 'contended') refused.resolve()
       return pending.promise

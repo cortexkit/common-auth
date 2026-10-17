@@ -41,7 +41,6 @@ export type LockEvent = {
 }
 
 export interface LockEnvironment {
-  now: () => number
   onLockEvent?: (event: LockEvent) => void
   onLockStep?: (
     lock: { name: string; path: string },
@@ -97,7 +96,6 @@ export async function acquirePoolLock(
       name: spec.name,
       path: spec.path,
       ttlMs: options.ttlMs,
-      now: env.now,
       renew: options.renew,
       onContended: () => emit('contended'),
       ...(env.onRenewalTimer

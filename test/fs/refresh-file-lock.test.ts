@@ -2,10 +2,8 @@ import { beforeEach, describe, expect } from 'bun:test'
 import { existsSync, rmSync } from 'node:fs'
 import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import {
-  acquireRefreshFileLock as acquireRawRefreshFileLock,
-  LockOwnershipError,
-} from '../../src/fs/index.js'
+import { LockOwnershipError } from '../../src/fs/index.js'
+import { acquireRefreshFileLockWithClock as acquireRawRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 import { phaseClock } from '../fixtures/phase-clock.js'

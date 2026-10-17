@@ -15,6 +15,7 @@ import {
   apiKey,
   blocked,
   deferred,
+  expireLease,
   oauth,
   rejectionOf,
   type Scenario,
@@ -30,14 +31,12 @@ beforeEach(async () => {
 })
 afterEach(() => s.cleanup())
 
-/** A store whose leases all expire when the named write step is reached. */
+/** Expires the held config lease when the named write step is reached. */
 function expiringAt(step: WriteStep) {
-  let clock = Date.now()
   const store = s.open({
-    now: () => clock,
     lockOptions: { renew: false },
-    onStep: (reached) => {
-      if (reached === step) clock += 60_000
+    onStep: async (reached) => {
+      if (reached === step) await expireLease(s.configPath, 'save')
     },
   })
   return store
@@ -350,13 +349,12 @@ describe('failure values carry the commit phase', () => {
   it('a failure hook that throws leaves the partial-commit failure intact and every lock released', async () => {
     await s.open().add({ id: 'a', credential: oauth('r-a') })
     const warnings: string[] = []
-    let clock = Date.now()
     const store = s.open({
-      now: () => clock,
       lockOptions: { renew: false },
       logger: { warn: (message) => void warnings.push(message) },
-      onStep: (step) => {
-        if (step === 'before-config-write') clock += 60_000
+      onStep: async (step) => {
+        if (step === 'before-config-write')
+          await expireLease(s.configPath, 'save')
       },
     })
     const error = await rejectionOf(

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect } from 'bun:test'
 import { mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
+import { acquireRefreshFileLockWithClock as acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'

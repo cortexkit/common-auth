@@ -10,6 +10,7 @@ import {
 } from '../../src/fs/index.js'
 import {
   acquireRefreshFileLock,
+  acquireRefreshFileLockWithClock,
   isLostMarkerRaceError,
 } from '../../src/fs/refresh-file-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
@@ -105,7 +106,7 @@ test('classifies ENOENT EINVAL and ENOTDIR as lost marker races', () => {
 })
 
 test('acquisition writes private newline-terminated owner bytes', async () => {
-  const lock = await acquireRefreshFileLock({
+  const lock = await acquireRefreshFileLockWithClock({
     path: target,
     name,
     ttlMs: 10000,

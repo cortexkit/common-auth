@@ -176,6 +176,13 @@ export async function rejectionOf(promise: Promise<unknown>): Promise<any> {
   throw new Error('expected a rejection')
 }
 
+/** Expires a paused, non-renewing holder's lease without changing logical store time. */
+export async function expireLease(path: string, name: string): Promise<void> {
+  const leasePath = `${path}.${name}.lock`
+  const owner = JSON.parse(await readFile(leasePath, 'utf8'))
+  await writeFile(leasePath, `${JSON.stringify({ ...owner, expiresAt: 0 })}\n`)
+}
+
 /** Overwrites a lock file with a foreign owner, so the holder's lease is lost. */
 export async function stealLease(path: string, name: string): Promise<void> {
   await writeFile(

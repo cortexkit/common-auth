@@ -67,7 +67,7 @@ export interface RefreshFileLock {
   hasLost(): boolean
 }
 
-export async function acquireRefreshFileLock(options: {
+type RefreshFileLockOptions = {
   name: string
   ttlMs: number
   /**
@@ -76,7 +76,6 @@ export async function acquireRefreshFileLock(options: {
    * be one host's path.
    */
   path: string
-  now?: () => number
   renew?: boolean
   renewIntervalMs?: number
   /** Notifies a live-owner refusal without awaiting; observer failures are ignored. */
@@ -103,7 +102,19 @@ export async function acquireRefreshFileLock(options: {
       | 'renewal-finished'
       | 'release-owner-confirmed',
   ) => void | Promise<void>
-}): Promise<RefreshFileLock | null> {
+}
+
+/** Filesystem leases share wall time across all callers and processes. */
+export function acquireRefreshFileLock(
+  options: RefreshFileLockOptions,
+): Promise<RefreshFileLock | null> {
+  return acquireRefreshFileLockWithClock({ ...options, now: Date.now })
+}
+
+/** @internal Clock seam for lease tests; not exported by the package's fs entry point. */
+export async function acquireRefreshFileLockWithClock(
+  options: RefreshFileLockOptions & { now?: () => number },
+): Promise<RefreshFileLock | null> {
   const lockPath = lockPathFor(options.path, options.name)
   const legacyOwnerPath = join(lockPath, 'owner.json')
   const ownerId = randomUUID()

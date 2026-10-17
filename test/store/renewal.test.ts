@@ -4,17 +4,21 @@ import { acquireRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
 import type { PoolStore } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observedState } from '../fixtures/observed.js'
-import { deferred, oauth, type Scenario, scenario } from './helpers.js'
+import {
+  deferred,
+  expireLease,
+  oauth,
+  type Scenario,
+  scenario,
+} from './helpers.js'
 
 const hooks = lifetimeHooks()
 const { afterEach, it } = hooks
 
 let s: Scenario
-let clock: number
 let renewals: Map<string, number>
 beforeEach(async () => {
   s = hooks.lifetime.manage(await scenario())
-  clock = Date.now()
   renewals = new Map()
 })
 afterEach(() => s.cleanup())
@@ -30,7 +34,6 @@ async function expiresAt(lock: Lock): Promise<number> {
 
 function open(renew: boolean): PoolStore {
   return s.open({
-    now: () => clock,
     lockOptions: { ttlMs: 1_000, renewIntervalMs: 10, renew },
     onLockStep: (lock, step) => {
       if (step === 'renewal-finished')
@@ -49,22 +52,16 @@ async function renewedTwice(names: string[]) {
   )
 }
 
-/**
- * Advances the injected clock in steps shorter than the remaining lease,
- * observing renewals between steps, until the summed advance exceeds the TTL.
- */
-async function advancePastTtl(locks: Lock[]) {
-  for (let step = 0; step < 4; step++) {
-    clock += 400
-    await renewedTwice(locks.map((lock) => lock.name))
-  }
+/** Observe renewal past the original wall-time deadline, not the store's logical clock. */
+async function advancePastTtl(deadlines: number[], names: string[]) {
+  await observedState(hooks.lifetime, () => Date.now() > Math.max(...deadlines))
+  await renewedTwice(names)
 }
 
 async function contenderAcquires(lock: Lock): Promise<boolean> {
   const contender = await acquireRefreshFileLock({
     ...lock,
     ttlMs: 10_000,
-    now: () => clock,
   })
   await contender?.release()
   return contender !== null
@@ -91,16 +88,20 @@ describe('lock renewal', () => {
       await entered.promise
       const before = await Promise.all(locks.map(expiresAt))
       if (renew) {
-        await advancePastTtl(locks)
+        await advancePastTtl(
+          before,
+          locks.map((lock) => lock.name),
+        )
         const after = await Promise.all(locks.map(expiresAt))
         for (const [index, value] of after.entries())
           expect(value).toBeGreaterThan(before[index] as number)
         for (const lock of locks)
           expect(await contenderAcquires(lock)).toBe(false)
       } else {
-        clock += 1_600
-        for (const lock of locks)
+        for (const lock of locks) {
+          await expireLease(lock.path, lock.name)
           expect(await contenderAcquires(lock)).toBe(true)
+        }
       }
       release.resolve()
       await refresh
@@ -115,7 +116,6 @@ describe('lock renewal', () => {
       const release = deferred()
       hooks.lifetime.unpark(() => release.resolve())
       const store = s.open({
-        now: () => clock,
         lockOptions: { ttlMs: 1_000, renewIntervalMs: 10, renew },
         onLockStep: (lock, step) => {
           if (step === 'renewal-finished') {
@@ -136,19 +136,20 @@ describe('lock renewal', () => {
       await reached.promise
       const before = await Promise.all(locks.map(expiresAt))
       if (renew) {
-        for (let step = 0; step < 4; step++) {
-          clock += 400
-          await renewedTwice(locks.map((lock) => `${lock.name}@${lock.path}`))
-        }
+        await advancePastTtl(
+          before,
+          locks.map((lock) => `${lock.name}@${lock.path}`),
+        )
         const after = await Promise.all(locks.map(expiresAt))
         for (const [index, value] of after.entries())
           expect(value).toBeGreaterThan(before[index] as number)
         for (const lock of locks)
           expect(await contenderAcquires(lock)).toBe(false)
       } else {
-        clock += 1_600
-        for (const lock of locks)
+        for (const lock of locks) {
+          await expireLease(lock.path, lock.name)
           expect(await contenderAcquires(lock)).toBe(true)
+        }
       }
       release.resolve()
       await add

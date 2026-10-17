@@ -13,6 +13,7 @@ import {
   apiKey,
   blocked,
   deferred,
+  expireLease,
   oauth,
   rejectionOf,
   runChild,
@@ -242,14 +243,13 @@ describe('lock order, ownership, hooks and refusal', () => {
 
   it('an outer lease lost during a paused provider call fails the refresh without overwriting a successor rotation', async () => {
     await s.open().add({ id: 'a', credential: oauth('r-a') })
-    let clock = Date.now()
     const provider = pausedProvider(result('r-stale'))
-    const first = s.open({ now: () => clock })
+    const first = s.open({ lockOptions: { renew: false } })
     const refresh = first.refresh('a', provider.fn)
     await provider.entered.promise
-    // The paused holder's leases expire; renewal cannot extend an expired one.
-    clock += 60_000
-    const successor = s.open({ now: () => clock })
+    await expireLease(s.statePath, 'row-a')
+    await expireLease(s.statePath, 'provider-openai')
+    const successor = s.open()
     await successor.rotate('a', oauth('r-successor'))
     provider.release.resolve()
     const error = await rejectionOf(refresh)

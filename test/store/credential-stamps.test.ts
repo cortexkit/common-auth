@@ -579,7 +579,7 @@ describe('strict mode and writers that land while an operation waits', () => {
     const held = await acquirePoolLock(
       { name: 'row-acct-a', path: s.statePath },
       { ...POOL_LOCK_DEFAULTS, renew: false },
-      { now: Date.now },
+      {},
     )
     const rotation = strict().rotate('a', oauth('r-rotated'))
     try {
