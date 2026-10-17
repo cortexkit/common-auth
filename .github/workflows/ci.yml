@@ -13,7 +13,7 @@ permissions:
   contents: read
 env:
   # The reviewed cortexkit/commons revision the mutation runner is built from.
-  CKDEV_MUTATE_REV: 9d6b663dac487bb982c7bfd18a96eee2292164ad
+  CKDEV_MUTATE_REV: 85c8b577795d556fb27e54b548f06ea913d8b337
 jobs:
   check:
     runs-on: ubuntu-latest
