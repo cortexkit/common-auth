@@ -5205,7 +5205,9 @@ old = '''async function update() {
     if (released) return
     let observed: Stats
     try {
-      observed = await stat(path)
+      // Durable writes can occupy every async filesystem worker in fsync.
+      // Renew on the calling thread so their queue cannot consume the lease.
+      observed = statSync(path)
     } catch (error) {
       retry(error)
       return
@@ -5217,7 +5219,9 @@ new = '''async function update() {
     if (released) return
     let observed: Stats
     try {
-      observed = await stat(path)
+      // Durable writes can occupy every async filesystem worker in fsync.
+      // Renew on the calling thread so their queue cannot consume the lease.
+      observed = statSync(path)
     } catch (error) {
       retry(error)
       return
@@ -5229,7 +5233,7 @@ command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/races.test.ts -t 
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/pi-slot/races.test.ts", "{test}"]
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^pi\sslot\sraces\sexpired\srenewal\sleaves\smatching\sdirectory\suntouched$']
-expect_message = 'Expected: 1'
+expect_message = 'expect(after.mtimeMs).toBe(before.mtimeMs)'
 
 [[control]]
 id = 'pi-slot-expired-auth-rename'
@@ -6010,3 +6014,46 @@ command = ['bun', 'test', 'test/quota/format.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^shared\squota\swording\sa\sreset\sshows\sits\stwo\slargest\sunits\sand\sis\snever\sshown\slater\sthan\sit\sis$']
+
+[[control]]
+id = 'pi-slot-renewal-stat-pool'
+guards = 'renewal stat bypasses async workers held in durable fsync'
+file = 'src/pi-slot/lock.ts'
+old = '      observed = statSync(path)'
+new = '      observed = await stat(path) /* NON-VACUITY BREAK: queue behind fsync */'
+test_file = 'test/pi-slot/renewal.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/renewal.test.ts -t "$1"', 'sh', '{test}']
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/pi-slot/renewal.test.ts", "{test}"]
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\srenewal\scompletes\swhile\sdurable\sfsyncs\ssaturate\sthe\sasync\spool$']
+expect_message = '"queuedStat": 4'
+
+[[control]]
+id = 'pi-slot-renewal-utimes-pool'
+guards = 'renewal utimes bypasses async workers held in durable fsync'
+file = 'src/pi-slot/lock.ts'
+old = 'utimesSync(path, next, next)'
+new = 'await utimes(path, next, next) /* NON-VACUITY BREAK: queue behind fsync */'
+test_file = 'test/pi-slot/renewal.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/renewal.test.ts -t "$1"', 'sh', '{test}']
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/pi-slot/renewal.test.ts", "{test}"]
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\srenewal\scompletes\swhile\sdurable\sfsyncs\ssaturate\sthe\sasync\spool$']
+expect_message = '"queuedUtimes": 4'
+
+[[control]]
+id = 'pi-slot-renewal-confirm-expiry'
+guards = 'a stalled synchronous utimes cannot confirm an expired lease'
+file = 'src/pi-slot/lock.ts'
+old = '''// A metadata syscall can itself stall; never confirm an expired lease.
+    assertFresh()'''
+new = '/* NON-VACUITY BREAK: confirm renewal despite expiry during utimes */'
+test_file = 'test/pi-slot/renewal.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/pi-slot/renewal.test.ts -t "$1"', 'sh', '{test}']
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/pi-slot/renewal.test.ts", "{test}"]
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pi\sslot\srenewal\srefuses\sexpiry\sduring\ssynchronous\sutimes$']
+expect_message = '"compromised": 0'
