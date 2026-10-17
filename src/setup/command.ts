@@ -88,7 +88,8 @@ function validatePlugin(plugin: SetupPlugin) {
  * Turn what setup recorded into one outcome per selected host, in setup order.
  * A host setup never reached was never asked to enroll. Only a host whose
  * enrollment was in flight when setup failed is checked on disk, by reading its
- * token file once; if that read fails it stays `unknown`.
+ * enrollment files once with `enrollmentAuthority`; if that read fails it stays
+ * `unknown`.
  */
 async function enrollmentReport(
   plugin: SetupPlugin,
