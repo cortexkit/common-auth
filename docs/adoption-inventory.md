@@ -216,7 +216,9 @@ the same outcomes as `{ host, outcome }` entries (`SetupHostEnrollment`, with
 rather than on it; for a thrown primitive, or when there are none, it returns
 `undefined`, and the printed lines are the only report. A failure while
 working out or printing the report is ignored, so it never replaces the
-original failure.
+original failure. The record belongs to the copy of the module that ran
+`runSetup`, so a plugin that bundles common-auth must import `setupEnrollment`
+from the same bundle as `runSetup`.
 The outcomes are what setup recorded while it ran: `enrolled` once approval
 landed and the token was written, `not-enrolled` for a host setup never asked
 or whose enrollment the vault refused, could not be reached for, or never
