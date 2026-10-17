@@ -245,16 +245,19 @@ describe('setup registration', () => {
             process.execPath,
             [
               '-e',
-              `process.stderr.write('x'.repeat(1024 * 1024) + '\\nTAIL-MARKER'); process.exitCode = 1`,
+              // Many short lines, so dropping the partial first line of the
+              // tail still leaves close to the full bound to measure.
+              `process.stderr.write(('x'.repeat(63) + '\\n').repeat(16384) + 'TAIL-MARKER'); process.exitCode = 1`,
             ],
             options,
           ),
       },
     }).catch((error: unknown) => error)
     expectSetupCommandError(result)
-    expect(Buffer.byteLength(result.stderrTail, 'utf8')).toBeLessThanOrEqual(
-      4 * 1024,
-    )
+    const bytes = Buffer.byteLength(result.stderrTail, 'utf8')
+    expect(bytes).toBeLessThanOrEqual(4 * 1024)
+    // A tail far below the bound would mean the cap isn't what's being tested.
+    expect(bytes).toBeGreaterThan(4 * 1024 - 128)
     expect(result.stderrTail).toEndWith('TAIL-MARKER')
   })
 
