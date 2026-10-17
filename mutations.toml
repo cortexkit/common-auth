@@ -6088,3 +6088,17 @@ list_command = ["bun", "scripts/list-bun-tests.mjs", "test/pi-slot/renewal.test.
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^pi\sslot\srenewal\srefuses\sexpiry\sduring\ssynchronous\sutimes$']
 expect_message = '"compromised": 0'
+
+[[control]]
+id = 'setup-command-runner-settles-on-spawn-error'
+guards = 'A setup command that never starts settles on its spawn error without waiting for a close event'
+file = 'src/setup/command-runner.ts'
+old = 'if (child.pid === undefined) settle(null, null)'
+new = '/* NON-VACUITY BREAK */'
+test_file = 'test/setup/command-runner-spawn-error.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/command-runner-spawn-error.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command-runner-spawn-error.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^a\scommand\sthat\snever\sstarts\ssettles\son\sits\sspawn\serror\swithout\sa\sclose\sevent$']
+expect_message = 'hung'
