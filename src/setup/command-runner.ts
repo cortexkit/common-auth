@@ -109,10 +109,10 @@ export const defaultCommandRunner: CommandRunner = {
         }
       })
       child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
-      child.once('error', () => {
-        spawnError = true
-      })
-      child.once('close', (code, signal) => {
+      let settled = false
+      const settle = (code: number | null, signal: NodeJS.Signals | null) => {
+        if (settled) return
+        settled = true
         if (timer) clearTimeout(timer)
         resolve({
           exitCode: spawnError ? 1 : outputExceeded ? 1 : (code ?? 1),
@@ -124,7 +124,15 @@ export const defaultCommandRunner: CommandRunner = {
           timedOut,
           durationMs: performance.now() - started,
         })
+      }
+      child.once('error', () => {
+        spawnError = true
+        // A child that never started (ENOENT, EACCES) has no process for the
+        // timer to kill. Node documents no guarantee that 'close' follows that
+        // 'error', so settle here rather than wait for it.
+        if (child.pid === undefined) settle(null, null)
       })
+      child.once('close', (code, signal) => settle(code, signal))
     })
   },
 }
