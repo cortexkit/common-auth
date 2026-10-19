@@ -362,6 +362,7 @@ export class ClaustrumScopedCustody {
   #outageError: unknown = new ClaustrumUnreachableError()
   #probeTimer?: ReturnType<typeof setTimeout>
   #probing = false
+  #lastProbeAt = -Infinity
   #probeDelay = 2_000
   #closed = false
 
@@ -436,21 +437,30 @@ export class ClaustrumScopedCustody {
       return
     this.#probeTimer = this.#setTimeout(() => {
       this.#probeTimer = undefined
-      if (this.#closed || !this.#outage) return
-      this.#probing = true
-      // list_scoped works without watch support and never fetches bearer material.
-      // discover also applies the existing enrollment/refusal receipt-drop rules.
-      void this.discover()
-        .catch(() => {
-          if (this.#outage)
-            this.#probeDelay = Math.min(this.#probeDelay * 2, 30_000)
-        })
-        .finally(() => {
-          this.#probing = false
-          this.#scheduleProbe()
-        })
+      this.#probe(true)
     }, this.#probeDelay)
     this.#probeTimer.unref?.()
+  }
+
+  #probe(idle = false): void {
+    if (this.#closed || !this.#outage || this.#probing) return
+    if (this.#now() - this.#lastProbeAt < 1_000) {
+      this.#scheduleProbe()
+      return
+    }
+    this.#lastProbeAt = this.#now()
+    this.#probing = true
+    // Both triggers share list_scoped discovery, including its receipt-drop rules.
+    // Sends never await discovery or let idle backoff delay the next send probe.
+    void this.discover()
+      .catch(() => {
+        if (idle && this.#outage)
+          this.#probeDelay = Math.min(this.#probeDelay * 2, 30_000)
+      })
+      .finally(() => {
+        this.#probing = false
+        this.#scheduleProbe()
+      })
   }
 
   #check(signal?: AbortSignal): void {
@@ -677,7 +687,10 @@ export class ClaustrumScopedCustody {
       this.#kept.clear()
       throw error
     }
-    if (this.#outage) return this.#serveKept(credentialId, kept, token, routeId)
+    if (this.#outage && kept) {
+      this.#probe()
+      return this.#serveKept(credentialId, kept, token, routeId)
+    }
     try {
       const attempt = await this.#authorizeFresh(
         { credentialId, credentialType, accountIdentity },

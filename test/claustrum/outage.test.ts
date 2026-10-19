@@ -1,12 +1,12 @@
 import { expect } from 'bun:test'
 import { join } from 'node:path'
+import { ClaustrumCredentialError } from '@cortexkit/claustrum-client'
 import { SubcClient } from '@cortexkit/subc-client'
 import {
   ClaustrumConsumer,
   type ClaustrumScopedAttempt,
   type ClaustrumScopedClient,
   ClaustrumScopedCustody,
-  classifyVaultFailure,
   connectClaustrumScopedClient,
 } from '../../src/claustrum/index.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
@@ -17,6 +17,7 @@ import {
   fakeTimers,
   family,
   tempDir,
+  unknownGrants,
   until,
   writeToken,
 } from './helpers.ts'
@@ -40,7 +41,7 @@ const flush = async () => {
 
 async function scenario() {
   const dir = await tempDir('claustrum-outage-')
-  const now = 1_000_000
+  let now = 1_000_000
   const daemon = await startMockDaemon({
     directory: dir,
     credentials: {
@@ -93,11 +94,20 @@ async function scenario() {
   return {
     custody,
     daemon,
-    timers,
+    timers: {
+      ...timers,
+      fire(delay: number) {
+        now += delay
+        timers.fire(delay)
+      },
+    },
     logs,
     calls,
     dir,
     connected,
+    advance: (ms: number) => {
+      now += ms
+    },
     setGet: (value: typeof get) => {
       get = value
     },
@@ -107,48 +117,240 @@ async function scenario() {
   }
 }
 
-for (const kept of [true, false]) {
-  test(`outage authorizes settle without vault calls or timers with kept=${kept}`, async () => {
-    const s = await scenario()
-    if (kept) await s.custody.authorize(identity)
-    s.daemon.outage = true
-    await s.custody.authorize(identity).catch(() => {})
-    const gets = s.calls.gets
-    // A second transport attempt cannot settle; only the in-memory path can.
-    s.setGet(() => new Promise(() => {}))
-    for (let request = 0; request < 3; request++) {
-      let settled = false
-      let receipt: ClaustrumScopedAttempt | undefined
-      let error: unknown
-      void s.custody.authorize(identity).then(
-        (value) => {
-          receipt = value
-          settled = true
-        },
-        (value) => {
-          error = value
-          settled = true
-        },
-      )
+test('outage kept authorizations never wait for foreground or background transport', async () => {
+  const s = await scenario()
+  await s.custody.authorize(identity)
+  s.daemon.outage = true
+  await s.custody.authorize(identity)
+  const gets = s.calls.gets
+  // Neither foreground nor background transport can settle; memory must still serve.
+  s.setGet(() => new Promise(() => {}))
+  s.setList(() => new Promise(() => {}))
+  for (let request = 0; request < 3; request++) {
+    let settled = false
+    let receipt: ClaustrumScopedAttempt | undefined
+    void s.custody.authorize(identity).then((value) => {
+      receipt = value
+      settled = true
+    })
+    await flush()
+    expect(settled).toBe(true)
+    expect(s.calls.gets).toBe(gets)
+    expect(receipt?.fromKeptReceipt).toBe(true)
+    expect(receipt?.accessToken).toBe('kept')
+  }
+  expect(s.calls.lists).toBe(1)
+  expect(s.timers.pending()).toEqual([2_000])
+  expect(s.logs.records.filter((r) => r.level === 'warn')).toEqual([
+    {
+      level: 'warn',
+      message: 'serving kept vault receipt',
+      data: { reason: 'unreachable' },
+    },
+  ])
+})
+
+async function backedOffOutage() {
+  const s = await scenario()
+  await s.custody.authorize(identity)
+  s.custody.transportLost()
+  s.setList(async () => {
+    throw Object.assign(new Error('transport lost'), { code: 'ECONNREFUSED' })
+  })
+  for (const delay of [2_000, 4_000, 8_000, 16_000]) {
+    s.timers.fire(delay)
+    await flush()
+  }
+  expect(s.timers.pending()).toEqual([30_000])
+  return s
+}
+
+test('outage send probe honors grant refusal within one second despite idle backoff', async () => {
+  const s = await backedOffOutage()
+  const refusal = new ClaustrumCredentialError(
+    'grant_denied',
+    'permanent',
+    'gone',
+  )
+  let rejectList: (error: unknown) => void = () => {}
+  s.setList(
+    () =>
+      new Promise((_resolve, reject) => {
+        rejectList = reject
+      }),
+  )
+  s.setGet(async () => {
+    throw refusal
+  })
+  s.advance(999)
+  expect((await s.custody.authorize(identity)).fromKeptReceipt).toBe(true)
+  expect(s.calls.lists).toBe(4)
+  s.advance(1)
+  expect((await s.custody.authorize(identity)).fromKeptReceipt).toBe(true)
+  await flush()
+  expect(s.calls.lists).toBe(5)
+  rejectList(refusal)
+  await flush()
+  expect(s.timers.pending()).toEqual([])
+  await expect(s.custody.authorize(identity)).rejects.toBe(refusal)
+  expect(s.custody.keptReceiptState().active).toBe(false)
+  // Re-entering an outage cannot resurrect receipts discarded by the refusal.
+  s.custody.transportLost()
+  s.setGet(async () => {
+    throw Object.assign(new Error('offline'), { code: 'ECONNREFUSED' })
+  })
+  await expect(s.custody.authorize(identity)).rejects.toMatchObject({
+    kind: 'unavailable',
+  })
+})
+
+test('outage send probe resumes fresh authorization within one second despite idle backoff', async () => {
+  const s = await backedOffOutage()
+  s.setList(async () => ({ rows: [], view: 'recovered', ...unknownGrants }))
+  s.daemon.credentials[ID] = {
+    payload: 'recovered',
+    account_id: 'work',
+    record_version: 2,
+    expires_at_ms: 5_000_000,
+  }
+  s.advance(1_000)
+  expect((await s.custody.authorize(identity)).fromKeptReceipt).toBe(true)
+  await flush()
+  expect(s.calls.lists).toBe(5)
+  expect(s.timers.pending()).toEqual([])
+  const next = await s.custody.authorize(identity)
+  expect(next.fromKeptReceipt).toBeUndefined()
+  expect(next.recordVersion).toBe(2)
+  expect(next.accessToken).toBe('recovered')
+})
+
+test('outage send probes are limited to one per second across bursts of fifty', async () => {
+  const s = await scenario()
+  await s.custody.authorize(identity)
+  s.custody.transportLost()
+  s.setList(async () => {
+    throw Object.assign(new Error('offline'), { code: 'ECONNREFUSED' })
+  })
+  for (let second = 0; second < 3; second++) {
+    for (let request = 0; request < 50; request++) {
+      expect((await s.custody.authorize(identity)).fromKeptReceipt).toBe(true)
       await flush()
-      expect(settled).toBe(true)
-      expect(s.calls.gets).toBe(gets)
-      if (kept) {
-        expect(receipt?.fromKeptReceipt).toBe(true)
-        expect(receipt?.accessToken).toBe('kept')
-      } else expect(classifyVaultFailure(error)).toBe('unreachable')
+      expect(s.calls.lists).toBe(second + 1)
+      s.advance(20)
     }
-    expect(s.calls.lists).toBe(0)
-    expect(s.timers.pending()).toEqual([2_000])
-    expect(s.logs.records.filter((r) => r.level === 'warn')).toEqual([
-      {
-        level: 'warn',
-        message: 'serving kept vault receipt',
-        data: { reason: 'unreachable' },
-      },
-    ])
+  }
+  expect(s.calls.gets).toBe(1)
+  // Failed send probes neither grow nor restart the idle timer's backoff.
+  expect(s.timers.pending()).toEqual([2_000])
+  s.timers.fire(2_000)
+  await flush()
+  expect(s.calls.lists).toBe(4)
+  expect(s.timers.pending()).toEqual([4_000])
+})
+
+test('outage send probes share a single flight with the idle timer', async () => {
+  const s = await scenario()
+  await s.custody.authorize(identity)
+  s.custody.transportLost()
+  let rejectList: (error: unknown) => void = () => {}
+  s.setList(
+    () =>
+      new Promise((_resolve, reject) => {
+        rejectList = reject
+      }),
+  )
+  expect((await s.custody.authorize(identity)).fromKeptReceipt).toBe(true)
+  await flush()
+  expect(s.calls.lists).toBe(1)
+  s.timers.fire(2_000)
+  for (let request = 0; request < 50; request++) {
+    s.advance(1_000)
+    expect((await s.custody.authorize(identity)).fromKeptReceipt).toBe(true)
+    await flush()
+    expect(s.calls.lists).toBe(1)
+  }
+  rejectList(Object.assign(new Error('offline'), { code: 'ECONNREFUSED' }))
+  await flush()
+  expect(s.timers.pending()).toEqual([2_000])
+  expect((await s.custody.authorize(identity)).fromKeptReceipt).toBe(true)
+  await flush()
+  expect(s.calls.lists).toBe(2)
+})
+
+for (const recovered of [true, false]) {
+  test(`outage account without a kept receipt tries fresh with recovered=${recovered}`, async () => {
+    const s = await scenario()
+    await s.custody.authorize(identity)
+    s.custody.transportLost()
+    const unreachable = Object.assign(new Error('offline'), {
+      code: 'ECONNREFUSED',
+    })
+    // Use a classified vault error to verify the original unreachable error survives.
+    const failure = new ClaustrumCredentialError(
+      'unavailable',
+      'transient',
+      'retry',
+    )
+    s.setGet(async (input) => {
+      if (!recovered) throw failure
+      return {
+        credentialId: input.credentialId,
+        accountId: 'work',
+        material: 'new-account',
+        recordVersion: 2,
+        expiresAtMs: 5_000_000,
+      }
+    })
+    const fresh = s.custody.authorize({
+      ...identity,
+      credentialId: 'oauth:test:new',
+    })
+    if (recovered) {
+      expect((await fresh).fromKeptReceipt).toBeUndefined()
+      expect(s.timers.pending()).toEqual([])
+      expect(
+        (await s.custody.authorize(identity)).fromKeptReceipt,
+      ).toBeUndefined()
+      expect(s.calls.gets).toBe(3)
+    } else {
+      await expect(fresh).rejects.toBe(failure)
+      expect(s.calls.gets).toBe(2)
+      expect(s.timers.pending()).toEqual([2_000])
+      s.setList(async () => {
+        throw unreachable
+      })
+      expect((await s.custody.authorize(identity)).fromKeptReceipt).toBe(true)
+    }
   })
 }
+
+test('outage close stops send probes and ignores an in flight recovery answer', async () => {
+  const s = await scenario()
+  await s.custody.authorize(identity)
+  s.custody.transportLost()
+  let resolveList: (
+    value: Awaited<ReturnType<ClaustrumScopedClient['listScoped']>>,
+  ) => void = () => {}
+  s.setList(
+    () =>
+      new Promise((resolve) => {
+        resolveList = resolve
+      }),
+  )
+  await s.custody.authorize(identity)
+  await flush()
+  expect(s.calls.lists).toBe(1)
+  s.custody.close()
+  resolveList({ rows: [], view: 'too-late', ...unknownGrants })
+  await flush()
+  s.advance(30_000)
+  await expect(s.custody.authorize(identity)).rejects.toMatchObject({
+    kind: 'closed',
+  })
+  expect(s.timers.pending()).toEqual([])
+  expect(s.calls.lists).toBe(1)
+  expect(s.logs.records.filter((r) => r.level === 'info')).toEqual([])
+})
 
 test('outage probe is single flight and backs off from two to thirty seconds', async () => {
   const s = await scenario()
