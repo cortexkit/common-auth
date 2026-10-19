@@ -10,7 +10,12 @@ import { join } from 'node:path'
 // Use the real subc transport's framing and handshake on both Node and Bun,
 // rather than reimplementing the Claustrum client's wire protocol.
 interface SubcWire {
-  buildFlags(binary: boolean, priority: number, subscription: boolean): number
+  buildFlags(
+    binary: boolean,
+    priority: number,
+    last: boolean,
+    admission?: number,
+  ): number
   buildFrame(
     type: number,
     flags: number,
@@ -34,7 +39,16 @@ interface SubcWire {
     corr: bigint
   }
   encodeFrame(frame: unknown): Uint8Array
-  FrameType: { Request: number; Response: number; Error: number }
+  FrameType: {
+    Request: number
+    Response: number
+    StreamData: number
+    StreamEnd: number
+    Error: number
+    Cancel: number
+    Goodbye: number
+  }
+  AdmissionClass: { Sheddable: number }
   HEADER_LEN: number
   PROTOCOL_VERSION: number
   Priority: { Interactive: number }
@@ -67,6 +81,34 @@ export interface MockCredential {
   served_account_id?: string | null
 }
 
+/**
+ * How the mock answers a watch (`auth.watch_scoped` or `usage.watch`).
+ * `accept` holds it open and sends notice seq 1 at once; `unknown_method`
+ * refuses it as a module that predates the method does; `{ refuse }` refuses
+ * it with that code before any notice (the vault with a refusal reply,
+ * insula with an error frame).
+ */
+export type MockWatchMode = 'accept' | 'unknown_method' | { refuse: string }
+
+/** One held-open watch the mock accepted. */
+export interface MockWatch {
+  /** The seq of the last notice sent. */
+  seq: number
+  epoch: string
+  /** Set when the client cancelled it, said goodbye, or disconnected. */
+  closed: boolean
+  /**
+   * Send one notice; a vault notice carries the current view, and insula's
+   * names what `fields` give (provider, account). `fields` also replace
+   * notice fields such as `seq`; `seq` defaults to the next one.
+   */
+  notify(fields?: Record<string, unknown>): void
+  /** End the stream with STREAM_END, as a module shutting down does. */
+  end(): void
+  /** End the stream with a refusal reply, as a vault revocation does. */
+  refuse(code: string): void
+}
+
 export interface MockReport {
   credential_id?: string
   enrollment_token?: string
@@ -92,6 +134,29 @@ export interface MockDaemon {
   insula?: { response: Wire; refusal?: string; hang?: 'open' | 'usage' }
   usageGets: number
   insulaOpens: number
+  /**
+   * How `auth.watch_scoped` is answered. Defaults to `unknown_method`, as a
+   * vault from before watches existed answers.
+   */
+  vaultWatch: MockWatchMode
+  /** Every watch request received, accepted or not. */
+  vaultWatchRequests: number
+  /** Accepted watches, oldest first, including closed ones. */
+  vaultWatches: MockWatch[]
+  /** The epoch new watches carry; change it to model a vault restart. */
+  vaultEpoch: string
+  /** As the vault fields above, for insula's `usage.watch`. */
+  usageWatch: MockWatchMode
+  usageWatchRequests: number
+  usageWatches: MockWatch[]
+  usageEpoch: string
+  /** While set, list_scoped refuses with not_found, as for a revoked enrollment. */
+  revoked: boolean
+  /**
+   * While set, each list_scoped is counted and answered as of its arrival,
+   * but the answer is sent only once this settles.
+   */
+  holdLists?: Promise<unknown>
   onInsulaClose?: () => void
   onReport?: (report: MockReport) => void
   approve(requestId: string, token?: string, generation?: number): void
@@ -156,6 +221,15 @@ export async function startMockDaemon(input: {
     insula: input.insula,
     usageGets: 0,
     insulaOpens: 0,
+    vaultWatch: 'unknown_method',
+    vaultWatchRequests: 0,
+    vaultWatches: [],
+    vaultEpoch: 'vault-epoch-1',
+    usageWatch: 'unknown_method',
+    usageWatchRequests: 0,
+    usageWatches: [],
+    usageEpoch: 'insula-epoch-1',
+    revoked: false,
     approve(requestId, token = 'ab'.repeat(32), generation = 1) {
       const entry = enrollments.get(requestId)
       if (!entry) throw new Error(`unknown request ${requestId}`)
@@ -217,9 +291,16 @@ export async function startMockDaemon(input: {
     }
   }
 
+  /** The view digest list_scoped would return now. */
+  function currentView(): string {
+    const result = inventory().result as { view: string }
+    return result.view
+  }
+
   function handle(method: string | undefined, params: Wire): Wire {
     if (method === 'credential.list_scoped') {
       state.lists++
+      if (state.revoked) return error('not_found')
       if (input.listScopedResult) return { result: input.listScopedResult }
       return inventory()
     }
@@ -315,6 +396,100 @@ export async function startMockDaemon(input: {
     let buffer = Buffer.alloc(0)
     let phase: 'hello' | 'auth' | 'frames' = 'hello'
     const routes = new Map<number, string>()
+    // Each route gets its own channel, as subc assigns them: a vault watch
+    // rides a second claustrum route beside the one list_scoped uses.
+    let nextChannel = 7
+    const watches = new Map<string, MockWatch>()
+    const closeWatches = (match: (key: string) => boolean) => {
+      for (const [key, watch] of watches) {
+        if (!match(key)) continue
+        watch.closed = true
+        watches.delete(key)
+      }
+    }
+    socket.once('close', () => closeWatches(() => true))
+
+    function openWatch(
+      header: ReturnType<SubcWire['decodeHeader']>,
+      module: 'claustrum' | 'insula',
+    ): void {
+      const vault = module === 'claustrum'
+      if (vault) state.vaultWatchRequests++
+      else state.usageWatchRequests++
+      const mode = vault ? state.vaultWatch : state.usageWatch
+      if (mode === 'unknown_method') {
+        writeResponse(
+          socket,
+          header,
+          { code: 'unknown_method', message: 'unknown method' },
+          subc.FrameType.Error,
+        )
+        return
+      }
+      if (!vault && mode !== 'accept') {
+        writeResponse(
+          socket,
+          header,
+          { code: mode.refuse },
+          subc.FrameType.Error,
+        )
+        return
+      }
+      if (vault && (mode !== 'accept' || state.revoked)) {
+        writeResponse(
+          socket,
+          header,
+          error(mode === 'accept' ? 'not_found' : mode.refuse),
+        )
+        return
+      }
+      const key = `${header.channel}:${header.corr}`
+      const finish = (type: number, body: unknown) => {
+        if (watch.closed) return
+        watch.closed = true
+        watches.delete(key)
+        writeResponse(socket, header, body, type, true)
+      }
+      const watch: MockWatch = {
+        seq: 0,
+        epoch: vault ? state.vaultEpoch : state.usageEpoch,
+        closed: false,
+        notify(fields = {}) {
+          if (watch.closed) return
+          const notice = {
+            kind: 'changed',
+            epoch: watch.epoch,
+            seq: watch.seq + 1,
+            ...(vault && { view: currentView(), keys: '' }),
+            ...fields,
+          }
+          watch.seq = notice.seq
+          // Notices go out as sheddable StreamData frames, as the vault's
+          // watchScoped and insula's usage.watch both send them: a notice is
+          // only a hint, so the transport may drop it under load.
+          const frame = subc.buildFrame(
+            subc.FrameType.StreamData,
+            subc.buildFlags(
+              false,
+              subc.Priority.Interactive,
+              false,
+              subc.AdmissionClass.Sheddable,
+            ),
+            header.channel,
+            header.epoch,
+            header.corr,
+            new TextEncoder().encode(JSON.stringify(notice)),
+          )
+          socket.write(Buffer.from(subc.encodeFrame(frame)))
+        },
+        end: () => finish(subc.FrameType.StreamEnd, {}),
+        refuse: (code) => finish(subc.FrameType.Response, error(code)),
+      }
+      watches.set(key, watch)
+      if (vault) state.vaultWatches.push(watch)
+      else state.usageWatches.push(watch)
+      watch.notify()
+    }
 
     socket.on('data', (chunk) => {
       buffer = Buffer.concat([
@@ -364,6 +539,18 @@ export async function startMockDaemon(input: {
           subc.HEADER_LEN + header.len,
         )
         buffer = buffer.subarray(subc.HEADER_LEN + header.len)
+        if (header.ty === subc.FrameType.Cancel) {
+          const key = `${header.channel}:${header.corr}`
+          closeWatches((candidate) => candidate === key)
+          continue
+        }
+        if (header.ty === subc.FrameType.Goodbye) {
+          routes.delete(header.channel)
+          closeWatches((candidate) =>
+            candidate.startsWith(`${header.channel}:`),
+          )
+          continue
+        }
         if (header.ty !== subc.FrameType.Request) continue
         const request = JSON.parse(body.toString('utf8')) as {
           method?: string
@@ -391,7 +578,7 @@ export async function startMockDaemon(input: {
                 continue
               }
             }
-            const channel = moduleId === 'insula' ? 8 : 7
+            const channel = nextChannel++
             routes.set(channel, moduleId)
             writeResponse(socket, header, {
               route_channel: channel,
@@ -411,6 +598,23 @@ export async function startMockDaemon(input: {
           )
           continue
         }
+        // subc-client does not yet set the SUBSCRIPTION flag on a subscribe
+        // (see its client.js). Both modules know a watch by its method alone,
+        // and so does this mock.
+        if (
+          request.method === 'auth.watch_scoped' &&
+          routes.get(header.channel) === 'claustrum'
+        ) {
+          openWatch(header, 'claustrum')
+          continue
+        }
+        if (
+          request.method === 'usage.watch' &&
+          routes.get(header.channel) === 'insula'
+        ) {
+          openWatch(header, 'insula')
+          continue
+        }
         if (routes.get(header.channel) === 'insula') {
           state.usageGets++
           if (state.insula?.hang === 'usage') continue
@@ -421,11 +625,13 @@ export async function startMockDaemon(input: {
           )
           continue
         }
-        writeResponse(
-          socket,
-          header,
-          handle(request.method, request.params ?? {}),
-        )
+        const reply = handle(request.method, request.params ?? {})
+        const hold =
+          request.method === 'credential.list_scoped'
+            ? state.holdLists
+            : undefined
+        if (hold) void hold.then(() => writeResponse(socket, header, reply))
+        else writeResponse(socket, header, reply)
       }
     })
   })
@@ -454,10 +660,11 @@ function writeResponse(
   header: ReturnType<SubcWire['decodeHeader']>,
   value: unknown,
   type: number = subc.FrameType.Response,
+  last = false,
 ): void {
   const frame = subc.buildFrame(
     type,
-    subc.buildFlags(false, subc.Priority.Interactive, false),
+    subc.buildFlags(false, subc.Priority.Interactive, last),
     header.channel,
     header.epoch,
     header.corr,

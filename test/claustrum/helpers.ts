@@ -1,7 +1,10 @@
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
+import {
+  ClaustrumClient,
+  type ScopedInventoryRow,
+} from '@cortexkit/claustrum-client'
 import type { ClaustrumFamily } from '../../src/claustrum/index.ts'
 import { makeTempDir } from '../fixtures/scratch.ts'
 
@@ -124,3 +127,56 @@ export const clientDecodesGrants = await (async () => {
     directory = parent
   }
 })()
+
+/**
+ * Timers the consumer arms are recorded and fired by the test, so polling
+ * pace is asserted from the delays armed rather than from waiting.
+ */
+export function fakeTimers() {
+  interface Timer {
+    delay: number
+    run: () => void
+    done: boolean
+    unref(): void
+  }
+  const armed: Timer[] = []
+  return {
+    setTimeoutImpl: ((run: () => void, delay: number) => {
+      const timer: Timer = { delay, run, done: false, unref() {} }
+      armed.push(timer)
+      return timer
+    }) as unknown as typeof setTimeout,
+    clearTimeoutImpl: ((timer: Timer | undefined) => {
+      if (timer) timer.done = true
+    }) as unknown as typeof clearTimeout,
+    /** Delays of the timers armed and not yet fired or cleared. */
+    pending: () =>
+      armed.filter((timer) => !timer.done).map((timer) => timer.delay),
+    fire(delay: number) {
+      const timer = armed.find((each) => !each.done && each.delay === delay)
+      if (!timer) throw new Error(`no timer armed for ${delay} ms`)
+      timer.done = true
+      timer.run()
+    },
+  }
+}
+
+/** Waits for real socket traffic with the mock daemon to land. */
+export async function until(
+  predicate: () => boolean,
+  what = 'condition',
+): Promise<void> {
+  const deadline = Date.now() + 2_000
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
+    await Bun.sleep(2)
+  }
+}
+
+/**
+ * Whether the installed claustrum-client can watch (0.12.0 and later).
+ * `check:claustrum-floor` also runs these tests against 0.6.2, which cannot, so
+ * the tests that need a real watching client are skipped there and the
+ * fallback tests run instead.
+ */
+export const clientWatches = 'watchScoped' in ClaustrumClient.prototype

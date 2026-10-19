@@ -28,6 +28,7 @@ import {
   type VaultRosterFile,
   vaultRoutingRows,
 } from './roster.js'
+import { SAFETY_POLL_MS, ScopedRosterWatch, type WatchMode } from './watch.js'
 
 export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   /**
@@ -65,6 +66,12 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
    */
   onRoster?: (roster: VaultRosterFile) => void
   onError?: (error: unknown) => void
+  /**
+   * How often `start()` ticks. A tick lists the vault when no vault watch is
+   * open (before it is accepted, or when the vault or the client cannot
+   * watch), and otherwise only every five minutes, as a safety net. A tick
+   * polls insula (at most once a minute) only while its watch is not open.
+   */
   pollIntervalMs?: number
   setTimeoutImpl?: typeof setTimeout
   clearTimeoutImpl?: typeof clearTimeout
@@ -72,6 +79,16 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   logger?: ClaustrumLogger
   /** Optional background quota source. In-band readings still use recordQuota. */
   insula?: InsulaQuotaOptions<Q>
+}
+
+/**
+ * How a started consumer learns about changes, for logs and status displays.
+ * `insula` is present when the consumer was given an insula source. Never
+ * carries secrets.
+ */
+export interface ClaustrumWatchState {
+  readonly vault: WatchMode
+  readonly insula?: WatchMode
 }
 
 export interface SendOptions {
@@ -97,6 +114,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   readonly #shutdown = new AbortController()
   readonly #logger: ClaustrumLogger
   #custody?: ClaustrumScopedCustody
+  /** The custody's client, kept so `start()` can open its vault watch. */
+  #client?: ClaustrumScopedClient
   #connecting?: Promise<ClaustrumScopedCustody>
   #refreshing?: Promise<VaultRosterFile | undefined>
   #roster?: VaultRosterFile
@@ -108,6 +127,10 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #timer?: ReturnType<typeof setTimeout>
   #started = false
   #insula?: ReturnType<typeof acquireInsulaQuotaSource>
+  #vaultWatch?: ScopedRosterWatch
+  #releaseInsulaWatch?: () => void
+  /** When this instance last completed a discovery, by `now`. */
+  #discoveredAt?: number
 
   constructor(options: ClaustrumConsumerOptions<Q>) {
     this.#options = options
@@ -166,6 +189,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
             client.close()
             this.#assertOpen()
           }
+          this.#client = client
           this.#custody = new ClaustrumScopedCustody({
             client,
             family: this.#options.family,
@@ -211,6 +235,25 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       : undefined
   }
 
+  /** How this consumer currently learns about changes, without I/O. */
+  watchState(): ClaustrumWatchState {
+    return Object.freeze({
+      vault: this.#vaultWatch?.mode ?? 'polling',
+      ...(this.#options.insula && {
+        insula: this.#insula?.source.watchMode() ?? 'polling',
+      }),
+    })
+  }
+
+  /** Close the watches with the connection they belong to. */
+  #stopWatch(): void {
+    this.#vaultWatch?.stop()
+    this.#vaultWatch = undefined
+    this.#client = undefined
+    this.#releaseInsulaWatch?.()
+    this.#releaseInsulaWatch = undefined
+  }
+
   /** Whether any account is using an in-memory outage receipt, without I/O. */
   keptReceiptState(): KeptReceiptState {
     return (
@@ -231,6 +274,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       if (!(await this.#active())) {
         this.#roster = undefined
         this.#grantReach = undefined
+        this.#stopWatch()
         this.#custody?.close()
         this.#custody = undefined
         this.#insula?.release()
@@ -272,6 +316,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       // Notify on view changes only: subscribers rewrite shared state on each
       // notification, and the poll runs every few seconds.
       if (roster && changed) this.#options.onRoster?.(roster)
+      this.#discoveredAt = (this.#options.now ?? Date.now)()
       return roster
     })().finally(() => {
       this.#refreshing = undefined
@@ -279,14 +324,25 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     return this.#refreshing
   }
 
+  /**
+   * Poll in the background and open the vault and insula watches. Until the
+   * vault watch is accepted, and whenever it is unavailable, every tick lists
+   * the vault exactly as before watches existed. While it is open a tick
+   * lists only when five minutes have passed since the last discovery, since
+   * the watch keeps no history; it still checks `isCustodyActive`, so a switch
+   * to local mode closes the connection as quickly as before. Insula is
+   * polled on the tick only while its own watch is not open. A host not in
+   * vault mode makes no request.
+   */
   start(): void {
     if (this.#started) return
     this.#assertOpen()
     this.#started = true
     const tick = async () => {
       try {
-        await this.refresh()
+        if (await this.#listDue()) await this.refresh()
         await this.refreshInsulaQuota()
+        this.#openWatch()
       } catch (error) {
         if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
       }
@@ -300,6 +356,64 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#timer.unref?.()
     }
     void tick()
+  }
+
+  /** Whether a background tick must list the vault now. */
+  async #listDue(): Promise<boolean> {
+    if (this.#vaultWatch?.mode !== 'watching') return true
+    const now = (this.#options.now ?? Date.now)()
+    if (
+      this.#discoveredAt === undefined ||
+      now - this.#discoveredAt >= SAFETY_POLL_MS
+    )
+      return true
+    // refresh() is what closes the connection when the host left vault mode.
+    return !(await this.#active())
+  }
+
+  /**
+   * Open the vault and insula watches once a vault connection exists. Only
+   * reached in vault mode: a host in local mode never connects.
+   */
+  #openWatch(): void {
+    const client = this.#client
+    if (this.#shutdown.signal.aborted || !client || !this.#custody) return
+    if (!this.#vaultWatch) {
+      const watch = new ScopedRosterWatch({
+        client,
+        enrollmentToken: async () =>
+          (await readClaustrumEnrollmentToken(this.#options.tokenPath)).token,
+        view: () => this.#roster?.view,
+        // The existing discovery, so a watched change commits the roster and
+        // re-applies it to kept receipts exactly as a poll does. A refresh
+        // already in flight may have listed before the change was announced,
+        // so wait for it and list again.
+        discover: async () => {
+          while (this.#refreshing) await this.#refreshing.catch(() => {})
+          await this.refresh()
+        },
+        onRefused: (error) => {
+          // As a poll that met the same refusal from list_scoped would.
+          this.#custody?.listFailed(error)
+          this.#options.onError?.(error)
+        },
+        onError: (error) => {
+          if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
+        },
+        logger: this.#logger,
+        now: this.#options.now,
+        setTimeoutImpl: this.#options.setTimeoutImpl,
+        clearTimeoutImpl: this.#options.clearTimeoutImpl,
+      })
+      this.#vaultWatch = watch
+      watch.start()
+    }
+    if (this.#options.insula && this.#insula && !this.#releaseInsulaWatch)
+      this.#releaseInsulaWatch = this.#insula.source.watch({
+        provider: this.#options.insula.provider,
+        setTimeoutImpl: this.#options.setTimeoutImpl,
+        clearTimeoutImpl: this.#options.clearTimeoutImpl,
+      })
   }
 
   /**
@@ -394,6 +508,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     if (!roster || !(await this.#active())) {
       this.#custody?.close()
       this.#custody = undefined
+      this.#stopWatch()
       this.#insula?.release()
       this.#insula = undefined
       throw new ClaustrumConsumerError(
@@ -591,6 +706,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     if (this.#timer)
       (this.#options.clearTimeoutImpl ?? clearTimeout)(this.#timer)
     this.#timer = undefined
+    this.#stopWatch()
     this.#custody?.close()
     this.#insula?.release()
     this.#insula = undefined

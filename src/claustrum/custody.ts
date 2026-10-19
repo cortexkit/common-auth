@@ -14,11 +14,16 @@ import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
 import type { InsulaUsageTransport } from './insula.js'
+import type { ScopedWatchSource } from './watch.js'
 
+/**
+ * `watchScoped` is present from claustrum-client 0.12.0. Hosts detect it at
+ * run time and keep polling without it.
+ */
 export type ClaustrumScopedClient = Pick<
   ClaustrumClient,
   'listScoped' | 'getScoped' | 'reportAuthFailureScoped' | 'close'
-> & { insula?: InsulaUsageTransport }
+> & { insula?: InsulaUsageTransport } & ScopedWatchSource
 
 /** The two credential types a plugin's family can hold; routing differs by type. */
 export type VaultCredentialType = 'oauth' | 'api_key'
@@ -473,7 +478,7 @@ export class ClaustrumScopedCustody {
     try {
       inventory = await this.#call(() => this.#client.listScoped(token), signal)
     } catch (error) {
-      if (classifyVaultFailure(error) !== 'unreachable') this.#kept.clear()
+      this.listFailed(error)
       throw error
     }
     const skipped: SkippedVaultRecord[] = []
@@ -522,6 +527,16 @@ export class ClaustrumScopedCustody {
       skipped: Object.freeze(skipped),
       ...(grantReach && { grantReach }),
     }
+  }
+
+  /**
+   * Apply a failed account listing: any answer from the vault (a refusal such
+   * as a revoked enrollment's `not_found`) drops every kept receipt, while an
+   * unreachable vault keeps them. A vault watch that ends with the same
+   * refusal calls this too, so both paths treat it alike.
+   */
+  listFailed(error: unknown): void {
+    if (classifyVaultFailure(error) !== 'unreachable') this.#kept.clear()
   }
 
   /** Discard bearer material when a route is removed, declined or rebound. */

@@ -24,6 +24,7 @@ export {
 export {
   ClaustrumConsumer,
   type ClaustrumConsumerOptions,
+  type ClaustrumWatchState,
   type SendOptions,
 } from './consumer.js'
 export {
@@ -93,7 +94,9 @@ export {
   type InsulaQuotaSource,
   type InsulaUsageEntry,
   type InsulaUsageTransport,
+  type InsulaUsageWatch,
   type InsulaUsageWindow,
+  type InsulaWatchOptions,
 } from './insula.js'
 export {
   acceptAccount,
@@ -124,6 +127,20 @@ export {
   type VaultRosterRow,
   vaultRoutingRows,
 } from './roster.js'
+export {
+  type ChangeNotice,
+  ChangeNoticeReader,
+  RESUBSCRIBE_BACKOFF_MS,
+  SAFETY_POLL_MS,
+  ScopedRosterWatch,
+  type ScopedRosterWatchOptions,
+  type ScopedWatchEnd,
+  type ScopedWatchHandle,
+  type ScopedWatchNoticeShape,
+  type ScopedWatchSource,
+  WATCH_RETRY_MS,
+  type WatchMode,
+} from './watch.js'
 
 /**
  * Connect the client that lists and fetches this consumer's vault credentials

@@ -6553,3 +6553,353 @@ list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receip
 test_count_pattern = "Ran {count} test"
 expect_red = ['^injected\sadapter\shandles\sclosed\-adapter\swithout\sconfusing\sshutdown\swith\soutage$']
 expect_message = 'Expected promise that rejects'
+
+# --- vault and insula change watches ---
+[[control]]
+id = 'claustrum-watch-view-gate'
+guards = 'a notice lists the vault only when its view differs from the last discovered roster'
+file = 'src/claustrum/watch.ts'
+old = '''if (force || this.#latestView !== this.#options.view())'''
+new = '''if (force || this.#latestView !== undefined) // NON-VACUITY BREAK: list on every notice'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\saccepted\svault\swatch\slists\sonly\swhen\sa\snotice\scarries\sa\snew\sview$']
+expect_message = 'Expected: 3'
+
+[[control]]
+id = 'claustrum-watch-gap-vault'
+guards = 'a vault notice after a sequence gap lists even with an unchanged view'
+file = 'src/claustrum/watch.ts'
+old = '''notice.seq === this.#seq + 1 &&'''
+new = '''/* NON-VACUITY BREAK: ignore sequence gaps */'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\ssequence\sgap\slists\seven\swhen\sthe\sview\sis\sunchanged$']
+expect_message = 'timed out waiting for discovery after the gap'
+
+[[control]]
+id = 'claustrum-watch-gap-insula'
+guards = 'an insula notice after a sequence gap re-reads usage.get whatever provider it names'
+file = 'src/claustrum/watch.ts'
+old = '''notice.seq === this.#seq + 1 &&'''
+new = '''/* NON-VACUITY BREAK: ignore sequence gaps */'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\ssequence\sgap\sre\-reads\severything\,\seven\sfor\sanother\sprovider$']
+expect_message = 'Expected: 2'
+
+[[control]]
+id = 'claustrum-watch-epoch-vault'
+guards = 'a vault notice with a new epoch lists even with an unchanged view'
+file = 'src/claustrum/watch.ts'
+old = '''(this.#epoch === undefined || notice.epoch === this.#epoch)'''
+new = '''true /* NON-VACUITY BREAK: ignore epoch changes */'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\snew\sepoch\slists\seven\swhen\sthe\sview\sis\sunchanged$']
+expect_message = 'timed out waiting for discovery after the restart'
+
+[[control]]
+id = 'claustrum-watch-epoch-insula'
+guards = 'an insula notice with a new epoch re-reads usage.get whatever provider it names'
+file = 'src/claustrum/watch.ts'
+old = '''(this.#epoch === undefined || notice.epoch === this.#epoch)'''
+new = '''true /* NON-VACUITY BREAK: ignore epoch changes */'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\snew\sepoch\sre\-reads\severything\,\seven\sfor\sanother\sprovider$']
+expect_message = 'Expected: 2'
+
+[[control]]
+id = 'claustrum-watch-coalesce-vault'
+guards = 'notices during a vault discovery share it instead of each listing'
+file = 'src/claustrum/watch.ts'
+old = '''    if (this.#running) {
+      this.#queued = true'''
+new = '''    if (this.#running && Math.random() < 0) { // NON-VACUITY BREAK: start a read per request
+      this.#queued = true'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sburst\sof\snotices\sduring\sa\sdiscovery\sshares\sthat\sdiscovery$']
+expect_message = 'Received: 3'
+
+[[control]]
+id = 'claustrum-watch-coalesce-insula'
+guards = 'a burst of insula notices makes one usage.get in flight and at most one queued'
+file = 'src/claustrum/watch.ts'
+old = '''    if (this.#running) {
+      this.#queued = true'''
+new = '''    if (this.#running && Math.random() < 0) { // NON-VACUITY BREAK: start a read per request
+      this.#queued = true'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sburst\sof\sten\snotices\sreads\susage\.get\sat\smost\stwice$']
+expect_message = 'Received: 11'
+
+[[control]]
+id = 'claustrum-watch-zero-notice-no-resubscribe'
+guards = 'a vault watch closed before any notice is not re-subscribed'
+file = 'src/claustrum/watch.ts'
+old = '''    if (watch.notices > 0) {'''
+new = '''    if (true) { // NON-VACUITY BREAK: re-subscribe an unaccepted watch'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\swatch\sclosed\sbefore\sany\snotice\sreads\sonce\sand\sis\snot\sre\-subscribed$']
+expect_message = 'timed out waiting for fallback'
+
+[[control]]
+id = 'claustrum-watch-resubscribe-reads'
+guards = 'the first notice of a re-subscribed vault watch lists'
+file = 'src/claustrum/watch.ts'
+old = '''this.#force = resubscribed'''
+new = '''this.#force = false // NON-VACUITY BREAK: trust the view across watches'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\swatch\sclosed\safter\snotices\sis\sre\-subscribed\sonce\sand\slists\sagain$']
+expect_message = 'timed out waiting for discovery on the new seq 1'
+
+[[control]]
+id = 'claustrum-watch-unknown-method'
+guards = 'a vault without the watch method falls back to polling with no retry'
+file = 'src/claustrum/watch.ts'
+old = '''if (end.kind === 'unsupported') {'''
+new = '''if ((end.kind as string) === 'never') { // NON-VACUITY BREAK: treat unknown_method as a transient close'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\svault\swithout\sthe\swatch\smethod\skeeps\spolling\sat\sthe\susual\sinterval$']
+expect_message = 'timed out waiting for tick'
+
+[[control]]
+id = 'claustrum-watch-client-detect'
+guards = 'a claustrum-client without watchScoped reports fallback and keeps polling'
+file = 'src/claustrum/watch.ts'
+old = '''if (typeof this.#options.client.watchScoped !== 'function') {'''
+new = '''if (false) { // NON-VACUITY BREAK: skip feature detection'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sclient\swithout\swatchScoped\skeeps\spolling\sat\sthe\susual\sinterval$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-watch-refusal-drops-kept'
+guards = 'a watch refused after revocation drops kept receipts as a refused list_scoped does'
+file = 'src/claustrum/consumer.ts'
+old = '''this.#custody?.listFailed(error)'''
+new = '''// NON-VACUITY BREAK: keep receipts after a refused watch'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\srevocation\sends\sthe\swatch\sand\sis\shandled\sas\sa\srefused\slist_scoped$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-watch-safety-poll'
+guards = 'a healthy vault watch still lists the roster every five minutes'
+file = 'src/claustrum/consumer.ts'
+old = '''now - this.#discoveredAt >= SAFETY_POLL_MS'''
+new = '''now - this.#discoveredAt >= 2 * SAFETY_POLL_MS /* NON-VACUITY BREAK */'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^the\ssafety\spoll\sstill\slists\sthe\sroster\severy\sfive\sminutes\swhile\swatching$']
+expect_message = 'Expected: 2'
+
+[[control]]
+id = 'claustrum-watch-skip-list'
+guards = 'ticks do not list the vault while its watch is open'
+file = 'src/claustrum/consumer.ts'
+old = '''if (this.#vaultWatch?.mode !== 'watching') return true'''
+new = '''if (this.#vaultWatch?.mode !== 'watching' || Math.random() >= 0) return true // NON-VACUITY BREAK'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\saccepted\svault\swatch\slists\sonly\swhen\sa\snotice\scarries\sa\snew\sview$']
+expect_message = 'Received: 3'
+
+[[control]]
+id = 'claustrum-watch-local-mode-check'
+guards = 'a tick while watching still notices the switch to local mode'
+file = 'src/claustrum/consumer.ts'
+old = '''return !(await this.#active())'''
+new = '''return false // NON-VACUITY BREAK: skip the custody-mode check'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^switching\sto\slocal\smode\scloses\sthe\sopen\swatch$']
+expect_message = 'timed out waiting for watch closed'
+
+[[control]]
+id = 'claustrum-watch-discover-commits'
+guards = 'a watched change runs the full discovery, so kept receipts follow the roster'
+file = 'src/claustrum/consumer.ts'
+old = '''while (this.#refreshing) await this.#refreshing.catch(() => {})
+          await this.refresh()'''
+new = '''while (this.#refreshing) await this.#refreshing.catch(() => {})
+          await this.#custody?.discover() // NON-VACUITY BREAK: list without committing'''
+test_file = 'test/claustrum/watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\swatched\sroster\schange\sthat\sremoves\sthe\saccount\sdrops\sits\skept\sreceipt$']
+expect_message = 'timed out waiting for roster'
+
+[[control]]
+id = 'insula-watch-seq1-reads'
+guards = 'the first insula notice, which names no provider, reads usage.get'
+file = 'src/claustrum/insula.ts'
+old = '''      notice?.provider === undefined ||
+      this.#everyProvider > 0 ||
+      this.#providers.has(notice.provider)'''
+new = '''      // NON-VACUITY BREAK: skip provider-less notices
+      this.#everyProvider > 0 ||
+      this.#providers.has(notice?.provider ?? '')'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^notice\sseq\s1\sreads\susage\.get\sonce\,\sand\slater\snotices\sfor\sthis\sprovider\sread\sagain$']
+expect_message = 'timed out waiting for read on seq 1'
+
+[[control]]
+id = 'insula-watch-provider-reads'
+guards = 'an insula notice for the watched provider reads usage.get'
+file = 'src/claustrum/insula.ts'
+old = '''this.#providers.has(notice.provider)'''
+new = '''false /* NON-VACUITY BREAK: ignore the watched provider */'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^notice\sseq\s1\sreads\susage\.get\sonce\,\sand\slater\snotices\sfor\sthis\sprovider\sread\sagain$']
+expect_message = 'timed out waiting for read on a codex notice'
+
+[[control]]
+id = 'insula-watch-poll-paused'
+guards = 'the minute poll reads nothing while the insula watch is open'
+file = 'src/claustrum/insula.ts'
+old = '''if (this.#mode === 'watching') return Promise.resolve()'''
+new = '''// NON-VACUITY BREAK: keep polling while watching'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^while\sthe\sinsula\swatch\sis\sopen\sthe\sbackground\spoll\sreads\snothing$']
+expect_message = 'Received: 4'
+
+[[control]]
+id = 'insula-watch-limit'
+guards = 'usage_watch_limit keeps polling without an extra read or retry'
+file = 'src/claustrum/insula.ts'
+old = '''if (code === 'unknown_method' || code === 'usage_watch_limit') {'''
+new = '''if (code === 'unknown_method') { // NON-VACUITY BREAK: treat the limit as any refusal'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^the\swatch\slimit\skeeps\spolling\sas\sbefore\,\swithout\sre\-subscribing$']
+expect_message = 'Expected: 0'
+
+[[control]]
+id = 'insula-watch-answered-no-retry'
+guards = 'an answered insula refusal is not retried'
+file = 'src/claustrum/insula.ts'
+old = '''if (error === undefined || classifyVaultFailure(error) === 'unreachable')'''
+new = '''if (true) // NON-VACUITY BREAK: retry every refusal'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\sanswered\srefusal\skeeps\spolling\sas\sbefore\,\swithout\sre\-subscribing$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'insula-watch-zero-notice-reads'
+guards = 'an insula watch closed before any notice reads usage.get once'
+file = 'src/claustrum/insula.ts'
+old = '''    this.#mode = 'fallback'
+    void this.#reads.request()'''
+new = '''    this.#mode = 'fallback' // NON-VACUITY BREAK: no confirming read'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\sanswered\srefusal\skeeps\spolling\sas\sbefore\,\swithout\sre\-subscribing$']
+expect_message = 'Received: 0'
+
+[[control]]
+id = 'insula-watch-unexplained-retry'
+guards = 'an insula watch that never opened is tried again later'
+file = 'src/claustrum/insula.ts'
+old = '''      this.#later(WATCH_RETRY_MS)
+  }'''
+new = '''      undefined // NON-VACUITY BREAK: never retry
+  }'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\swatch\sthat\snever\sopens\sreads\sonce\,\spolls\,\sand\stries\sagain\smuch\slater$']
+expect_message = 'timed out waiting for retry'
+
+[[control]]
+id = 'insula-watch-resubscribe'
+guards = 'an insula watch closed after notices is re-subscribed once'
+file = 'src/claustrum/insula.ts'
+old = '''    if (watch.notices > 0) {'''
+new = '''    if (false) { // NON-VACUITY BREAK: treat a close after notices as unaccepted'''
+test_file = 'test/claustrum/insula-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\sinsula\swatch\sclosed\safter\snotices\sis\sre\-subscribed\sonce\sand\sreads\sagain$']
+expect_message = 'timed out waiting for backoff'
