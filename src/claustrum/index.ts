@@ -16,6 +16,12 @@ export {
   type EnrollmentTokenFile,
 } from '@cortexkit/claustrum-client'
 export {
+  ClaustrumUnreachableError,
+  classifyVaultFailure,
+  VAULT_FAILURE_CLASSES,
+  type VaultFailureClass,
+} from './availability.js'
+export {
   ClaustrumConsumer,
   type ClaustrumConsumerOptions,
   type SendOptions,
@@ -30,6 +36,8 @@ export {
   decideScopedRetryAfter401,
   type IdentityParser,
   isScopedCredentialRotation,
+  KEPT_RECEIPT_MARGIN_MS,
+  type KeptReceiptState,
   type ScopedRetryReason,
   SERVING_MARGIN_MS,
   type SkippedVaultReason,

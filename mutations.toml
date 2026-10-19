@@ -6198,3 +6198,342 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format.test.ts'
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^narrow\squota\swording\sa\sstale\sreading\sadds\sno\sage;\sisQuotaStale\sreports\sit\sso\sthe\sline\scan\sbe\sdimmed$']
 expect_message = 'Received: false'
+
+# --- Last-known-good vault receipts ---
+
+[[control]]
+id = 'claustrum-kept-keep'
+guards = 'successful vault reads retain one last-known-good receipt'
+file = 'src/claustrum/custody.ts'
+old = '''this.#kept.set(credentialId, { attempt, routeId, since: null })'''
+new = '''// NON-VACUITY BREAK: do not retain the successful read.'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\ssurvives\sa\sstopped\sdaemon\sand\srecovers\sfresh\swithout\schanging\soutage\srouting$']
+expect_message = 'ECONNREFUSED'
+
+[[control]]
+id = 'claustrum-kept-classification'
+guards = 'an answered grant refusal cannot fall back even when transient'
+file = 'src/claustrum/availability.ts'
+old = '''grant_denied: 'answered''''
+new = '''grant_denied: 'unreachable' /* NON-VACUITY BREAK */'''
+test_file = 'test/claustrum/availability.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/availability.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/availability.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^vault\sfailure\stable\sclassifies\severy\sreviewed\scode\sand\srejects\sunknown\scodes$']
+expect_message = 'Expected: "answered"'
+
+[[control]]
+id = 'claustrum-kept-expiry'
+guards = 'OAuth fallback stops at the sixty second headroom boundary'
+file = 'src/claustrum/custody.ts'
+old = '''attempt.expiresAtMs - this.#now() > KEPT_RECEIPT_MARGIN_MS'''
+new = '''attempt.expiresAtMs - this.#now() > 0 /* NON-VACUITY BREAK */'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sOAuth\sreceipt\sis\sbounded\sby\sexpiry\swith\sa\ssixty\ssecond\smargin$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-api-key'
+guards = 'unexpiring API keys remain usable through an outage'
+file = 'src/claustrum/custody.ts'
+old = '''? attempt.credentialType === 'api_key''''
+new = '''? false /* NON-VACUITY BREAK */'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sAPI\skey\swithout\sexpiry\sstays\susable\sduring\san\sextended\soutage$']
+expect_message = 'unavailable'
+
+[[control]]
+id = 'claustrum-kept-refusal-drop'
+guards = 'a vault refusal discards the last receipt before an outage'
+file = 'src/claustrum/custody.ts'
+old = '''if (classifyVaultFailure(error) !== 'unreachable') {
+        this.forget(credentialId)
+        throw error
+      }'''
+new = '''if (classifyVaultFailure(error) !== 'unreachable') {
+        // NON-VACUITY BREAK: reject but retain the refused receipt.
+        throw error
+      }'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\safter\svault\srefusal\senrollment_revoked$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-identity-drop'
+guards = 'an identity contradiction discards the last receipt'
+file = 'src/claustrum/custody.ts'
+old = '''if (classifyVaultFailure(error) !== 'unreachable') {
+        this.forget(credentialId)
+        throw error
+      }'''
+new = '''if (classifyVaultFailure(error) !== 'unreachable') {
+        // NON-VACUITY BREAK: reject but retain the refused receipt.
+        throw error
+      }'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sserved\sidentity\schanges$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-roster-removed'
+guards = 'a roster removed fence discards bearer material'
+file = 'src/claustrum/consumer.ts'
+old = '''if (observed) this.#custody?.forget(observed.credentialId)
+      throw new ClaustrumConsumerError(
+        'route-unavailable','''
+new = '''// NON-VACUITY BREAK: retain the account rejected by the roster fence.
+      throw new ClaustrumConsumerError(
+        'route-unavailable','''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sroster\sis\sremoved$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-roster-credential'
+guards = 'a roster credential fence discards bearer material'
+file = 'src/claustrum/consumer.ts'
+old = '''if (observed) this.#custody?.forget(observed.credentialId)
+      throw new ClaustrumConsumerError(
+        'route-unavailable','''
+new = '''// NON-VACUITY BREAK: retain the account rejected by the roster fence.
+      throw new ClaustrumConsumerError(
+        'route-unavailable','''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sroster\sis\scredential$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-roster-identity'
+guards = 'a roster identity fence discards bearer material'
+file = 'src/claustrum/consumer.ts'
+old = '''if (observed) this.#custody?.forget(observed.credentialId)
+      throw new ClaustrumConsumerError(
+        'route-unavailable','''
+new = '''// NON-VACUITY BREAK: retain the account rejected by the roster fence.
+      throw new ClaustrumConsumerError(
+        'route-unavailable','''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sroster\sis\sidentity$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-roster-turned-off'
+guards = 'a roster turned-off fence discards bearer material'
+file = 'src/claustrum/consumer.ts'
+old = '''if (observed) this.#custody?.forget(observed.credentialId)
+      throw new ClaustrumConsumerError(
+        'route-unavailable','''
+new = '''// NON-VACUITY BREAK: retain the account rejected by the roster fence.
+      throw new ClaustrumConsumerError(
+        'route-unavailable','''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sroster\sis\sturned\-off$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-roster-declined'
+guards = 'a peer decline discards bearer material before a later accept'
+file = 'src/claustrum/consumer.ts'
+old = '''if (observed) this.#custody?.forget(observed.credentialId)
+      throw new ClaustrumConsumerError(
+        'route-declined','''
+new = '''// NON-VACUITY BREAK: keep the declined receipt.
+      throw new ClaustrumConsumerError(
+        'route-declined','''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sdiscarded\sby\sanother\sprocess\sdecline\scannot\sreturn\safter\saccept$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-discovery-drop'
+guards = 'a successful roster refresh removes receipts for absent accounts'
+file = 'src/claustrum/consumer.ts'
+old = '''custody.retain(roster?.rows ?? [])'''
+new = '''// NON-VACUITY BREAK: do not reconcile the refreshed roster.'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\sby\sa\ssuccessful\sdiscovery\sremoving\sthe\saccount$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-local-decline'
+guards = 'local decline discards a receipt even if accepted before the next send'
+file = 'src/claustrum/consumer.ts'
+old = '''this.#custody?.retain(this.#roster?.rows ?? [])'''
+new = '''// NON-VACUITY BREAK: retain locally declined bearer material.'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\simmediately\son\slocal\sdecline$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-disconnect'
+guards = 'disconnect at dispatch discards the custody instance and its kept receipts'
+file = 'src/claustrum/consumer.ts'
+old = '''if (!roster || !(await this.#active())) {
+      this.#custody?.close()
+      this.#custody = undefined'''
+new = '''if (!roster || !(await this.#active())) {
+      // NON-VACUITY BREAK: keep custody across disconnect.'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\son\sdisconnect\seven\swithout\sa\sdiscovery\spoll$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-enrollment-drop'
+guards = 'a missing enrollment token discards kept receipts, not just the send'
+file = 'src/claustrum/custody.ts'
+old = '''} catch (error) {
+      this.#kept.clear()
+      throw error
+    }
+    try {
+      const attempt = await this.#authorizeFresh('''
+new = '''} catch (error) {
+      // NON-VACUITY BREAK: retain receipts after enrollment disappears.
+      throw error
+    }
+    try {
+      const attempt = await this.#authorizeFresh('''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\sreceipt\sis\sdropped\swhen\senrollment\stoken\sdisappears$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-401-drop'
+guards = 'a kept-token 401 discards the receipt until the vault serves again'
+file = 'src/claustrum/custody.ts'
+old = '''if (keptRoute !== undefined) {
+      this.forget(attempt.credentialId)'''
+new = '''if (keptRoute !== undefined) {
+      // NON-VACUITY BREAK: retain a provider-rejected outage token.'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\s401\sstops\sthe\saccount\swithout\sretry\sor\sreport\suntil\sa\sfresh\svault\sserve$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-kept-401-no-report'
+guards = 'a kept-token 401 never sends a vault failure report'
+file = 'src/claustrum/custody.ts'
+old = '''this.#logger.debug('scoped 401 not reported', {
+        routeId: keptRoute,
+        reason: 'kept-receipt',
+      })
+      return'''
+new = '''this.#logger.debug('scoped 401 not reported', {
+        routeId: keptRoute,
+        reason: 'kept-receipt',
+      })
+      // NON-VACUITY BREAK: fall through and report a kept-token 401.'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\s401\sstops\sthe\saccount\swithout\sretry\sor\sreport\suntil\sa\sfresh\svault\sserve$']
+expect_message = 'Expected length: 0'
+
+[[control]]
+id = 'claustrum-kept-401-no-retry'
+guards = 'a kept-token 401 does not reauthorize or retry during the outage'
+file = 'src/claustrum/consumer.ts'
+old = '''if (response.status === 401 && served.fromKeptReceipt) {'''
+new = '''if (response.status === 401 && false) { // NON-VACUITY BREAK'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^kept\s401\sstops\sthe\saccount\swithout\sretry\sor\sreport\suntil\sa\sfresh\svault\sserve$']
+expect_message = 'Expected: 1'
+
+[[control]]
+id = 'claustrum-kept-adapter-connect'
+guards = 'an adapter can mark an unreachable connect before getScoped'
+file = 'src/claustrum/availability.ts'
+old = '''error instanceof ClaustrumUnreachableError ||'''
+new = '''false || // NON-VACUITY BREAK: ignore the adapter transport marker.'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^injected\sadapter\shandles\smarked\-connect\swithout\sconfusing\sshutdown\swith\soutage$']
+expect_message = 'unavailable'
+
+[[control]]
+id = 'claustrum-kept-unknown-closed'
+guards = 'unknown adapter shutdowns cannot activate fallback'
+file = 'src/claustrum/availability.ts'
+old = '''return 'answered'
+  return VAULT_FAILURE_CLASSES'''
+new = '''return 'unreachable' // NON-VACUITY BREAK: trust an unknown shutdown.
+  return VAULT_FAILURE_CLASSES'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^injected\sadapter\shandles\sclosed\-adapter\swithout\sconfusing\sshutdown\swith\soutage$']
+expect_message = 'Expected promise that rejects'
