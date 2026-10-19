@@ -6523,8 +6523,8 @@ runner = 'command'
 command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
-expect_red = ['^kept\s401\sstops\sthe\saccount\swithout\sretry\sor\sreport\suntil\sa\sfresh\svault\sserve$']
-expect_message = 'Expected: 1'
+expect_red = ['^a\skept-token\s401\sis\snot\sretried\seven\sif\sthe\svault\sreturns\sduring\sthe\ssend$']
+expect_message = 'expect(received).toBe(expected)'
 
 [[control]]
 id = 'claustrum-kept-adapter-connect'
@@ -6831,7 +6831,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watch.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^while\sthe\sinsula\swatch\sis\sopen\sthe\sbackground\spoll\sreads\snothing$']
-expect_message = 'Received: 4'
+expect_message = 'expect(received).toBe(expected)'
 
 [[control]]
 id = 'insula-watch-limit'

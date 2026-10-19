@@ -333,6 +333,37 @@ test('kept 401 stops the account without retry or report until a fresh vault ser
   await s.send()
 })
 
+// While the outage lasts, re-authorizing would only serve the same kept token,
+// so the kept-token 401 rule matters when the vault comes back during the send:
+// the request is not replayed on a fresh, newer token, and the consumer doesn't
+// even ask the vault again for it.
+test('a kept-token 401 is not retried even if the vault returns during the send', async () => {
+  const s = await scenario()
+  await s.warm()
+  s.record.refuse = 'unavailable'
+  const gets = s.daemon.gets.length
+  let dispatches = 0
+  const response = await s.consumer.send(
+    s.route,
+    async (receipt) => {
+      dispatches++
+      if (receipt.fromKeptReceipt) {
+        delete s.record.refuse
+        s.record.record_version = 8
+        s.record.payload = 'fresh-after-outage'
+        await s.consumer.refresh()
+      }
+      return new Response(null, { status: 401 })
+    },
+    { site: 'model' },
+  )
+  expect(response.status).toBe(401)
+  expect(dispatches).toBe(1)
+  // The one vault read is the send's own attempt, which found it unreachable.
+  expect(s.daemon.gets.length - gets).toBe(1)
+  expect(s.daemon.reports).toHaveLength(0)
+})
+
 // A token the provider rejected must not come back from memory when the vault
 // later goes down, whether or not the 401 report reached the vault.
 for (const report of ['reported', 'report fails'] as const) {
