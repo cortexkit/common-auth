@@ -5,6 +5,7 @@ import type { RoutingRow } from '../routing/index.js'
 import { combineAbortSignals } from '../util/any-signal.js'
 import {
   type ClaustrumFamily,
+  type ClaustrumRosterWatch,
   type ClaustrumScopedAttempt,
   type ClaustrumScopedClient,
   ClaustrumScopedCustody,
@@ -28,7 +29,7 @@ import {
   type VaultRosterFile,
   vaultRoutingRows,
 } from './roster.js'
-import { SAFETY_POLL_MS, ScopedRosterWatch, type WatchMode } from './watch.js'
+import { SAFETY_POLL_MS, type WatchMode } from './watch.js'
 
 export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   /**
@@ -114,8 +115,6 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   readonly #shutdown = new AbortController()
   readonly #logger: ClaustrumLogger
   #custody?: ClaustrumScopedCustody
-  /** The custody's client, kept so `start()` can open its vault watch. */
-  #client?: ClaustrumScopedClient
   #connecting?: Promise<ClaustrumScopedCustody>
   #refreshing?: Promise<VaultRosterFile | undefined>
   #roster?: VaultRosterFile
@@ -127,7 +126,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #timer?: ReturnType<typeof setTimeout>
   #started = false
   #insula?: ReturnType<typeof acquireInsulaQuotaSource>
-  #vaultWatch?: ScopedRosterWatch
+  #vaultWatch?: ClaustrumRosterWatch
   #releaseInsulaWatch?: () => void
   /** When this instance last completed a discovery, by `now`. */
   #discoveredAt?: number
@@ -189,7 +188,6 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
             client.close()
             this.#assertOpen()
           }
-          this.#client = client
           this.#custody = new ClaustrumScopedCustody({
             client,
             family: this.#options.family,
@@ -249,9 +247,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
 
   /** Close the watches with the connection they belong to. */
   #stopWatch(): void {
-    this.#vaultWatch?.stop()
+    this.#vaultWatch?.close()
     this.#vaultWatch = undefined
-    this.#client = undefined
     this.#releaseInsulaWatch?.()
     this.#releaseInsulaWatch = undefined
   }
@@ -378,40 +375,27 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
    * reached in vault mode: a host in local mode never connects.
    */
   #openWatch(): void {
-    const client = this.#client
-    if (this.#shutdown.signal.aborted || !client || !this.#custody) return
-    if (!this.#vaultWatch) {
-      const watch = new ScopedRosterWatch({
-        client,
-        enrollmentToken: async () =>
-          (await readClaustrumEnrollmentToken(this.#options.tokenPath)).token,
-        view: () => this.#roster?.view,
-        // The existing discovery, so a watched change commits the roster and
-        // re-applies it to kept receipts exactly as a poll does. A refresh
-        // already in flight may have listed before the change was announced,
-        // so wait for it and list again.
-        discover: async () => {
-          while (this.#refreshing) await this.#refreshing.catch(() => {})
-          await this.refresh()
-        },
-        onRefused: (error) => {
-          // As a poll that met the same refusal from list_scoped would.
-          this.#custody?.listFailed(error)
-          this.#options.onError?.(error)
-        },
-        onTransportLost: () => this.#custody?.transportLost(),
-        onReachable: () => this.#custody?.reachable(),
-        onError: (error) => {
-          if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
-        },
-        logger: this.#logger,
-        now: this.#options.now,
-        setTimeoutImpl: this.#options.setTimeoutImpl,
-        clearTimeoutImpl: this.#options.clearTimeoutImpl,
-      })
-      this.#vaultWatch = watch
-      watch.start()
-    }
+    const custody = this.#custody
+    if (this.#shutdown.signal.aborted || !custody) return
+    // The same entry point a host without a consumer uses, so both apply
+    // notices, refusals and outages alike.
+    this.#vaultWatch ??= custody.watchRoster({
+      view: () => this.#roster?.view,
+      // The existing discovery, so a watched change commits the roster and
+      // re-applies it to kept receipts exactly as a poll does. A refresh
+      // already in flight may have listed before the change was announced,
+      // so wait for it and list again.
+      onView: async () => {
+        while (this.#refreshing) await this.#refreshing.catch(() => {})
+        await this.refresh()
+      },
+      // Custody has dropped kept receipts, as a poll meeting the same
+      // refusal from list_scoped would.
+      onRefused: (error) => this.#options.onError?.(error),
+      onError: (error) => {
+        if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
+      },
+    })
     if (this.#options.insula && this.#insula && !this.#releaseInsulaWatch)
       this.#releaseInsulaWatch = this.#insula.source.watch({
         provider: this.#options.insula.provider,

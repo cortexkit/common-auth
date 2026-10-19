@@ -162,8 +162,9 @@ export interface ScopedRosterWatchOptions {
   /**
    * The host's existing discovery: `list_scoped`, the roster commit and
    * everything that follows it. The watch never reads the vault list itself.
+   * `view` is the view the newest notice carried.
    */
-  discover: () => Promise<unknown>
+  discover: (view: string) => Promise<unknown>
   /**
    * The vault refused the watch, and the confirming `list_scoped` read it
    * with this error (a revoked enrollment ends both with `not_found`). Handle
@@ -216,8 +217,9 @@ export class ScopedRosterWatch {
       async () => {
         const force = this.#force
         this.#force = false
+        // A read is only ever requested by a notice, which set #latestView.
         if (force || this.#latestView !== this.#options.view())
-          await this.#options.discover()
+          await this.#options.discover(this.#latestView ?? '')
       },
       (error) => {
         if (!this.#stopped) this.#options.onError?.(error)

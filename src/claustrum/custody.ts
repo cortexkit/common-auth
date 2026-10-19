@@ -14,7 +14,11 @@ import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
 import type { InsulaUsageTransport } from './insula.js'
-import type { ScopedWatchSource } from './watch.js'
+import {
+  ScopedRosterWatch,
+  type ScopedWatchSource,
+  type WatchMode,
+} from './watch.js'
 
 /**
  * `watchScoped` is present from claustrum-client 0.12.0. Hosts detect it at
@@ -197,6 +201,48 @@ interface KeptReceipt {
   since: number | null
 }
 
+export interface ClaustrumRosterWatchOptions {
+  /**
+   * Run the host's own discovery (`custody.discover()`, then its roster
+   * commit). Called with the newest notice's view when that view differs from
+   * the last discovered one, when a notice shows a sequence gap or a new
+   * epoch, and on the first notice of a watch re-opened after a close (the
+   * time between two watches was not observed). One call runs at a time;
+   * notices that arrive meanwhile earn at most one more call, which runs only
+   * if the view still differs. A rejection goes to `onError`.
+   */
+  onView: (view: string) => unknown
+  /**
+   * The view of the roster the host last committed. Defaults to the view of
+   * the last successful `custody.discover()` (outage probes excluded). Pass it
+   * when the host can commit a roster it did not list itself (a peer process
+   * held the discovery lease) or can fail after listing.
+   */
+  view?: () => string | undefined
+  /**
+   * Called whenever the mode changes. The watch starts in `polling`. Keep the
+   * host's own list timer at its usual pace unless the mode is `watching`.
+   */
+  onMode?: (mode: WatchMode) => void
+  /**
+   * The vault refused the watch, and its confirming `list_scoped` read it with
+   * this error (a revoked enrollment answers `not_found`). Custody has already
+   * applied it as it applies a refused discovery (`listFailed`: every kept
+   * receipt is dropped); handle it as the host handles that refusal.
+   */
+  onRefused?: (error: unknown) => void
+  /** A failed `onView`, or a watch that could not be opened. */
+  onError?: (error: unknown) => void
+}
+
+/** A vault watch held by a custody; see `ClaustrumScopedCustody.watchRoster`. */
+export interface ClaustrumRosterWatch {
+  /** How the host currently learns about changes. */
+  readonly mode: WatchMode
+  /** Stop the watch and its timers. Safe to call more than once. */
+  close(): void
+}
+
 /** Reads the provider identity a served token executes under, when the plugin can tell. */
 export type IdentityParser = (accessToken: string) => string | undefined
 
@@ -365,6 +411,9 @@ export class ClaustrumScopedCustody {
   #lastProbeAt = -Infinity
   #probeDelay = 2_000
   #closed = false
+  /** The view of the last successful `discover()`, for `watchRoster`. */
+  #discoveredView?: string
+  readonly #watches = new Set<ScopedRosterWatch>()
 
   constructor(options: {
     client: ClaustrumScopedClient
@@ -452,7 +501,9 @@ export class ClaustrumScopedCustody {
     this.#probing = true
     // Both triggers share list_scoped discovery, including its receipt-drop rules.
     // Sends never await discovery or let idle backoff delay the next send probe.
-    void this.discover()
+    // A probe commits no roster, so it is not the host's discovery and does
+    // not move the view a roster watch compares notices against.
+    void this.#list()
       .catch(() => {
         if (idle && this.#outage)
           this.#probeDelay = Math.min(this.#probeDelay * 2, 30_000)
@@ -540,6 +591,12 @@ export class ClaustrumScopedCustody {
    * skipped records: they simply are not this consumer's.
    */
   async discover(signal?: AbortSignal): Promise<VaultInventory> {
+    const inventory = await this.#list(signal)
+    this.#discoveredView = inventory.view
+    return inventory
+  }
+
+  async #list(signal?: AbortSignal): Promise<VaultInventory> {
     let inventory: Awaited<ReturnType<ClaustrumScopedClient['listScoped']>>
     let token: string
     try {
@@ -921,11 +978,68 @@ export class ClaustrumScopedCustody {
     }
   }
 
+  /**
+   * Watch this consumer's visible vault accounts instead of listing them on a
+   * short timer. Opens one `watchScoped` on this custody's client and calls
+   * `onView` when the host must run its discovery (see
+   * `ClaustrumRosterWatchOptions`). A claustrum-client without `watchScoped`
+   * (before 0.12.0) or a vault that answers `unknown_method` reports
+   * `fallback` and opens nothing. A watch that closes before any notice was
+   * never accepted: the client reads once to learn why, and the watch reports
+   * `fallback` and tries one new watch after `WATCH_RETRY_MS`, never in a
+   * loop. A watch that closes after notices is re-opened after
+   * `RESUBSCRIBE_BACKOFF_MS`, doubling per close in a row. A lost transport
+   * starts this custody's outage, exactly as an unreachable call does, and
+   * the first notice of a watch ends it. Timers are unreferenced; `close()`
+   * on the returned watch or on this custody stops it.
+   *
+   * The watch keeps no history, so the host still lists on a slow timer while
+   * the mode is `watching`: every `SAFETY_POLL_MS` (five minutes). In any
+   * other mode the host keeps its usual list timer.
+   */
+  watchRoster(options: ClaustrumRosterWatchOptions): ClaustrumRosterWatch {
+    this.#check()
+    const watch: ScopedRosterWatch = new ScopedRosterWatch({
+      client: this.#client,
+      enrollmentToken: () => this.#token(),
+      view: options.view ?? (() => this.#discoveredView),
+      discover: async (view) => {
+        await options.onView(view)
+      },
+      onRefused: (error) => {
+        // A refused watch is the refusal list_scoped would answer.
+        this.listFailed(error)
+        options.onRefused?.(error)
+      },
+      onTransportLost: () => this.transportLost(),
+      onReachable: () => this.reachable(),
+      onError: options.onError,
+      onMode: options.onMode,
+      logger: this.#logger,
+      now: this.#now,
+      setTimeoutImpl: this.#setTimeout,
+      clearTimeoutImpl: this.#clearTimeout,
+    })
+    this.#watches.add(watch)
+    watch.start()
+    return {
+      get mode() {
+        return watch.mode
+      },
+      close: () => {
+        this.#watches.delete(watch)
+        watch.stop()
+      },
+    }
+  }
+
   close(): void {
     if (this.#closed) return
     this.#closed = true
     if (this.#probeTimer) this.#clearTimeout(this.#probeTimer)
     this.#probeTimer = undefined
+    for (const watch of this.#watches) watch.stop()
+    this.#watches.clear()
     this.#kept.clear()
     this.#client.close()
   }

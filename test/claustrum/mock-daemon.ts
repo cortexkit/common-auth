@@ -107,6 +107,11 @@ export interface MockWatch {
   end(): void
   /** End the stream with a refusal reply, as a vault revocation does. */
   refuse(code: string): void
+  /**
+   * Destroy the connection carrying the watch, as a lost transport does. The
+   * mock keeps listening, so the client can connect again.
+   */
+  drop(): void
 }
 
 export interface MockReport {
@@ -487,6 +492,7 @@ export async function startMockDaemon(input: {
         },
         end: () => finish(subc.FrameType.StreamEnd, {}),
         refuse: (code) => finish(subc.FrameType.Response, error(code)),
+        drop: () => socket.destroy(),
       }
       watches.set(key, watch)
       if (vault) state.vaultWatches.push(watch)

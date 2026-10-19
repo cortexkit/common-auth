@@ -30,6 +30,8 @@ export {
 export {
   type AccountIdentitySource,
   type ClaustrumFamily,
+  type ClaustrumRosterWatch,
+  type ClaustrumRosterWatchOptions,
   type ClaustrumScopedAttempt,
   type ClaustrumScopedClient,
   ClaustrumScopedCustody,
