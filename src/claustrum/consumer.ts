@@ -237,18 +237,11 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     return Object.freeze({ vault: this.#vaultWatch?.mode ?? 'polling' })
   }
 
-  /**
-   * Drop the vault connection and everything riding on it: the watch, the
-   * custody (with its kept receipts) and the insula source.
-   */
-  #disconnect(): void {
+  /** Close the vault watch with the connection it rides on. */
+  #stopWatch(): void {
     this.#vaultWatch?.stop()
     this.#vaultWatch = undefined
-    this.#custody?.close()
-    this.#custody = undefined
     this.#client = undefined
-    this.#insula?.release()
-    this.#insula = undefined
   }
 
   /** Whether any account is using an in-memory outage receipt, without I/O. */
@@ -271,7 +264,11 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       if (!(await this.#active())) {
         this.#roster = undefined
         this.#grantReach = undefined
-        this.#disconnect()
+        this.#stopWatch()
+        this.#custody?.close()
+        this.#custody = undefined
+        this.#insula?.release()
+        this.#insula = undefined
         return undefined
       }
       const custody = await this.#getCustody()
@@ -492,7 +489,11 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     this.#assertOpen(signal)
     const roster = this.#roster ?? (await this.#wait(this.refresh(), signal))
     if (!roster || !(await this.#active())) {
-      this.#disconnect()
+      this.#custody?.close()
+      this.#custody = undefined
+      this.#stopWatch()
+      this.#insula?.release()
+      this.#insula = undefined
       throw new ClaustrumConsumerError(
         'not-active',
         'Claustrum scoped custody is not active',
@@ -688,7 +689,10 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     if (this.#timer)
       (this.#options.clearTimeoutImpl ?? clearTimeout)(this.#timer)
     this.#timer = undefined
-    this.#disconnect()
+    this.#stopWatch()
+    this.#custody?.close()
+    this.#insula?.release()
+    this.#insula = undefined
     this.#roster = undefined
     this.#grantReach = undefined
   }
