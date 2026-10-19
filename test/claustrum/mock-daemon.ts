@@ -464,7 +464,9 @@ export async function startMockDaemon(input: {
             ...fields,
           }
           watch.seq = notice.seq
-          // Notices are sheddable stream data, as both modules send them.
+          // Notices go out as sheddable StreamData frames, as the vault's
+          // watchScoped and insula's usage.watch both send them: a notice is
+          // only a hint, so the transport may drop it under load.
           const frame = subc.buildFrame(
             subc.FrameType.StreamData,
             subc.buildFlags(

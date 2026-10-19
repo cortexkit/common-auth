@@ -227,7 +227,7 @@ test.each([
     await Bun.sleep(30)
     expect(s.daemon.usageGets).toBe(reads)
     expect(s.timers.pending()).toEqual([])
-    // Polling is exactly today's: one usage.get per minute at most.
+    // Polling is the same as without a watch: at most one usage.get a minute.
     await s.source.refresh(NOW)
     await s.source.refresh(NOW + 59_999)
     expect(s.daemon.usageGets).toBe(reads + 1)

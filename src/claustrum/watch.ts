@@ -35,7 +35,10 @@ export const WATCH_RETRY_MS = 5 * 60_000
  */
 export const RESUBSCRIBE_BACKOFF_MS = 1_000
 
-/** The fields every change notice carries, from either module. */
+/**
+ * The fields every change notice carries, from the vault's watchScoped and
+ * insula's usage.watch alike.
+ */
 export interface ChangeNotice {
   readonly kind: string
   readonly epoch: string
@@ -199,7 +202,10 @@ export class ScopedRosterWatch {
   #stopped = false
   #latestView?: string
   #force = false
-  /** Closes after acceptance in a row; sets the re-subscribe backoff. */
+  /**
+   * How many accepted watches in a row have closed; each one doubles the wait
+   * before the next re-subscribe. Reset once a watch stays up five minutes.
+   */
   #closes = 0
 
   constructor(options: ScopedRosterWatchOptions) {

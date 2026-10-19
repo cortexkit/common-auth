@@ -167,7 +167,9 @@ export function insulaUsageTransport(
         let deadline: ReturnType<typeof setTimeout> | undefined
         const timeout = new Promise<never>((_resolve, reject) => {
           deadline = setTimeout(
-            // Coded as a timeout so the source treats it as unreachable.
+            // Coded as a timeout, so InsulaQuotaSource treats a watch that could
+            // not open in time as an unreachable insula and tries again later,
+            // not as a refusal.
             () =>
               reject(
                 Object.assign(new Error('insula watch timeout'), {
@@ -343,7 +345,10 @@ export class InsulaQuotaSource {
   #watch?: OpenUsageWatch
   #timer?: ReturnType<typeof setTimeout>
   #timers: Pick<InsulaWatchOptions, 'setTimeoutImpl' | 'clearTimeoutImpl'> = {}
-  /** Closes in a row of watches that had been accepted; sets the backoff. */
+  /**
+   * How many accepted watches in a row have closed; each one doubles the wait
+   * before the next re-subscribe. Reset once a watch brings a second notice.
+   */
   #closes = 0
 
   constructor(
