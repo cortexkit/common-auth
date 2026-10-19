@@ -177,7 +177,8 @@ test.if(clientWatches)(
     const s = await scenario()
     const watch = s.open()
     await watching(s, watch)
-    // Seq 1 carries the view the start-up discovery already read.
+    // Seq 1, sent on acceptance, and this repeat carry the view the start-up
+    // discovery already read.
     s.served().notify()
     await Bun.sleep(50)
     expect(s.views).toEqual([])
@@ -185,7 +186,8 @@ test.if(clientWatches)(
     s.daemon.credentials['oauth:test:home'] = credential('account-home')
     s.served().notify()
     await until(() => s.views.length === 1, 'onView for the new view')
-    await until(() => s.daemon.lists === 2, 'discovery of the new view')
+    await until(() => s.discovered.length === 1, 'discovery of the new view')
+    expect(s.daemon.lists).toBe(2)
     // onView names the notice's view, which the host's discovery then read.
     expect(s.views[0]).not.toBe(s.first.view)
     expect(s.views).toEqual(s.discovered)
