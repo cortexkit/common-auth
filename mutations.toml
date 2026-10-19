@@ -6440,12 +6440,16 @@ old = '''} catch (error) {
       this.#kept.clear()
       throw error
     }
+    if (this.#outage)
+      return this.#serveKept(credentialId, kept, token, routeId)
     try {
       const attempt = await this.#authorizeFresh('''
 new = '''} catch (error) {
       // NON-VACUITY BREAK: retain receipts after enrollment disappears.
       throw error
     }
+    if (this.#outage)
+      return this.#serveKept(credentialId, kept, token, routeId)
     try {
       const attempt = await this.#authorizeFresh('''
 test_file = 'test/claustrum/kept-receipt.test.ts'
@@ -6903,3 +6907,247 @@ list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/insula-watc
 test_count_pattern = "Ran {count} test"
 expect_red = ['^an\sinsula\swatch\sclosed\safter\snotices\sis\sre\-subscribed\sonce\sand\sreads\sagain$']
 expect_message = 'timed out waiting for backoff'
+
+# --- Per-connection vault outage recovery ---
+
+[[control]]
+id = 'claustrum-outage-fast-kept'
+guards = 'outage authorizations serve memory immediately without another vault attempt'
+file = 'src/claustrum/custody.ts'
+old = '''if (this.#outage)
+      return this.#serveKept(credentialId, kept, token, routeId)'''
+new = '''// NON-VACUITY BREAK: retry transport on every authorization.'''
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sauthorizes\ssettle\swithout\svault\scalls\sor\stimers\swith\skept=true$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-outage-fast-empty'
+guards = 'an account without a kept receipt refuses without another transport wait'
+file = 'src/claustrum/custody.ts'
+old = '''if (this.#outage)
+      return this.#serveKept(credentialId, kept, token, routeId)'''
+new = '''// NON-VACUITY BREAK: retry transport for an account with nothing kept.'''
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sauthorizes\ssettle\swithout\svault\scalls\sor\stimers\swith\skept=false$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-outage-list-entry'
+guards = 'an unreachable listing starts connection-wide fallback before any failed get'
+file = 'src/claustrum/custody.ts'
+old = 'this.#outage = true'
+new = '// NON-VACUITY BREAK: never enter the outage state.'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\slist\sfailure\senters\sfallback\sand\sany\ssuccessful\scall\scancels\sits\sprobe$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-outage-watch-entry'
+guards = 'watch transport loss enters custody fallback without a foreground failed get'
+file = 'src/claustrum/consumer.ts'
+old = 'onTransportLost: () => this.#custody?.transportLost(),'
+new = 'onTransportLost: () => {}, // NON-VACUITY BREAK'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\swatch\stransport\sloss\senters\sfallback\sbefore\sthe\snext\sauthorization$']
+expect_message = 'timed out waiting for condition'
+
+[[control]]
+id = 'claustrum-outage-probe-start'
+guards = 'the first outage schedules a recovery probe after two seconds'
+file = 'src/claustrum/custody.ts'
+old = '''this.#logger.warn('serving kept vault receipt', { reason: 'unreachable' })
+    this.#scheduleProbe()'''
+new = '''this.#logger.warn('serving kept vault receipt', { reason: 'unreachable' })
+    // NON-VACUITY BREAK: do not start the recovery probe.'''
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sprobe\sis\ssingle\sflight\sand\sbacks\soff\sfrom\stwo\sto\sthirty\sseconds$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-single-flight'
+guards = 'a new outage cannot start a second probe while an earlier probe is pending'
+file = 'src/claustrum/custody.ts'
+old = 'if (this.#closed || !this.#outage || this.#probeTimer || this.#probing) return'
+new = 'if (this.#closed || !this.#outage || this.#probeTimer) return // NON-VACUITY BREAK'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\scannot\soverlap\sa\spending\sprobe\sfrom\san\searlier\soutage$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-backoff'
+guards = 'failed recovery probes double their delay'
+file = 'src/claustrum/custody.ts'
+old = 'this.#probeDelay = Math.min(this.#probeDelay * 2, 30_000)'
+new = 'this.#probeDelay = Math.min(this.#probeDelay, 30_000) // NON-VACUITY BREAK'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sprobe\sis\ssingle\sflight\sand\sbacks\soff\sfrom\stwo\sto\sthirty\sseconds$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-cap'
+guards = 'probe delay never exceeds thirty seconds'
+file = 'src/claustrum/custody.ts'
+old = 'this.#probeDelay = Math.min(this.#probeDelay * 2, 30_000)'
+new = 'this.#probeDelay = this.#probeDelay * 2 // NON-VACUITY BREAK'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sprobe\sis\ssingle\sflight\sand\sbacks\soff\sfrom\stwo\sto\sthirty\sseconds$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-recovery'
+guards = 'a successful probe ends fallback so the next send reads a fresh record version'
+file = 'src/claustrum/custody.ts'
+old = '''this.#check(signal)
+    this.reachable()
+    return result'''
+new = '''this.#check(signal)
+    // NON-VACUITY BREAK: ignore a successful vault answer.
+    return result'''
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sprobe\srecovery\smakes\sthe\snext\sauthorization\sfresh\sat\sthe\snew\sversion$']
+expect_message = 'timed out waiting for condition'
+
+[[control]]
+id = 'claustrum-outage-probe-refusal-drop'
+guards = 'an answered probe refusal discards all kept bearer material'
+file = 'src/claustrum/custody.ts'
+old = '''else {
+      this.reachable()
+      this.#kept.clear()
+    }'''
+new = '''else {
+      this.reachable()
+      // NON-VACUITY BREAK: keep bearer material after a refused probe.
+    }'''
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sprobe\srefusal\sdrops\sreceipts\sand\sends\stransport\sfallback$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
+id = 'claustrum-outage-probe-refusal-exit'
+guards = 'a refusal proving the vault answered ends the outage and its probe loop'
+file = 'src/claustrum/custody.ts'
+old = 'this.#outage = false'
+new = '// NON-VACUITY BREAK: remain in outage after the vault answers.'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sprobe\srefusal\sdrops\sreceipts\sand\sends\stransport\sfallback$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-reset'
+guards = 'a recovered connection starts its next outage at the initial two second delay'
+file = 'src/claustrum/custody.ts'
+old = 'this.#probeDelay = 2_000'
+new = '// NON-VACUITY BREAK: retain the previous outage backoff.'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sprobe\srecovery\smakes\sthe\snext\sauthorization\sfresh\sat\sthe\snew\sversion$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-cancel-on-answer'
+guards = 'any successful foreground call cancels a pending recovery timer'
+file = 'src/claustrum/custody.ts'
+old = '''this.#outage = false
+    if (this.#probeTimer) this.#clearTimeout(this.#probeTimer)'''
+new = '''this.#outage = false
+    // NON-VACUITY BREAK: leave the recovery timer armed.'''
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\slist\sfailure\senters\sfallback\sand\sany\ssuccessful\scall\scancels\sits\sprobe$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-close'
+guards = 'closing custody cancels its pending probe timer'
+file = 'src/claustrum/custody.ts'
+old = '''this.#closed = true
+    if (this.#probeTimer) this.#clearTimeout(this.#probeTimer)'''
+new = '''this.#closed = true
+    // NON-VACUITY BREAK: leave the probe timer alive after close.'''
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sclose\scancels\sthe\sprobe\sand\san\sin\sflight\sprobe\scannot\srearm\sit$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-close-rearm'
+guards = 'a probe finishing after close cannot schedule another timer'
+file = 'src/claustrum/custody.ts'
+old = 'if (this.#closed || !this.#outage || this.#probeTimer || this.#probing) return'
+new = 'if (!this.#outage || this.#probeTimer || this.#probing) return // NON-VACUITY BREAK'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sclose\scancels\sthe\sprobe\sand\san\sin\sflight\sprobe\scannot\srearm\sit$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-outage-probe-unref'
+guards = 'a recovery timer must not keep the host process alive'
+file = 'src/claustrum/custody.ts'
+old = 'this.#probeTimer.unref?.()'
+new = '// NON-VACUITY BREAK: keep a reference to the recovery timer.'
+test_file = 'test/claustrum/outage.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', 'test/claustrum/outage.test.ts', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^outage\sprobe\stimer\sis\sunreferenced$']
+expect_message = 'expect(received).toBe(expected)'

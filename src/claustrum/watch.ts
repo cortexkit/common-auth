@@ -170,6 +170,8 @@ export interface ScopedRosterWatchOptions {
    * it as discovery handles the same refusal from `list_scoped`.
    */
   onRefused: (error: unknown) => void
+  onTransportLost?: () => void
+  onReachable?: () => void
   onError?: (error: unknown) => void
   onMode?: (mode: WatchMode) => void
   logger?: ClaustrumLogger
@@ -288,6 +290,7 @@ export class ScopedRosterWatch {
           if (this.#stopped || !watch || this.#watch !== watch) return
           watch.notices++
           if (watch.notices === 1) {
+            this.#options.onReachable?.()
             watch.acceptedAt = (this.#options.now ?? Date.now)()
             this.#setMode('watching', 'accepted')
           }
@@ -319,6 +322,7 @@ export class ScopedRosterWatch {
     if (this.#stopped || this.#watch !== watch) return
     this.#watch = undefined
     if (end.kind === 'stopped') return
+    if (end.kind === 'transport_lost') this.#options.onTransportLost?.()
     if (end.kind === 'unsupported') {
       // An older vault answers unknown_method: poll exactly as before.
       this.#setMode('fallback', 'vault-without-watch')

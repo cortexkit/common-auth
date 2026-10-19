@@ -152,6 +152,8 @@ export interface MockDaemon {
   usageEpoch: string
   /** While set, list_scoped refuses with not_found, as for a revoked enrollment. */
   revoked: boolean
+  /** Drop scoped calls at the transport, without sending a vault refusal. */
+  outage: boolean
   /**
    * While set, each list_scoped is counted and answered as of its arrival,
    * but the answer is sent only once this settles.
@@ -230,6 +232,7 @@ export async function startMockDaemon(input: {
     usageWatches: [],
     usageEpoch: 'insula-epoch-1',
     revoked: false,
+    outage: false,
     approve(requestId, token = 'ab'.repeat(32), generation = 1) {
       const entry = enrollments.get(requestId)
       if (!entry) throw new Error(`unknown request ${requestId}`)
@@ -597,6 +600,10 @@ export async function startMockDaemon(input: {
             subc.FrameType.Error,
           )
           continue
+        }
+        if (state.outage && routes.get(header.channel) === 'claustrum') {
+          socket.destroy()
+          return
         }
         // subc-client does not yet set the SUBSCRIPTION flag on a subscribe
         // (see its client.js). Both modules know a watch by its method alone,

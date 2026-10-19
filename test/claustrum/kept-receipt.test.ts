@@ -99,6 +99,8 @@ async function scenario(apiKey = false) {
     await send()
     expect(sends.at(-1)?.accessToken).toBe(SECRET)
     delete record.refuse
+    // A successful listing ends the outage before testing fresh-call fences.
+    await consumer.refresh()
   }
   return {
     dir,
@@ -149,6 +151,7 @@ test('kept receipt survives a stopped daemon and recovers fresh without changing
   s.record.record_version = 8
   s.record.project_id = 'fresh-project'
   const restarted = await s.start()
+  await s.consumer.refresh()
   await s.send()
   expect(restarted.gets).toHaveLength(1)
   expect(s.sends.at(-1)?.accessToken).toBe('fresh-token')
@@ -159,14 +162,14 @@ test('kept receipt survives a stopped daemon and recovers fresh without changing
     {
       level: 'warn',
       message: 'serving kept vault receipt',
-      data: { routeId: s.route, reason: 'unreachable' },
+      data: { reason: 'unreachable' },
     },
   ])
   expect(s.logs.records.filter((r) => r.level === 'info')).toEqual([
     {
       level: 'info',
       message: 'vault receipt serving resumed',
-      data: { routeId: s.route, reason: 'reachable' },
+      data: { reason: 'reachable' },
     },
   ])
 })
@@ -324,6 +327,7 @@ test('kept 401 stops the account without retry or report until a fresh vault ser
   })
   await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
   delete s.record.refuse
+  await s.consumer.refresh()
   await s.send()
   s.record.refuse = 'unavailable'
   await s.send()
@@ -440,6 +444,9 @@ for (const failure of [
         readonly kind = 'closed'
       }
       connectFailure = new NativeCustodyError('adapter closed')
+      await expect(custody.discover()).rejects.toMatchObject({
+        kind: 'unavailable',
+      })
       await expect(custody.authorize(identity)).rejects.toMatchObject({
         kind: 'unavailable',
       })

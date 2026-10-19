@@ -339,7 +339,7 @@ function grantReachOf(
 /**
  * Reads this consumer's vault credentials (list, fetch, 401 report), with the
  * enrollment token as authorization. Used by every host of a plugin. Every
- * physical send still asks the vault first. Only an unreachable vault permits
+ * physical send asks the vault first while reachable. Only an unreachable vault permits
  * reuse of the last validated receipt, in memory and bounded by its expiry.
  * The enrollment token is re-read per operation so revocation and disconnect
  * still take effect without a process restart.
@@ -356,6 +356,13 @@ export class ClaustrumScopedCustody {
   readonly #reports = new WeakMap<ClaustrumScopedAttempt, Promise<void>>()
   readonly #kept = new Map<string, KeptReceipt>()
   readonly #keptAttempts = new WeakMap<ClaustrumScopedAttempt, string>()
+  readonly #setTimeout: typeof setTimeout
+  readonly #clearTimeout: typeof clearTimeout
+  #outage = false
+  #outageError: unknown = new ClaustrumUnreachableError()
+  #probeTimer?: ReturnType<typeof setTimeout>
+  #probing = false
+  #probeDelay = 2_000
   #closed = false
 
   constructor(options: {
@@ -374,6 +381,8 @@ export class ClaustrumScopedCustody {
     requireAssertion?: boolean
     now?: () => number
     logger?: ClaustrumLogger
+    setTimeoutImpl?: typeof setTimeout
+    clearTimeoutImpl?: typeof clearTimeout
   }) {
     const tokenPath = options.tokenPath
     if (options.readToken) {
@@ -392,6 +401,56 @@ export class ClaustrumScopedCustody {
     this.#requireAssertion = options.requireAssertion ?? false
     this.#now = options.now ?? Date.now
     this.#logger = options.logger ?? defaultLogger
+    this.#setTimeout = options.setTimeoutImpl ?? setTimeout
+    this.#clearTimeout = options.clearTimeoutImpl ?? clearTimeout
+  }
+
+  /** A watch losing its transport is the same outage as an unreachable read. */
+  transportLost(error?: unknown): void {
+    if (this.#closed || this.#outage) return
+    this.#outage = true
+    this.#outageError =
+      error instanceof ClaustrumCredentialError
+        ? error
+        : new ClaustrumUnreachableError()
+    this.#logger.warn('serving kept vault receipt', { reason: 'unreachable' })
+    this.#scheduleProbe()
+  }
+
+  /** Any vault answer ends transport fallback, even when it refuses access. */
+  reachable(): void {
+    if (this.#closed || !this.#outage) return
+    this.#outage = false
+    if (this.#probeTimer) this.#clearTimeout(this.#probeTimer)
+    this.#probeTimer = undefined
+    this.#probeDelay = 2_000
+    for (const kept of this.#kept.values()) kept.since = null
+    ;(this.#logger.info ?? defaultLogger.info)(
+      'vault receipt serving resumed',
+      { reason: 'reachable' },
+    )
+  }
+
+  #scheduleProbe(): void {
+    if (this.#closed || !this.#outage || this.#probeTimer || this.#probing)
+      return
+    this.#probeTimer = this.#setTimeout(() => {
+      this.#probeTimer = undefined
+      if (this.#closed || !this.#outage) return
+      this.#probing = true
+      // list_scoped works without watch support and never fetches bearer material.
+      // discover also applies the existing enrollment/refusal receipt-drop rules.
+      void this.discover()
+        .catch(() => {
+          if (this.#outage)
+            this.#probeDelay = Math.min(this.#probeDelay * 2, 30_000)
+        })
+        .finally(() => {
+          this.#probing = false
+          this.#scheduleProbe()
+        })
+    }, this.#probeDelay)
+    this.#probeTimer.unref?.()
   }
 
   #check(signal?: AbortSignal): void {
@@ -443,6 +502,9 @@ export class ClaustrumScopedCustody {
         : await pending
     } catch (error) {
       this.#check(signal)
+      if (classifyVaultFailure(error) === 'unreachable')
+        this.transportLost(error)
+      else this.reachable()
       // Keep the vault's own refusals (ClaustrumCredentialError, carrying
       // code, class and action); replace any other error, whose text may echo
       // request params that include the enrollment token.
@@ -457,6 +519,7 @@ export class ClaustrumScopedCustody {
       removeAbortListener?.()
     }
     this.#check(signal)
+    this.reachable()
     return result
   }
 
@@ -536,7 +599,11 @@ export class ClaustrumScopedCustody {
    * refusal calls this too, so both paths treat it alike.
    */
   listFailed(error: unknown): void {
-    if (classifyVaultFailure(error) !== 'unreachable') this.#kept.clear()
+    if (classifyVaultFailure(error) === 'unreachable') this.transportLost(error)
+    else {
+      this.reachable()
+      this.#kept.clear()
+    }
   }
 
   /** Discard bearer material when a route is removed, declined or rebound. */
@@ -585,7 +652,7 @@ export class ClaustrumScopedCustody {
       : attempt.expiresAtMs - this.#now() > KEPT_RECEIPT_MARGIN_MS
   }
 
-  /** Ask the vault first; retain one validated receipt per credential in memory only. */
+  /** Ask the vault while reachable; retain one validated receipt in memory only. */
   async authorize(
     identity: ClaustrumScopedIdentity,
     signal?: AbortSignal,
@@ -610,17 +677,13 @@ export class ClaustrumScopedCustody {
       this.#kept.clear()
       throw error
     }
+    if (this.#outage) return this.#serveKept(credentialId, kept, token, routeId)
     try {
       const attempt = await this.#authorizeFresh(
         { credentialId, credentialType, accountIdentity },
         token,
         signal,
       )
-      if (kept?.since !== null && kept?.since !== undefined)
-        (this.#logger.info ?? defaultLogger.info)(
-          'vault receipt serving resumed',
-          { routeId, reason: 'reachable' },
-        )
       this.#kept.set(credentialId, { attempt, routeId, since: null })
       return attempt
     } catch (error) {
@@ -629,33 +692,37 @@ export class ClaustrumScopedCustody {
         this.forget(credentialId)
         throw error
       }
-      // A concurrent refusal or 401 may already have discarded this entry.
-      if (
-        !kept ||
-        this.#kept.get(credentialId) !== kept ||
-        !this.#usable(kept.attempt)
-      ) {
-        this.forget(credentialId)
-        throw error
-      }
-      if (kept.since === null) {
-        kept.since = this.#now()
-        this.#logger.warn('serving kept vault receipt', {
-          routeId,
-          reason: 'unreachable',
-        })
-      }
-      const attempt: ClaustrumScopedAttempt = Object.freeze(
-        Object.defineProperty(
-          { ...kept.attempt, fromKeptReceipt: true as const },
-          'accessToken',
-          { value: kept.attempt.accessToken, enumerable: false },
-        ),
-      )
-      this.#provenance.set(attempt, token)
-      this.#keptAttempts.set(attempt, routeId)
-      return attempt
+      return this.#serveKept(credentialId, kept, token, routeId, error)
     }
+  }
+
+  #serveKept(
+    credentialId: string,
+    kept: KeptReceipt | undefined,
+    token: string,
+    routeId: string,
+    error: unknown = this.#outageError,
+  ): ClaustrumScopedAttempt {
+    // A concurrent refusal or 401 may already have discarded this entry.
+    if (
+      !kept ||
+      this.#kept.get(credentialId) !== kept ||
+      !this.#usable(kept.attempt)
+    ) {
+      this.forget(credentialId)
+      throw error
+    }
+    if (kept.since === null) kept.since = this.#now()
+    const attempt: ClaustrumScopedAttempt = Object.freeze(
+      Object.defineProperty(
+        { ...kept.attempt, fromKeptReceipt: true as const },
+        'accessToken',
+        { value: kept.attempt.accessToken, enumerable: false },
+      ),
+    )
+    this.#provenance.set(attempt, token)
+    this.#keptAttempts.set(attempt, routeId)
+    return attempt
   }
 
   /**
@@ -844,6 +911,8 @@ export class ClaustrumScopedCustody {
   close(): void {
     if (this.#closed) return
     this.#closed = true
+    if (this.#probeTimer) this.#clearTimeout(this.#probeTimer)
+    this.#probeTimer = undefined
     this.#kept.clear()
     this.#client.close()
   }

@@ -198,6 +198,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
             requireAssertion: this.#options.requireAssertion,
             now: this.#options.now,
             logger: this.#logger,
+            setTimeoutImpl: this.#options.setTimeoutImpl,
+            clearTimeoutImpl: this.#options.clearTimeoutImpl,
           })
           if (this.#options.insula && client.insula) {
             this.#insula = acquireInsulaQuotaSource(
@@ -397,6 +399,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
           this.#custody?.listFailed(error)
           this.#options.onError?.(error)
         },
+        onTransportLost: () => this.#custody?.transportLost(),
+        onReachable: () => this.#custody?.reachable(),
         onError: (error) => {
           if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
         },
