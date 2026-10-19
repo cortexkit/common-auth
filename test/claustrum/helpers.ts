@@ -1,7 +1,10 @@
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
+import {
+  ClaustrumClient,
+  type ScopedInventoryRow,
+} from '@cortexkit/claustrum-client'
 import type { ClaustrumFamily } from '../../src/claustrum/index.ts'
 import { makeTempDir } from '../fixtures/scratch.ts'
 
@@ -169,3 +172,11 @@ export async function until(
     await Bun.sleep(2)
   }
 }
+
+/**
+ * Whether the installed claustrum-client can watch (0.12.0 and later).
+ * `check:claustrum-floor` also runs these tests against 0.6.2, which cannot, so
+ * the tests that need a real watching client are skipped there and the
+ * fallback tests run instead.
+ */
+export const clientWatches = 'watchScoped' in ClaustrumClient.prototype

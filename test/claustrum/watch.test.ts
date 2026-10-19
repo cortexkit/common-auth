@@ -1,9 +1,6 @@
 import { expect } from 'bun:test'
 import { join } from 'node:path'
-import {
-  ClaustrumClient,
-  ClaustrumCredentialError,
-} from '@cortexkit/claustrum-client'
+import { ClaustrumCredentialError } from '@cortexkit/claustrum-client'
 import {
   ClaustrumConsumer,
   type ClaustrumScopedAttempt,
@@ -17,6 +14,7 @@ import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   captureLogger,
   cleanupDirs,
+  clientWatches,
   fakeTimers,
   family,
   tempDir,
@@ -38,14 +36,6 @@ afterEach(async () => {
   await Promise.all(daemons.splice(0).map((daemon) => daemon.stop()))
   await cleanupDirs()
 })
-
-/**
- * Whether the installed claustrum-client can watch (0.12.0 and later).
- * `check:claustrum-floor` also runs this file against 0.6.2, which cannot, so
- * the tests that need a real watching client are skipped there and the
- * fallback tests run instead.
- */
-const clientWatches = 'watchScoped' in ClaustrumClient.prototype
 
 const ID = 'oauth:test:work'
 const POLL_MS = 5_000

@@ -11,6 +11,7 @@ import {
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   cleanupDirs,
+  clientWatches,
   fakeTimers,
   family,
   tempDir,
@@ -302,32 +303,36 @@ async function consumerScenario(options: { active: boolean }) {
   }
 }
 
-test('an idle watching consumer makes no vault or insula read between safety polls', async () => {
-  const s = await consumerScenario({ active: true })
-  s.consumer.start()
-  await until(
-    () =>
-      s.consumer.watchState().vault === 'watching' &&
-      s.consumer.watchState().insula === 'watching',
-    'both watches',
-  )
-  await until(() => s.timers.pending().includes(POLL_MS), 'tick')
-  // Start-up made one list and one usage.get, and insula's seq 1 one more.
-  await until(() => s.daemon.usageGets === 2, 'read on insula seq 1')
-  expect(s.daemon.lists).toBe(1)
-  const lists = s.daemon.lists
-  const usageGets = s.daemon.usageGets
-  for (let minute = 0; minute < 4; minute++) {
-    s.advance(60_000)
-    await s.tick()
-  }
-  expect(s.daemon.lists).toBe(lists)
-  expect(s.daemon.usageGets).toBe(usageGets)
-  expect(s.consumer.watchState()).toEqual({
-    vault: 'watching',
-    insula: 'watching',
-  })
-})
+// The vault half needs a client with watchScoped (claustrum-client 0.12.0).
+test.if(clientWatches)(
+  'an idle watching consumer makes no vault or insula read between safety polls',
+  async () => {
+    const s = await consumerScenario({ active: true })
+    s.consumer.start()
+    await until(
+      () =>
+        s.consumer.watchState().vault === 'watching' &&
+        s.consumer.watchState().insula === 'watching',
+      'both watches',
+    )
+    await until(() => s.timers.pending().includes(POLL_MS), 'tick')
+    // Start-up made one list and one usage.get, and insula's seq 1 one more.
+    await until(() => s.daemon.usageGets === 2, 'read on insula seq 1')
+    expect(s.daemon.lists).toBe(1)
+    const lists = s.daemon.lists
+    const usageGets = s.daemon.usageGets
+    for (let minute = 0; minute < 4; minute++) {
+      s.advance(60_000)
+      await s.tick()
+    }
+    expect(s.daemon.lists).toBe(lists)
+    expect(s.daemon.usageGets).toBe(usageGets)
+    expect(s.consumer.watchState()).toEqual({
+      vault: 'watching',
+      insula: 'watching',
+    })
+  },
+)
 
 test('a consumer in local mode opens no insula watch', async () => {
   const s = await consumerScenario({ active: false })
