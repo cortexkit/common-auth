@@ -172,7 +172,12 @@ export interface ClaustrumScopedAttempt {
   readonly accessToken: string
   readonly recordVersion: number
   readonly expiresAtMs: number | null
-  /** True only for an outage fallback; a 401 must not retry or report it. */
+  /**
+   * True when this receipt was not freshly served but is the last token kept
+   * from an earlier read, used because the vault could not be reached. A 401
+   * with such a receipt must not be retried and is not reported to the vault,
+   * which is unreachable.
+   */
   readonly fromKeptReceipt?: true
 }
 
