@@ -6229,7 +6229,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sOAuth\sreceipt\sis\sbounded\sby\sexpiry\swith\sa\ssixty\ssecond\smargin$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-api-key'
@@ -6263,7 +6263,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\safter\svault\srefusal\senrollment_revoked$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-identity-drop'
@@ -6283,7 +6283,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sserved\sidentity\schanges$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-roster-removed'
@@ -6301,7 +6301,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sroster\sis\sremoved$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-roster-credential'
@@ -6319,7 +6319,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sroster\sis\scredential$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-roster-identity'
@@ -6337,7 +6337,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sroster\sis\sidentity$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-roster-turned-off'
@@ -6355,7 +6355,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\swhen\sroster\sis\sturned\-off$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-roster-declined'
@@ -6373,7 +6373,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sdiscarded\sby\sanother\sprocess\sdecline\scannot\sreturn\safter\saccept$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-discovery-drop'
@@ -6387,7 +6387,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\sby\sa\ssuccessful\sdiscovery\sremoving\sthe\saccount$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-local-decline'
@@ -6401,7 +6401,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\simmediately\son\slocal\sdecline$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-disconnect'
@@ -6418,7 +6418,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\son\sdisconnect\seven\swithout\sa\sdiscovery\spoll$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-enrollment-drop'
@@ -6442,7 +6442,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\sreceipt\sis\sdropped\swhen\senrollment\stoken\sdisappears$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-401-drop'
@@ -6458,7 +6458,7 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^kept\s401\sstops\sthe\saccount\swithout\sretry\sor\sreport\suntil\sa\sfresh\svault\sserve$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'claustrum-kept-401-no-report'
@@ -6524,4 +6524,4 @@ command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/cla
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^injected\sadapter\shandles\sclosed\-adapter\swithout\sconfusing\sshutdown\swith\soutage$']
-expect_message = 'expected a rejection'
+expect_message = 'Expected promise that rejects'
