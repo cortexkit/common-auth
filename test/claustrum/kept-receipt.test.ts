@@ -329,6 +329,33 @@ test('kept 401 stops the account without retry or report until a fresh vault ser
   await s.send()
 })
 
+// A token the provider rejected must not come back from memory when the vault
+// later goes down, whether or not the 401 report reached the vault.
+for (const report of ['reported', 'report fails'] as const) {
+  test(`a fresh receipt rejected with 401 is not kept for an outage (${report})`, async () => {
+    const s = await scenario()
+    await s.send()
+    if (report === 'report fails')
+      s.daemon.onReport = () => {
+        void s.daemon.stop()
+      }
+    const response = await s.consumer
+      .send(s.route, async () => new Response(null, { status: 401 }), {
+        site: 'model',
+      })
+      .catch((error: unknown) => error)
+    if (report === 'reported') {
+      expect((response as Response).status).toBe(401)
+      expect(s.daemon.reports).toHaveLength(1)
+      s.record.refuse = 'unavailable'
+    } else await s.daemon.stop()
+    const before = s.sends.length
+    await expect(s.send()).rejects.toBeDefined()
+    expect(s.sends.length).toBe(before)
+    expect(s.consumer.keptReceiptState().active).toBe(false)
+  })
+}
+
 test('kept receipt never reaches logs or the state directory and is not shared with a new consumer', async () => {
   const s = await scenario()
   await s.warm()

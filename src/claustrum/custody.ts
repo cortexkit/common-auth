@@ -795,6 +795,12 @@ export class ClaustrumScopedCustody {
       })
       return
     }
+    // The provider rejected this token, so it must not come back as a kept
+    // receipt during a later outage. Drop it before reporting, so a report that
+    // fails because the vault is unreachable still drops it.
+    const kept = this.#kept.get(attempt.credentialId)
+    if (kept && kept.attempt.recordVersion === attempt.recordVersion)
+      this.forget(attempt.credentialId)
     const pending = this.#reports.get(attempt)
     if (pending) return pending
     const report = this.#call(() =>

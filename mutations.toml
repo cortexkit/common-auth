@@ -6473,6 +6473,22 @@ expect_red = ['^kept\s401\sstops\sthe\saccount\swithout\sretry\sor\sreport\sunti
 expect_message = 'Expected promise that rejects'
 
 [[control]]
+id = 'claustrum-fresh-401-drops-kept'
+guards = 'a fresh receipt the provider rejected with 401 is not served again from memory during an outage'
+file = 'src/claustrum/custody.ts'
+old = '''    if (kept && kept.attempt.recordVersion === attempt.recordVersion)
+      this.forget(attempt.credentialId)'''
+new = '''    // NON-VACUITY BREAK: keep a provider-rejected fresh token for outages.
+    void kept'''
+test_file = 'test/claustrum/kept-receipt.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/kept-receipt.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/kept-receipt.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sfresh\sreceipt\srejected\swith\s401\sis\snot\skept\sfor\san\soutage\s\(reported\)$']
+expect_message = 'Expected promise that rejects'
+
+[[control]]
 id = 'claustrum-kept-401-no-report'
 guards = 'a kept-token 401 never sends a vault failure report'
 file = 'src/claustrum/custody.ts'
