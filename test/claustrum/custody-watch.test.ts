@@ -106,6 +106,8 @@ async function scenario(
   // The host's own discovery, run once at start-up as it does today.
   const first = await custody.discover()
   const views: string[] = []
+  /** The views the host's own discoveries read, in order. */
+  const discovered: string[] = []
   const modes: WatchMode[] = []
   const refusals: unknown[] = []
   const errors: unknown[] = []
@@ -119,6 +121,7 @@ async function scenario(
     record,
     first,
     views,
+    discovered,
     modes,
     refusals,
     errors,
@@ -127,7 +130,7 @@ async function scenario(
         onView: async (view) => {
           views.push(view)
           if (options.onView) await options.onView(view)
-          else await custody.discover()
+          else discovered.push((await custody.discover()).view)
         },
         onMode: (mode) => modes.push(mode),
         onRefused: (error) => refusals.push(error),
@@ -183,7 +186,9 @@ test.if(clientWatches)(
     s.served().notify()
     await until(() => s.views.length === 1, 'onView for the new view')
     await until(() => s.daemon.lists === 2, 'discovery of the new view')
+    // onView names the notice's view, which the host's discovery then read.
     expect(s.views[0]).not.toBe(s.first.view)
+    expect(s.views).toEqual(s.discovered)
     // The host's discovery read that view, so repeating it calls nothing.
     s.served().notify()
     s.served().notify()
@@ -212,7 +217,7 @@ test.if(clientWatches)(
     await watching(s, watch)
     s.daemon.credentials['oauth:test:home'] = credential('account-home')
     for (let notice = 0; notice < 10; notice++) s.served().notify()
-    await until(() => s.views.length === 1, 'onView')
+    await until(() => s.views.length > 0, 'onView')
     await Bun.sleep(30)
     expect(s.views).toHaveLength(1)
     gate.resolve()
@@ -316,6 +321,10 @@ test.if(clientWatches)(
     s.timers.fire(RESUBSCRIBE_BACKOFF_MS)
     await until(() => logged(s, 'vault receipt serving resumed'), 'outage end')
     expect(watch.mode).toBe('watching')
+    // Nothing watched the vault between the two watches, so the new watch's
+    // first notice asks the host to discover even with the same view.
+    await until(() => s.views.length === 1, 'onView on the new watch')
+    expect(s.views).toEqual([s.first.view])
     // Recovery cancelled the outage probe.
     expect(s.timers.pending()).toEqual([])
     expect(s.daemon.vaultWatchRequests).toBe(2)

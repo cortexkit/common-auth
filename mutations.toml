@@ -6766,9 +6766,11 @@ expect_message = 'expect(received).toEqual(expected)'
 [[control]]
 id = 'claustrum-watch-refusal-drops-kept'
 guards = 'a watch refused after revocation drops kept receipts as a refused list_scoped does'
-file = 'src/claustrum/consumer.ts'
-old = '''this.#custody?.listFailed(error)'''
-new = '''// NON-VACUITY BREAK: keep receipts after a refused watch'''
+file = 'src/claustrum/custody.ts'
+old = '''this.listFailed(error)
+        options.onRefused?.(error)'''
+new = '''// NON-VACUITY BREAK: keep receipts after a refused watch
+        options.onRefused?.(error)'''
 test_file = 'test/claustrum/watch.test.ts'
 runner = 'command'
 command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
@@ -6824,9 +6826,9 @@ id = 'claustrum-watch-discover-commits'
 guards = 'a watched change runs the full discovery, so kept receipts follow the roster'
 file = 'src/claustrum/consumer.ts'
 old = '''while (this.#refreshing) await this.#refreshing.catch(() => {})
-          await this.refresh()'''
+        await this.refresh()'''
 new = '''while (this.#refreshing) await this.#refreshing.catch(() => {})
-          await this.#custody?.discover() // NON-VACUITY BREAK: list without committing'''
+        await this.#custody?.discover() // NON-VACUITY BREAK: list without committing'''
 test_file = 'test/claustrum/watch.test.ts'
 runner = 'command'
 command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
@@ -6834,6 +6836,208 @@ list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/watch.test.
 test_count_pattern = "Ran {count} test"
 expect_red = ['^a\swatched\sroster\schange\sthat\sremoves\sthe\saccount\sdrops\sits\skept\sreceipt$']
 expect_message = 'timed out waiting for roster'
+
+# --- custody-level vault watch for hosts without a ClaustrumConsumer ---
+[[control]]
+id = 'custody-watch-default-view'
+guards = "a custody watch compares notices with the view of the host's last discovery when the host names none"
+file = 'src/claustrum/custody.ts'
+old = '''view: options.view ?? (() => this.#discoveredView),'''
+new = '''view: options.view ?? (() => undefined), // NON-VACUITY BREAK: forget the discovered view'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\scustody\swatch\scalls\sonView\sfor\sa\snew\sview\sand\snot\sfor\san\sunchanged\sone$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'custody-watch-discover-records-view'
+guards = "custody.discover() records the view a custody watch compares notices with"
+file = 'src/claustrum/custody.ts'
+old = '''this.#discoveredView = inventory.view'''
+new = '''// NON-VACUITY BREAK: do not record the discovered view'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\scustody\swatch\scalls\sonView\sfor\sa\snew\sview\sand\snot\sfor\san\sunchanged\sone$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'custody-watch-onview-view'
+guards = "onView receives the view the newest notice carried"
+file = 'src/claustrum/watch.ts'
+old = '''await this.#options.discover(this.#latestView ?? '')'''
+new = '''await this.#options.discover('') // NON-VACUITY BREAK: drop the notice's view'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\scustody\swatch\scalls\sonView\sfor\sa\snew\sview\sand\snot\sfor\san\sunchanged\sone$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'custody-watch-probe-not-discovery'
+guards = "an outage probe's listing does not count as the host's discovery for a custody watch"
+file = 'src/claustrum/custody.ts'
+old = '''void this.#list()'''
+new = '''void this.discover() // NON-VACUITY BREAK: let a probe move the watch's view'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^an\soutage\sprobe\slisting\sa\snew\sview\sdoes\snot\sstand\sin\sfor\sthe\shost\sdiscovery$']
+expect_message = 'timed out waiting for onView after the probe'
+
+[[control]]
+id = 'custody-watch-coalesce'
+guards = "notices during a running onView share it instead of each calling onView"
+file = 'src/claustrum/watch.ts'
+old = '''    if (this.#running) {
+      this.#queued = true'''
+new = '''    if (this.#running && Math.random() < 0) { // NON-VACUITY BREAK: start a read per request
+      this.#queued = true'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sburst\sof\snotices\sduring\sonView\sshares\sthat\scall$']
+expect_message = 'toHaveLength'
+
+[[control]]
+id = 'custody-watch-zero-notice-no-resubscribe'
+guards = "a custody watch closed before any notice is not re-subscribed"
+file = 'src/claustrum/watch.ts'
+old = '''    if (watch.notices > 0) {'''
+new = '''    if (true) { // NON-VACUITY BREAK: re-subscribe an unaccepted watch'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\scustody\swatch\sclosed\sbefore\sany\snotice\sreads\sonce\sand\sdoes\snot\sloop$']
+expect_message = 'timed out waiting for fallback'
+
+[[control]]
+id = 'custody-watch-unknown-method'
+guards = "a vault answering unknown_method leaves a custody watch in fallback with no retry"
+file = 'src/claustrum/watch.ts'
+old = '''if (end.kind === 'unsupported') {'''
+new = '''if ((end.kind as string) === 'never') { // NON-VACUITY BREAK: treat unknown_method as a transient close'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\svault\sanswering\sunknown_method\sreports\sfallback\swith\sno\sretry$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'custody-watch-client-detect'
+guards = "a custody watch on a client without watchScoped reports fallback"
+file = 'src/claustrum/watch.ts'
+old = '''if (typeof this.#options.client.watchScoped !== 'function') {'''
+new = '''if (false) { // NON-VACUITY BREAK: skip feature detection'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\sclient\swithout\swatchScoped\sreports\sfallback\sand\sopens\snothing$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'custody-watch-refusal-drops-kept'
+guards = "a refused custody watch drops kept receipts as a refused discovery does"
+file = 'src/claustrum/custody.ts'
+old = '''this.listFailed(error)
+        options.onRefused?.(error)'''
+new = '''// NON-VACUITY BREAK: keep receipts after a refused watch
+        options.onRefused?.(error)'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\srevocation\sends\sthe\scustody\swatch\sas\sa\srefused\sdiscovery$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'custody-watch-transport-lost'
+guards = "a custody watch losing its transport starts the custody outage"
+file = 'src/claustrum/custody.ts'
+old = '''onTransportLost: () => this.transportLost(),'''
+new = '''onTransportLost: () => {}, // NON-VACUITY BREAK'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\slost\swatch\stransport\sstarts\sthe\scustody\soutage\sand\sits\snext\sfirst\snotice\sends\sit$']
+expect_message = 'timed out waiting for outage'
+
+[[control]]
+id = 'custody-watch-reachable'
+guards = "the first notice of a custody watch ends the custody outage"
+file = 'src/claustrum/custody.ts'
+old = '''onReachable: () => this.reachable(),'''
+new = '''onReachable: () => {}, // NON-VACUITY BREAK'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\slost\swatch\stransport\sstarts\sthe\scustody\soutage\sand\sits\snext\sfirst\snotice\sends\sit$']
+expect_message = 'timed out waiting for outage end'
+
+[[control]]
+id = 'custody-watch-resubscribe-reads'
+guards = "the first notice of a re-opened custody watch calls onView"
+file = 'src/claustrum/watch.ts'
+old = '''this.#force = resubscribed'''
+new = '''this.#force = false // NON-VACUITY BREAK: trust the view across watches'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^a\slost\swatch\stransport\sstarts\sthe\scustody\soutage\sand\sits\snext\sfirst\snotice\sends\sit$']
+expect_message = 'timed out waiting for onView on the new watch'
+
+[[control]]
+id = 'custody-watch-handle-close'
+guards = "closing a custody watch stops it"
+file = 'src/claustrum/custody.ts'
+old = '''        this.#watches.delete(watch)
+        watch.stop()'''
+new = '''        this.#watches.delete(watch) // NON-VACUITY BREAK: leave the watch open'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^closing\sthe\scustody\swatch\sstops\sit$']
+expect_message = 'timed out waiting for watch closed'
+
+[[control]]
+id = 'custody-watch-custody-close'
+guards = "closing the custody stops its watches and their timers"
+file = 'src/claustrum/custody.ts'
+old = '''for (const watch of this.#watches) watch.stop()'''
+new = '''// NON-VACUITY BREAK: leave the watches running'''
+test_file = 'test/claustrum/custody-watch.test.ts'
+runner = 'command'
+command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/custody-watch.test.ts", "{test}"]
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/claustrum/custody-watch.test.ts", "{test}"]
+test_count_pattern = "Ran {count} test"
+expect_red = ['^closing\sthe\scustody\sstops\sits\swatch\sand\scancels\sits\sre\-subscribe$']
+expect_message = 'expect(received).toEqual(expected)'
 
 [[control]]
 id = 'insula-watch-seq1-reads'
@@ -7048,8 +7252,8 @@ expect_message = 'expect(received).toBe(expected)'
 [[control]]
 id = 'claustrum-outage-watch-entry'
 guards = 'watch transport loss enters custody fallback without a foreground failed get'
-file = 'src/claustrum/consumer.ts'
-old = 'onTransportLost: () => this.#custody?.transportLost(),'
+file = 'src/claustrum/custody.ts'
+old = 'onTransportLost: () => this.transportLost(),'
 new = 'onTransportLost: () => {}, // NON-VACUITY BREAK'
 test_file = 'test/claustrum/outage.test.ts'
 runner = 'command'
