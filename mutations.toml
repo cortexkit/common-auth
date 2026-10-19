@@ -6199,6 +6199,48 @@ test_count_pattern = 'Ran {count} test'
 expect_red = ['^narrow\squota\swording\sa\sstale\sreading\sadds\sno\sage;\sisQuotaStale\sreports\sit\sso\sthe\sline\scan\sbe\sdimmed$']
 expect_message = 'Received: false'
 
+[[control]]
+id = 'quota-narrow-group-tightest-window'
+guards = 'A grouped narrow line shows each group by its tightest window, not whichever window comes first'
+file = 'src/quota/format.ts'
+old = 'return groupTightest ? [{ group, listed, window: groupTightest }] : []'
+new = 'return inGroup[0] ? [{ group, listed, window: inGroup[0] }] : [] // NON-VACUITY BREAK: take the first window of each group'
+test_file = 'test/quota/format-groups.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/format-groups.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format-groups.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^narrow\squota\swording\sfor\snamed\sgroups\sthe\santigravity\sreading\sshows\seach\sgroup\sby\sits\stwo-letter\sname\swith\sits\stightest\swindow$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'quota-narrow-group-listed-order'
+guards = 'A grouped narrow line keeps the groups in the order the reading lists them, so it does not reorder as figures move'
+file = 'src/quota/format.ts'
+old = '.sort((a, b) => a.listed - b.listed)'
+new = '.sort(() => 0) // NON-VACUITY BREAK: keep the tightest group first'
+test_file = 'test/quota/format-groups.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/format-groups.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format-groups.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^narrow\squota\swording\sfor\snamed\sgroups\swith\sthree\sgroups\sthe\stwo\swith\sleast\sleft\sshow,\sin\slisted\sorder$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'quota-narrow-group-cap'
+guards = 'A grouped narrow line shows at most two groups, so it stays bounded whatever the reading carries'
+file = 'src/quota/format.ts'
+old = 'const NARROW_GROUP_LIMIT = 2'
+new = 'const NARROW_GROUP_LIMIT = 3 // NON-VACUITY BREAK: show a third group'
+test_file = 'test/quota/format-groups.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/format-groups.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format-groups.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^narrow\squota\swording\sfor\snamed\sgroups\swith\sthree\sgroups\sthe\stwo\swith\sleast\sleft\sshow,\sin\slisted\sorder$']
+expect_message = 'expect(received).toBe(expected)'
+
 # --- Last-known-good vault receipts ---
 
 [[control]]

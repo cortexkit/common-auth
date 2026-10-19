@@ -38,6 +38,16 @@ export interface ProjectedBudget {
   resetsAt?: string
 }
 
+/**
+ * A named group of windows, such as antigravity-auth's `Gemini` and
+ * `Other models`: every window stored under `scope` belongs to it, and
+ * `label` is the group's display name.
+ */
+export interface QuotaGroup {
+  scope: string
+  label: string
+}
+
 export interface ProjectedQuota {
   scope: string
   /** One entry per label: longest known window first, unknown lengths last. */
@@ -50,6 +60,13 @@ export interface ProjectedQuota {
   /** Present only when the stored budget is a reading, not cleared. */
   budget?: ProjectedBudget
   counters?: Record<string, QuotaCounter>
+  /**
+   * The named groups the windows belong to, in the order the plugin lists
+   * them. Set only by a plugin whose windows all belong to such groups; the
+   * narrow form then shows one item per group (see `formatQuota`).
+   * `projectQuota` never sets it.
+   */
+  groups?: readonly QuotaGroup[]
 }
 
 function project(entry: QuotaEntry): ProjectedLimit {

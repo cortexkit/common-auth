@@ -50,6 +50,7 @@ export type {
   ProjectedBudget,
   ProjectedLimit,
   ProjectedQuota,
+  QuotaGroup,
 } from './projection.js'
 export {
   budgetExhaustedResetAt,
