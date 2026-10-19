@@ -300,7 +300,10 @@ export interface InsulaWatchOptions {
    * providers then needs no read; unset means every notice does.
    */
   provider?: string
-  /** Timers for the re-subscribe and retry waits; the host's own in tests. */
+  /**
+   * setTimeout and clearTimeout for the waits before re-subscribing or retrying
+   * a watch. Defaults to the global timers; tests inject virtual ones.
+   */
   setTimeoutImpl?: typeof setTimeout
   clearTimeoutImpl?: typeof clearTimeout
 }
@@ -339,7 +342,10 @@ export class InsulaQuotaSource {
   readonly #reader = new ChangeNoticeReader()
   #mode: WatchMode = 'polling'
   #watchers = 0
-  /** Watchers that read every provider, and the providers the others read. */
+  /**
+   * How many registered watchers read every provider. Watchers limited to one
+   * provider are counted per provider in `#providers` instead.
+   */
   #everyProvider = 0
   readonly #providers = new Map<string, number>()
   #watch?: OpenUsageWatch
@@ -358,10 +364,11 @@ export class InsulaQuotaSource {
 
   /**
    * The background poll: at most one usage.get per minute per daemon and
-   * enrollment token. While a watch is open it reads nothing: notices bring
-   * every change, and an account insula stays quiet about ages past the
-   * freshness gate in `current()`, which sends it back to the plugin's own
-   * provider poll.
+   * enrollment token. While a watch is open it reads nothing, because insula's
+   * notices announce every new reading. If insula stops announcing an account,
+   * that account's last entry grows older than the freshness limit `current()`
+   * applies, `current()` returns nothing for it, and the plugin falls back to
+   * its own provider poll for that account.
    */
   refresh(now: number): Promise<void> {
     if (this.#reads.running) return this.#reads.running
