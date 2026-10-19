@@ -6482,14 +6482,20 @@ old = '''} catch (error) {
       this.#kept.clear()
       throw error
     }
-    if (this.#outage) return this.#serveKept(credentialId, kept, token, routeId)
+    if (this.#outage && kept) {
+      this.#probe()
+      return this.#serveKept(credentialId, kept, token, routeId)
+    }
     try {
       const attempt = await this.#authorizeFresh('''
 new = '''} catch (error) {
       // NON-VACUITY BREAK: retain receipts after enrollment disappears.
       throw error
     }
-    if (this.#outage) return this.#serveKept(credentialId, kept, token, routeId)
+    if (this.#outage && kept) {
+      this.#probe()
+      return this.#serveKept(credentialId, kept, token, routeId)
+    }
     try {
       const attempt = await this.#authorizeFresh('''
 test_file = 'test/claustrum/kept-receipt.test.ts'
