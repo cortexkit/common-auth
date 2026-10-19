@@ -109,7 +109,7 @@ export interface MockGrant {
 }
 
 function error(code: string, errorClass = 'permanent'): Wire {
-  return { error: { code, class: errorClass } }
+  return { result: { error: { code, class: errorClass } } }
 }
 
 export async function startMockDaemon(input: {

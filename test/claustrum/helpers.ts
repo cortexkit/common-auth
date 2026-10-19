@@ -11,7 +11,7 @@ export const family: ClaustrumFamily = {
 }
 
 export interface LogRecord {
-  level: 'warn' | 'debug'
+  level: 'info' | 'warn' | 'debug'
   message: string
   data?: unknown
 }
@@ -21,6 +21,8 @@ export function captureLogger() {
   return {
     records,
     logger: {
+      info: (message: string, data?: unknown) =>
+        records.push({ level: 'info', message, data }),
       warn: (message: string, data?: unknown) =>
         records.push({ level: 'warn', message, data }),
       debug: (message: string, data?: unknown) =>

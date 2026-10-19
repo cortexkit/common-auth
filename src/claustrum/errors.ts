@@ -37,6 +37,7 @@ export class ClaustrumConsumerError extends Error {
 
 /** The structural logger every class here accepts; `/logger`'s `createLogger` satisfies it. */
 export interface ClaustrumLogger {
+  info?(message: string, data?: unknown): void
   warn(message: string, data?: unknown): void
   debug(message: string, data?: unknown): void
 }

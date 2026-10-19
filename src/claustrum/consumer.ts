@@ -10,6 +10,7 @@ import {
   ClaustrumScopedCustody,
   decideScopedRetryAfter401,
   type IdentityParser,
+  type KeptReceiptState,
   type VaultGrantReach,
 } from './custody.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
@@ -210,6 +211,14 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       : undefined
   }
 
+  /** Whether any account is using an in-memory outage receipt, without I/O. */
+  keptReceiptState(): KeptReceiptState {
+    return (
+      this.#custody?.keptReceiptState() ??
+      Object.freeze({ active: false, since: null })
+    )
+  }
+
   /** Rows for `/routing`, from the last committed roster. */
   routingRows(): RoutingRow[] {
     return vaultRoutingRows(this.#roster)
@@ -252,6 +261,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#assertOpen()
       const changed = roster?.view !== this.#roster?.view
       this.#roster = roster
+      custody.retain(roster?.rows ?? [])
       // Each discovery replaces the previous value, including with unknown. A
       // refresh that served a peer's roster discovered nothing and leaves it;
       // grantReach() hides it once the roster's view no longer matches.
@@ -381,31 +391,41 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   ): Promise<ClaustrumScopedAttempt> {
     this.#assertOpen(signal)
     const roster = this.#roster ?? (await this.#wait(this.refresh(), signal))
-    if (!roster || !(await this.#active()))
+    if (!roster || !(await this.#active())) {
+      this.#custody?.close()
+      this.#custody = undefined
+      this.#insula?.release()
+      this.#insula = undefined
       throw new ClaustrumConsumerError(
         'not-active',
         'Claustrum scoped custody is not active',
       )
+    }
     const current = await readVaultRoster(this.#options.rosterPath)
     this.#assertOpen(signal)
     const observed = roster.rows.find((row) => row.routeId === routeId)
     const configured = current?.rows.find((row) => row.routeId === routeId)
-    if (configured && !configured.enabled)
+    if (configured && !configured.enabled) {
+      if (observed) this.#custody?.forget(observed.credentialId)
       throw new ClaustrumConsumerError(
         'route-declined',
         'Claustrum route is disabled',
       )
+    }
     if (
       !observed ||
       !configured ||
       configured.state !== 'active' ||
       configured.credentialId !== observed.credentialId ||
-      configured.accountIdentity !== observed.accountIdentity
-    )
+      configured.accountIdentity !== observed.accountIdentity ||
+      configured.credentialType !== observed.credentialType
+    ) {
+      if (observed) this.#custody?.forget(observed.credentialId)
       throw new ClaustrumConsumerError(
         'route-unavailable',
         'Claustrum route is disabled, removed or changed',
       )
+    }
     const custody = await this.#wait(this.#getCustody(), signal)
     const combined = combineAbortSignals([
       this.#shutdown.signal,
@@ -421,6 +441,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
           }),
         },
         combined.signal,
+        routeId,
       )
     } finally {
       combined.dispose()
@@ -460,6 +481,10 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     const signal = options.signal
     let served = await this.authorize(routeId, signal)
     let response = await dispatch(served, signal)
+    if (response.status === 401 && served.fromKeptReceipt) {
+      await this.reportFailure(served, 401, options.reporterSource ?? 'direct')
+      return response
+    }
     if (response.status === 401 && !signal?.aborted) {
       let current: ClaustrumScopedAttempt | undefined
       try {
@@ -499,6 +524,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     this.#assertOpen()
     await declineVaultRoute(this.#options.rosterPath, routeId)
     this.#roster = await readVaultRoster(this.#options.rosterPath)
+    this.#custody?.retain(this.#roster?.rows ?? [])
   }
 
   async accept(routeId: string): Promise<void> {

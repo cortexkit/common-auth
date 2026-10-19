@@ -6,6 +6,10 @@ import {
   type ScopedInventoryRow,
 } from '@cortexkit/claustrum-client'
 import { createLogger } from '../logger/index.js'
+import {
+  ClaustrumUnreachableError,
+  classifyVaultFailure,
+} from './availability.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
@@ -168,6 +172,19 @@ export interface ClaustrumScopedAttempt {
   readonly accessToken: string
   readonly recordVersion: number
   readonly expiresAtMs: number | null
+  /** True only for an outage fallback; a 401 must not retry or report it. */
+  readonly fromKeptReceipt?: true
+}
+
+export interface KeptReceiptState {
+  readonly active: boolean
+  readonly since: number | null
+}
+
+interface KeptReceipt {
+  readonly attempt: ClaustrumScopedAttempt
+  readonly routeId: string
+  since: number | null
 }
 
 /** Reads the provider identity a served token executes under, when the plugin can tell. */
@@ -180,6 +197,8 @@ export function isScopedCredentialRotation(
 ): current is ClaustrumScopedAttempt {
   return (
     current !== undefined &&
+    !current.fromKeptReceipt &&
+    !served.fromKeptReceipt &&
     current.credentialId === served.credentialId &&
     current.accountIdentity === served.accountIdentity &&
     current.recordVersion !== served.recordVersion
@@ -237,6 +256,9 @@ export function decideScopedRetryAfter401(
  * so it cannot expire while a long request is still using it.
  */
 export const SERVING_MARGIN_MS = 300_000
+
+/** A kept receipt needs a minute of headroom, not the vault's refresh demand. */
+export const KEPT_RECEIPT_MARGIN_MS = 60_000
 
 function invalidMaterial(): ClaustrumConsumerError {
   return new ClaustrumConsumerError(
@@ -306,11 +328,11 @@ function grantReachOf(
 
 /**
  * Reads this consumer's vault credentials (list, fetch, 401 report), with the
- * enrollment token as authorization. Used by every host of a plugin. There is
- * deliberately no credential cache and no single-flight of credential reads:
- * each physical send is authorized by the vault, so a revoked enrollment or a
- * changed record takes effect on the next send. The enrollment token is
- * re-read per operation so an operator's reissue on disk is picked up.
+ * enrollment token as authorization. Used by every host of a plugin. Every
+ * physical send still asks the vault first. Only an unreachable vault permits
+ * reuse of the last validated receipt, in memory and bounded by its expiry.
+ * The enrollment token is re-read per operation so revocation and disconnect
+ * still take effect without a process restart.
  */
 export class ClaustrumScopedCustody {
   readonly #client: ClaustrumScopedClient
@@ -322,6 +344,8 @@ export class ClaustrumScopedCustody {
   readonly #logger: ClaustrumLogger
   readonly #provenance = new WeakMap<ClaustrumScopedAttempt, string>()
   readonly #reports = new WeakMap<ClaustrumScopedAttempt, Promise<void>>()
+  readonly #kept = new Map<string, KeptReceipt>()
+  readonly #keptAttempts = new WeakMap<ClaustrumScopedAttempt, string>()
   #closed = false
 
   constructor(options: {
@@ -413,6 +437,8 @@ export class ClaustrumScopedCustody {
       // code, class and action); replace any other error, whose text may echo
       // request params that include the enrollment token.
       if (error instanceof ClaustrumCredentialError) throw error
+      if (classifyVaultFailure(error) === 'unreachable')
+        throw new ClaustrumUnreachableError()
       throw new ClaustrumConsumerError(
         'unavailable',
         'Claustrum scoped operation unavailable',
@@ -431,11 +457,20 @@ export class ClaustrumScopedCustody {
    * skipped records: they simply are not this consumer's.
    */
   async discover(signal?: AbortSignal): Promise<VaultInventory> {
-    const token = await this.#token(signal)
-    const inventory = await this.#call(
-      () => this.#client.listScoped(token),
-      signal,
-    )
+    let inventory: Awaited<ReturnType<ClaustrumScopedClient['listScoped']>>
+    let token: string
+    try {
+      token = await this.#token(signal)
+    } catch (error) {
+      this.#kept.clear()
+      throw error
+    }
+    try {
+      inventory = await this.#call(() => this.#client.listScoped(token), signal)
+    } catch (error) {
+      if (classifyVaultFailure(error) !== 'unreachable') this.#kept.clear()
+      throw error
+    }
     const skipped: SkippedVaultRecord[] = []
     const candidates: Array<{
       row: ScopedInventoryRow
@@ -484,17 +519,134 @@ export class ClaustrumScopedCustody {
     }
   }
 
-  /**
-   * Fetch the credential for one physical send and wrap it in a fresh receipt.
-   * The vault's served identity (or, without one, the plugin's parse of the
-   * token) must equal the roster's when both are present. Without
-   * `requireAssertion`, absence on either side proves nothing and does not
-   * refuse; the receipt records what the vault asserted separately from what
-   * the roster expected. With it, a reply that does not itself name the
-   * credential id and the expected account is refused.
-   */
+  /** Discard bearer material when a route is removed, declined or rebound. */
+  forget(credentialId: string): void {
+    this.#kept.delete(credentialId)
+  }
+
+  /** Apply an already-held roster; this never fetches credentials or writes it. */
+  retain(
+    identities: readonly (ClaustrumScopedIdentity & {
+      enabled: boolean
+      state: string
+    })[],
+  ): void {
+    const current = new Map(
+      identities.map((identity) => [identity.credentialId, identity]),
+    )
+    for (const [id, kept] of this.#kept) {
+      const identity = current.get(id)
+      if (
+        !identity?.enabled ||
+        identity.state !== 'active' ||
+        identity.credentialType !== kept.attempt.credentialType ||
+        identity.accountIdentity !== kept.attempt.expectedAccountIdentity
+      )
+        this.forget(id)
+    }
+  }
+
+  /** A frozen, non-secret summary for a plugin's status display. */
+  keptReceiptState(): KeptReceiptState {
+    let since: number | null = null
+    for (const [id, kept] of this.#kept) {
+      if (!this.#usable(kept.attempt)) {
+        this.forget(id)
+        continue
+      }
+      if (kept.since !== null) since = Math.min(since ?? kept.since, kept.since)
+    }
+    return Object.freeze({ active: since !== null, since })
+  }
+
+  #usable(attempt: ClaustrumScopedAttempt): boolean {
+    return attempt.expiresAtMs === null
+      ? attempt.credentialType === 'api_key'
+      : attempt.expiresAtMs - this.#now() > KEPT_RECEIPT_MARGIN_MS
+  }
+
+  /** Ask the vault first; retain one validated receipt per credential in memory only. */
   async authorize(
     identity: ClaustrumScopedIdentity,
+    signal?: AbortSignal,
+    routeId = 'vault',
+  ): Promise<ClaustrumScopedAttempt> {
+    this.#check(signal)
+    const { credentialId, credentialType, accountIdentity } = identity
+    let kept = this.#kept.get(credentialId)
+    if (
+      kept &&
+      (kept.attempt.credentialType !== credentialType ||
+        kept.attempt.expectedAccountIdentity !== accountIdentity)
+    ) {
+      this.forget(credentialId)
+      kept = undefined
+    }
+    // A missing or invalid enrollment is not a transport outage.
+    let token: string
+    try {
+      token = await this.#token(signal)
+    } catch (error) {
+      this.#kept.clear()
+      throw error
+    }
+    try {
+      const attempt = await this.#authorizeFresh(
+        { credentialId, credentialType, accountIdentity },
+        token,
+        signal,
+      )
+      if (kept?.since !== null && kept?.since !== undefined)
+        (this.#logger.info ?? defaultLogger.info)(
+          'vault receipt serving resumed',
+          { routeId, reason: 'reachable' },
+        )
+      this.#kept.set(credentialId, { attempt, routeId, since: null })
+      return attempt
+    } catch (error) {
+      this.#check(signal)
+      if (classifyVaultFailure(error) !== 'unreachable') {
+        this.forget(credentialId)
+        throw error
+      }
+      // A concurrent refusal or 401 may already have discarded this entry.
+      if (
+        !kept ||
+        this.#kept.get(credentialId) !== kept ||
+        !this.#usable(kept.attempt)
+      ) {
+        this.forget(credentialId)
+        throw error
+      }
+      if (kept.since === null) {
+        kept.since = this.#now()
+        this.#logger.warn('serving kept vault receipt', {
+          routeId,
+          reason: 'unreachable',
+        })
+      }
+      const attempt: ClaustrumScopedAttempt = Object.freeze(
+        Object.defineProperty(
+          { ...kept.attempt, fromKeptReceipt: true as const },
+          'accessToken',
+          { value: kept.attempt.accessToken, enumerable: false },
+        ),
+      )
+      this.#provenance.set(attempt, token)
+      this.#keptAttempts.set(attempt, routeId)
+      return attempt
+    }
+  }
+
+  /**
+   * Fetch and validate a fresh receipt before retaining it. The vault assertion
+   * (or the plugin's token parse) must agree with the roster when both exist.
+   * With requireAssertion, an absent assertion also refuses rather than
+   * treating the roster's expectation as proof of the served account.
+   */
+  async #authorizeFresh(
+    identity: ClaustrumScopedIdentity,
+    token: string,
     signal?: AbortSignal,
   ): Promise<ClaustrumScopedAttempt> {
     if (!identity.credentialId)
@@ -509,7 +661,6 @@ export class ClaustrumScopedCustody {
         'identity-unasserted',
         'Claustrum dispatch requires a known account identity',
       )
-    const token = await this.#token(signal)
     const served = await this.#call(
       () =>
         this.#client.getScoped({
@@ -630,6 +781,15 @@ export class ClaustrumScopedCustody {
         'no-receipt',
         'Claustrum failure report requires an original dispatch receipt',
       )
+    const keptRoute = this.#keptAttempts.get(attempt)
+    if (keptRoute !== undefined) {
+      this.forget(attempt.credentialId)
+      this.#logger.debug('scoped 401 not reported', {
+        routeId: keptRoute,
+        reason: 'kept-receipt',
+      })
+      return
+    }
     const pending = this.#reports.get(attempt)
     if (pending) return pending
     const report = this.#call(() =>
@@ -658,6 +818,7 @@ export class ClaustrumScopedCustody {
   close(): void {
     if (this.#closed) return
     this.#closed = true
+    this.#kept.clear()
     this.#client.close()
   }
 }
