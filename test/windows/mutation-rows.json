@@ -16,8 +16,8 @@
   {
     "id": "private-deadline",
     "file": "src/fs/private-files.ts",
-    "old": "    if (now() >= deadline) break\n    if (delay)\n      await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(\n        Math.min(delay, Math.max(0, deadline - now())),\n      )\n    if (now() >= deadline) break\n    await options.beforeRename?.()\n    if (now() >= deadline) break",
-    "new": "    if (Boolean(false) /* NON-VACUITY BREAK */) break\n    if (delay)\n      await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(\n        Math.min(delay, Math.max(0, deadline - now())),\n      )\n    if (Boolean(false) /* NON-VACUITY BREAK */) break\n    await options.beforeRename?.()\n    if (Boolean(false) /* NON-VACUITY BREAK */) break",
+    "old": "const leaseDeadline = options.deadline ?? Infinity",
+    "new": "const leaseDeadline = Infinity /* NON-VACUITY BREAK: ignore caller lease expiry */",
     "test": "elapsed deadline includes IO and lease cap prevents a new attempt"
   },
   {

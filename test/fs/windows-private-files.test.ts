@@ -206,6 +206,87 @@ describe('Windows private IO logic', () => {
     expect(fences).toBe(6)
   })
 
+  test('slow ownership checks do not prevent the first rename attempt', async () => {
+    let time = 0
+    let attempts = 0
+    const sleeps: number[] = []
+    const result = await replaceWindowsFile('stage', 'target', {
+      now: () => time,
+      sleep: async (ms) => {
+        sleeps.push(ms)
+        time += ms
+      },
+      beforeRename: async () => {
+        time += 600
+      },
+      rename: async () => {
+        attempts++
+      },
+    })
+    expect(attempts).toBe(1)
+    expect(sleeps).toEqual([])
+    expect(result).toEqual({ attempts: 1, elapsedMs: 600 })
+  })
+
+  test('retry budget starts at the first failed rename and excludes ownership checks', async () => {
+    let time = 0
+    const attemptTimes: number[] = []
+    const sleeps: number[] = []
+    const original = io('EBUSY', 32)
+    await expect(
+      replaceWindowsFile('stage', 'target', {
+        now: () => time,
+        sleep: async (ms) => {
+          sleeps.push(ms)
+          time += ms
+        },
+        beforeRename: async () => {
+          time += 600
+        },
+        rename: async () => {
+          attemptTimes.push(time)
+          time +=
+            attemptTimes.length === 1
+              ? 200
+              : attemptTimes.length === 2
+                ? 450
+                : 0
+          throw original
+        },
+      }),
+    ).rejects.toMatchObject({
+      cause: original,
+      code: 'EBUSY',
+      attempts: 3,
+      elapsedMs: 2500,
+    })
+    expect(attemptTimes).toEqual([600, 1410, 2480])
+    expect(sleeps).toEqual([10, 20, 20])
+  })
+
+  test('lease expiry stops before ownership checks and after a slow check', async () => {
+    for (const initialTime of [100, 0]) {
+      let time = initialTime
+      let fences = 0
+      let attempts = 0
+      await expect(
+        replaceWindowsFile('stage', 'target', {
+          now: () => time,
+          deadline: 100,
+          beforeRename: async () => {
+            fences++
+            time = 100
+          },
+          rename: async () => {
+            attempts++
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'ETIMEDOUT', attempts: 0 })
+      expect(attempts).toBe(0)
+      expect(fences).toBe(initialTime === 100 ? 0 : 1)
+    }
+  })
+
   test('elapsed deadline includes IO and lease cap prevents a new attempt', async () => {
     for (const deadline of [500, 45]) {
       let time = 0

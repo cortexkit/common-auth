@@ -5454,30 +5454,42 @@ expect_red = ["foreign ownership and reparse points are never migrated"]
 id = "private-deadline"
 guards = "elapsed deadline includes IO and lease cap prevents a new attempt"
 file = "src/fs/private-files.ts"
-old = '''
-    if (now() >= deadline) break
-    if (delay)
-      await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(
-        Math.min(delay, Math.max(0, deadline - now())),
-      )
-    if (now() >= deadline) break
-    await options.beforeRename?.()
-    if (now() >= deadline) break'''
-new = '''
-    if (Boolean(false) /* NON-VACUITY BREAK */) break
-    if (delay)
-      await (options.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(
-        Math.min(delay, Math.max(0, deadline - now())),
-      )
-    if (Boolean(false) /* NON-VACUITY BREAK */) break
-    await options.beforeRename?.()
-    if (Boolean(false) /* NON-VACUITY BREAK */) break'''
+old = 'const leaseDeadline = options.deadline ?? Infinity'
+new = 'const leaseDeadline = Infinity /* NON-VACUITY BREAK: ignore caller lease expiry */'
 test_file = "test/fs/windows-private-files.test.ts"
 runner = "command"
 command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/fs/windows-private-files.test.ts", "{test}"]
 test_count_pattern = 'Ran {count} test'
 expect_red = ["elapsed deadline includes IO and lease cap prevents a new attempt"]
+
+[[control]]
+id = 'private-first-rename'
+guards = 'Slow ownership assertions cannot exhaust the sharing budget before the first rename'
+file = 'src/fs/private-files.ts'
+old = 'if (now() >= leaseDeadline) break'
+new = 'if (now() >= Math.min(leaseDeadline, start + 500)) break // NON-VACUITY BREAK: charge the first ownership assertion to sharing retries'
+test_file = 'test/fs/windows-private-files.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/fs/windows-private-files.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/fs/windows-private-files.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Windows\sprivate\sIO\slogic\sslow\sownership\schecks\sdo\snot\sprevent\sthe\sfirst\srename\sattempt$']
+expect_message = 'Publication deadline expired'
+
+[[control]]
+id = 'private-retry-budget-start'
+guards = 'The sharing retry budget starts at the first failed rename rather than before ownership checks'
+file = 'src/fs/private-files.ts'
+old = 'retryDeadline ??= now() + 500'
+new = 'retryDeadline ??= start + 500 // NON-VACUITY BREAK: start sharing retries at publication entry'
+test_file = 'test/fs/windows-private-files.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/fs/windows-private-files.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/fs/windows-private-files.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Windows\sprivate\sIO\slogic\sretry\sbudget\sstarts\sat\sthe\sfirst\sfailed\srename\sand\sexcludes\sownership\schecks$']
+expect_message = 'toMatchObject'
 
 [[control]]
 id = "private-native-retry"
