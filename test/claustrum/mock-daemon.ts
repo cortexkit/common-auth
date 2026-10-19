@@ -82,13 +82,15 @@ export interface MockCredential {
 }
 
 /**
- * How the mock answers `auth.watch_scoped`. `accept` holds it open and sends
- * notice seq 1 at once; `unknown_method` refuses it as a vault that predates
- * the method does; `{ refuse }` replies with that refusal before any notice.
+ * How the mock answers a watch (`auth.watch_scoped` or `usage.watch`).
+ * `accept` holds it open and sends notice seq 1 at once; `unknown_method`
+ * refuses it as a module that predates the method does; `{ refuse }` refuses
+ * it with that code before any notice (the vault with a refusal reply,
+ * insula with an error frame).
  */
 export type MockWatchMode = 'accept' | 'unknown_method' | { refuse: string }
 
-/** One held-open vault watch the mock accepted. */
+/** One held-open watch the mock accepted. */
 export interface MockWatch {
   /** The seq of the last notice sent. */
   seq: number
@@ -96,8 +98,9 @@ export interface MockWatch {
   /** Set when the client cancelled it, said goodbye, or disconnected. */
   closed: boolean
   /**
-   * Send one notice carrying the current view. `fields` replace notice
-   * fields, such as `seq` or `epoch`; `seq` defaults to the next one.
+   * Send one notice; a vault notice carries the current view, and insula's
+   * names what `fields` give (provider, account). `fields` also replace
+   * notice fields such as `seq`; `seq` defaults to the next one.
    */
   notify(fields?: Record<string, unknown>): void
   /** End the stream with STREAM_END, as a module shutting down does. */
@@ -142,6 +145,11 @@ export interface MockDaemon {
   vaultWatches: MockWatch[]
   /** The epoch new watches carry; change it to model a vault restart. */
   vaultEpoch: string
+  /** As the vault fields above, for insula's `usage.watch`. */
+  usageWatch: MockWatchMode
+  usageWatchRequests: number
+  usageWatches: MockWatch[]
+  usageEpoch: string
   /** While set, list_scoped refuses with not_found, as for a revoked enrollment. */
   revoked: boolean
   /**
@@ -217,6 +225,10 @@ export async function startMockDaemon(input: {
     vaultWatchRequests: 0,
     vaultWatches: [],
     vaultEpoch: 'vault-epoch-1',
+    usageWatch: 'unknown_method',
+    usageWatchRequests: 0,
+    usageWatches: [],
+    usageEpoch: 'insula-epoch-1',
     revoked: false,
     approve(requestId, token = 'ab'.repeat(32), generation = 1) {
       const entry = enrollments.get(requestId)
@@ -397,9 +409,14 @@ export async function startMockDaemon(input: {
     }
     socket.once('close', () => closeWatches(() => true))
 
-    function openWatch(header: ReturnType<SubcWire['decodeHeader']>): void {
-      state.vaultWatchRequests++
-      const mode = state.vaultWatch
+    function openWatch(
+      header: ReturnType<SubcWire['decodeHeader']>,
+      module: 'claustrum' | 'insula',
+    ): void {
+      const vault = module === 'claustrum'
+      if (vault) state.vaultWatchRequests++
+      else state.usageWatchRequests++
+      const mode = vault ? state.vaultWatch : state.usageWatch
       if (mode === 'unknown_method') {
         writeResponse(
           socket,
@@ -409,7 +426,16 @@ export async function startMockDaemon(input: {
         )
         return
       }
-      if (mode !== 'accept' || state.revoked) {
+      if (!vault && mode !== 'accept') {
+        writeResponse(
+          socket,
+          header,
+          { code: mode.refuse },
+          subc.FrameType.Error,
+        )
+        return
+      }
+      if (vault && (mode !== 'accept' || state.revoked)) {
         writeResponse(
           socket,
           header,
@@ -426,7 +452,7 @@ export async function startMockDaemon(input: {
       }
       const watch: MockWatch = {
         seq: 0,
-        epoch: state.vaultEpoch,
+        epoch: vault ? state.vaultEpoch : state.usageEpoch,
         closed: false,
         notify(fields = {}) {
           if (watch.closed) return
@@ -434,12 +460,11 @@ export async function startMockDaemon(input: {
             kind: 'changed',
             epoch: watch.epoch,
             seq: watch.seq + 1,
-            view: currentView(),
-            keys: '',
+            ...(vault && { view: currentView(), keys: '' }),
             ...fields,
           }
           watch.seq = notice.seq
-          // Notices are sheddable stream data, as the vault sends them.
+          // Notices are sheddable stream data, as both modules send them.
           const frame = subc.buildFrame(
             subc.FrameType.StreamData,
             subc.buildFlags(
@@ -459,7 +484,8 @@ export async function startMockDaemon(input: {
         refuse: (code) => finish(subc.FrameType.Response, error(code)),
       }
       watches.set(key, watch)
-      state.vaultWatches.push(watch)
+      if (vault) state.vaultWatches.push(watch)
+      else state.usageWatches.push(watch)
       watch.notify()
     }
 
@@ -571,12 +597,20 @@ export async function startMockDaemon(input: {
           continue
         }
         // subc-client does not yet set the SUBSCRIPTION flag on a subscribe
-        // (see its client.js), so a watch is known by its method alone.
+        // (see its client.js). Both modules know a watch by its method alone,
+        // and so does this mock.
         if (
           request.method === 'auth.watch_scoped' &&
           routes.get(header.channel) === 'claustrum'
         ) {
-          openWatch(header)
+          openWatch(header, 'claustrum')
+          continue
+        }
+        if (
+          request.method === 'usage.watch' &&
+          routes.get(header.channel) === 'insula'
+        ) {
+          openWatch(header, 'insula')
           continue
         }
         if (routes.get(header.channel) === 'insula') {

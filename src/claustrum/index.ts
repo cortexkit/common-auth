@@ -94,7 +94,9 @@ export {
   type InsulaQuotaSource,
   type InsulaUsageEntry,
   type InsulaUsageTransport,
+  type InsulaUsageWatch,
   type InsulaUsageWindow,
+  type InsulaWatchOptions,
 } from './insula.js'
 export {
   acceptAccount,

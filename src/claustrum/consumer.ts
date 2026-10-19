@@ -67,10 +67,10 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   onRoster?: (roster: VaultRosterFile) => void
   onError?: (error: unknown) => void
   /**
-   * How often `start()` polls the vault when no vault watch is open: before
-   * the watch is accepted, and whenever the vault or the client cannot watch.
-   * While the watch is open the roster is read only every five minutes, as a
-   * safety net. Insula, when configured, is polled on this tick as before.
+   * How often `start()` ticks. A tick lists the vault when no vault watch is
+   * open (before it is accepted, or when the vault or the client cannot
+   * watch), and otherwise only every five minutes, as a safety net. A tick
+   * polls insula (at most once a minute) only while its watch is not open.
    */
   pollIntervalMs?: number
   setTimeoutImpl?: typeof setTimeout
@@ -82,11 +82,13 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
 }
 
 /**
- * How a started consumer learns about vault account changes, for logs and
- * status displays. Never carries secrets.
+ * How a started consumer learns about changes, for logs and status displays.
+ * `insula` is present when the consumer was given an insula source. Never
+ * carries secrets.
  */
 export interface ClaustrumWatchState {
   readonly vault: WatchMode
+  readonly insula?: WatchMode
 }
 
 export interface SendOptions {
@@ -126,6 +128,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #started = false
   #insula?: ReturnType<typeof acquireInsulaQuotaSource>
   #vaultWatch?: ScopedRosterWatch
+  #releaseInsulaWatch?: () => void
   /** When this instance last completed a discovery, by `now`. */
   #discoveredAt?: number
 
@@ -234,14 +237,21 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
 
   /** How this consumer currently learns about changes, without I/O. */
   watchState(): ClaustrumWatchState {
-    return Object.freeze({ vault: this.#vaultWatch?.mode ?? 'polling' })
+    return Object.freeze({
+      vault: this.#vaultWatch?.mode ?? 'polling',
+      ...(this.#options.insula && {
+        insula: this.#insula?.source.watchMode() ?? 'polling',
+      }),
+    })
   }
 
-  /** Close the vault watch with the connection it rides on. */
+  /** Close the watches with the connection they belong to. */
   #stopWatch(): void {
     this.#vaultWatch?.stop()
     this.#vaultWatch = undefined
     this.#client = undefined
+    this.#releaseInsulaWatch?.()
+    this.#releaseInsulaWatch = undefined
   }
 
   /** Whether any account is using an in-memory outage receipt, without I/O. */
@@ -315,12 +325,13 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   }
 
   /**
-   * Poll in the background and open the vault watch. Until the watch is
-   * accepted, and whenever it is unavailable, every tick lists the vault
-   * exactly as before watches existed. While the watch is open a tick lists
-   * only when five minutes have passed since the last discovery, since the
-   * watch keeps no history; it still checks `isCustodyActive`, so a switch to
-   * local mode closes the connection as quickly as before. A host not in
+   * Poll in the background and open the vault and insula watches. Until the
+   * vault watch is accepted, and whenever it is unavailable, every tick lists
+   * the vault exactly as before watches existed. While it is open a tick
+   * lists only when five minutes have passed since the last discovery, since
+   * the watch keeps no history; it still checks `isCustodyActive`, so a switch
+   * to local mode closes the connection as quickly as before. Insula is
+   * polled on the tick only while its own watch is not open. A host not in
    * vault mode makes no request.
    */
   start(): void {
@@ -361,8 +372,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   }
 
   /**
-   * Open the vault watch once a vault connection exists. Only reached in
-   * vault mode: a host in local mode never connects.
+   * Open the vault and insula watches once a vault connection exists. Only
+   * reached in vault mode: a host in local mode never connects.
    */
   #openWatch(): void {
     const client = this.#client
@@ -397,6 +408,12 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#vaultWatch = watch
       watch.start()
     }
+    if (this.#options.insula && this.#insula && !this.#releaseInsulaWatch)
+      this.#releaseInsulaWatch = this.#insula.source.watch({
+        provider: this.#options.insula.provider,
+        setTimeoutImpl: this.#options.setTimeoutImpl,
+        clearTimeoutImpl: this.#options.clearTimeoutImpl,
+      })
   }
 
   /**
