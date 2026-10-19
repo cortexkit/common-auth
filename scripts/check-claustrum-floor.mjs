@@ -43,6 +43,26 @@ try {
     }
     if (version !== '0.6.2') throw new Error('Expected claustrum-client 0.6.2, loaded ' + (version ?? 'unknown package version'))
     console.log('Loaded @cortexkit/claustrum-client ' + version)
+    // common-auth and claustrum-client must load the same subc-client.
+    const { realpathSync } = await import('node:fs')
+    const { dirname } = await import('node:path')
+    const ours = realpathSync(Bun.resolveSync('@cortexkit/subc-client', process.cwd()))
+    const theirs = realpathSync(Bun.resolveSync('@cortexkit/subc-client', dirname(realpathSync(entry))))
+    if (ours !== theirs) throw new Error('Expected one subc-client copy, found ' + ours + ' and ' + theirs)
+    let subcDir = ours
+    let subcVersion
+    while (subcDir !== '/') {
+      try {
+        const manifest = JSON.parse(readFileSync(subcDir + '/package.json', 'utf8'))
+        if (manifest.name === '@cortexkit/subc-client') {
+          subcVersion = manifest.version
+          break
+        }
+      } catch {}
+      subcDir = subcDir.slice(0, subcDir.lastIndexOf('/'))
+    }
+    if (subcVersion !== '0.16.1') throw new Error('Expected subc-client 0.16.1, loaded ' + (subcVersion ?? 'unknown package version'))
+    console.log('Loaded one @cortexkit/subc-client ' + subcVersion)
   `], scratch)
   run('bun', ['test', 'test/claustrum/'], scratch)
   run('bun', ['run', 'build'], scratch)
