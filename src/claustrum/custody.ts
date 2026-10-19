@@ -1007,7 +1007,8 @@ export class ClaustrumScopedCustody {
         await options.onView(view)
       },
       onRefused: (error) => {
-        // A refused watch is the refusal list_scoped would answer.
+        // Apply a refused watch as discover() applies a refused account
+        // listing: every kept receipt is dropped.
         this.listFailed(error)
         options.onRefused?.(error)
       },
