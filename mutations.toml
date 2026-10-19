@@ -6615,7 +6615,7 @@ guards = 'notices during a vault discovery share it instead of each listing'
 file = 'src/claustrum/watch.ts'
 old = '''    if (this.#running) {
       this.#queued = true'''
-new = '''    if (false) { // NON-VACUITY BREAK: start a read per request
+new = '''    if (this.#running && Math.random() < 0) { // NON-VACUITY BREAK: start a read per request
       this.#queued = true'''
 test_file = 'test/claustrum/watch.test.ts'
 runner = 'command'
@@ -6631,7 +6631,7 @@ guards = 'a burst of insula notices makes one usage.get in flight and at most on
 file = 'src/claustrum/watch.ts'
 old = '''    if (this.#running) {
       this.#queued = true'''
-new = '''    if (false) { // NON-VACUITY BREAK: start a read per request
+new = '''    if (this.#running && Math.random() < 0) { // NON-VACUITY BREAK: start a read per request
       this.#queued = true'''
 test_file = 'test/claustrum/insula-watch.test.ts'
 runner = 'command'
@@ -6730,7 +6730,7 @@ id = 'claustrum-watch-skip-list'
 guards = 'ticks do not list the vault while its watch is open'
 file = 'src/claustrum/consumer.ts'
 old = '''if (this.#vaultWatch?.mode !== 'watching') return true'''
-new = '''if (this.#vaultWatch?.mode !== 'watching' || true) return true // NON-VACUITY BREAK'''
+new = '''if (this.#vaultWatch?.mode !== 'watching' || Math.random() >= 0) return true // NON-VACUITY BREAK'''
 test_file = 'test/claustrum/watch.test.ts'
 runner = 'command'
 command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]
@@ -6774,9 +6774,11 @@ id = 'insula-watch-seq1-reads'
 guards = 'the first insula notice, which names no provider, reads usage.get'
 file = 'src/claustrum/insula.ts'
 old = '''      notice?.provider === undefined ||
-'''
+      this.#everyProvider > 0 ||
+      this.#providers.has(notice.provider)'''
 new = '''      // NON-VACUITY BREAK: skip provider-less notices
-'''
+      this.#everyProvider > 0 ||
+      this.#providers.has(notice?.provider ?? '')'''
 test_file = 'test/claustrum/insula-watch.test.ts'
 runner = 'command'
 command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/insula-watch.test.ts", "{test}"]
