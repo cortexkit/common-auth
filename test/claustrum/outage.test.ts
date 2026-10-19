@@ -13,6 +13,7 @@ import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   captureLogger,
   cleanupDirs,
+  clientWatches,
   fakeTimers,
   family,
   tempDir,
@@ -202,32 +203,37 @@ test('outage cannot overlap a pending probe from an earlier outage', async () =>
   expect(s.timers.pending()).toEqual([4_000])
 })
 
-test('outage watch transport loss enters fallback before the next authorization', async () => {
-  const s = await scenario()
-  s.daemon.vaultWatch = 'accept'
-  const consumer = lifetime.manage(
-    new ClaustrumConsumer({
-      rosterPath: join(s.dir, 'roster.json'),
-      tokenPath: await writeToken(s.dir),
-      family,
-      connect: async () => s.connected,
-      now: () => 1_000_000,
-      logger: s.logs.logger,
-      ...s.timers,
-    }),
-  )
-  await consumer.refresh()
-  consumer.start()
-  await until(() => consumer.watchState().vault === 'watching')
-  const route = consumer.snapshot()?.rows[0]?.routeId
-  if (!route) throw new Error('missing route')
-  await consumer.authorize(route)
-  await s.daemon.stop()
-  await until(() => s.logs.records.some((r) => r.level === 'warn'))
-  expect(s.timers.pending()).toContain(2_000)
-  const kept = await consumer.authorize(route)
-  expect(kept.fromKeptReceipt).toBe(true)
-})
+// Needs a claustrum-client with watchScoped (0.12.0); the floor job runs 0.6.2,
+// which has no watch, so this path can't occur there.
+test.if(clientWatches)(
+  'outage watch transport loss enters fallback before the next authorization',
+  async () => {
+    const s = await scenario()
+    s.daemon.vaultWatch = 'accept'
+    const consumer = lifetime.manage(
+      new ClaustrumConsumer({
+        rosterPath: join(s.dir, 'roster.json'),
+        tokenPath: await writeToken(s.dir),
+        family,
+        connect: async () => s.connected,
+        now: () => 1_000_000,
+        logger: s.logs.logger,
+        ...s.timers,
+      }),
+    )
+    await consumer.refresh()
+    consumer.start()
+    await until(() => consumer.watchState().vault === 'watching')
+    const route = consumer.snapshot()?.rows[0]?.routeId
+    if (!route) throw new Error('missing route')
+    await consumer.authorize(route)
+    await s.daemon.stop()
+    await until(() => s.logs.records.some((r) => r.level === 'warn'))
+    expect(s.timers.pending()).toContain(2_000)
+    const kept = await consumer.authorize(route)
+    expect(kept.fromKeptReceipt).toBe(true)
+  },
+)
 
 test('outage probe recovery makes the next authorization fresh at the new version', async () => {
   const s = await scenario()
