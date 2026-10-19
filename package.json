@@ -1,6 +1,6 @@
 {
   "name": "@cortexkit/common-auth",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Shared code for the CortexKit auth plugins: account pool, quota and routing, commands and auth menu, OpenCode 2 hooks, Claustrum custody, and plumbing (loopback RPC, file locks, logger, sidebar state, TUI preferences and build).",
   "license": "MIT",
   "repository": {
@@ -112,7 +112,7 @@
   },
   "peerDependencies": {
     "@cortexkit/claustrum-client": ">=0.6.2",
-    "@cortexkit/subc-client": "^0.16.0",
+    "@cortexkit/subc-client": "^0.16.0 || ^0.22.0",
     "@opencode/plugin": ">=2.0.21",
     "@opentui/core": ">=0.5.11",
     "@opentui/solid": ">=0.5.11",
@@ -140,8 +140,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
-    "@cortexkit/claustrum-client": "0.10.0",
-    "@cortexkit/subc-client": "0.16.1",
+    "@cortexkit/claustrum-client": "^0.12.0",
+    "@cortexkit/subc-client": "0.22.2",
     "@earendil-works/pi-coding-agent": "1.0.4",
     "@opencode/plugin": "2.0.21",
     "@opentui/core": ">=0.5.12",

@@ -28,6 +28,7 @@ import {
   type VaultRosterFile,
   vaultRoutingRows,
 } from './roster.js'
+import { SAFETY_POLL_MS, ScopedRosterWatch, type WatchMode } from './watch.js'
 
 export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   /**
@@ -65,6 +66,12 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
    */
   onRoster?: (roster: VaultRosterFile) => void
   onError?: (error: unknown) => void
+  /**
+   * How often `start()` polls the vault when no vault watch is open: before
+   * the watch is accepted, and whenever the vault or the client cannot watch.
+   * While the watch is open the roster is read only every five minutes, as a
+   * safety net. Insula, when configured, is polled on this tick as before.
+   */
   pollIntervalMs?: number
   setTimeoutImpl?: typeof setTimeout
   clearTimeoutImpl?: typeof clearTimeout
@@ -72,6 +79,14 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   logger?: ClaustrumLogger
   /** Optional background quota source. In-band readings still use recordQuota. */
   insula?: InsulaQuotaOptions<Q>
+}
+
+/**
+ * How a started consumer learns about vault account changes, for logs and
+ * status displays. Never carries secrets.
+ */
+export interface ClaustrumWatchState {
+  readonly vault: WatchMode
 }
 
 export interface SendOptions {
@@ -97,6 +112,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   readonly #shutdown = new AbortController()
   readonly #logger: ClaustrumLogger
   #custody?: ClaustrumScopedCustody
+  /** The custody's client, kept so `start()` can open its vault watch. */
+  #client?: ClaustrumScopedClient
   #connecting?: Promise<ClaustrumScopedCustody>
   #refreshing?: Promise<VaultRosterFile | undefined>
   #roster?: VaultRosterFile
@@ -108,6 +125,9 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #timer?: ReturnType<typeof setTimeout>
   #started = false
   #insula?: ReturnType<typeof acquireInsulaQuotaSource>
+  #vaultWatch?: ScopedRosterWatch
+  /** When this instance last completed a discovery, by `now`. */
+  #discoveredAt?: number
 
   constructor(options: ClaustrumConsumerOptions<Q>) {
     this.#options = options
@@ -166,6 +186,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
             client.close()
             this.#assertOpen()
           }
+          this.#client = client
           this.#custody = new ClaustrumScopedCustody({
             client,
             family: this.#options.family,
@@ -211,6 +232,25 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       : undefined
   }
 
+  /** How this consumer currently learns about changes, without I/O. */
+  watchState(): ClaustrumWatchState {
+    return Object.freeze({ vault: this.#vaultWatch?.mode ?? 'polling' })
+  }
+
+  /**
+   * Drop the vault connection and everything riding on it: the watch, the
+   * custody (with its kept receipts) and the insula source.
+   */
+  #disconnect(): void {
+    this.#vaultWatch?.stop()
+    this.#vaultWatch = undefined
+    this.#custody?.close()
+    this.#custody = undefined
+    this.#client = undefined
+    this.#insula?.release()
+    this.#insula = undefined
+  }
+
   /** Whether any account is using an in-memory outage receipt, without I/O. */
   keptReceiptState(): KeptReceiptState {
     return (
@@ -231,10 +271,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       if (!(await this.#active())) {
         this.#roster = undefined
         this.#grantReach = undefined
-        this.#custody?.close()
-        this.#custody = undefined
-        this.#insula?.release()
-        this.#insula = undefined
+        this.#disconnect()
         return undefined
       }
       const custody = await this.#getCustody()
@@ -272,6 +309,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       // Notify on view changes only: subscribers rewrite shared state on each
       // notification, and the poll runs every few seconds.
       if (roster && changed) this.#options.onRoster?.(roster)
+      this.#discoveredAt = (this.#options.now ?? Date.now)()
       return roster
     })().finally(() => {
       this.#refreshing = undefined
@@ -279,14 +317,24 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     return this.#refreshing
   }
 
+  /**
+   * Poll in the background and open the vault watch. Until the watch is
+   * accepted, and whenever it is unavailable, every tick lists the vault
+   * exactly as before watches existed. While the watch is open a tick lists
+   * only when five minutes have passed since the last discovery, since the
+   * watch keeps no history; it still checks `isCustodyActive`, so a switch to
+   * local mode closes the connection as quickly as before. A host not in
+   * vault mode makes no request.
+   */
   start(): void {
     if (this.#started) return
     this.#assertOpen()
     this.#started = true
     const tick = async () => {
       try {
-        await this.refresh()
+        if (await this.#listDue()) await this.refresh()
         await this.refreshInsulaQuota()
+        this.#openWatch()
       } catch (error) {
         if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
       }
@@ -300,6 +348,58 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#timer.unref?.()
     }
     void tick()
+  }
+
+  /** Whether a background tick must list the vault now. */
+  async #listDue(): Promise<boolean> {
+    if (this.#vaultWatch?.mode !== 'watching') return true
+    const now = (this.#options.now ?? Date.now)()
+    if (
+      this.#discoveredAt === undefined ||
+      now - this.#discoveredAt >= SAFETY_POLL_MS
+    )
+      return true
+    // refresh() is what closes the connection when the host left vault mode.
+    return !(await this.#active())
+  }
+
+  /**
+   * Open the vault watch once a vault connection exists. Only reached in
+   * vault mode: a host in local mode never connects.
+   */
+  #openWatch(): void {
+    const client = this.#client
+    if (this.#shutdown.signal.aborted || !client || !this.#custody) return
+    if (!this.#vaultWatch) {
+      const watch = new ScopedRosterWatch({
+        client,
+        enrollmentToken: async () =>
+          (await readClaustrumEnrollmentToken(this.#options.tokenPath)).token,
+        view: () => this.#roster?.view,
+        // The existing discovery, so a watched change commits the roster and
+        // re-applies it to kept receipts exactly as a poll does. A refresh
+        // already in flight may have listed before the change was announced,
+        // so wait for it and list again.
+        discover: async () => {
+          while (this.#refreshing) await this.#refreshing.catch(() => {})
+          await this.refresh()
+        },
+        onRefused: (error) => {
+          // As a poll that met the same refusal from list_scoped would.
+          this.#custody?.listFailed(error)
+          this.#options.onError?.(error)
+        },
+        onError: (error) => {
+          if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
+        },
+        logger: this.#logger,
+        now: this.#options.now,
+        setTimeoutImpl: this.#options.setTimeoutImpl,
+        clearTimeoutImpl: this.#options.clearTimeoutImpl,
+      })
+      this.#vaultWatch = watch
+      watch.start()
+    }
   }
 
   /**
@@ -392,10 +492,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     this.#assertOpen(signal)
     const roster = this.#roster ?? (await this.#wait(this.refresh(), signal))
     if (!roster || !(await this.#active())) {
-      this.#custody?.close()
-      this.#custody = undefined
-      this.#insula?.release()
-      this.#insula = undefined
+      this.#disconnect()
       throw new ClaustrumConsumerError(
         'not-active',
         'Claustrum scoped custody is not active',
@@ -591,9 +688,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     if (this.#timer)
       (this.#options.clearTimeoutImpl ?? clearTimeout)(this.#timer)
     this.#timer = undefined
-    this.#custody?.close()
-    this.#insula?.release()
-    this.#insula = undefined
+    this.#disconnect()
     this.#roster = undefined
     this.#grantReach = undefined
   }
