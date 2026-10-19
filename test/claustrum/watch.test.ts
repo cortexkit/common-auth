@@ -244,6 +244,61 @@ test.if(clientWatches)(
 )
 
 test.if(clientWatches)(
+  'a sequence gap lists even when the view is unchanged',
+  async () => {
+    const s = await scenario()
+    s.consumer.start()
+    await watching(s)
+    // seq 2 and 3 were shed: a change they announced may be missing.
+    s.watch().notify({ seq: 4 })
+    await until(() => s.daemon.lists === 2, 'discovery after the gap')
+    s.watch().notify()
+    s.watch().notify()
+    await Bun.sleep(50)
+    expect(s.daemon.lists).toBe(2)
+  },
+)
+
+test.if(clientWatches)(
+  'a new epoch lists even when the view is unchanged',
+  async () => {
+    const s = await scenario()
+    s.consumer.start()
+    await watching(s)
+    // The vault restarted between two notices of one watch.
+    s.watch().epoch = 'vault-epoch-2'
+    s.watch().notify()
+    await until(() => s.daemon.lists === 2, 'discovery after the restart')
+    s.watch().notify()
+    s.watch().notify()
+    await Bun.sleep(50)
+    expect(s.daemon.lists).toBe(2)
+  },
+)
+
+test.if(clientWatches)(
+  'a burst of notices during a discovery shares that discovery',
+  async () => {
+    const s = await scenario()
+    s.consumer.start()
+    await watching(s)
+    const held = Promise.withResolvers<void>()
+    s.daemon.holdLists = held.promise
+    s.daemon.credentials['oauth:test:home'] = credential('account-home')
+    for (let notice = 0; notice < 10; notice++) s.watch().notify()
+    await until(() => s.daemon.lists === 2, 'discovery')
+    await Bun.sleep(30)
+    s.daemon.holdLists = undefined
+    held.resolve()
+    await until(() => s.consumer.snapshot()?.rows.length === 2, 'roster')
+    await Bun.sleep(50)
+    // One discovery in flight and at most one queued behind it; the queued
+    // one finds the view already read and lists nothing.
+    expect(s.daemon.lists).toBe(2)
+  },
+)
+
+test.if(clientWatches)(
   'the safety poll still lists the roster every five minutes while watching',
   async () => {
     const s = await scenario()

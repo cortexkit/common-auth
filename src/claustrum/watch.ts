@@ -287,8 +287,9 @@ export class ScopedRosterWatch {
           }
           if (!this.#reader.continuous(notice)) this.#force = true
           this.#latestView = notice.view
-          if (this.#force || notice.view !== this.#options.view())
-            void this.#reads.request()
+          // The read itself decides whether to list, against the roster as
+          // it stands when the read runs.
+          void this.#reads.request()
         },
         { enrollmentToken: token },
       )

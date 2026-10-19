@@ -144,6 +144,11 @@ export interface MockDaemon {
   vaultEpoch: string
   /** While set, list_scoped refuses with not_found, as for a revoked enrollment. */
   revoked: boolean
+  /**
+   * While set, each list_scoped is counted and answered as of its arrival,
+   * but the answer is sent only once this settles.
+   */
+  holdLists?: Promise<unknown>
   onInsulaClose?: () => void
   onReport?: (report: MockReport) => void
   approve(requestId: string, token?: string, generation?: number): void
@@ -584,11 +589,13 @@ export async function startMockDaemon(input: {
           )
           continue
         }
-        writeResponse(
-          socket,
-          header,
-          handle(request.method, request.params ?? {}),
-        )
+        const reply = handle(request.method, request.params ?? {})
+        const hold =
+          request.method === 'credential.list_scoped'
+            ? state.holdLists
+            : undefined
+        if (hold) void hold.then(() => writeResponse(socket, header, reply))
+        else writeResponse(socket, header, reply)
       }
     })
   })

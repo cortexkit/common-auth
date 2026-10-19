@@ -20,6 +20,9 @@ try {
   const pkgPath = join(scratch, 'package.json')
   const pkg = JSON.parse(await readFile(pkgPath, 'utf8'))
   pkg.devDependencies['@cortexkit/claustrum-client'] = '0.6.2'
+  // claustrum-client 0.6.2 depends on subc-client ^0.16.0; pin that line too
+  // so the floor tree holds one subc-client copy, as a real 0.6.2 host does.
+  pkg.devDependencies['@cortexkit/subc-client'] = '0.16.1'
   await (await import('node:fs/promises')).writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
   run('bun', ['install', '--no-save', '--ignore-scripts'], scratch)
   run('bun', ['-e', `
