@@ -22,6 +22,46 @@ on:
 permissions:
   contents: read
 jobs:
+  publish-timing:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-2022, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '26.3.0'
+          architecture: ${{ matrix.os == 'windows-11-arm' && 'arm64' || 'x64' }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.2'
+      - name: Build the ownership timing probe
+        shell: pwsh
+        run: |
+          node --version
+          bun --version
+          bun install --frozen-lockfile
+          if ($LASTEXITCODE) { throw 'Install failed' }
+          bun run build
+          if ($LASTEXITCODE) { throw 'Build failed' }
+      - name: Time real lease ownership checks and native steps
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force publish-timing-evidence | Out-Null
+          node test/windows/publish-timing.mjs 2>&1 | Tee-Object publish-timing-evidence/node.jsonl
+          if ($LASTEXITCODE) { throw 'Node publication timing failed' }
+          bun test/windows/publish-timing.mjs 2>&1 | Tee-Object publish-timing-evidence/bun.jsonl
+          if ($LASTEXITCODE) { throw 'Bun publication timing failed' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: publish-timing-${{ matrix.os }}
+          path: publish-timing-evidence/
+          if-no-files-found: error
   vault-enrollment:
     strategy:
       fail-fast: false
