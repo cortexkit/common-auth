@@ -6440,16 +6440,14 @@ old = '''} catch (error) {
       this.#kept.clear()
       throw error
     }
-    if (this.#outage)
-      return this.#serveKept(credentialId, kept, token, routeId)
+    if (this.#outage) return this.#serveKept(credentialId, kept, token, routeId)
     try {
       const attempt = await this.#authorizeFresh('''
 new = '''} catch (error) {
       // NON-VACUITY BREAK: retain receipts after enrollment disappears.
       throw error
     }
-    if (this.#outage)
-      return this.#serveKept(credentialId, kept, token, routeId)
+    if (this.#outage) return this.#serveKept(credentialId, kept, token, routeId)
     try {
       const attempt = await this.#authorizeFresh('''
 test_file = 'test/claustrum/kept-receipt.test.ts'
@@ -6914,8 +6912,7 @@ expect_message = 'timed out waiting for backoff'
 id = 'claustrum-outage-fast-kept'
 guards = 'outage authorizations serve memory immediately without another vault attempt'
 file = 'src/claustrum/custody.ts'
-old = '''if (this.#outage)
-      return this.#serveKept(credentialId, kept, token, routeId)'''
+old = '''if (this.#outage) return this.#serveKept(credentialId, kept, token, routeId)'''
 new = '''// NON-VACUITY BREAK: retry transport on every authorization.'''
 test_file = 'test/claustrum/outage.test.ts'
 runner = 'command'
@@ -6929,8 +6926,7 @@ expect_message = 'expect(received).toBe(expected)'
 id = 'claustrum-outage-fast-empty'
 guards = 'an account without a kept receipt refuses without another transport wait'
 file = 'src/claustrum/custody.ts'
-old = '''if (this.#outage)
-      return this.#serveKept(credentialId, kept, token, routeId)'''
+old = '''if (this.#outage) return this.#serveKept(credentialId, kept, token, routeId)'''
 new = '''// NON-VACUITY BREAK: retry transport for an account with nothing kept.'''
 test_file = 'test/claustrum/outage.test.ts'
 runner = 'command'
@@ -6988,7 +6984,8 @@ expect_message = 'expect(received).toEqual(expected)'
 id = 'claustrum-outage-probe-single-flight'
 guards = 'a new outage cannot start a second probe while an earlier probe is pending'
 file = 'src/claustrum/custody.ts'
-old = 'if (this.#closed || !this.#outage || this.#probeTimer || this.#probing) return'
+old = '''if (this.#closed || !this.#outage || this.#probeTimer || this.#probing)
+      return'''
 new = 'if (this.#closed || !this.#outage || this.#probeTimer) return // NON-VACUITY BREAK'
 test_file = 'test/claustrum/outage.test.ts'
 runner = 'command'
@@ -7128,7 +7125,8 @@ expect_message = 'expect(received).toEqual(expected)'
 id = 'claustrum-outage-probe-close-rearm'
 guards = 'a probe finishing after close cannot schedule another timer'
 file = 'src/claustrum/custody.ts'
-old = 'if (this.#closed || !this.#outage || this.#probeTimer || this.#probing) return'
+old = '''if (this.#closed || !this.#outage || this.#probeTimer || this.#probing)
+      return'''
 new = 'if (!this.#outage || this.#probeTimer || this.#probing) return // NON-VACUITY BREAK'
 test_file = 'test/claustrum/outage.test.ts'
 runner = 'command'
