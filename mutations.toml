@@ -5360,8 +5360,12 @@ expect_message = 'expect(received).toEqual(expected)'
 id = 'auth-menu-windows-opener-does-not-wait'
 guards = 'Windows opener launches PowerShell unreferenced without waiting, so a slow cold start is never killed before the browser opens'
 file = 'src/auth-menu/login.ts'
-old = 'child.unref()'
-new = 'void child /* NON-VACUITY BREAK */'
+old = '''      child.unref()
+      // Node leaves pid undefined when the process could not be started.
+      return child.pid !== undefined'''
+new = '''      void child /* NON-VACUITY BREAK */
+      // Node leaves pid undefined when the process could not be started.
+      return child.pid !== undefined'''
 test_file = 'test/auth-menu/login.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/auth-menu/login.test.ts -t "$1"', 'sh', '{test}']
