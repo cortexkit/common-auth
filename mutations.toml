@@ -5700,6 +5700,34 @@ expect_message = 'Private file refused at safe-parent'
 # --- Optional insula background quota ---
 
 [[control]]
+id = 'insula-upstream-failure-no-fallback'
+guards = 'Background provider polling must not amplify an upstream failure already observed by insula'
+file = 'src/claustrum/consumer.ts'
+old = "result.miss === 'cold' || result.miss === 'upstream-failed'"
+new = "result.miss === 'cold' /* NON-VACUITY BREAK: poll after an upstream failure */"
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/claustrum/insula.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^background\sinsula\swrapper\sskips\scold\sand\supstream\sfailure\swith\stransition-only\ssafe\slogs$']
+expect_message = 'toBe'
+
+[[control]]
+id = 'insula-cold-wait-bounded'
+guards = 'A provider that never completes must eventually allow the plugin provider poll'
+file = 'src/claustrum/insula.ts'
+old = 'now - since >= COLD_WAIT'
+new = 'false /* NON-VACUITY BREAK: wait for a cold provider forever */'
+test_file = 'test/claustrum/insula.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/claustrum/insula.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^insula\scold\sexpires\safter\stwo\ssweeps\sand\scompleteness\sresets\sthe\sbound$']
+expect_message = 'unreachable'
+
+[[control]]
 id = 'insula-account-id-join'
 guards = 'only the exact trimmed insula account joins the vault-served account_id, never a different account with matching display metadata'
 file = 'src/claustrum/insula.ts'

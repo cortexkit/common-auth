@@ -5,6 +5,7 @@ import {
   acquireInsulaQuotaSource,
   ClaustrumConsumer,
   connectClaustrumScopedClient,
+  type InsulaQuotaMiss,
   type InsulaUsageEntry,
   recordVaultQuota,
 } from '../../src/claustrum/index.ts'
@@ -69,6 +70,7 @@ async function scenario(entries = [entry()], refusal?: string) {
     fetchedAt: number
     source?: string
   }> = []
+  const logs: Array<{ message: string; data: unknown }> = []
   const create = (project: string, token = tokenPath) => {
     const consumer = new ClaustrumConsumer({
       rosterPath: join(dir, `${project}-roster.json`),
@@ -81,6 +83,10 @@ async function scenario(entries = [entry()], refusal?: string) {
         }),
       isCustodyActive: () => active,
       now: () => now,
+      logger: {
+        debug() {},
+        warn: (message, data) => logs.push({ message, data }),
+      },
       insula: {
         provider: 'codex',
         normalize: (value, context): QuotaObservation | undefined => {
@@ -104,11 +110,10 @@ async function scenario(entries = [entry()], refusal?: string) {
   }
   const consumer = create('first')
   await consumer.refresh()
-  const receipt = await consumer.authorize(
-    consumer
-      .snapshot()!
-      .rows.find((row) => row.accountIdentity === 'account-work')!.routeId,
-  )
+  const routeId = consumer
+    .snapshot()!
+    .rows.find((row) => row.accountIdentity === 'account-work')!.routeId
+  const receipt = await consumer.authorize(routeId)
   const polls: string[] = []
   const poll = async (target = consumer, served = receipt) => {
     const cached = await target.cachedInsulaQuota(served)
@@ -121,9 +126,11 @@ async function scenario(entries = [entry()], refusal?: string) {
     daemon,
     consumer,
     receipt,
+    routeId,
     polls,
     poll,
     seen,
+    logs,
     create,
     tokenPath,
     setNow: (value: number) => {
@@ -150,6 +157,195 @@ test('current insula quota skips the own poll and retains source reading time', 
     readings: [{ label: 'session', usedPercent: 90 }],
   })
   expect(mergeQuotaObservation(merged, reading)).toEqual(merged)
+})
+
+async function lookupScenario(response: Record<string, unknown>) {
+  const s = await scenario()
+  s.daemon.insula!.response = response
+  const client = await connectClaustrumScopedClient({
+    connectionFile: s.daemon.connectionFile,
+    identity: { project_root: s.dir, harness: 'test', session: 'lookup' },
+  })
+  consumers.push(client)
+  const acquired = acquireInsulaQuotaSource(client.insula!, s.tokenPath)
+  consumers.push({ close: () => acquired.release() })
+  await acquired.source.refresh(NOW)
+  return { ...s, source: acquired.source }
+}
+
+test('insula lookup classifies scripted misses and preserves current compatibility', async () => {
+  const cases: Array<[Record<string, unknown>, InsulaQuotaMiss]> = [
+    [{ result: [], completeProviders: [] }, 'cold'],
+    [{ result: [], completeProviders: ['codex'] }, 'credential'],
+    [{ result: [entry({ errorClass: 'upstream_failed' })] }, 'upstream-failed'],
+    [
+      {
+        result: [
+          entry({
+            account: undefined,
+            usage: undefined,
+            errorClass: 'upstream_failed',
+          }),
+        ],
+      },
+      'upstream-failed',
+    ],
+    ...['credential_absent', 'credential_unusable', 'credential_rejected'].map(
+      (errorClass): [Record<string, unknown>, InsulaQuotaMiss] => [
+        { result: [entry({ errorClass })] },
+        'credential',
+      ],
+    ),
+    [
+      { result: [entry({ fetchedAt: new Date(NOW - 240_000).toISOString() })] },
+      'stale',
+    ],
+    [{ result: [entry({ stale: true })] }, 'stale'],
+    [{ result: [entry({ errorClass: 'future_error' })] }, 'unreachable'],
+    [{ result: [entry({ fetchedAt: 'invalid' })] }, 'unreachable'],
+    [{ result: {} }, 'unreachable'],
+    [{ error: { code: 'unavailable' } }, 'unreachable'],
+  ]
+  for (const [response, miss] of cases) {
+    const s = await lookupScenario(response)
+    expect(s.source.lookup('codex', 'account-work', NOW).miss).toBe(miss)
+    expect(s.source.current('codex', 'account-work', NOW)).toBeUndefined()
+    expect(
+      await s.consumer.cachedInsulaQuotaForRoute(s.routeId),
+    ).toBeUndefined()
+  }
+})
+
+test('insula lookup returns dated stale readings and gives upstream failure precedence', async () => {
+  const s = await lookupScenario({ result: [entry()] })
+  const reading = s.source.current('codex', 'account-work', NOW)!
+  expect(s.source.lookup('codex', 'account-work', NOW)).toEqual({ reading })
+  expect(s.source.lookup('codex', 'account-work', NOW + 239_000)).toEqual({
+    miss: 'stale',
+    reading,
+  })
+  s.daemon.insula!.response = {
+    result: [entry({ stale: true, errorClass: 'upstream_failed' })],
+  }
+  await s.source.refresh(NOW + 60_000)
+  expect(s.source.lookup('codex', 'account-work', NOW + 60_000).miss).toBe(
+    'upstream-failed',
+  )
+})
+
+test('insula cold expires after two sweeps and completeness resets the bound', async () => {
+  const s = await lookupScenario({ result: [], completeProviders: [] })
+  expect(s.source.lookup('codex', 'account-work', NOW)).toEqual({
+    miss: 'cold',
+  })
+  expect(s.source.lookup('codex', 'account-other', NOW + 119_999)).toEqual({
+    miss: 'cold',
+  })
+  expect(s.source.lookup('codex', 'account-work', NOW + 120_000)).toEqual({
+    miss: 'unreachable',
+  })
+  expect(s.source.lookup('claude', 'account-work', NOW + 120_000)).toEqual({
+    miss: 'cold',
+  })
+  s.daemon.insula!.response = { result: [], completeProviders: ['codex'] }
+  await s.source.refresh(NOW + 180_000)
+  s.daemon.insula!.response = { result: [], completeProviders: [] }
+  await s.source.refresh(NOW + 240_000)
+  expect(s.source.lookup('codex', 'account-work', NOW + 240_000)).toEqual({
+    miss: 'cold',
+  })
+})
+
+test('background insula wrapper skips cold and upstream failure with transition-only safe logs', async () => {
+  const s = await lookupScenario({ result: [], completeProviders: [] })
+  const route = s.routeId
+  let polls = 0
+  const fallback = async () => {
+    polls++
+    return { checkedAt: NOW, readings: [] }
+  }
+  expect(
+    await s.consumer.pollInsulaQuotaForRoute(route, fallback),
+  ).toBeUndefined()
+  await s.consumer.pollInsulaQuotaForRoute(route, fallback)
+  expect(polls).toBe(0)
+  expect(s.logs).toEqual([
+    { message: 'skipped insula provider poll', data: { reason: 'cold' } },
+  ])
+  s.daemon.insula!.response = {
+    result: [entry({ errorClass: 'upstream_failed' })],
+  }
+  s.setNow(NOW + 60_000)
+  await s.consumer.refreshInsulaQuota()
+  await s.consumer.pollInsulaQuotaForRoute(route, fallback)
+  await s.consumer.pollInsulaQuotaForRoute(route, fallback)
+  expect(polls).toBe(0)
+  expect(s.logs).toEqual([
+    { message: 'skipped insula provider poll', data: { reason: 'cold' } },
+    {
+      message: 'skipped insula provider poll',
+      data: { reason: 'upstream-failed' },
+    },
+  ])
+  expect(
+    await s.consumer.recordQuota(
+      route,
+      { checkedAt: NOW, readings: [] },
+      s.receipt,
+    ),
+  ).toBe(true)
+  s.daemon.insula!.response = { result: [], completeProviders: ['codex'] }
+  s.setNow(NOW + 120_000)
+  await s.consumer.refreshInsulaQuota()
+  await s.consumer.pollInsulaQuotaForRoute(route, fallback)
+  expect(polls).toBe(1)
+  s.daemon.insula!.response = { result: [], completeProviders: [] }
+  s.setNow(NOW + 180_000)
+  await s.consumer.refreshInsulaQuota()
+  await s.consumer.pollInsulaQuotaForRoute(route, fallback)
+  expect(s.logs.at(-1)).toEqual({
+    message: 'skipped insula provider poll',
+    data: { reason: 'cold' },
+  })
+  expect(s.logs).toHaveLength(3)
+  s.setNow(NOW + 300_000)
+  await s.consumer.pollInsulaQuotaForRoute(route, fallback)
+  expect(polls).toBe(2)
+})
+
+test('background insula wrapper polls only stale credential and unreachable misses', async () => {
+  for (const response of [
+    { result: [entry({ fetchedAt: new Date(NOW - 240_000).toISOString() })] },
+    { result: [entry({ errorClass: 'credential_rejected' })] },
+    { error: { code: 'unavailable' } },
+  ]) {
+    const s = await lookupScenario(response)
+    let polls = 0
+    const quota = { checkedAt: NOW, readings: [] }
+    expect(
+      await s.consumer.pollInsulaQuotaForRoute(s.routeId, async () => {
+        polls++
+        return quota
+      }),
+    ).toEqual(quota)
+    expect(polls).toBe(1)
+    expect(s.logs).toEqual([])
+    const lookup = await s.consumer.lookupInsulaQuotaForRoute(s.routeId)
+    if (lookup.miss === 'stale')
+      expect(lookup.reading?.checkedAt).toBe(NOW - 240_000)
+  }
+  const s = await lookupScenario({ result: [entry()] })
+  let polls = 0
+  expect(
+    await s.consumer.pollInsulaQuotaForRoute(s.routeId, async () => {
+      polls++
+      return undefined
+    }),
+  ).toEqual({
+    checkedAt: NOW - 1_000,
+    readings: [{ label: 'session', usedPercent: 80 }],
+  })
+  expect(polls).toBe(0)
 })
 
 test('route lookup hits a receipt-bound roster account without authorizing on the background path', async () => {
@@ -430,6 +626,9 @@ test.each([
     expect(s.polls).toEqual(['account-work'])
     expect(s.daemon.insulaOpens).toBe(1)
     expect(s.daemon.usageGets).toBe(0)
+    expect(await s.consumer.lookupInsulaQuotaForRoute(s.routeId)).toEqual({
+      miss: 'unreachable',
+    })
   },
 )
 
@@ -518,6 +717,9 @@ test.each(['open', 'usage'] as const)(
     await closed
     expect(s.daemon.insulaOpens).toBe(1)
     expect(s.daemon.usageGets).toBe(hang === 'usage' ? 1 : 0)
+    expect(await s.consumer.lookupInsulaQuotaForRoute(s.routeId)).toEqual({
+      miss: 'unreachable',
+    })
   },
 )
 

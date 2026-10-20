@@ -55,6 +55,28 @@ export interface InsulaQuotaContext {
   source?: string
 }
 
+export type InsulaQuotaMiss =
+  | 'cold'
+  | 'stale'
+  | 'upstream-failed'
+  | 'credential'
+  | 'unreachable'
+
+export interface InsulaQuotaReading {
+  entry: InsulaUsageEntry
+  context: InsulaQuotaContext
+}
+
+/** A miss may retain a dated reading; it is not a current quota observation. */
+export type InsulaQuotaLookup =
+  | { reading: InsulaQuotaReading; miss?: never }
+  | { miss: InsulaQuotaMiss; reading?: InsulaQuotaReading }
+
+/** The normalized equivalent of a source lookup, for a plugin's quota type. */
+export type InsulaQuotaResult<Q> =
+  | { reading: Q; miss?: never }
+  | { miss: InsulaQuotaMiss; reading?: Q }
+
 export interface InsulaQuotaOptions<Q> {
   provider: 'codex' | 'claude' | 'antigravity'
   /**
@@ -243,6 +265,9 @@ export function insulaUsageTransport(
 
 const MINUTE = 60_000
 const MAX_AGE = 4 * MINUTE
+// consumer-contract.md:331 refetches a slot after 60 s. Two such intervals
+// bound our willingness to wait, not a claim that insula completed its sweep.
+const COLD_WAIT = 2 * MINUTE
 const sources = new Map<string, { source: InsulaQuotaSource; refs: number }>()
 // Keep only the minute budget after the last owner closes, so project churn
 // cannot reset the bound. Expired budgets are pruned on the next tick.
@@ -315,6 +340,9 @@ interface OpenUsageWatch {
 
 export class InsulaQuotaSource {
   #entries: InsulaUsageEntry[] = []
+  #available = false
+  #completeProviders = new Set<string>()
+  readonly #coldSince = new Map<string, number>()
   /** Every usage.get, polled or watch-driven, shares this one slot. */
   readonly #reads = new CoalescedRead(
     async () => {
@@ -326,15 +354,31 @@ export class InsulaQuotaSource {
           reply.error !== undefined
         )
           throw new Error('unavailable insula usage')
-        // Each response is a snapshot, not a delta. Missing accounts fall back;
-        // neither pending nor the entry count asserts provider completeness.
+        // Each response is a snapshot, not a delta. Only completeProviders
+        // asserts completeness; neither pending nor the entry count does.
         this.#entries = reply.result.filter(
           (entry): entry is InsulaUsageEntry =>
             record(entry) && typeof entry.provider === 'string',
         )
+        this.#available =
+          this.#entries.length === reply.result.length &&
+          (reply.completeProviders === undefined ||
+            (Array.isArray(reply.completeProviders) &&
+              reply.completeProviders.every(
+                (value) => typeof value === 'string',
+              )))
+        this.#completeProviders = new Set(
+          this.#available && Array.isArray(reply.completeProviders)
+            ? reply.completeProviders
+            : [],
+        )
+        for (const provider of this.#completeProviders)
+          this.#coldSince.delete(provider)
       } catch {
         // Refusal is absence, even if the previous reading was still young.
         this.#entries = []
+        this.#available = false
+        this.#completeProviders.clear()
       }
     },
     () => {},
@@ -553,6 +597,58 @@ export class InsulaQuotaSource {
       }
     }
     return undefined
+  }
+
+  /** Cache-only background lookup; current() retains its original miss behavior. */
+  lookup(provider: string, accountId: string, now: number): InsulaQuotaLookup {
+    if (!this.#available) return { miss: 'unreachable' }
+    const entry = this.#entries.find(
+      (value) =>
+        value.provider === provider &&
+        typeof value.account === 'string' &&
+        value.account.trim() === accountId,
+    )
+    // An unlabelled error describes the provider's credential path, not an
+    // unrelated labelled account. Never borrow another account's verdict.
+    const errorClass = (
+      entry ??
+      this.#entries.find(
+        (value) =>
+          value.provider === provider &&
+          value.account === undefined &&
+          value.errorClass !== undefined,
+      )
+    )?.errorClass
+    if (errorClass === 'upstream_failed') return { miss: 'upstream-failed' }
+    if (
+      errorClass === 'credential_absent' ||
+      errorClass === 'credential_unusable' ||
+      errorClass === 'credential_rejected'
+    )
+      return { miss: 'credential' }
+    if (errorClass !== undefined) return { miss: 'unreachable' }
+    if (entry) {
+      const fetchedAt =
+        typeof entry.fetchedAt === 'string'
+          ? Date.parse(entry.fetchedAt)
+          : Number.NaN
+      if (!record(entry.usage) || !Number.isFinite(fetchedAt))
+        return { miss: 'unreachable' }
+      const reading = {
+        entry,
+        context: {
+          fetchedAt,
+          ...(typeof entry.source === 'string' && { source: entry.source }),
+        },
+      }
+      return now >= fetchedAt + MAX_AGE || entry.stale !== undefined
+        ? { miss: 'stale', reading }
+        : { reading }
+    }
+    if (this.#completeProviders.has(provider)) return { miss: 'credential' }
+    const since = this.#coldSince.get(provider) ?? now
+    this.#coldSince.set(provider, since)
+    return { miss: now - since >= COLD_WAIT ? 'unreachable' : 'cold' }
   }
 }
 

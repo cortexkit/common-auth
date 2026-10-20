@@ -16,7 +16,12 @@ import {
 } from './custody.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
-import { acquireInsulaQuotaSource, type InsulaQuotaOptions } from './insula.js'
+import {
+  acquireInsulaQuotaSource,
+  type InsulaQuotaMiss,
+  type InsulaQuotaOptions,
+  type InsulaQuotaResult,
+} from './insula.js'
 import {
   type AccountMapper,
   acceptVaultRoute,
@@ -128,6 +133,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #insula?: ReturnType<typeof acquireInsulaQuotaSource>
   #vaultWatch?: ClaustrumRosterWatch
   #releaseInsulaWatch?: () => void
+  readonly #insulaSkips = new Map<string, InsulaQuotaMiss>()
   /** When this instance last completed a discovery, by `now`. */
   #discoveredAt?: number
 
@@ -468,6 +474,56 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     } catch {
       return undefined
     }
+  }
+
+  /** Cache-only background lookup, preserving the reason a route has no reading. */
+  async lookupInsulaQuotaForRoute(
+    routeId: string,
+  ): Promise<InsulaQuotaResult<Q>> {
+    const options = this.#options.insula
+    if (!options || this.#shutdown.signal.aborted || !(await this.#active()))
+      return { miss: 'unreachable' }
+    try {
+      await readClaustrumEnrollmentToken(this.#options.tokenPath)
+      const roster = await readVaultRoster(this.#options.rosterPath)
+      const account = roster?.rows.find(
+        (row) => row.routeId === routeId,
+      )?.accountIdentity
+      if (!account || !this.#insula) return { miss: 'unreachable' }
+      const result = this.#insula.source.lookup(
+        options.provider,
+        account,
+        (this.#options.now ?? Date.now)(),
+      )
+      const reading =
+        result.reading &&
+        options.normalize(result.reading.entry, result.reading.context)
+      if (result.miss)
+        return { miss: result.miss, ...(reading !== undefined && { reading }) }
+      // Refusing an echo or unsupported window leaves the plugin's poll in charge.
+      return reading === undefined ? { miss: 'unreachable' } : { reading }
+    } catch {
+      return { miss: 'unreachable' }
+    }
+  }
+
+  /** Skip the fallback poll while insula is cold or its upstream fetch failed. */
+  async pollInsulaQuotaForRoute(
+    routeId: string,
+    fallback: () => Promise<Q | undefined>,
+  ): Promise<Q | undefined> {
+    const result = await this.lookupInsulaQuotaForRoute(routeId)
+    if (result.miss === 'cold' || result.miss === 'upstream-failed') {
+      if (this.#insulaSkips.get(routeId) !== result.miss) {
+        this.#insulaSkips.set(routeId, result.miss)
+        this.#logger.warn('skipped insula provider poll', {
+          reason: result.miss,
+        })
+      }
+      return undefined
+    }
+    this.#insulaSkips.delete(routeId)
+    return result.miss ? fallback() : result.reading
   }
 
   #normalizeInsulaQuota(accountIdentity: string | undefined): Q | undefined {

@@ -92,7 +92,11 @@ export {
 export {
   acquireInsulaQuotaSource,
   type InsulaQuotaContext,
+  type InsulaQuotaLookup,
+  type InsulaQuotaMiss,
   type InsulaQuotaOptions,
+  type InsulaQuotaReading,
+  type InsulaQuotaResult,
   type InsulaQuotaSource,
   type InsulaUsageEntry,
   type InsulaUsageTransport,
