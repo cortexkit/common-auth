@@ -1,8 +1,21 @@
 import { describe, expect, test } from 'bun:test'
+import { EventEmitter } from 'node:events'
 import { openBrowserForMenu } from '../../src/auth-menu/login.js'
 
 const oauthUrl =
   "https://auth.openai.com/oauth/authorize?client_id=client&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&response_type=code&scope=openid%20email&state=it's 50% done&code_challenge=challenge-value&code_challenge_method=S256"
+
+type TestChild = EventEmitter & { pid?: number; unref(): void }
+
+function childProcess(
+  pid: number | undefined,
+  events: string[] = [],
+): TestChild {
+  const child = new EventEmitter() as TestChild
+  child.pid = pid
+  child.unref = () => events.push('unref')
+  return child
+}
 
 describe('auth menu browser opener', () => {
   test('Windows encodes an OAuth URL intact without a shell', () => {
@@ -12,9 +25,6 @@ describe('auth menu browser opener', () => {
     const opened = openBrowserForMenu(
       oauthUrl,
       'win32',
-      () => {
-        throw new Error('Windows must not wait on a synchronous opener')
-      },
       (file, args, options) => {
         calls.push([file, args, options])
         return {
@@ -58,44 +68,55 @@ describe('auth menu browser opener', () => {
     expect(quotedUrl?.replaceAll("''", "'")).toBe(oauthUrl)
   })
 
-  test('macOS and Linux keep their native opener arguments', () => {
+  test('macOS and Linux launch their native openers without waiting', () => {
     const calls: unknown[][] = []
-    const execFileSync = (file: string, args: string[], options: unknown) => {
-      calls.push([file, args, options])
-    }
+    const events: string[] = []
+    const children: TestChild[] = []
+    const opened = (['darwin', 'linux'] as const).map((platform) => {
+      const child = childProcess(4242, events)
+      children.push(child)
+      return openBrowserForMenu(oauthUrl, platform, (file, args, options) => {
+        calls.push([file, args, options])
+        return child
+      })
+    })
 
-    expect(openBrowserForMenu(oauthUrl, 'darwin', execFileSync)).toBe(true)
-    expect(openBrowserForMenu(oauthUrl, 'linux', execFileSync)).toBe(true)
+    expect(opened).toEqual([true, true])
+    expect(events).toEqual(['unref', 'unref'])
     expect(calls).toEqual([
-      ['open', [oauthUrl], { stdio: 'ignore', timeout: 3000 }],
-      ['xdg-open', [oauthUrl], { stdio: 'ignore', timeout: 3000 }],
+      ['open', [oauthUrl], { stdio: 'ignore' }],
+      ['xdg-open', [oauthUrl], { stdio: 'ignore' }],
     ])
+    for (const child of children) {
+      expect(() =>
+        child.emit('error', new Error('opener failed after launch')),
+      ).not.toThrow()
+    }
   })
 
   test('returns false when the platform opener fails', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      expect(
+        openBrowserForMenu(oauthUrl, platform, () => childProcess(undefined)),
+      ).toBe(false)
+      expect(
+        openBrowserForMenu(oauthUrl, platform, () => {
+          throw new Error('opener unavailable')
+        }),
+      ).toBe(false)
+    }
     expect(
-      openBrowserForMenu(oauthUrl, 'linux', () => {
-        throw new Error('opener unavailable')
+      openBrowserForMenu(oauthUrl, 'win32', () => {
+        throw new Error('spawn unavailable')
       }),
-    ).toBe(false)
-    expect(
-      openBrowserForMenu(
-        oauthUrl,
-        'win32',
-        () => {},
-        () => {
-          throw new Error('spawn unavailable')
-        },
-      ),
     ).toBe(false)
     // Node reports an unstartable process with an undefined pid.
     expect(
-      openBrowserForMenu(
-        oauthUrl,
-        'win32',
-        () => {},
-        () => ({ pid: undefined, on: () => {}, unref: () => {} }),
-      ),
+      openBrowserForMenu(oauthUrl, 'win32', () => ({
+        pid: undefined,
+        on: () => {},
+        unref: () => {},
+      })),
     ).toBe(false)
   })
 })

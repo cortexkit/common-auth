@@ -1,7 +1,4 @@
-import {
-  execFileSync as defaultExecFileSync,
-  spawn as defaultSpawn,
-} from 'node:child_process'
+import { spawn as defaultSpawn } from 'node:child_process'
 import type { PoolCredential } from '../store/index.js'
 import type { MenuContext } from './menu.js'
 
@@ -33,33 +30,26 @@ export interface MenuLogin {
     signal?: AbortSignal
   }): Promise<LoginFlow>
   /**
-   * Opens the URL in a browser; false or a throw means no browser could be
-   * opened. Defaults to `openBrowserForMenu`.
+   * Opens the URL in a browser; false or a throw means its opener could not be
+   * started. Defaults to `openBrowserForMenu`.
    */
   openBrowser?(url: string): boolean | undefined | Promise<boolean | undefined>
 }
 
-type BrowserExec = (
-  file: string,
-  args: string[],
-  options: { stdio: 'ignore'; timeout: number },
-) => unknown
-
 type BrowserSpawn = (
   file: string,
   args: string[],
-  options: { stdio: 'ignore'; windowsHide: true },
+  options: { stdio: 'ignore'; windowsHide?: true },
 ) => {
   pid?: number
   unref(): void
   on(event: 'error', listener: () => void): unknown
 }
 
-/** Opens a URL with the platform's opener; false when that fails. */
+/** Opens a URL with the platform's opener; false when it could not start. */
 export function openBrowserForMenu(
   url: string,
   platform: NodeJS.Platform = process.platform,
-  execFileSync: BrowserExec = defaultExecFileSync,
   spawn: BrowserSpawn = defaultSpawn,
 ): boolean {
   try {
@@ -92,14 +82,19 @@ export function openBrowserForMenu(
       child.unref()
       // Node leaves pid undefined when the process could not be started.
       return child.pid !== undefined
-    } else {
-      execFileSync(platform === 'darwin' ? 'open' : 'xdg-open', [url], {
-        stdio: 'ignore',
-        timeout: 3000,
-      })
     }
-    return true
+
+    const child = spawn(platform === 'darwin' ? 'open' : 'xdg-open', [url], {
+      stdio: 'ignore',
+    })
+    // A failed launch reports asynchronously; without a listener it would
+    // become an uncaught exception after this function has returned.
+    child.on('error', () => {})
+    child.unref()
+    // The URL handler's process may outlive the caller; a pid means launch began.
+    return child.pid !== undefined
   } catch {
+    // Browser launch is best effort; the printed URL remains the fallback.
     return false
   }
 }
@@ -118,7 +113,7 @@ function printFlow(context: MenuContext, flow: LoginFlow) {
 
 /**
  * Runs a login for the menu: a browser login first and, when no browser can
- * be opened, a device-code login instead, so a headless machine can still
+ * be started, a device-code login instead, so a headless machine can still
  * add an account. The URL is always printed, so an operator can open it by
  * hand when the opener reports success but nothing appears.
  */

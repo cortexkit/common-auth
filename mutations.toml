@@ -7448,3 +7448,48 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/outage.test
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^outage\sprobe\stimer\sis\sunreferenced$']
 expect_message = 'expect(received).toBe(expected)'
+
+
+# Replay these opener controls with both Bun 1.3.14 and 1.4.2. Their messages
+# match stable assertion labels rather than runtime-specific error formatting.
+[[control]]
+id = 'auth-menu-unix-opener-does-not-wait'
+guards = 'macOS and Linux opener children are unreferenced so the plugin does not wait for them'
+file = 'src/auth-menu/login.ts'
+old = '''    child.unref()
+    // The URL handler's process may outlive the caller; a pid means launch began.
+    return child.pid !== undefined'''
+new = '''    void child /* NON-VACUITY BREAK */
+    // The URL handler's process may outlive the caller; a pid means launch began.
+    return child.pid !== undefined'''
+test_file = 'test/auth-menu/login.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/auth-menu/login.test.ts -t "$1"', 'sh', '{test}']
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/auth-menu/login.test.ts", "{test}"]
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^auth\smenu\sbrowser\sopener\smacOS\sand\sLinux\slaunch\stheir\snative\sopeners\swithout\swaiting$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'auth-menu-unix-opener-handles-late-error'
+guards = 'a Unix opener error emitted after the launch returns cannot become an uncaught exception'
+file = 'src/auth-menu/login.ts'
+old = '''    const child = spawn(platform === 'darwin' ? 'open' : 'xdg-open', [url], {
+      stdio: 'ignore',
+    })
+    // A failed launch reports asynchronously; without a listener it would
+    // become an uncaught exception after this function has returned.
+    child.on('error', () => {})'''
+new = '''    const child = spawn(platform === 'darwin' ? 'open' : 'xdg-open', [url], {
+      stdio: 'ignore',
+    })
+    // A failed launch reports asynchronously; without a listener it would
+    // become an uncaught exception after this function has returned.
+    void child /* NON-VACUITY BREAK */'''
+test_file = 'test/auth-menu/login.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/auth-menu/login.test.ts -t "$1"', 'sh', '{test}']
+list_command = ["bun", "scripts/list-bun-tests.mjs", "test/auth-menu/login.test.ts", "{test}"]
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^auth\smenu\sbrowser\sopener\smacOS\sand\sLinux\slaunch\stheir\snative\sopeners\swithout\swaiting$']
+expect_message = 'toThrow'
