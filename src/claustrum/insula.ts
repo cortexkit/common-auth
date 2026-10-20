@@ -58,6 +58,7 @@ export interface InsulaQuotaContext {
 export type InsulaQuotaMiss =
   | 'cold'
   | 'stale'
+  | 'absent'
   | 'upstream-failed'
   | 'credential'
   | 'unreachable'
@@ -645,7 +646,7 @@ export class InsulaQuotaSource {
         ? { miss: 'stale', reading }
         : { reading }
     }
-    if (this.#completeProviders.has(provider)) return { miss: 'credential' }
+    if (this.#completeProviders.has(provider)) return { miss: 'absent' }
     const since = this.#coldSince.get(provider) ?? now
     this.#coldSince.set(provider, since)
     return { miss: now - since >= COLD_WAIT ? 'unreachable' : 'cold' }

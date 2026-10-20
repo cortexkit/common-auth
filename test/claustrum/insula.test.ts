@@ -176,7 +176,7 @@ async function lookupScenario(response: Record<string, unknown>) {
 test('insula lookup classifies scripted misses and preserves current compatibility', async () => {
   const cases: Array<[Record<string, unknown>, InsulaQuotaMiss]> = [
     [{ result: [], completeProviders: [] }, 'cold'],
-    [{ result: [], completeProviders: ['codex'] }, 'credential'],
+    [{ result: [], completeProviders: ['codex'] }, 'absent'],
     [{ result: [entry({ errorClass: 'upstream_failed' })] }, 'upstream-failed'],
     [
       {
@@ -313,9 +313,13 @@ test('background insula wrapper skips cold and upstream failure with transition-
   expect(polls).toBe(2)
 })
 
-test('background insula wrapper polls only stale credential and unreachable misses', async () => {
+test('background insula wrapper polls only stale absent credential and unreachable misses', async () => {
   for (const response of [
     { result: [entry({ fetchedAt: new Date(NOW - 240_000).toISOString() })] },
+    {
+      result: [entry({ account: 'account-other' })],
+      completeProviders: ['codex'],
+    },
     { result: [entry({ errorClass: 'credential_rejected' })] },
     { error: { code: 'unavailable' } },
   ]) {
