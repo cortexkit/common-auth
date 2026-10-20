@@ -4,7 +4,7 @@ Base: `28e9d0ded7adb074a3d1a10a38c13fac66082ad4`. No production code, election-r
 
 ## Historical failures: what the raw evidence actually says
 
-Read-only evidence from the independent anthropic-auth integration worker (ANTAUTH)'s full-order run of the base common-auth suite: `/Users/ufukaltinok/Work/Projects/CortexKit/anthropic-auth/.cortexkit/alfonso/probes/common-auth-095-source-28e9d0d/parent-full.stderr.log`:
+Read-only evidence from the independent anthropic-auth integration worker (ANTAUTH)'s full-order run of the base common-auth suite: `/Users/ufukaltinok/Work/Projects/CortexKit/anthropic-auth/.cortexkit/prefrontal/probes/common-auth-095-source-28e9d0d/parent-full.stderr.log`:
 
 ```text
 919: (fail) acquireRefreshFileLock > elects one owner across 512 plain stale-lock contentions [35007.76ms]

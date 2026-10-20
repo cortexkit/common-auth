@@ -70,7 +70,7 @@ const name = process.env.RUN_NAME ?? `variant-${variant}`;
 // The self-tag instruction this run appends must be exactly the one Magic
 // Context's own trial used (its plan file and its OpenCode 1 wrapper), so the
 // results here are comparable with that trial.
-const planLine = readFileSync(join(MC_REPO, ".cortexkit/alfonso/plans/issue-582-variant-c.md"), "utf8")
+const planLine = readFileSync(join(MC_REPO, ".cortexkit/prefrontal/plans/issue-582-variant-c.md"), "utf8")
     .split("\n")
     .find((line) => line.startsWith("> Every user message"))
     ?.slice(2);

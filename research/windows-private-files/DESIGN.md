@@ -42,7 +42,7 @@ Report only; no implementation or claim of Windows execution. Source snapshots: 
 > [published README](https://unpkg.com/@cortexkit/private-files@0.2.1/README.md)
 > and [declarations](https://unpkg.com/@cortexkit/private-files@0.2.1/dist/index.d.ts).
 >
-> The measured safe-parent spec (`openai-auth/.cortexkit/alfonso/reports/windows-safe-parent/SPEC.md`,
+> The measured safe-parent spec (`openai-auth/.cortexkit/prefrontal/reports/windows-safe-parent/SPEC.md`,
 > lines 11–12 and 40) records profile owners as "SYSTEM or Administrators" and
 > config entries as "Inherited only: SYSTEM, Administrators, the user, Full";
 > "The profile folder passes, and so does the OpenCode config folder."

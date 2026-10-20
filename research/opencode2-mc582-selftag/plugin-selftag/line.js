@@ -1,7 +1,7 @@
 // The variant C system line of Magic Context's self-tag trial, byte for byte.
 // Sources it must equal (run.mjs checks both before every run and refuses to
 // start on any difference):
-//   magic-context/.cortexkit/alfonso/plans/issue-582-variant-c.md,
+//   magic-context/.cortexkit/prefrontal/plans/issue-582-variant-c.md,
 //     section "Variant C system line" (the blockquote)
 //   magic-context/packages/plugin/scripts/self-tag-trial/host-plugin.mjs,
 //     constant instructionC
