@@ -5925,7 +5925,7 @@ command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^an\saccount\squota\swrite\sis\srefused\sfor\sanother\saccount\sor\san\sunbound\sroute$']
-expect_message = 'toEqual'
+expect_message = 'expect(received).toBe(expected)'
 
 [[control]]
 id = 'setup-pi-folder-without-cli-is-skipped'
