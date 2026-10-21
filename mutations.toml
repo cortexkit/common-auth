@@ -3082,11 +3082,11 @@ expect_message = 'stable pending calls must discover once'
 id = 'claustrum-roster-reasserts-lock-at-publish'
 guards = 'the roster write lock is reasserted at the final pre-rename point, so a lease lost while the roster is staged publishes nothing'
 file = 'src/claustrum/roster.ts'
-old = '''          await options.beforePublish?.()
-          options.signal?.throwIfAborted()
-          await lock.assertOwned()'''
-new = '''          await options.beforePublish?.() // NON-VACUITY BREAK: no lock check at rename.
-          options.signal?.throwIfAborted()'''
+old = '''            await options.beforePublish?.()
+            options.signal?.throwIfAborted()
+            await lock.assertOwned()'''
+new = '''            await options.beforePublish?.() // NON-VACUITY BREAK: no lock check at rename.
+            options.signal?.throwIfAborted()'''
 test_file = 'test/claustrum/roster.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/claustrum/roster.test.ts', '-t', '{test}']
@@ -3099,23 +3099,24 @@ expect_message = 'toBeInstanceOf'
 id = 'claustrum-roster-before-publish-at-rename'
 guards = 'the caller publication guard runs after the roster is staged, immediately before the rename, not when the change callback returns'
 file = 'src/claustrum/roster.ts'
-old = '''      await lock.assertOwned()
-      // Staging the file takes several awaited steps; check both the caller's
-      // lease and this lock again at the last moment before the rename.
-      await writeJsonAtomic(path, next, {
-        beforeRename: async () => {
-          await options.beforePublish?.()
-          options.signal?.throwIfAborted()
-          await lock.assertOwned()
-        },
-      })'''
-new = '''      await options.beforePublish?.() // NON-VACUITY BREAK: guard before staging.
-      await lock.assertOwned()
-      await writeJsonAtomic(path, next, {
-        beforeRename: async () => {
-          await lock.assertOwned()
-        },
-      })'''
+old = '''        await lock.assertOwned()
+        // Staging the file takes several awaited steps; check both the caller's
+        // lease and this lock again at the last moment before the rename.
+        await writeJsonAtomic(path, next, {
+          beforeRename: async () => {
+            await options.beforePublish?.()
+            options.signal?.throwIfAborted()
+            await lock.assertOwned()
+          },
+        })'''
+new = '''        await options.beforePublish?.() // NON-VACUITY BREAK: guard before staging.
+        await lock.assertOwned()
+        await writeJsonAtomic(path, next, {
+          beforeRename: async () => {
+            options.signal?.throwIfAborted()
+            await lock.assertOwned()
+          },
+        })'''
 test_file = 'test/claustrum/roster.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/claustrum/roster.test.ts', '-t', '{test}']
@@ -5881,7 +5882,10 @@ expect_message = '/Expected: 1\s+Received: 2/'
 id = 'insula-route-lookup-observes-peer-replacement'
 guards = 'background route lookup reads the committed roster so a peer known-account replacement cannot keep the old route matched to insula'
 file = 'src/claustrum/consumer.ts'
-old = '''      const roster = await readVaultRoster(this.#options.rosterPath)
+old = '''      const roster = pendingVaultQuota(
+        this.#options.rosterPath,
+        await readVaultRoster(this.#options.rosterPath),
+      )
       const row = roster?.rows.find((entry) => entry.routeId === routeId)'''
 new = '''      // NON-VACUITY BREAK: ignore peer replacements and use the old local snapshot.
       const roster = this.#roster
