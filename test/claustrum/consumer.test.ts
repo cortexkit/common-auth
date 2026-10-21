@@ -125,11 +125,17 @@ test('shared consumers update memory before publication and the last dispose dra
   if (!lock) throw new Error('holder failed')
   try {
     const start = performance.now()
-    const recorded = f.consumer.recordQuota(
-      route,
-      { checkedAt: 100, readings: [{ label: 'primary', usedPercent: 20 }] },
-      attempt,
-    )
+    // The write lock is held, so the call must not wait for it: it answers
+    // after the lock-free fence read, and both consumers see the reading in
+    // memory while the file does not have it yet.
+    expect(
+      await f.consumer.recordQuota(
+        route,
+        { checkedAt: 100, readings: [{ label: 'primary', usedPercent: 20 }] },
+        attempt,
+      ),
+    ).toBe(true)
+    expect(performance.now() - start).toBeLessThan(500)
     expect(
       f.consumer.routingRows().find((row) => row.id === route)?.quota
         ?.limits[0],
@@ -137,8 +143,6 @@ test('shared consumers update memory before publication and the last dispose dra
     expect(
       peer.routingRows().find((row) => row.id === route)?.quota?.limits[0],
     ).toMatchObject({ checkedAt: 100 })
-    expect(await recorded).toBe(true)
-    expect(performance.now() - start).toBeLessThan(500)
     expect(
       (await readVaultRoster(f.options.rosterPath))?.rows.find(
         (row) => row.routeId === route,
@@ -636,7 +640,7 @@ test('a credential an incomplete reply re-lists under another account is never a
         expectedAccountIdentity: accountIdentity,
         accountIdentitySource: 'asserted',
       }),
-    ).toBe(true)
+    ).toBe(false)
   expect(
     f.consumer.snapshot()?.rows.find((row) => row.routeId === routeA)?.quota,
   ).toBeUndefined()

@@ -522,13 +522,13 @@ test('an account quota write is refused for another account or an unbound route'
   const reading = { checkedAt: NOW, readings: [] }
   expect(
     await consumer.recordAccountQuota(unbound.routeId, 'account-work', reading),
-  ).toBe(true)
+  ).toBe(false)
   const bound = consumer
     .snapshot()!
     .rows.find((value) => value.accountIdentity !== undefined)!
   expect(
     await consumer.recordAccountQuota(bound.routeId, 'someone-else', reading),
-  ).toBe(true)
+  ).toBe(false)
   await drainVaultQuota(join(s.dir, 'account-fence-roster.json'))
   expect(
     consumer.snapshot()!.rows.find((value) => value.routeId === bound.routeId)

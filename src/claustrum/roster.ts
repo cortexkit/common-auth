@@ -9,6 +9,7 @@ import {
 import { readPrivateText, windowsPrivateFiles } from '../fs/private-files.js'
 import {
   decodeQuotaMap,
+  isQuotaObservation,
   mergeQuotaObservation,
   type QuotaMap,
   type QuotaObservation,
@@ -32,6 +33,7 @@ import {
 } from './interlock.js'
 import {
   enqueueVaultQuota,
+  pendingVaultQuota,
   type VaultQuotaPublication,
 } from './quota-writer.js'
 
@@ -660,10 +662,12 @@ function receiptFence(
  * write is fenced on the receipt the reading was taken with: it lands only
  * while the row still holds that receipt's credential (as representative or
  * alias) and account, so a slow read for a replaced account can never land on
- * its successor. Resolves on enqueue, not durable publication; true means the
- * observation was accepted into the process mailbox, not that its fence passed.
+ * its successor. Resolves false when the fence refuses the reading against the
+ * roster as it stands now (on disk, plus readings this process has not
+ * written yet), and true once the reading is queued for the next write. The
+ * write applies the fence again, so a rebind between the two still refuses.
  */
-export function recordVaultQuota(
+export async function recordVaultQuota(
   path: string,
   input: QuotaReceipt & {
     routeId: string
@@ -671,12 +675,25 @@ export function recordVaultQuota(
   },
 ): Promise<boolean> {
   const { routeId, observation, ...receipt } = input
-  return enqueueVaultQuota(path, {
+  return enqueueFencedVaultQuota(path, {
     routeId,
     observation,
     accountIdentity: receipt.accountIdentity,
     receipt,
   })
+}
+
+// The answer callers rely on (false for a replaced account) comes from the
+// fence, so it runs here against the current roster before anything is
+// queued. The read takes no lock: the roster file is replaced atomically.
+async function enqueueFencedVaultQuota(
+  path: string,
+  publication: VaultQuotaPublication,
+): Promise<boolean> {
+  if (!isQuotaObservation(publication.observation)) return false
+  const current = pendingVaultQuota(path, await readVaultRoster(path))
+  if (!applyVaultQuota(current, publication).kept) return false
+  return enqueueVaultQuota(path, publication)
 }
 
 /**
@@ -685,8 +702,8 @@ export function recordVaultQuota(
  * lands only while the row is still bound to that exact known account, so a
  * reading taken before a replacement never reaches the successor. Unlike
  * `recordVaultQuota` it never binds an account: a row without a known account
- * is refused at flush time. Resolves on enqueue, with the same acceptance
- * semantics as `recordVaultQuota`.
+ * is refused. Resolves false when the row is not bound to that account now,
+ * and true once the reading is queued, as `recordVaultQuota` does.
  */
 export function recordVaultAccountQuota(
   path: string,
@@ -696,7 +713,7 @@ export function recordVaultAccountQuota(
     observation: QuotaObservation
   },
 ): Promise<boolean> {
-  return enqueueVaultQuota(path, input)
+  return enqueueFencedVaultQuota(path, input)
 }
 
 /** Apply the same identity fence to memory overlays and durable quota batches. */

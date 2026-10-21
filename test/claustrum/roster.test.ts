@@ -28,15 +28,16 @@ const { afterEach, test } = hooks
 
 afterEach(cleanupDirs)
 
-// The public promise acknowledges enqueueing. Persistence tests explicitly
-// drain, and refused receipts must leave the actual roster bytes untouched.
+// The promise answers whether the fence kept the reading (true once queued,
+// false when refused). Persistence tests explicitly drain, and refused
+// receipts must leave the actual roster bytes untouched.
 async function publishQuota(
   path: string,
   input: Parameters<typeof recordVaultQuota>[1],
   kept = true,
 ) {
   const before = kept ? undefined : await readFile(path, 'utf8')
-  expect(await recordVaultQuota(path, input)).toBe(true)
+  expect(await recordVaultQuota(path, input)).toBe(kept)
   await drainVaultQuota(path)
   if (before !== undefined) expect(await readFile(path, 'utf8')).toBe(before)
 }

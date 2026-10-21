@@ -986,11 +986,14 @@ watch.close() // custody.close() also stops it
 **Detached roster quota publication.** `recordVaultQuota(path, input)`,
 `recordVaultAccountQuota(path, input)`, `consumer.recordQuota(routeId, observation, receipt)`
 and `consumer.recordAccountQuota(routeId, accountIdentity, observation)` retain their
-`Promise<boolean>` signatures, but now **resolve on enqueue, never on a file write**.
-`true` acknowledges a well-formed observation in the process mailbox; it does not
-promise that the account/credential will still match at publication. A malformed
-observation returns `false`. Identity checks run against the latest roster under
-the write lock, so removed, replaced or mismatched accounts still receive nothing.
+`Promise<boolean>` signatures and their meaning, but now **resolve after a
+lock-free fence check and enqueue, never on a file write**. The fence runs against
+the roster as it stands (the file, read without a lock, plus this process's
+unwritten readings): `false` means the reading was refused (a replaced or other
+account, an unbound route, a missing row, or a malformed observation), as in
+0.22; `true` means it passed and is queued. The write applies the fence again
+under the write lock, so a rebind between the answer and the write still keeps
+the reading out of the file.
 Do not use the acknowledgement as a durable receipt or fail a request over quota
 bookkeeping. Every consumer sharing the resolved roster path updates its in-memory
 quota immediately, including routing/admission; persisted-file reloads overlay
@@ -1021,8 +1024,8 @@ Repository caller inventory (other plugins adopt this API outside this repositor
 
 | Caller | What it awaits |
 | --- | --- |
-| `ClaustrumConsumer.recordQuota` (`src/claustrum/consumer.ts`) | Returns `recordVaultQuota`'s enqueue promise; no disk read or write is awaited. |
-| `ClaustrumConsumer.recordAccountQuota` (same file) | Returns `recordVaultAccountQuota`'s enqueue promise; no disk read or write is awaited. |
+| `ClaustrumConsumer.recordQuota` (`src/claustrum/consumer.ts`) | Returns `recordVaultQuota`'s answer: one lock-free roster read for the fence, no lock and no write awaited. |
+| `ClaustrumConsumer.recordAccountQuota` (same file) | Returns `recordVaultAccountQuota`'s answer: one lock-free roster read for the fence, no lock and no write awaited. |
 | `test/claustrum/roster.test.ts`'s `publishQuota` helper | Awaits enqueue, then explicitly drains before checking durable bytes, including unchanged bytes for refused receipts. |
 | `test/claustrum/roster-quota.test.ts` | Awaits enqueue; drains explicitly for merge/fence/shutdown assertions. Its four-process producers remain concurrent. |
 | `test/fixtures/roster-quota-process.ts` | Submits without awaiting individual readings, joins acknowledgements afterwards, then drains once at shutdown. |
