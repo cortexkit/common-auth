@@ -9,6 +9,11 @@ import {
   type ProcessInspectionStep,
 } from '../../src/setup/index.js'
 
+// Fixture PIDs are small numbers, and in a container this test process can
+// hold one of them; production would then leave that row out as itself. So
+// every fence here is told the running process has a PID no row can have.
+const NO_SELF = -1
+
 describe('setup process fence', () => {
   test('Windows CIM uses a 45 second one-shot budget and still refuses past it', async () => {
     for (const durationMs of [20_000, 45_001]) {
@@ -43,7 +48,10 @@ describe('setup process fence', () => {
           }
         },
       }
-      const fence = createProcessFence(runner, { platform: 'win32' })
+      const fence = createProcessFence(runner, {
+        selfPid: NO_SELF,
+        platform: 'win32',
+      })
       if (durationMs === 20_000) {
         expect(
           (await fence.listRunningHosts()).map((host) => host.pid),
@@ -95,6 +103,7 @@ describe('setup process fence', () => {
         }
         try {
           await listSetupProcesses(runner, {
+            selfPid: NO_SELF,
             platform: step === 'ps' ? 'linux' : 'win32',
             onStep: (details) => observations.push(details),
           })
@@ -136,7 +145,10 @@ describe('setup process fence', () => {
         },
       }
       try {
-        await listSetupProcesses(runner, { platform: 'win32' })
+        await listSetupProcesses(runner, {
+          selfPid: NO_SELF,
+          platform: 'win32',
+        })
         throw new Error('must refuse')
       } catch (error) {
         expect(error).toBeInstanceOf(ProcessInspectionError)
@@ -168,6 +180,8 @@ describe('setup process fence', () => {
         }
       },
     }
+    // This test is about leaving out the running process itself, so it keeps
+    // the default `selfPid` (this process's real PID).
     expect(await listSetupProcesses(runner, { platform: 'win32' })).toEqual([
       { pid: 0, command: 'System Idle Process' },
       { pid: process.pid, command: 'node.exe' },
@@ -217,7 +231,10 @@ describe('setup process fence', () => {
         }
       },
     }
-    const fence = createProcessFence(runner, { platform: 'win32' })
+    const fence = createProcessFence(runner, {
+      selfPid: NO_SELF,
+      platform: 'win32',
+    })
     expect((await fence.listRunningHosts()).map((host) => host.pid)).toEqual([
       111, 112,
     ])
@@ -248,7 +265,7 @@ describe('setup process fence', () => {
           }
         },
       },
-      { platform: 'win32' },
+      { selfPid: NO_SELF, platform: 'win32' },
     )
     const preview = await fence.previewRunningHosts?.()
     expect(files).toEqual(['tasklist.exe'])
@@ -280,7 +297,10 @@ describe('setup process fence', () => {
         },
       }
       await expect(
-        createProcessFence(runner, { platform: 'win32' }).listRunningHosts(),
+        createProcessFence(runner, {
+          selfPid: NO_SELF,
+          platform: 'win32',
+        }).listRunningHosts(),
       ).rejects.toThrow('cannot prove hosts are stopped')
     }
   })
@@ -299,6 +319,7 @@ describe('setup process fence', () => {
     }
     expect(
       await createProcessFence(runner, {
+        selfPid: NO_SELF,
         platform: 'win32',
       }).listRunningHosts(),
     ).toEqual([])
@@ -320,7 +341,7 @@ describe('setup process fence', () => {
             }
           },
         },
-        { platform: 'linux' },
+        { selfPid: NO_SELF, platform: 'linux' },
       )
       await expect(assertHostsStopped(fence)).rejects.toThrow('Please quit')
     }
@@ -338,7 +359,7 @@ describe('setup process fence', () => {
           }
         },
       },
-      { platform: 'linux' },
+      { selfPid: NO_SELF, platform: 'linux' },
     )
     await expect(assertHostsStopped(fence)).rejects.toThrow('Please quit')
     try {
@@ -368,7 +389,7 @@ describe('setup process fence', () => {
           }
         },
       },
-      { platform: 'win32' },
+      { selfPid: NO_SELF, platform: 'win32' },
     )
     await expect(assertHostsStopped(fence)).rejects.toThrow(
       'OpenCode or Pi processes',
@@ -387,7 +408,7 @@ describe('setup process fence', () => {
             return { exitCode, stdout, stderr: 'sensitive' }
           },
         },
-        { platform },
+        { selfPid: NO_SELF, platform },
       )
       await expect(assertHostsStopped(fence)).rejects.toThrow(
         'cannot prove hosts are stopped',
@@ -412,7 +433,7 @@ describe('setup process fence', () => {
           }
         },
       },
-      { platform: 'linux' },
+      { selfPid: NO_SELF, platform: 'linux' },
     )
     expect(await fence.listRunningHosts()).toEqual([
       {
@@ -440,7 +461,7 @@ describe('setup process fence', () => {
           return { exitCode: 0, stdout: `${lines.join('\n')}\n`, stderr: '' }
         },
       },
-      { platform: 'linux' },
+      { selfPid: NO_SELF, platform: 'linux' },
     )
     expect((await fence.listRunningHosts()).map((host) => host.pid)).toEqual([
       11, 12, 13, 14, 15, 16,
@@ -458,6 +479,7 @@ describe('setup process fence', () => {
           }
         },
       },
+      // About leaving out setup itself, so it keeps the real default `selfPid`.
       { platform: 'linux' },
     )
     await expect(assertHostsStopped(fence)).resolves.toBeUndefined()

@@ -161,9 +161,16 @@ export async function listSetupProcesses(
     onStep?: (details: ProcessInspectionStep) => void
     /** False skips the Windows PowerShell query for Node and Bun command lines. */
     inspectRuntimes?: boolean
+    /**
+     * The process to leave out, the running setup itself. Defaults to
+     * `process.pid`; tests pass a value no listed process can have, because in
+     * a container this process can hold any small PID a fixture uses.
+     */
+    selfPid?: number
   } = {},
 ): Promise<Array<{ pid: number; command: string }>> {
   const windows = (options.platform ?? process.platform) === 'win32'
+  const selfPid = options.selfPid ?? process.pid
   let inspection: ProcessInspectionStep = {
     step: windows ? 'tasklist' : 'ps',
     exitCode: null,
@@ -239,7 +246,7 @@ export async function listSetupProcesses(
     // tasklist identifies native hosts, but npm Pi/OpenCode scripts appear as Node or Bun.
     const runtimes = processes.filter(
       (entry) =>
-        entry.pid !== process.pid && /^(?:node|bun)\.exe$/i.test(entry.command),
+        entry.pid !== selfPid && /^(?:node|bun)\.exe$/i.test(entry.command),
     )
     if (windows && runtimes.length && options.inspectRuntimes !== false) {
       const details = await inspect(
@@ -286,10 +293,11 @@ export async function listSetupProcesses(
 
 export function createProcessFence(
   runner: CommandRunner = defaultCommandRunner,
-  options: { platform?: string } = {},
+  options: { platform?: string; selfPid?: number } = {},
 ): ProcessFence {
+  const selfPid = options.selfPid ?? process.pid
   const isHost = (entry: { pid: number; command: string }) =>
-    entry.pid !== process.pid && hostName(entry.command) !== null
+    entry.pid !== selfPid && hostName(entry.command) !== null
   return {
     async listRunningHosts(env?: SetupEnvironment) {
       return (await listSetupProcesses(runner, { ...options, env })).filter(
@@ -308,7 +316,7 @@ export function createProcessFence(
         uncheckedRuntimes: windows
           ? processes.filter(
               (entry) =>
-                entry.pid !== process.pid &&
+                entry.pid !== selfPid &&
                 /^(?:node|bun)\.exe$/i.test(entry.command),
             ).length
           : 0,
