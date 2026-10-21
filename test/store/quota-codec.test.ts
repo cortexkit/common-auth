@@ -6,6 +6,8 @@ import {
 } from '../../src/quota/index.js'
 import { admit } from '../../src/routing/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import * as published from '../quota/fixtures/quota-0.22.0/map.js'
+import * as publishedMerge from '../quota/fixtures/quota-0.22.0/merge.js'
 import { oauth, type Scenario, scenario } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -115,4 +117,80 @@ test('a later quota write drops a malformed stored counter instead of refusing',
   expect(stored.counters).toEqual({
     resetCredits: { value: 4, checkedAt: 400 },
   })
+})
+
+test('the store round trips credits and a later write drops a malformed stored record', async () => {
+  const store = s.open({ quota: quotaCodec })
+  await store.add({ id: 'a', credential: oauth('r-a') })
+  const credits = {
+    hasCredits: true,
+    unlimited: false,
+    balance: 40,
+    checkedAt: 100,
+  }
+  await store.recordQuota(
+    'a',
+    { credentialEpoch: 1 },
+    {
+      checkedAt: 100,
+      readings: [{ label: 'primary', usedPercent: 20 }],
+      credits,
+    },
+  )
+  const first = await s.open({ quota: quotaCodec }).read()
+  if (first.status !== 'ready') throw new Error('expected ready')
+  expect((first.rows[0]?.quota as QuotaMap | undefined)?.credits).toEqual(
+    credits,
+  )
+  const config = await s.config()
+  config.commonAuthPool.rows.a.quota.credits = { hasCredits: 'yes' }
+  await s.writeConfig(config)
+  const read = await s.open({ quota: quotaCodec }).read()
+  if (read.status !== 'ready') throw new Error('expected ready')
+  const quota = read.rows[0]?.quota as QuotaMap | undefined
+  expect(quota?.credits).toBeUndefined()
+  expect(quota?.limits).toHaveLength(1)
+  // Reads already hide the bad record; a write must not be refused for it.
+  await store.recordQuota('a', { credentialEpoch: 1 }, { checkedAt: 200 })
+  const stored = (await s.config()).commonAuthPool.rows.a.quota
+  expect(stored.credits).toBeUndefined()
+  expect(stored.limits).toHaveLength(1)
+})
+
+test('a store opened with the 0.22 quota codec keeps credits a newer plugin wrote', async () => {
+  const legacyCodec = {
+    validate: published.isQuotaMap,
+    decode: published.decodeQuotaMap,
+    merge: publishedMerge.mergeQuotaObservation,
+  }
+  const credits = { hasCredits: true, unlimited: true, checkedAt: 100 }
+  const store = s.open({ quota: quotaCodec })
+  await store.add({ id: 'a', credential: oauth('r-a') })
+  await store.recordQuota(
+    'a',
+    { credentialEpoch: 1 },
+    { checkedAt: 100, credits },
+  )
+  const legacy = s.open({ quota: legacyCodec })
+  const read = await legacy.read()
+  if (read.status !== 'ready') throw new Error('expected ready')
+  expect((read.rows[0]?.quota as QuotaMap | undefined)?.credits).toEqual(
+    credits,
+  )
+  await legacy.recordQuota(
+    'a',
+    { credentialEpoch: 1 },
+    {
+      checkedAt: 200,
+      readings: [{ label: 'primary', usedPercent: 30 }],
+    },
+  )
+  expect((await s.config()).commonAuthPool.rows.a.quota.credits).toEqual(
+    credits,
+  )
+  const current = await s.open({ quota: quotaCodec }).read()
+  if (current.status !== 'ready') throw new Error('expected ready')
+  expect((current.rows[0]?.quota as QuotaMap | undefined)?.credits).toEqual(
+    credits,
+  )
 })

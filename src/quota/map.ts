@@ -14,6 +14,9 @@
 // reset clock. It is a tri-state: absent (never reported), a reading, or
 // cleared (the provider reported that no budget exists).
 //
+// Provider-named counters and the prepaid credits record sit beside them too,
+// each judged by its own observation time rather than the limits'.
+//
 // The map is plain JSON so the store can persist it without interpreting it.
 
 /** The scope of a limit that binds every request regardless of model. */
@@ -81,12 +84,31 @@ export interface QuotaCounter {
   checkedAt: number
 }
 
+/**
+ * Prepaid credits a provider account holds beside its rate-limit windows (for
+ * example a ChatGPT workspace's credits, which keep requests working after a
+ * window is used up). This is a state, not a count or the spend budget: the
+ * account has credits or not, they may be unlimited, and the provider may
+ * report a balance. It carries its own observation time.
+ */
+export interface QuotaCredits {
+  hasCredits: boolean
+  unlimited: boolean
+  /** The balance the provider reported, when it reported one. */
+  balance?: number
+  /** The provider's verdict that the overage allowance is used up. */
+  overageLimitReached?: boolean
+  checkedAt: number
+}
+
 export interface QuotaMap {
   limits: QuotaEntry[]
   /** Absent means no observation has reported on the budget yet. */
   budget?: CreditBudgetEntry
   /** Provider-named counts, each with its own observation time. */
   counters?: Record<string, QuotaCounter>
+  /** Absent means no observation has reported on prepaid credits yet. */
+  credits?: QuotaCredits
 }
 
 export function emptyQuotaMap(): QuotaMap {
@@ -186,6 +208,22 @@ export function isQuotaCounters(
   return isRecord(value) && Object.values(value).every(isQuotaCounter)
 }
 
+function isBoolean(value: unknown): boolean {
+  return typeof value === 'boolean'
+}
+
+/** True when `value` is a well-formed prepaid-credits record. */
+export function isQuotaCredits(value: unknown): value is QuotaCredits {
+  return (
+    isRecord(value) &&
+    typeof value.hasCredits === 'boolean' &&
+    typeof value.unlimited === 'boolean' &&
+    optional(value, 'balance', isFiniteNumber) &&
+    optional(value, 'overageLimitReached', isBoolean) &&
+    isFiniteNumber(value.checkedAt)
+  )
+}
+
 /** Keep usable counters without letting one malformed count hide a quota map. */
 export function readQuotaCounters(
   value: unknown,
@@ -199,17 +237,25 @@ export function readQuotaCounters(
     : (Object.fromEntries(entries) as Record<string, QuotaCounter>)
 }
 
-/** Decode persisted quota, dropping malformed counters but not limit evidence. */
+/**
+ * Decode persisted quota, dropping malformed counters or a malformed credits
+ * record but not limit or budget evidence.
+ */
 export function decodeQuotaMap(value: unknown): QuotaMap | undefined {
   // A valid map is returned as the same object, so stored quota keeps the
-  // identity it had before counters existed; only a map with a malformed
-  // counter is copied without it.
+  // identity it had before counters and credits existed; only a map with a
+  // malformed counter or credits record is copied without it.
   if (isQuotaMap(value)) return value
   if (!isRecord(value)) return undefined
-  const { counters: rawCounters, ...rest } = value
+  const { counters: rawCounters, credits: rawCredits, ...rest } = value
   if (!isQuotaMap(rest)) return undefined
   const counters = readQuotaCounters(rawCounters)
-  return { ...rest, ...(counters === undefined ? {} : { counters }) }
+  const credits = isQuotaCredits(rawCredits) ? rawCredits : undefined
+  return {
+    ...rest,
+    ...(counters === undefined ? {} : { counters }),
+    ...(credits === undefined ? {} : { credits }),
+  }
 }
 
 /**
@@ -229,6 +275,7 @@ export function isQuotaMap(value: unknown): value is QuotaMap {
   }
   return (
     optional(value, 'budget', isCreditBudgetEntry) &&
-    optional(value, 'counters', isQuotaCounters)
+    optional(value, 'counters', isQuotaCounters) &&
+    optional(value, 'credits', isQuotaCredits)
   )
 }

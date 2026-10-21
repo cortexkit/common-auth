@@ -7525,3 +7525,34 @@ list_command = ["bun", "scripts/list-bun-tests.mjs", "test/auth-menu/login.test.
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^auth\smenu\sbrowser\sopener\smacOS\sand\sLinux\slaunch\stheir\snative\sopeners\swithout\swaiting$']
 expect_message = 'toThrow'
+
+# --- prepaid quota credits ---
+# Replay with both Bun 1.3.14 and 1.4.2; the messages match stable assertion
+# labels rather than runtime-specific error formatting.
+[[control]]
+id = 'quota-credits-newest-wins'
+guards = 'a stored credits record cannot block a newer one, so an account that gains or loses prepaid credits is seen as it is now'
+file = 'src/quota/merge.ts'
+old = 'if (stored !== undefined && observed.checkedAt < stored.checkedAt) {'
+new = 'if (stored !== undefined /* NON-VACUITY BREAK: keep older credits */) {'
+test_file = 'test/quota/credits.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/credits.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/credits.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^quota\scredits\sthe\snewest\scredits\srecord\swins\sin\seither\sarrival\sorder\susing\sits\sown\stimestamp$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'quota-credits-malformed-dropped'
+guards = 'a malformed stored credits record is dropped on read and merge, so it cannot reach routing or menus as if it were real'
+file = 'src/quota/map.ts'
+old = 'const credits = isQuotaCredits(rawCredits) ? rawCredits : undefined'
+new = 'const credits = rawCredits as QuotaCredits | undefined /* NON-VACUITY BREAK */'
+test_file = 'test/quota/credits.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/credits.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/credits.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^quota\scredits\sa\smalformed\sstored\scredits\srecord\sis\sdropped\son\sread\sand\smerge\swhile\slimits,\sbudget\sand\scounters\sare\skept$']
+expect_message = 'expect(received).toEqual(expected)'

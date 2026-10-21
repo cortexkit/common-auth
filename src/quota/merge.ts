@@ -18,8 +18,10 @@ import {
   decodeQuotaMap,
   entryTime,
   isQuotaCounters,
+  isQuotaCredits,
   limitKey,
   type QuotaCounter,
+  type QuotaCredits,
   type QuotaEntry,
   type QuotaMap,
 } from './map.js'
@@ -62,6 +64,11 @@ export interface QuotaObservation {
   budget?: ObservedBudget
   /** Each named count uses its own time, independently of limits and budget. */
   counters?: Record<string, QuotaCounter>
+  /**
+   * Prepaid credits, judged by their own time independently of limits, budget
+   * and counters. Absent means the observation says nothing about credits.
+   */
+  credits?: QuotaCredits
 }
 
 /** Thrown by `mergeQuotaObservation` when either argument is malformed. */
@@ -144,7 +151,8 @@ export function isQuotaObservation(value: unknown): value is QuotaObservation {
   if (!coverage.every(isObservedPair)) return false
   return (
     (value.budget === undefined || isObservedBudget(value.budget)) &&
-    (value.counters === undefined || isQuotaCounters(value.counters))
+    (value.counters === undefined || isQuotaCounters(value.counters)) &&
+    (value.credits === undefined || isQuotaCredits(value.credits))
   )
 }
 
@@ -176,6 +184,20 @@ function mergeCounters(
     }
   }
   return counters.size === 0 ? undefined : Object.fromEntries(counters)
+}
+
+// Credits merge like a single counter: the newer record wins, an equal time
+// applies (the observation applied last wins), and an observation without
+// credits leaves the stored record alone.
+function mergeCredits(
+  stored: QuotaCredits | undefined,
+  observed: QuotaCredits | undefined,
+): QuotaCredits | undefined {
+  if (observed === undefined) return stored
+  if (stored !== undefined && observed.checkedAt < stored.checkedAt) {
+    return stored
+  }
+  return { ...observed }
 }
 
 /**
@@ -245,14 +267,17 @@ export function mergeQuotaObservation(
     limits: _limits,
     budget: _budget,
     counters: _counters,
+    credits: _credits,
     ...unknownKeys
   } = base
   const budget = mergeBudget(base.budget, observation.budget, at)
   const counters = mergeCounters(base.counters, observation.counters)
+  const credits = mergeCredits(base.credits, observation.credits)
   return {
     ...unknownKeys,
     limits: [...entries.values()].sort(compareEntries),
     ...(budget === undefined ? {} : { budget }),
     ...(counters === undefined ? {} : { counters }),
+    ...(credits === undefined ? {} : { credits }),
   }
 }

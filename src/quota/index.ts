@@ -12,6 +12,7 @@ export {
   NO_LIMITS_REPORTED,
   NO_QUOTA_READING,
   QUOTA_STALE_AFTER_MS,
+  quotaCreditsText,
   quotaTextParts,
   quotaWindowName,
   quotaWindowParts,
@@ -22,6 +23,7 @@ export type {
   CreditBudgetReading,
   QuotaAbsentEntry,
   QuotaCounter,
+  QuotaCredits,
   QuotaEntry,
   QuotaMap,
   QuotaReadingEntry,
@@ -32,6 +34,7 @@ export {
   DEFAULT_REQUIRED_LABELS,
   decodeQuotaMap,
   emptyQuotaMap,
+  isQuotaCredits,
   isQuotaMap,
 } from './map.js'
 export type {

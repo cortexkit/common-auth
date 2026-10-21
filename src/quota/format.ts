@@ -12,7 +12,7 @@
 //
 // Like the rest of this module it reads no clock: `now` is a parameter.
 
-import { ALL_SCOPE } from './map.js'
+import { ALL_SCOPE, type QuotaCredits } from './map.js'
 import type {
   ProjectedLimit,
   ProjectedQuota,
@@ -468,4 +468,27 @@ export function formatQuota(
   return quota && quota.limits.length > 0
     ? NO_LIMITS_REPORTED
     : NO_QUOTA_READING
+}
+
+/**
+ * Prepaid credits as one short value, worded as the official Codex client's
+ * status view words them: `Unlimited` for unlimited credits, `<n> credits`
+ * for a finite positive balance (rounded to a whole number), `Available` when
+ * the account has credits but no usable balance was reported, and undefined
+ * when it has none (or `credits` is undefined), so a caller shows no credits
+ * row at all. Unlimited wins even when `hasCredits` is false. No other
+ * formatter adds this text; a caller that wants a credits row asks for it.
+ */
+export function quotaCreditsText(
+  credits:
+    | Pick<QuotaCredits, 'hasCredits' | 'unlimited' | 'balance'>
+    | undefined,
+): string | undefined {
+  if (credits === undefined) return undefined
+  if (credits.unlimited) return 'Unlimited'
+  if (!credits.hasCredits) return undefined
+  const { balance } = credits
+  return typeof balance === 'number' && Number.isFinite(balance) && balance > 0
+    ? `${Math.round(balance)} credits`
+    : 'Available'
 }

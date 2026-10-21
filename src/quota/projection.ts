@@ -10,7 +10,9 @@
 import {
   ALL_SCOPE,
   type CreditBudgetReading,
+  isQuotaCredits,
   type QuotaCounter,
+  type QuotaCredits,
   type QuotaEntry,
   type QuotaMap,
   readQuotaCounters,
@@ -60,6 +62,8 @@ export interface ProjectedQuota {
   /** Present only when the stored budget is a reading, not cleared. */
   budget?: ProjectedBudget
   counters?: Record<string, QuotaCounter>
+  /** The stored prepaid credits, unchanged in every scope. */
+  credits?: QuotaCredits
   /**
    * The named groups the windows belong to, in the order the plugin lists
    * them. Set only by a plugin whose windows all belong to such groups; the
@@ -162,12 +166,14 @@ export function projectQuota(
   const budget =
     map?.budget?.kind === 'reading' ? projectBudget(map.budget) : undefined
   const counters = readQuotaCounters(map?.counters)
+  const credits = isQuotaCredits(map?.credits) ? map.credits : undefined
   return {
     scope,
     limits,
     ...(checkedAt === undefined ? {} : { checkedAt }),
     ...(budget === undefined ? {} : { budget }),
     ...(counters === undefined ? {} : { counters }),
+    ...(credits === undefined ? {} : { credits }),
   }
 }
 
