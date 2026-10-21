@@ -20,6 +20,54 @@ prebuild = [
   { name = "build", command = ["bun", "run", "build"], timeout_s = 600 },
 ]
 
+# --- detached vault quota publication ---
+[[control]]
+id = 'claustrum-quota-timeout-retains-mailbox'
+guards = 'a roster write lock timeout retains all observations and retries instead of losing their newest readings'
+file = 'src/claustrum/quota-writer.ts'
+old = '// Keep the batch in the mailbox, including any fresher fields enqueued meanwhile.'
+new = 'writer.pending.clear() // NON-VACUITY BREAK: discard quota after lock timeout.'
+test_file = 'test/claustrum/roster-quota.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/claustrum/roster-quota.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/roster-quota.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^four\sprocesses\scoalesce\squota\sreadings\sand\sretain\sthe\snewest\sthrough\slock\scontention$']
+expect_message = 'toMatchObject'
+
+[[control]]
+id = 'claustrum-quota-flush-identity-fence'
+guards = 'a queued reading cannot land on an account that replaced its original account before the flush'
+file = 'src/claustrum/roster.ts'
+old = "if (!current || !row || fence === 'refuse')"
+new = 'if (!current || !row) // NON-VACUITY BREAK: skip the receipt and account fence.'
+test_file = 'test/claustrum/roster-quota.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/claustrum/roster-quota.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/roster-quota.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^flush\sfences\sobservations\sagainst\sthe\scurrent\sidentity\sand\sdrops\sdeparted\saccounts$']
+expect_message = 'toBe'
+
+[[control]]
+id = 'claustrum-quota-coalesces-writes'
+guards = 'concurrent quota producers acquire far fewer real roster write locks than the number of observations'
+file = 'src/claustrum/quota-writer.ts'
+old = '''  if (!isQuotaObservation(publication.observation))
+    return Promise.resolve(false)
+  const writer = writerFor(path)'''
+new = '''  if (!isQuotaObservation(publication.observation))
+    return Promise.resolve(false)
+  return mutateVaultRoster(path, (current) => ({ next: applyVaultQuota(current, publication).roster, result: true })) // NON-VACUITY BREAK: one write per reading.
+  const writer = writerFor(path)'''
+test_file = 'test/claustrum/roster-quota.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/claustrum/roster-quota.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/roster-quota.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^four\sprocesses\suse\sfar\sfewer\sroster\slocks\sthan\squota\sreadings\swithout\scontention$']
+expect_message = 'expect(received)'
+
 # --- lease clock domains ---
 [[control]]
 id = 'pool-lease-injected-clock'
@@ -3035,8 +3083,10 @@ id = 'claustrum-roster-reasserts-lock-at-publish'
 guards = 'the roster write lock is reasserted at the final pre-rename point, so a lease lost while the roster is staged publishes nothing'
 file = 'src/claustrum/roster.ts'
 old = '''          await options.beforePublish?.()
+          options.signal?.throwIfAborted()
           await lock.assertOwned()'''
-new = '''          await options.beforePublish?.() // NON-VACUITY BREAK: no lock check at rename.'''
+new = '''          await options.beforePublish?.() // NON-VACUITY BREAK: no lock check at rename.
+          options.signal?.throwIfAborted()'''
 test_file = 'test/claustrum/roster.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/claustrum/roster.test.ts', '-t', '{test}']
@@ -3055,6 +3105,7 @@ old = '''      await lock.assertOwned()
       await writeJsonAtomic(path, next, {
         beforeRename: async () => {
           await options.beforePublish?.()
+          options.signal?.throwIfAborted()
           await lock.assertOwned()
         },
       })'''
@@ -5861,16 +5912,16 @@ expect_message = 'Expected: < 2000'
 id = 'insula-account-quota-fenced-on-account'
 guards = 'a background account reading lands only on a route still bound to that exact known account'
 file = 'src/claustrum/roster.ts'
-old = '''      row.accountIdentity === undefined ||
-      row.accountIdentity !== input.accountIdentity'''
-new = '''      false /* NON-VACUITY BREAK: write any account's reading. */'''
+old = '''row.accountIdentity !== undefined &&
+          row.accountIdentity === input.accountIdentity'''
+new = '''true /* NON-VACUITY BREAK: write any account's reading. */'''
 test_file = 'test/claustrum/insula.test.ts'
 runner = 'command'
 command = ['bun', 'test', 'test/claustrum/insula.test.ts', '-t', '{test}']
 list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^an\saccount\squota\swrite\sis\srefused\sfor\sanother\saccount\sor\san\sunbound\sroute$']
-expect_message = 'Expected: false'
+expect_message = 'toEqual'
 
 [[control]]
 id = 'setup-pi-folder-without-cli-is-skipped'

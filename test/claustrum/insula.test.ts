@@ -5,6 +5,7 @@ import {
   acquireInsulaQuotaSource,
   ClaustrumConsumer,
   connectClaustrumScopedClient,
+  drainVaultQuota,
   type InsulaQuotaMiss,
   type InsulaUsageEntry,
   recordVaultQuota,
@@ -477,6 +478,7 @@ test('account and served-vault counter writes persist for a second consumer', as
       counters: counter,
     }),
   ).toBe(true)
+  await drainVaultQuota(path)
   expect(
     JSON.parse(await readFile(path, 'utf8')).rows.find(
       (row: { routeId: string }) => row.routeId === routeId,
@@ -496,6 +498,7 @@ test('account and served-vault counter writes persist for a second consumer', as
       observation: { checkedAt: NOW - 2_000, counters: newer },
     }),
   ).toBe(true)
+  await drainVaultQuota(path)
   expect(
     JSON.parse(await readFile(path, 'utf8')).rows.find(
       (row: { routeId: string }) => row.routeId === routeId,
@@ -519,16 +522,30 @@ test('an account quota write is refused for another account or an unbound route'
   const reading = { checkedAt: NOW, readings: [] }
   expect(
     await consumer.recordAccountQuota(unbound.routeId, 'account-work', reading),
-  ).toBe(false)
+  ).toBe(true)
   const bound = consumer
     .snapshot()!
     .rows.find((value) => value.accountIdentity !== undefined)!
   expect(
     await consumer.recordAccountQuota(bound.routeId, 'someone-else', reading),
-  ).toBe(false)
+  ).toBe(true)
+  await drainVaultQuota(join(s.dir, 'account-fence-roster.json'))
   expect(
     consumer.snapshot()!.rows.find((value) => value.routeId === bound.routeId)
       ?.quota,
+  ).toEqual(bound.quota)
+  const persisted = JSON.parse(
+    await readFile(join(s.dir, 'account-fence-roster.json'), 'utf8'),
+  )
+  expect(
+    persisted.rows.find(
+      (row: { routeId: string }) => row.routeId === unbound.routeId,
+    )?.quota,
+  ).toBeUndefined()
+  expect(
+    persisted.rows.find(
+      (row: { routeId: string }) => row.routeId === bound.routeId,
+    )?.quota,
   ).toEqual(bound.quota)
 })
 

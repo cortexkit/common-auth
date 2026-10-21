@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
+import { resolve } from 'node:path'
 import {
   acquireRefreshFileLock,
+  LockContentionError,
   withLock,
   writeJsonAtomic,
 } from '../fs/index.js'
@@ -28,6 +30,12 @@ import {
   declineAccount,
   isDeclined,
 } from './interlock.js'
+import {
+  enqueueVaultQuota,
+  type VaultQuotaPublication,
+} from './quota-writer.js'
+
+export { drainVaultQuota } from './quota-writer.js'
 
 /**
  * One vault account as the pool sees it. It carries no bearer material: the
@@ -477,6 +485,7 @@ const WRITE_LOCK = {
   name: 'claustrum-roster-write',
   ttlMs: 10_000,
   timeoutMs: 5_000,
+  renew: true,
 }
 const DISCOVERY_LEASE = { name: 'claustrum-roster', ttlMs: 30_000 }
 
@@ -486,6 +495,7 @@ export interface VaultRosterLockContext {
 }
 
 export interface MutateVaultRosterOptions {
+  signal?: AbortSignal
   /**
    * Runs when the new roster is fully staged on disk, immediately before the
    * rename that publishes it, so a caller can confirm a lease of its own at
@@ -511,24 +521,29 @@ export async function mutateVaultRoster<T>(
     | { next?: VaultRosterFile; result: T },
   options: MutateVaultRosterOptions = {},
 ): Promise<T> {
-  return withLock(path, WRITE_LOCK, async (lock) => {
-    const current = await readVaultRoster(path)
-    const { next, result } = await change(current, {
-      assertOwned: () => lock.assertOwned(),
-    })
-    if (next) {
-      await lock.assertOwned()
-      // Staging the file takes several awaited steps; check both the caller's
-      // lease and this lock again at the last moment before the rename.
-      await writeJsonAtomic(path, next, {
-        beforeRename: async () => {
-          await options.beforePublish?.()
-          await lock.assertOwned()
-        },
+  return withLock(
+    path,
+    { ...WRITE_LOCK, signal: options.signal },
+    async (lock) => {
+      const current = await readVaultRoster(path)
+      const { next, result } = await change(current, {
+        assertOwned: () => lock.assertOwned(),
       })
-    }
-    return result
-  })
+      if (next) {
+        await lock.assertOwned()
+        // Staging the file takes several awaited steps; check both the caller's
+        // lease and this lock again at the last moment before the rename.
+        await writeJsonAtomic(path, next, {
+          beforeRename: async () => {
+            await options.beforePublish?.()
+            options.signal?.throwIfAborted()
+            await lock.assertOwned()
+          },
+        })
+      }
+      return result
+    },
+  )
 }
 
 /** Mark a vault account declined; it stays listed but never routes. */
@@ -645,7 +660,8 @@ function receiptFence(
  * write is fenced on the receipt the reading was taken with: it lands only
  * while the row still holds that receipt's credential (as representative or
  * alias) and account, so a slow read for a replaced account can never land on
- * its successor. Returns whether the observation was kept.
+ * its successor. Resolves on enqueue, not durable publication; true means the
+ * observation was accepted into the process mailbox, not that its fence passed.
  */
 export function recordVaultQuota(
   path: string,
@@ -654,27 +670,12 @@ export function recordVaultQuota(
     observation: QuotaObservation
   },
 ): Promise<boolean> {
-  return mutateVaultRoster(path, (current) => {
-    const row = current?.rows.find((entry) => entry.routeId === input.routeId)
-    const fence = !current || !row ? 'refuse' : receiptFence(row, input)
-    if (!current || !row || fence === 'refuse') return { result: false }
-    const quota = mergeQuotaObservation(row.quota, input.observation)
-    // A bound account is `unclaimed`: the vault's list has not named it, and
-    // the next projection keeps it as the account this credential last
-    // logged into until the vault names one.
-    const bound =
-      fence === 'bind'
-        ? { accountIdentity: input.accountIdentity, unclaimed: true as const }
-        : {}
-    return {
-      next: {
-        ...current,
-        rows: current.rows.map((entry) =>
-          entry === row ? { ...entry, ...bound, quota } : entry,
-        ),
-      },
-      result: true,
-    }
+  const { routeId, observation, ...receipt } = input
+  return enqueueVaultQuota(path, {
+    routeId,
+    observation,
+    accountIdentity: receipt.accountIdentity,
+    receipt,
   })
 }
 
@@ -684,7 +685,8 @@ export function recordVaultQuota(
  * lands only while the row is still bound to that exact known account, so a
  * reading taken before a replacement never reaches the successor. Unlike
  * `recordVaultQuota` it never binds an account: a row without a known account
- * is refused. Returns whether the observation was kept.
+ * is refused at flush time. Resolves on enqueue, with the same acceptance
+ * semantics as `recordVaultQuota`.
  */
 export function recordVaultAccountQuota(
   path: string,
@@ -694,26 +696,50 @@ export function recordVaultAccountQuota(
     observation: QuotaObservation
   },
 ): Promise<boolean> {
-  return mutateVaultRoster(path, (current) => {
-    const row = current?.rows.find((entry) => entry.routeId === input.routeId)
-    if (
-      !current ||
-      !row ||
-      row.accountIdentity === undefined ||
-      row.accountIdentity !== input.accountIdentity
-    )
-      return { result: false }
-    const quota = mergeQuotaObservation(row.quota, input.observation)
-    return {
-      next: {
-        ...current,
-        rows: current.rows.map((entry) =>
-          entry === row ? { ...entry, quota } : entry,
-        ),
-      },
-      result: true,
-    }
-  })
+  return enqueueVaultQuota(path, input)
+}
+
+/** Apply the same identity fence to memory overlays and durable quota batches. */
+export function applyVaultQuota(
+  current: VaultRosterFile | undefined,
+  input: VaultQuotaPublication,
+): { roster: VaultRosterFile | undefined; kept: boolean } {
+  const row = current?.rows.find((entry) => entry.routeId === input.routeId)
+  const fence = !row
+    ? 'refuse'
+    : input.receipt
+      ? receiptFence(row, input.receipt)
+      : row.accountIdentity !== undefined &&
+          row.accountIdentity === input.accountIdentity
+        ? 'hold'
+        : 'refuse'
+  if (!current || !row || fence === 'refuse')
+    return { roster: current, kept: false }
+  const quota = mergeQuotaObservation(row.quota, input.observation)
+  // Binding remembers which account this credential proved, without claiming
+  // that the vault's discovery has named that account yet.
+  const bound =
+    fence === 'bind'
+      ? { accountIdentity: input.accountIdentity, unclaimed: true as const }
+      : {}
+  return {
+    roster: {
+      ...current,
+      rows: current.rows.map((entry) =>
+        entry === row ? { ...entry, ...bound, quota } : entry,
+      ),
+    },
+    kept: true,
+  }
+}
+
+const pendingDiscoveries = new Map<
+  string,
+  { inventory: VaultInventory; previousView: string | undefined }
+>()
+
+export function forgetPendingVaultDiscovery(path: string): void {
+  pendingDiscoveries.delete(resolve(path))
 }
 
 /**
@@ -722,6 +748,8 @@ export function recordVaultAccountQuota(
  * from a newer one, so a run that lost its lease is refused at commit. A
  * failed list, or custody switching off mid-run, never writes anything; a
  * peer holding the lease means its last committed roster is served instead.
+ * A write-lock timeout keeps the discovered inventory for the next poll,
+ * unless a peer has superseded its base view in the meantime.
  */
 export async function refreshVaultRoster(options: {
   path: string
@@ -729,10 +757,14 @@ export async function refreshVaultRoster(options: {
   isActive?: () => boolean | Promise<boolean>
   signal?: AbortSignal
   projection?: ProjectionOptions | (() => ProjectionOptions)
+  onInventory?: (inventory: VaultInventory) => void
 }): Promise<VaultRosterFile | undefined> {
   options.signal?.throwIfAborted()
   const active = async () => (await options.isActive?.()) ?? true
-  if (!(await active())) return undefined
+  if (!(await active())) {
+    forgetPendingVaultDiscovery(options.path)
+    return undefined
+  }
   const lease = await acquireRefreshFileLock({
     ...DISCOVERY_LEASE,
     path: options.path,
@@ -748,21 +780,58 @@ export async function refreshVaultRoster(options: {
       )
     return persisted
   }
+  const key = resolve(options.path)
+  let discovered:
+    | { inventory: VaultInventory; previousView: string | undefined }
+    | undefined
   try {
-    const inventory = await options.custody.discover(options.signal)
+    const previous = await readVaultRoster(options.path)
+    const pending = pendingDiscoveries.get(key)
+    // Opaque view cursors cannot be ordered. Reuse a discovery only while no
+    // peer has committed a different view since it was read.
+    discovered =
+      pending &&
+      (pending.previousView === previous?.view ||
+        pending.inventory.view === previous?.view)
+        ? pending
+        : {
+            inventory: await options.custody.discover(options.signal),
+            previousView: previous?.view,
+          }
+    pendingDiscoveries.delete(key)
+    const { inventory } = discovered
+    options.onInventory?.(inventory)
     options.signal?.throwIfAborted()
-    return await mutateVaultRoster(options.path, async (current) => {
-      if (!(await active())) return { result: undefined }
-      options.signal?.throwIfAborted()
-      await lease.assertOwned()
-      const projection =
-        typeof options.projection === 'function'
-          ? options.projection()
-          : options.projection
-      const next = projectVaultRoster(current, inventory, projection)
-      const changed = JSON.stringify(current) !== JSON.stringify(next)
-      return { ...(changed && { next }), result: next }
-    })
+    return await mutateVaultRoster(
+      options.path,
+      async (current) => {
+        if (!(await active())) return { result: undefined }
+        options.signal?.throwIfAborted()
+        await lease.assertOwned()
+        const projection =
+          typeof options.projection === 'function'
+            ? options.projection()
+            : options.projection
+        const next = projectVaultRoster(current, inventory, projection)
+        const changed = JSON.stringify(current) !== JSON.stringify(next)
+        return { ...(changed && { next }), result: next }
+      },
+      {
+        beforePublish: async () => {
+          options.signal?.throwIfAborted()
+          await lease.assertOwned()
+        },
+      },
+    )
+  } catch (error) {
+    if (
+      error instanceof LockContentionError &&
+      discovered &&
+      !options.signal?.aborted &&
+      (await active())
+    )
+      pendingDiscoveries.set(key, discovered)
+    throw error
   } finally {
     await lease.release()
   }

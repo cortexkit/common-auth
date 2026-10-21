@@ -14,6 +14,7 @@ import {
   connectClaustrumEnrollmentClient,
   connectClaustrumScopedClient,
   disconnectClaustrumEnrollment,
+  drainVaultQuota,
   enrollmentAuthority,
   getClaustrumEnrollmentPaths,
   readVaultRoster,
@@ -366,6 +367,9 @@ test(vaultTestNames[0], () =>
                     consumer.recordQuota(row.routeId, observation, receipt),
                   ),
                   true,
+                )
+                await pending('drain roster quota publication', () =>
+                  drainVaultQuota(join(s.root, 'state', 'vault-roster.json')),
                 )
                 const persisted = await readVaultRoster(
                   join(s.root, 'state', 'vault-roster.json'),

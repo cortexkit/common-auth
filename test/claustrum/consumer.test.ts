@@ -6,8 +6,10 @@ import {
   type ClaustrumConsumerOptions,
   type ClaustrumScopedClient,
   declineVaultRoute,
+  readVaultRoster,
   type VaultRosterFile,
 } from '../../src/claustrum/index.ts'
+import { acquireRefreshFileLock } from '../../src/fs/index.js'
 import { admit, type RoutingRow } from '../../src/routing/index.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
@@ -28,7 +30,7 @@ function managedConsumer(options: ClaustrumConsumerOptions) {
   return hooks.lifetime.manage(new ClaustrumConsumer(options))
 }
 afterEach(async () => {
-  for (const consumer of consumers.splice(0)) consumer.close()
+  await Promise.all(consumers.splice(0).map((consumer) => consumer.dispose()))
   await cleanupDirs()
 })
 
@@ -102,6 +104,63 @@ async function fixture() {
 function unauthorized() {
   return new Response(null, { status: 401 })
 }
+
+test('shared consumers update memory before publication and the last dispose drains', async () => {
+  const f = await fixture()
+  const first = await f.consumer.refresh()
+  const peer = managedConsumer({
+    ...f.options,
+    rosterPath: `${f.dir}/./vault-roster.json`,
+  })
+  consumers.push(peer)
+  await peer.refresh()
+  const route = f.route(first, 'oauth:test')
+  const attempt = await f.consumer.authorize(route)
+  const lock = await acquireRefreshFileLock({
+    path: f.options.rosterPath,
+    name: 'claustrum-roster-write',
+    ttlMs: 10_000,
+    renew: true,
+  })
+  if (!lock) throw new Error('holder failed')
+  try {
+    const start = performance.now()
+    const recorded = f.consumer.recordQuota(
+      route,
+      { checkedAt: 100, readings: [{ label: 'primary', usedPercent: 20 }] },
+      attempt,
+    )
+    expect(
+      f.consumer.routingRows().find((row) => row.id === route)?.quota
+        ?.limits[0],
+    ).toMatchObject({ checkedAt: 100 })
+    expect(
+      peer.routingRows().find((row) => row.id === route)?.quota?.limits[0],
+    ).toMatchObject({ checkedAt: 100 })
+    expect(await recorded).toBe(true)
+    expect(performance.now() - start).toBeLessThan(500)
+    expect(
+      (await readVaultRoster(f.options.rosterPath))?.rows.find(
+        (row) => row.routeId === route,
+      )?.quota,
+    ).toBeUndefined()
+    await f.consumer.dispose()
+    await peer.recordAccountQuota(route, 'provider-0', {
+      checkedAt: 200,
+      readings: [{ label: 'primary', usedPercent: 30 }],
+    })
+    const draining = peer.dispose()
+    await lock.release()
+    await draining
+    expect(
+      (await readVaultRoster(f.options.rosterPath))?.rows.find(
+        (row) => row.routeId === route,
+      )?.quota?.limits[0],
+    ).toMatchObject({ checkedAt: 200, usedPercent: 30 })
+  } finally {
+    await lock.release()
+  }
+})
 
 test('metadata refresh and connection coalesce, but dispatch authorization never coalesces', async () => {
   const f = await fixture()
@@ -577,7 +636,10 @@ test('a credential an incomplete reply re-lists under another account is never a
         expectedAccountIdentity: accountIdentity,
         accountIdentitySource: 'asserted',
       }),
-    ).toBe(false)
+    ).toBe(true)
+  expect(
+    f.consumer.snapshot()?.rows.find((row) => row.routeId === routeA)?.quota,
+  ).toBeUndefined()
   expect(
     await f.consumer.recordQuota(routeB, observation, {
       credentialId: 'oauth:test',
@@ -586,4 +648,10 @@ test('a credential an incomplete reply re-lists under another account is never a
       accountIdentitySource: 'asserted',
     }),
   ).toBe(true)
+  await f.consumer.dispose()
+  expect(
+    (await readVaultRoster(f.options.rosterPath))?.rows.find(
+      (row) => row.routeId === routeA,
+    )?.quota,
+  ).toBeUndefined()
 })

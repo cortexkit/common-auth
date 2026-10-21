@@ -983,11 +983,61 @@ clearInterval(timer)
 watch.close() // custody.close() also stops it
 ```
 
+**Detached roster quota publication.** `recordVaultQuota(path, input)`,
+`recordVaultAccountQuota(path, input)`, `consumer.recordQuota(routeId, observation, receipt)`
+and `consumer.recordAccountQuota(routeId, accountIdentity, observation)` retain their
+`Promise<boolean>` signatures, but now **resolve on enqueue, never on a file write**.
+`true` acknowledges a well-formed observation in the process mailbox; it does not
+promise that the account/credential will still match at publication. A malformed
+observation returns `false`. Identity checks run against the latest roster under
+the write lock, so removed, replaced or mismatched accounts still receive nothing.
+Do not use the acknowledgement as a durable receipt or fail a request over quota
+bookkeeping. Every consumer sharing the resolved roster path updates its in-memory
+quota immediately, including routing/admission; persisted-file reloads overlay
+pending observations without reviving an account removed by a peer.
+
+There is one mailbox per resolved roster path per process, one pending entry per
+known account identity (or per route while its identity is unknown), and at most
+one flush/lock waiter. Fields coalesce by their own freshness
+rules: checkedAt per window/budget, and each counter/credits record's own checkedAt.
+Receipt provenance stays attached to fields so an invalid newer credential cannot
+erase a valid pending reading. A flush publishes all accounts in one mutation.
+Lock failures retain the mailbox and retry with jittered backoff, with one warning
+per uninterrupted failure run, not one warning per observation. The roster write
+lock renews its existing 10-second lease; its 5-second acquisition budget is unchanged.
+
+On unload, `close(): void` starts a detached bounded drain; hosts with an awaitable
+dispose hook should use **`await consumer.dispose()`**. Only the last consumer of
+a shared file drains/stops its writer. Custody-only hosts should call
+**`await drainVaultQuota(path)`** from `/claustrum` during disposal. Its default
+one-second shutdown budget can lose pending observations quietly; ordinary
+publication never drops them on lock contention. Do not drain on request paths.
+Discovery refreshes still retry on their next poll: after a write-lock timeout,
+the discovered inventory is retained and reused only if the roster still has the
+view that was current when discovery began, or already has the discovered inventory's
+view. The discovery lease is reacquired and checked again at rename.
+
+Repository caller inventory (other plugins adopt this API outside this repository):
+
+| Caller | What it awaits |
+| --- | --- |
+| `ClaustrumConsumer.recordQuota` (`src/claustrum/consumer.ts`) | Returns `recordVaultQuota`'s enqueue promise; no disk read or write is awaited. |
+| `ClaustrumConsumer.recordAccountQuota` (same file) | Returns `recordVaultAccountQuota`'s enqueue promise; no disk read or write is awaited. |
+| `test/claustrum/roster.test.ts`'s `publishQuota` helper | Awaits enqueue, then explicitly drains before checking durable bytes, including unchanged bytes for refused receipts. |
+| `test/claustrum/roster-quota.test.ts` | Awaits enqueue; drains explicitly for merge/fence/shutdown assertions. Its four-process producers remain concurrent. |
+| `test/fixtures/roster-quota-process.ts` | Submits without awaiting individual readings, joins acknowledgements afterwards, then drains once at shutdown. |
+| `test/claustrum/consumer.test.ts` | Awaits consumer enqueue acknowledgements; immediate-memory checks also run before awaiting one acknowledgement, and dispose checks durable publication. |
+| `test/claustrum/insula.test.ts` | Awaits consumer/direct enqueue acknowledgements; persisted counter/fence checks explicitly drain, while cache/routing checks observe memory immediately. |
+| `test/windows/claustrum-vault.mjs` | Awaits the consumer enqueue promise through its test-lifetime operation helper, then explicitly drains before checking persisted quota. |
+
+`PoolStore.recordQuota` (`src/store`, `src/auth-menu/accounts.ts` and store tests)
+is a separate API and is not changed by roster publication.
+
 **Optional insula background quota.** Supply `insula: { provider: 'codex' | 'claude' | 'antigravity', normalize(entry, context) }` to `ClaustrumConsumer<Q>`; `Q` is the plugin's snapshot type (defaults to `/quota`'s `QuotaObservation`). `context` exposes `fetchedAt` as epoch milliseconds and `source`, and the entry retains the original timestamp and open usage fields. A normalizer returns `Q`, or `undefined` to keep the plugin's own poll. `connectClaustrumScopedClient` supplies an optional `insula` transport without changing its scoped methods; custom scoped clients can supply `insula: { connectionFile, getUsage(), watchUsage? }`. The transport imports the `@cortexkit/subc-client` peer statically: claustrum-client already loads it with `/claustrum`, and a dynamic import would make a plugin's bundler emit a separate chunk that a running host can lose on rebuild. The transport opens the literal management surface `insula` on the same daemon connection file and bind identity, and reads the full `usage.get` envelope. The quota read uses a short-lived, separately owned socket; the scoped credential connection is untouched. It does not resolve a catalog claimant by capability and needs no grant beyond the enrolled principal.
 
 The source is process-local and refcounted by **resolved daemon connection file plus enrollment token path**, not project or provider. Consumers with the same pair share all entries and one attempt per minute, including concurrent ticks and failed attempts; different pairs never share. `close()` releases the consumer's reference, while the minute budget survives project unload/reload. No polling timer is added: `start()` drives it on the existing metadata tick, or a plugin's own background loop can explicitly `await consumer.refreshInsulaQuota()` once before visiting accounts. Neither `authorize` nor `send` calls insula. Local/standalone mode and a missing or unreadable enrollment token never call it.
 
-For background polling, after the tick's `refreshInsulaQuota()`, use **`await consumer.pollInsulaQuotaForRoute(routeId, fallback)` (0.22.0)**, where `fallback` is the existing due-account provider poll. It returns the normalized current reading without calling `fallback`, calls `fallback` only for `stale`, `absent`, `credential` or `unreachable`, and returns `undefined` without polling on `cold` or `upstream-failed`. It logs `skipped insula provider poll` once per route/account reason transition, with only `{ reason: 'cold' | 'upstream-failed' }`, never an identity, email or route id. A successful lookup or an allowed fallback resets the once-per-transition logging state. The wrapper does not schedule polls or persist readings: store an insula observation with `await consumer.recordAccountQuota(routeId, row.accountIdentity, observation)`, which lands only while the route is still bound to that known account (it never binds one) and reloads the in-memory roster from the file without a vault call. In-band `recordQuota` updates remain independent and unchanged.
+For background polling, after the tick's `refreshInsulaQuota()`, use **`await consumer.pollInsulaQuotaForRoute(routeId, fallback)` (0.22.0)**, where `fallback` is the existing due-account provider poll. It returns the normalized current reading without calling `fallback`, calls `fallback` only for `stale`, `absent`, `credential` or `unreachable`, and returns `undefined` without polling on `cold` or `upstream-failed`. It logs `skipped insula provider poll` once per route/account reason transition, with only `{ reason: 'cold' | 'upstream-failed' }`, never an identity, email or route id. A successful lookup or an allowed fallback resets the once-per-transition logging state. The wrapper does not schedule polls or persist readings: enqueue an insula observation with `await consumer.recordAccountQuota(routeId, row.accountIdentity, observation)`, which updates memory immediately and publishes detached, only while the route is still bound to that known account (it never binds one). In-band `recordQuota` updates use the same shared mailbox and retain their receipt fence.
 
 **`consumer.lookupInsulaQuotaForRoute(routeId): Promise<InsulaQuotaResult<Q>>`** exposes `{ reading: Q } | { miss: InsulaQuotaMiss, reading?: Q }` for callers needing a dated stale display. Both new methods re-read the persisted roster and use its known `accountIdentity`; they never authorize or call `get_scoped` just to ask the cache. An unbound row cannot match, and a known replacement committed by another consumer invalidates the old route even before this instance's next metadata refresh. A normalizer refusing an echo or unsupported reading is `unreachable` for fallback purposes. **`cachedInsulaQuotaForRoute` remains unchanged** (`Q | undefined`, all misses return `undefined`); existing callers must switch to the wrapper to suppress duplicate polls. The row's identity comes from `list_scoped.account_id` (the same vault identity as `get_scoped.account_id`), or from an asserted/parsed served receipt bound by `recordQuota`; identity omissions retain that last known binding. For an insula provider, **`parseIdentity` must return the same provider identity insula keys on for a vault record without `account_id`**; for Codex, that is the token's **ChatGPT account id**, not an email or display label.
 

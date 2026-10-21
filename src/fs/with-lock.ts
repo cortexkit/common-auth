@@ -35,6 +35,7 @@ export interface LockOptions {
   ttlMs: number
   timeoutMs: number
   renew?: boolean
+  signal?: AbortSignal
   onStep?: Parameters<typeof acquireRefreshFileLock>[0]['onStep']
   onRenewalTimer?: Parameters<
     typeof acquireRefreshFileLock
@@ -48,6 +49,7 @@ export async function withLock<T>(
 ): Promise<T> {
   const started = performance.now()
   for (;;) {
+    options.signal?.throwIfAborted()
     const lock = await acquireRefreshFileLock({
       path: target,
       name: options.name,
@@ -60,6 +62,7 @@ export async function withLock<T>(
     })
     if (lock) {
       try {
+        options.signal?.throwIfAborted()
         return await fn(lock)
       } finally {
         await lock.release()

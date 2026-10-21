@@ -6,6 +6,7 @@ import {
   acceptVaultRoute,
   declineAccount,
   declineVaultRoute,
+  drainVaultQuota,
   isDeclined,
   mutateVaultRoster,
   projectVaultRoster,
@@ -26,6 +27,19 @@ const hooks = lifetimeHooks()
 const { afterEach, test } = hooks
 
 afterEach(cleanupDirs)
+
+// The public promise acknowledges enqueueing. Persistence tests explicitly
+// drain, and refused receipts must leave the actual roster bytes untouched.
+async function publishQuota(
+  path: string,
+  input: Parameters<typeof recordVaultQuota>[1],
+  kept = true,
+) {
+  const before = kept ? undefined : await readFile(path, 'utf8')
+  expect(await recordVaultQuota(path, input)).toBe(true)
+  await drainVaultQuota(path)
+  if (before !== undefined) expect(await readFile(path, 'utf8')).toBe(before)
+}
 
 const work: VaultCredential = {
   credentialId: 'oauth:test:work',
@@ -341,13 +355,15 @@ test('identity replacement does not inherit quota, profile or route identity', a
   const { path } = await fixture()
   const first = await refreshVaultRoster({ path, custody: inventory([work]) })
   const original = routeOf(first, work.credentialId)
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: original.routeId,
       observation,
       ...receiptFor(work),
-    }),
-  ).toBe(true)
+    },
+    true,
+  )
   const replaced = await refreshVaultRoster({
     path,
     custody: inventory([{ ...work, accountIdentity: 'replacement' }]),
@@ -366,13 +382,15 @@ test('an identity learned later keeps the route and its quota', async () => {
     custody: inventory([anonymous]),
   })
   const original = routeOf(first, work.credentialId)
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: original.routeId,
       observation,
       ...receiptFor(anonymous),
-    }),
-  ).toBe(true)
+    },
+    true,
+  )
   const learned = await refreshVaultRoster({ path, custody: inventory([work]) })
   const row = routeOf(learned, work.credentialId)
   expect(row.routeId).toBe(original.routeId)
@@ -523,28 +541,34 @@ test('a quota observation taken for a replaced account is dropped', async () => 
     path,
     custody: inventory([{ ...work, accountIdentity: 'replacement' }]),
   })
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: route,
       observation,
       ...receiptFor(work),
-    }),
-  ).toBe(false)
+    },
+    false,
+  )
   const current = routeOf(await readVaultRoster(path), work.credentialId)
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: current.routeId,
       observation,
       ...receiptFor(work),
-    }),
-  ).toBe(false)
-  expect(
-    await recordVaultQuota(path, {
+    },
+    false,
+  )
+  await publishQuota(
+    path,
+    {
       routeId: current.routeId,
       observation,
       ...receiptFor({ ...work, accountIdentity: 'replacement' }),
-    }),
-  ).toBe(true)
+    },
+    true,
+  )
   expect(
     routeOf(await readVaultRoster(path), work.credentialId).quota,
   ).toBeDefined()
@@ -609,13 +633,15 @@ test('a temporary identity omission keeps the last known binding, so the same ac
     custody: inventory([work, alias], 'v1'),
   })
   const original = routeOf(first, work.credentialId)
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: original.routeId,
       observation,
       ...receiptFor(work),
-    }),
-  ).toBe(true)
+    },
+    true,
+  )
   const omitted = await refreshVaultRoster({
     path,
     custody: inventory([unclaimed(work), unclaimed(alias)], 'v2'),
@@ -650,7 +676,7 @@ test('a known replacement after a temporary identity omission inherits no route,
     custody: inventory([work, alias], 'v1'),
   })
   const original = routeOf(first, work.credentialId)
-  await recordVaultQuota(path, {
+  await publishQuota(path, {
     routeId: original.routeId,
     observation,
     ...receiptFor(work),
@@ -682,13 +708,15 @@ test('a known replacement after a temporary identity omission inherits no route,
   expect(row.quota).toBeUndefined()
   expect(row.enabled).toBe(true)
   expect(row.unclaimed).toBeUndefined()
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: row.routeId,
       observation,
       ...receiptFor(work),
-    }),
-  ).toBe(false)
+    },
+    false,
+  )
 })
 
 test('an incomplete reply keeps an account whose representative record is malformed, with that record still a member', () => {
@@ -856,49 +884,57 @@ test('a quota observation must name the served credential and account, and an ab
     custody: inventory([work, alias, fallback, anonymous]),
   })
   const route = rowFor(first, 'provider-work').routeId
-  const record = (receipt: Parameters<typeof recordVaultQuota>[1]) =>
-    recordVaultQuota(path, receipt)
   // A row that has never had a known account takes a receipt issued for it
   // in that state, even when the token parse named an account, but not one
   // issued for a known account it does not hold.
   const anonymousRoute = routeOf(first, anonymous.credentialId).routeId
-  expect(
-    await record({
+  await publishQuota(
+    path,
+    {
       routeId: anonymousRoute,
       observation,
       credentialId: anonymous.credentialId,
       accountIdentity: 'parsed-account',
       accountIdentitySource: 'parsed',
-    }),
-  ).toBe(true)
-  expect(
-    await record({
+    },
+    true,
+  )
+  await publishQuota(
+    path,
+    {
       routeId: anonymousRoute,
       observation,
       ...receiptFor({ ...anonymous, accountIdentity: 'other-account' }),
-    }),
-  ).toBe(false)
+    },
+    false,
+  )
   // A receipt with no account identity is rejected for a row whose account is known.
-  expect(
-    await record({
+  await publishQuota(
+    path,
+    {
       routeId: route,
       observation,
       credentialId: work.credentialId,
       accountIdentitySource: 'none',
-    }),
-  ).toBe(false)
+    },
+    false,
+  )
   // A receipt is rejected when its credential is not the row's representative or alias.
-  expect(
-    await record({
+  await publishQuota(
+    path,
+    {
       routeId: route,
       observation,
       ...receiptFor(fallback),
       accountIdentity: work.accountIdentity,
-    }),
-  ).toBe(false)
-  expect(
-    await record({ routeId: route, observation, ...receiptFor(alias) }),
-  ).toBe(true)
+    },
+    false,
+  )
+  await publishQuota(
+    path,
+    { routeId: route, observation, ...receiptFor(alias) },
+    true,
+  )
   // When the vault's list names no account for the row's credential, a reading
   // is accepted only if the vault's reply or the token parse proved the
   // account; the roster's expected account alone is not proof.
@@ -909,17 +945,21 @@ test('a quota observation must name the served credential and account, and an ab
       'v2',
     ),
   })
-  expect(
-    await record({
+  await publishQuota(
+    path,
+    {
       routeId: route,
       observation,
       ...receiptFor(work),
       accountIdentitySource: 'expected',
-    }),
-  ).toBe(false)
-  expect(
-    await record({ routeId: route, observation, ...receiptFor(work) }),
-  ).toBe(true)
+    },
+    false,
+  )
+  await publishQuota(
+    path,
+    { routeId: route, observation, ...receiptFor(work) },
+    true,
+  )
 })
 
 test('roster reads drop malformed counters without losing quota or the row', async () => {
@@ -967,8 +1007,9 @@ test('counter-free roster quota writes keep the legacy file bytes', async () => 
   const first = await refreshVaultRoster({ path, custody: inventory([work]) })
   if (!first) throw new Error('expected roster')
   const row = rowFor(first, 'provider-work')
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: row.routeId,
       ...receiptFor(work),
       observation: {
@@ -976,8 +1017,9 @@ test('counter-free roster quota writes keep the legacy file bytes', async () => 
         readings: [{ label: 'primary', usedPercent: 20 }],
         budget: { kind: 'cleared' },
       },
-    }),
-  ).toBe(true)
+    },
+    true,
+  )
   const legacyQuota = {
     limits: [
       {
@@ -1008,15 +1050,17 @@ test('a reading with a proven account on a row that has never had one binds that
   })
   const original = routeOf(first, work.credentialId)
   expect(original.accountIdentity).toBeUndefined()
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: original.routeId,
       observation,
       credentialId: work.credentialId,
       accountIdentity: 'account-A',
       accountIdentitySource: 'asserted',
-    }),
-  ).toBe(true)
+    },
+    true,
+  )
   const bound = routeOf(await readVaultRoster(path), work.credentialId)
   expect(bound).toMatchObject({
     routeId: original.routeId,
@@ -1025,13 +1069,15 @@ test('a reading with a proven account on a row that has never had one binds that
   })
   expect(bound.quota).toBeDefined()
   // The bound account's own receipt still lands on the row.
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: original.routeId,
       observation,
       ...receiptFor({ ...work, accountIdentity: 'account-A' }),
-    }),
-  ).toBe(true)
+    },
+    true,
+  )
   const replaced = await refreshVaultRoster({
     path,
     custody: inventory([{ ...work, accountIdentity: 'account-B' }], 'v2'),
@@ -1050,14 +1096,16 @@ test('a reading with no account on a row that has never had one is kept and bind
     custody: inventory([anonymous]),
   })
   const original = routeOf(first, work.credentialId)
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: original.routeId,
       observation,
       credentialId: work.credentialId,
       accountIdentitySource: 'none',
-    }),
-  ).toBe(true)
+    },
+    true,
+  )
   const kept = routeOf(await readVaultRoster(path), work.credentialId)
   expect(kept.quota).toBeDefined()
   expect(kept.accountIdentity).toBeUndefined()
@@ -1084,14 +1132,16 @@ test('a reading with a proven account on an accountless row with several credent
     ],
   }
   await writeFile(path, JSON.stringify(roster), { mode: 0o600 })
-  expect(
-    await recordVaultQuota(path, {
+  await publishQuota(
+    path,
+    {
       routeId: 'vault:shared',
       observation,
       credentialId: alias.credentialId,
       accountIdentity: 'account-A',
       accountIdentitySource: 'parsed',
-    }),
-  ).toBe(false)
+    },
+    false,
+  )
   expect(await readVaultRoster(path)).toEqual(roster)
 })

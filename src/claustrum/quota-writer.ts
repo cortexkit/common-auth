@@ -1,0 +1,297 @@
+import { resolve } from 'node:path'
+import { createLogger } from '../logger/index.js'
+import { isQuotaObservation, type QuotaObservation } from '../quota/index.js'
+import {
+  applyVaultQuota,
+  mutateVaultRoster,
+  type QuotaReceipt,
+  type VaultRosterFile,
+} from './roster.js'
+
+export type VaultQuotaPublication = {
+  routeId: string
+  accountIdentity?: string
+  receipt?: QuotaReceipt
+  observation: QuotaObservation
+}
+
+type Field = {
+  at: number
+  order: number
+  publication: VaultQuotaPublication
+  priorReading?: VaultQuotaPublication
+}
+type Pending = Map<string, Map<string, Field>>
+type Listener = (publication: VaultQuotaPublication) => void
+interface Writer {
+  path: string
+  pending: Pending
+  listeners: Set<Listener>
+  wake: Set<() => void>
+  abort: AbortController
+  running?: Promise<void>
+  timer?: ReturnType<typeof setTimeout>
+  failures: number
+  draining: boolean
+  order: number
+}
+
+// Every consumer of the same file shares one mailbox and one lock waiter.
+const writers = new Map<string, Writer>()
+const logger = createLogger('claustrum')
+const COALESCE_MS = 100
+
+function writerFor(path: string): Writer {
+  const key = resolve(path)
+  let writer = writers.get(key)
+  if (!writer) {
+    writer = {
+      path: key,
+      pending: new Map(),
+      listeners: new Set(),
+      wake: new Set(),
+      abort: new AbortController(),
+      failures: 0,
+      draining: false,
+      order: 0,
+    }
+    writers.set(key, writer)
+  }
+  return writer
+}
+
+/** Retain the shared writer; the last consumer's close drains it. */
+export function retainVaultQuotaWriter(
+  path: string,
+  listener: Listener,
+): () => Promise<void> {
+  const writer = writerFor(path)
+  writer.listeners.add(listener)
+  let released: Promise<void> | undefined
+  return () =>
+    (released ??= (() => {
+      writer.listeners.delete(listener)
+      return writer.listeners.size ? Promise.resolve() : drainVaultQuota(path)
+    })())
+}
+
+function fields(publication: VaultQuotaPublication): Map<string, Field> {
+  const result = new Map<string, Field>()
+  const { observation } = publication
+  const witness = JSON.stringify([
+    publication.routeId,
+    publication.receipt?.credentialId,
+    publication.receipt?.accountIdentitySource,
+    publication.receipt?.expectedAccountIdentity,
+  ])
+  const add = (key: string, at: number, part: QuotaObservation) =>
+    result.set(`${witness}:${key}`, {
+      at,
+      order: 0,
+      publication: { ...publication, observation: part },
+    })
+  const keyFor = (scope: string | undefined, label: string) =>
+    JSON.stringify([scope ?? 'all', label])
+  const read = new Set<string>()
+  for (const reading of observation.readings ?? []) {
+    const key = keyFor(reading.scope, reading.label)
+    read.add(key)
+    add(key, observation.checkedAt, {
+      checkedAt: observation.checkedAt,
+      readings: [{ ...reading }],
+    })
+  }
+  for (const pair of observation.coverage ?? []) {
+    const key = keyFor(pair.scope, pair.label)
+    if (!read.has(key))
+      add(key, observation.checkedAt, {
+        checkedAt: observation.checkedAt,
+        coverage: [{ ...pair }],
+      })
+  }
+  if (observation.budget)
+    add('budget', observation.checkedAt, {
+      checkedAt: observation.checkedAt,
+      budget: { ...observation.budget },
+    })
+  for (const [name, counter] of Object.entries(observation.counters ?? {})) {
+    add(`counter:${name}`, counter.checkedAt, {
+      checkedAt: observation.checkedAt,
+      counters: { [name]: { ...counter } },
+    })
+  }
+  if (observation.credits)
+    add('credits', observation.credits.checkedAt, {
+      checkedAt: observation.checkedAt,
+      credits: { ...observation.credits },
+    })
+  // Even an empty observation can bind an account proved by its receipt.
+  if (!result.size)
+    add('empty', observation.checkedAt, { checkedAt: observation.checkedAt })
+  return result
+}
+
+/** Enqueue without filesystem work; each quota field retains its own receipt fence. */
+export function enqueueVaultQuota(
+  path: string,
+  publication: VaultQuotaPublication,
+): Promise<boolean> {
+  if (!isQuotaObservation(publication.observation))
+    return Promise.resolve(false)
+  const writer = writerFor(path)
+  const account = JSON.stringify([
+    publication.accountIdentity ?? null,
+    publication.accountIdentity === undefined ? publication.routeId : null,
+  ])
+  const pending = writer.pending.get(account) ?? new Map<string, Field>()
+  for (const [key, field] of fields(publication)) {
+    const previous = pending.get(key)
+    if (!previous || field.at >= previous.at) {
+      field.order = ++writer.order
+      // A covered disappearance after an unflushed reading is a retirement,
+      // not an absence. Retain just enough history to preserve that distinction.
+      if (field.publication.observation.coverage)
+        field.priorReading = previous?.publication.observation.readings
+          ? previous.publication
+          : previous?.priorReading
+      pending.set(key, field)
+    }
+  }
+  if (pending.size) writer.pending.set(account, pending)
+  for (const listener of writer.listeners) listener(publication)
+  schedule(writer, COALESCE_MS)
+  return Promise.resolve(true)
+}
+
+function orderedFields(pending: Pending): Field[] {
+  // Equal observation times are last-enqueue-wins even across different
+  // credentials or account-only readings. Map insertion order cannot prove it.
+  return [...pending.values()]
+    .flatMap((account) => [...account.values()])
+    .sort((a, b) => a.order - b.order)
+}
+
+/** Overlay uncommitted observations when a consumer reloads the durable roster. */
+export function pendingVaultQuota(
+  path: string,
+  roster: VaultRosterFile | undefined,
+): VaultRosterFile | undefined {
+  const writer = writers.get(resolve(path))
+  if (writer) {
+    for (const field of orderedFields(writer.pending)) {
+      if (field.priorReading)
+        roster = applyVaultQuota(roster, field.priorReading).roster
+      roster = applyVaultQuota(roster, field.publication).roster
+    }
+  }
+  return roster
+}
+
+function schedule(writer: Writer, delay: number): void {
+  if (
+    writer.running ||
+    writer.timer ||
+    !writer.pending.size ||
+    writer.abort.signal.aborted
+  )
+    return
+  writer.timer = setTimeout(() => {
+    writer.timer = undefined
+    flush(writer)
+  }, delay)
+  if (!writer.draining) writer.timer.unref?.()
+}
+
+function flush(writer: Writer): void {
+  if (writer.running || writer.abort.signal.aborted) return
+  const batch = new Map(
+    [...writer.pending].map(([account, pending]) => [
+      account,
+      new Map(pending),
+    ]),
+  )
+  writer.running = (async () => {
+    try {
+      await mutateVaultRoster(
+        writer.path,
+        (current) => {
+          let next = current
+          for (const field of orderedFields(batch)) {
+            if (field.priorReading)
+              next = applyVaultQuota(next, field.priorReading).roster
+            next = applyVaultQuota(next, field.publication).roster
+          }
+          return { ...(next !== current && { next }), result: undefined }
+        },
+        { signal: writer.abort.signal },
+      )
+      for (const [account, fields] of batch) {
+        const pending = writer.pending.get(account)
+        for (const [key, field] of fields) {
+          // A newer enqueue must survive completion of an older flush.
+          if (pending?.get(key) === field) pending.delete(key)
+        }
+        if (!pending?.size) writer.pending.delete(account)
+      }
+      writer.failures = 0
+    } catch (error) {
+      if (!writer.abort.signal.aborted && writer.failures++ === 0) {
+        logger.warn('vault quota publication delayed; retrying', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+      // Keep the batch in the mailbox, including any fresher fields enqueued meanwhile.
+    } finally {
+      writer.running = undefined
+      for (const wake of writer.wake) wake()
+      const backoff = writer.failures
+        ? Math.min(5_000, 100 * 2 ** Math.min(writer.failures, 6)) *
+          (0.5 + Math.random())
+        : COALESCE_MS
+      schedule(writer, backoff)
+    }
+  })()
+}
+
+/** Wait at most timeoutMs for detached publication; shutdown loss is acceptable. */
+export async function drainVaultQuota(
+  path: string,
+  timeoutMs = 1_000,
+): Promise<void> {
+  const key = resolve(path)
+  const writer = writers.get(key)
+  if (!writer) return
+  writer.draining = true
+  clearTimeout(writer.timer)
+  writer.timer = undefined
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  let wake: (() => void) | undefined
+  const drained = new Promise<void>((done) => {
+    wake = () => {
+      if (!writer.pending.size || writer.abort.signal.aborted) done()
+    }
+    writer.wake.add(wake)
+    wake()
+  })
+  try {
+    if (writer.pending.size) flush(writer)
+    await Promise.race([
+      drained,
+      new Promise<void>((done) => {
+        deadline = setTimeout(done, Math.max(0, timeoutMs))
+      }),
+    ])
+  } finally {
+    clearTimeout(deadline)
+    if (wake) writer.wake.delete(wake)
+    writer.draining = false
+    // A still-open consumer owns the mailbox, so another consumer's disposal
+    // must not discard its observations or stop its retries.
+    if (!writer.listeners.size) {
+      writer.abort.abort()
+      clearTimeout(writer.timer)
+      writer.pending.clear()
+      if (writers.get(key) === writer) writers.delete(key)
+    }
+  }
+}

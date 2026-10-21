@@ -110,6 +110,7 @@ export {
   declineAccount,
   isDeclined,
 } from './interlock.js'
+export { drainVaultQuota } from './quota-writer.js'
 export {
   type AccountMapper,
   acceptVaultRoute,
