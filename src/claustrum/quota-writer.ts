@@ -75,6 +75,13 @@ export function retainVaultQuotaWriter(
     })())
 }
 
+// Split one observation into its independently dated parts: each rate-limit
+// window (scope and label), each covered-but-unread window, the budget, each
+// counter and the credits record. The mailbox keeps the newest of each part on
+// its own, so a later observation that carries only some parts can't erase an
+// older but still newest reading of another part, which is how
+// mergeQuotaObservation treats them on disk. Each key also carries the
+// receipt's identity, so the identity fence still applies to every part.
 function fields(publication: VaultQuotaPublication): Map<string, Field> {
   const result = new Map<string, Field>()
   const { observation } = publication
