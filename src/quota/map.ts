@@ -243,8 +243,9 @@ export function readQuotaCounters(
  */
 export function decodeQuotaMap(value: unknown): QuotaMap | undefined {
   // A valid map is returned as the same object, so stored quota keeps the
-  // identity it had before counters and credits existed; only a map with a
-  // malformed counter or credits record is copied without it.
+  // identity it had before counters and credits existed. A map with a
+  // malformed counter or credits record is copied with those malformed
+  // fields left out.
   if (isQuotaMap(value)) return value
   if (!isRecord(value)) return undefined
   const { counters: rawCounters, credits: rawCredits, ...rest } = value

@@ -475,9 +475,10 @@ export function formatQuota(
  * status view words them: `Unlimited` for unlimited credits, `<n> credits`
  * for a finite positive balance (rounded to a whole number), `Available` when
  * the account has credits but no usable balance was reported, and undefined
- * when it has none (or `credits` is undefined), so a caller shows no credits
- * row at all. Unlimited wins even when `hasCredits` is false. No other
- * formatter adds this text; a caller that wants a credits row asks for it.
+ * when the account has no credits (or `credits` is undefined), so a caller
+ * shows no credits row at all. Unlimited wins even when `hasCredits` is false.
+ * No other formatter adds this text; a caller that wants a credits row asks
+ * for it.
  */
 export function quotaCreditsText(
   credits:
