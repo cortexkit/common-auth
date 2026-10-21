@@ -58,7 +58,7 @@ old = '''  if (!isQuotaObservation(publication.observation))
   const writer = writerFor(path)'''
 new = '''  if (!isQuotaObservation(publication.observation))
     return Promise.resolve(false)
-  return mutateVaultRoster(path, (current) => ({ next: applyVaultQuota(current, publication).roster, result: true })) // NON-VACUITY BREAK: one write per reading.
+  if (path.length >= 0) return mutateVaultRoster(path, (current) => ({ next: applyVaultQuota(current, publication).roster, result: true })) // NON-VACUITY BREAK: one write per reading.
   const writer = writerFor(path)'''
 test_file = 'test/claustrum/roster-quota.test.ts'
 runner = 'command'
