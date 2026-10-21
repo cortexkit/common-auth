@@ -7611,3 +7611,17 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/credits.test.ts
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^quota\scredits\sa\smalformed\sstored\scredits\srecord\sis\sdropped\son\sread\sand\smerge\swhile\slimits,\sbudget\sand\scounters\sare\skept$']
 expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'quota-part-short-uses-model-abbreviation'
+guards = 'a model-scoped window part reads under the same short name the narrow line gives it, so a sidebar row that shows the short name never disagrees with the narrow line or runs long'
+file = 'src/quota/format.ts'
+old = '          : (abbreviations.get(window.scope) ?? window.scope)'
+new = '          : window.part.name /* NON-VACUITY BREAK: full name, not the short one */'
+test_file = 'test/quota/format.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/quota/format.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/quota/format.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^narrow\squota\swording\seach\spart\scarries\sthe\sshort\sname\sthe\snarrow\sline\sgives\sit$']
+expect_message = 'expect(received).toEqual(expected)'

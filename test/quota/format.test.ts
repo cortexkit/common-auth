@@ -260,6 +260,7 @@ describe('shared quota wording', () => {
       {
         kind: 'window',
         name: '5h',
+        short: '5h',
         figure: '58% left',
         remainingPercent: 58,
         resetIn: '2h',
@@ -269,6 +270,7 @@ describe('shared quota wording', () => {
       {
         kind: 'window',
         name: '7d',
+        short: '7d',
         figure: '90% left',
         remainingPercent: 90,
         resetIn: '3d',
@@ -278,6 +280,7 @@ describe('shared quota wording', () => {
       {
         kind: 'budget',
         name: 'credits',
+        short: 'cr',
         figure: 'credits 75% left',
         remainingPercent: 75,
         checkedAt: now,
@@ -608,6 +611,37 @@ describe('narrow quota wording', () => {
         ),
       ),
     ).toBe('5h 38% · Fabr 20% left')
+  })
+
+  test('each part carries the short name the narrow line gives it', () => {
+    const shorts = (quota: ProjectedQuota) =>
+      quotaWindowParts(quota, { now }).windows.map((part) => [
+        part.kind,
+        part.name,
+        part.short,
+      ])
+    const budget = { checkedAt: now, reached: false, remainingPercent: 50 }
+    // Account-wide windows keep their name; a lone model window gets two
+    // letters; the budget reads cr.
+    expect(
+      shorts(
+        row([fiveHour(38), limit('fable', 'fable_week', 90, 10_080)], budget),
+      ),
+    ).toEqual([
+      ['window', '5h', '5h'],
+      ['window', expect.any(String), 'Fa'],
+      ['budget', 'credits', 'cr'],
+    ])
+    // Colliding model names are extended exactly as the narrow line extends
+    // them, and the narrow line uses the part's short name.
+    const colliding = row([
+      fiveHour(38),
+      limit('fable', 'fable_week', 50, 10_080),
+      limit('fabric', 'fabric_week', 20, 10_080),
+    ])
+    const parts = quotaWindowParts(colliding, { now }).windows
+    expect(parts.map((part) => part.short)).toEqual(['5h', 'Fabl', 'Fabr'])
+    expect(narrow(colliding)).toBe('5h 38% · Fabr 20% left')
   })
 
   test('the percentage is the compact figure: remaining, rounded and clamped', () => {

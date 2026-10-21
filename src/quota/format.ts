@@ -56,6 +56,13 @@ export interface QuotaWindowPart {
   kind: 'window' | 'budget'
   /** The display name of a quota window, or `credits` for the budget. */
   name: string
+  /**
+   * The label the narrow line gives this item: an account-wide window keeps
+   * its name (`5h`), a model-scoped window reads as its model's short name
+   * (`Fa` for Fable, extended until names in the same reading differ), and
+   * the budget reads `cr`. For layouts too narrow for the full name.
+   */
+  short: string
   /** The shared figure wording, including `credits` for budget figures. */
   figure: string
   /** The unrounded remaining percentage, clamped to 0–100, when known. */
@@ -170,6 +177,30 @@ export function quotaWindowParts(
   return age === undefined ? { windows: parts } : { windows: parts, age }
 }
 
+/**
+ * The narrow label of each scoped window part, as `narrowTextParts` names
+ * them: model short names are worked out over every model-scoped window in
+ * the reading, so two models never share a short name.
+ */
+function withShortNames(windows: ScopedWindowPart[]): ScopedWindowPart[] {
+  const abbreviations = scopeAbbreviations(
+    windows
+      .filter(
+        ({ part, scope }) => part.kind === 'window' && scope !== ALL_SCOPE,
+      )
+      .map(({ scope }) => scope),
+  )
+  for (const window of windows) {
+    window.part.short =
+      window.part.kind === 'budget'
+        ? 'cr'
+        : window.scope === ALL_SCOPE
+          ? window.part.name
+          : (abbreviations.get(window.scope) ?? window.scope)
+  }
+  return windows
+}
+
 /** A window part with the scope its limit was stored under (`all` for the budget). */
 interface ScopedWindowPart {
   part: QuotaWindowPart
@@ -207,6 +238,7 @@ function scopedWindowParts(
       part: {
         kind: 'window',
         name: quotaWindowName(limit),
+        short: '',
         figure: percentLeft(limit.remainingPercent ?? 0),
         remainingPercent,
         checkedAt: limit.checkedAt,
@@ -228,6 +260,7 @@ function scopedWindowParts(
       part: {
         kind: 'budget',
         name: 'credits',
+        short: '',
         figure,
         ...(remainingPercent === undefined
           ? {}
@@ -238,6 +271,7 @@ function scopedWindowParts(
     })
   }
 
+  withShortNames(windows)
   if (windows.length > 0) {
     const age = now - Math.min(...windows.map(({ part }) => part.checkedAt))
     if (age > (options.staleAfterMs ?? QUOTA_STALE_AFTER_MS)) {
@@ -397,20 +431,21 @@ function narrowTextParts(
   const scoped = windows.filter(
     ({ part, scope }) => part.kind === 'window' && scope !== ALL_SCOPE,
   )
-  const abbreviations = scopeAbbreviations(scoped.map(({ scope }) => scope))
   // The items competing for the one slot after the account-wide windows, in
   // tie-break order: scoped windows in display order, then the budget. A
   // spent budget counts as 0% left; one without a percentage cannot compete.
+  // Their labels are the parts' short names, so the narrow line and a layout
+  // reading `short` always agree.
   const budget = windows.find(({ part }) => part.kind === 'budget')
   const budgetLeft = budget?.spent ? 0 : budget?.part.remainingPercent
   const extras = [
-    ...scoped.map(({ scope, part }) => ({
-      label: abbreviations.get(scope) ?? scope,
+    ...scoped.map(({ part }) => ({
+      label: part.short,
       remaining: part.remainingPercent ?? 0,
     })),
-    ...(budgetLeft === undefined
+    ...(budgetLeft === undefined || budget === undefined
       ? []
-      : [{ label: 'cr', remaining: budgetLeft }]),
+      : [{ label: budget.part.short, remaining: budgetLeft }]),
   ]
   // Strictly lower wins, so on a tie the earlier item keeps the slot.
   const tightest = extras.reduce<(typeof extras)[number] | undefined>(

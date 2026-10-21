@@ -362,10 +362,19 @@ function rendered(formatter: Formatter, quota: ProjectedQuota) {
   }
 }
 
+// 0.23.0 added `short` to each part. The comparison with 0.20.0 leaves it
+// out, so every field 0.20.0 had must still read the same; `short` itself is
+// tested beside the narrow line in format.test.ts.
 const live: Formatter = {
   formatQuota,
   quotaTextParts,
-  quotaWindowParts,
+  quotaWindowParts: (quota, options) => {
+    const parts = quotaWindowParts(quota, options)
+    return {
+      ...parts,
+      windows: parts.windows.map(({ short: _short, ...part }) => part),
+    } as ReturnType<typeof quotaWindowParts>
+  },
   isQuotaStale,
 }
 
