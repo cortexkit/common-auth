@@ -101,13 +101,8 @@ export const unknownGrants = {
   grantTuples: undefined,
 } as const
 
-/**
- * Whether the installed claustrum-client decodes `listScoped`'s grant fields
- * (0.10.0 and later). `check:claustrum-floor` also runs these tests against
- * 0.6.2, the oldest client the peer dependency accepts, which ignores the
- * fields, so a vault that sends them still reads as unknown there.
- */
-export const clientDecodesGrants = await (async () => {
+/** Version of the installed package, found from its resolved entry point. */
+export const claustrumClientVersion = await (async () => {
   let directory = dirname(
     fileURLToPath(import.meta.resolve('@cortexkit/claustrum-client')),
   )
@@ -115,18 +110,27 @@ export const clientDecodesGrants = await (async () => {
     const manifest = await readFile(join(directory, 'package.json'), 'utf8')
       .then((text) => JSON.parse(text) as { name?: string; version?: string })
       .catch(() => undefined)
-    if (manifest?.name === '@cortexkit/claustrum-client') {
-      const [major = 0, minor = 0] = (manifest.version ?? '')
-        .split('.')
-        .map(Number)
-      return major > 0 || minor >= 10
-    }
+    if (manifest?.name === '@cortexkit/claustrum-client')
+      return manifest.version ?? ''
     const parent = dirname(directory)
     if (parent === directory)
       throw new Error('cannot find the claustrum-client package manifest')
     directory = parent
   }
 })()
+
+const [clientMajor = 0, clientMinor = 0] = claustrumClientVersion
+  .split('.')
+  .map(Number)
+
+/**
+ * Whether the installed client decodes `listScoped`'s grant fields, added in
+ * 0.10.0. The floor client ignores them and therefore reads them as unknown.
+ */
+export const clientDecodesGrants = clientMajor > 0 || clientMinor >= 10
+
+/** Whether the installed client treats protocol failures as definitive (0.13+). */
+export const clientKeepsDefinitiveErrors = clientMajor > 0 || clientMinor >= 13
 
 /**
  * Timers the consumer arms are recorded and fired by the test, so polling

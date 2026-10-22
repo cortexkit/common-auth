@@ -8,7 +8,7 @@ import {
 } from '../../src/setup/enroll.ts'
 import type { SetupIO } from '../../src/setup/types.ts'
 import { plugin, terminal } from '../setup/helpers.ts'
-import { cleanupDirs, tempDir } from './helpers.ts'
+import { cleanupDirs, clientKeepsDefinitiveErrors, tempDir } from './helpers.ts'
 import { type MockDaemon, startMockDaemon } from './mock-daemon.ts'
 
 // These run setup's enrollment against the real claustrum-client and a daemon
@@ -92,11 +92,14 @@ test('a vault that answers the proposal with unknown_method stops setup after on
     reason: 'unsupported-vault',
     lastErrorCode: 'unknown_method',
   })
-  // Setup asked once. A client before 0.13.0 reconnects and repeats a refused
-  // call once on its own, so the daemon may see that one proposal twice.
+  // Clients before 0.13 may repeat the refused proposal while reconnecting.
   expect(proposals).toBe(1)
-  expect(daemon.proposals.length).toBeGreaterThanOrEqual(1)
-  expect(daemon.proposals.length).toBeLessThanOrEqual(2)
+  if (clientKeepsDefinitiveErrors) {
+    expect(daemon.proposals).toHaveLength(1)
+  } else {
+    expect(daemon.proposals.length).toBeGreaterThanOrEqual(1)
+    expect(daemon.proposals.length).toBeLessThanOrEqual(2)
+  }
   expect(waits).toEqual([])
   expect(term.lines.join('')).toBe(
     'Asking the vault to connect test-auth-opencode…\n',
@@ -147,11 +150,10 @@ test('an enrollment that fails unexpectedly reports a named, fixed error with on
   expect(String(error.message)).not.toContain(secret)
 })
 
-test('an old client that masks unknown_method as transport_error is bounded by the overall wait', async () => {
-  // claustrum-client before 0.13.0 reconnects after the refusal; when that
-  // reconnect fails it reports transport_error, the same error, class and
-  // action as any lost connection. Setup cannot tell the two apart, so it
-  // backs off and stops at the overall bound, naming the code it saw.
+test('an unknown_method proposal preserves each client version’s failure behavior', async () => {
+  // Before 0.13, a refused call triggers a reconnect. If that reconnect fails,
+  // the client reports transport_error and setup backs off to its overall wait.
+  // From 0.13 on, unknown_method is definitive, so setup stops immediately.
   const { daemon, p, io, waits } = await vault(
     'unknown_method-then-unreachable',
   )
@@ -160,6 +162,23 @@ test('an old client that masks unknown_method as transport_error is bounded by t
     connectSetupHost(p, 'opencode', io, term, async () => {}),
   )
   expect(error).toBeInstanceOf(HostNotEnrolledError)
+
+  if (clientKeepsDefinitiveErrors) {
+    expect(error.message).toBe(
+      'This Claustrum vault does not support connecting plugins yet, so setup cannot connect to it. Run setup without --claustrum to use local accounts.',
+    )
+    expect(error).toMatchObject({
+      reason: 'unsupported-vault',
+      lastErrorCode: 'unknown_method',
+    })
+    expect(waits).toEqual([])
+    expect(daemon.proposals).toHaveLength(1)
+    expect(term.lines.join('')).toBe(
+      'Asking the vault to connect test-auth-opencode…\n',
+    )
+    return
+  }
+
   expect(error.message).toBe(
     'The vault never created the enrollment request (last error: transport_error). Check that ck is running, then rerun setup.',
   )
