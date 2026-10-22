@@ -43,11 +43,22 @@ const ENROLLMENT_LOCK_TTL_MS = 30_000
 const TOKEN_RE = /^[0-9a-f]{64}$/
 
 /**
+ * The code a vault without the enrollment ceremony answers a proposal with.
+ * Setup reports it as "this vault cannot connect plugins" instead of waiting.
+ */
+export const UNSUPPORTED_ENROLLMENT_CODE = 'unknown_method'
+
+/**
  * Codes the vault's closed enrollment-refusal vocabulary marks permanent. The
  * client labels some module error frames transient/retry regardless, so the
  * producer's code takes precedence over the client's action for these.
  */
 export const TERMINAL_ENROLLMENT_CODES: ReadonlySet<string> = new Set([
+  // The daemon's answer to an operation it does not implement: a vault built
+  // before the enrollment ceremony. It arrives as a transport Error frame with
+  // no class, which claustrum-client before 0.13.0 labels transient/retry, but
+  // asking again can never succeed.
+  UNSUPPORTED_ENROLLMENT_CODE,
   'invalid_params',
   'pending_exists',
   'not_found',
@@ -920,6 +931,15 @@ export class ClaustrumEnrollmentManager {
               retryCode: refusal.code,
             }
           }
+          // A vault without the ceremony created no request, so nothing is
+          // blocked: the pending state (no request id) stays on disk and a
+          // later run against a vault that supports enrollment proposes again.
+          if (refusal.code === UNSUPPORTED_ENROLLMENT_CODE)
+            return {
+              state: 'unavailable',
+              proposedName: state.proposedName,
+              code: refusal.code,
+            }
           return this.#block(state, refusal.code)
         }
       }

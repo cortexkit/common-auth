@@ -135,6 +135,11 @@ export interface SetupIO {
     handshakeTimeoutMs: number
   }) => Promise<ClaustrumEnrollmentConnection>
   wait?: (ms: number) => Promise<void>
+  /**
+   * Monotonic milliseconds that bound the enrollment wait. Defaults to
+   * `performance.now`; tests pair it with `wait` to run a fake clock.
+   */
+  now?: () => number
 }
 
 export interface HostDetection {

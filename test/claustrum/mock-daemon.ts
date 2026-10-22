@@ -160,6 +160,15 @@ export interface MockDaemon {
   /** Drop scoped calls at the transport, without sending a vault refusal. */
   outage: boolean
   /**
+   * How `auth.enroll_propose` is answered. `supported` runs the ceremony.
+   * `unknown_method` answers the way every published claustrum vault does,
+   * since none has the ceremony yet: the daemon's transport Error frame with
+   * no class. `unknown_method-then-unreachable` does the same and then refuses
+   * every new connection, so a client that reconnects after the refusal
+   * fails to.
+   */
+  enrollment: 'supported' | 'unknown_method' | 'unknown_method-then-unreachable'
+  /**
    * While set, each list_scoped is counted and answered as of its arrival,
    * but the answer is sent only once this settles.
    */
@@ -215,6 +224,9 @@ export async function startMockDaemon(input: {
     }
   >()
   let nextRequest = 1
+  // Set once an enrollment proposal is refused in the
+  // `unknown_method-then-unreachable` mode; new connections are then dropped.
+  let unreachable = false
 
   const state: MockDaemon = {
     connectionFile: '',
@@ -238,6 +250,7 @@ export async function startMockDaemon(input: {
     usageEpoch: 'insula-epoch-1',
     revoked: false,
     outage: false,
+    enrollment: 'supported',
     approve(requestId, token = 'ab'.repeat(32), generation = 1) {
       const entry = enrollments.get(requestId)
       if (!entry) throw new Error(`unknown request ${requestId}`)
@@ -394,6 +407,10 @@ export async function startMockDaemon(input: {
   }
 
   const server = createServer((socket) => {
+    if (unreachable) {
+      socket.destroy()
+      return
+    }
     let insulaSocket = false
     sockets.add(socket)
     socket.once('close', () => {
@@ -635,6 +652,27 @@ export async function startMockDaemon(input: {
             socket,
             header,
             state.insula?.response ?? error('module_removed'),
+          )
+          continue
+        }
+        if (
+          request.method === 'auth.enroll_propose' &&
+          state.enrollment !== 'supported'
+        ) {
+          state.proposals.push({
+            name: request.params?.proposed_name as string | undefined,
+            hash: request.params?.request_secret_hash as string | undefined,
+          })
+          if (state.enrollment === 'unknown_method-then-unreachable')
+            unreachable = true
+          writeResponse(
+            socket,
+            header,
+            {
+              code: 'unknown_method',
+              message: "unknown method 'auth.enroll_propose'",
+            },
+            subc.FrameType.Error,
           )
           continue
         }

@@ -7,6 +7,12 @@ export {
   openCodeDesktopMarkers,
 } from './detect.js'
 export {
+  ENROLLMENT_WAIT_MS,
+  HostNotEnrolledError,
+  type HostNotEnrolledReason,
+  UNSUPPORTED_VAULT_MESSAGE,
+} from './enroll.js'
+export {
   assertHostsStopped,
   createProcessFence,
   listSetupProcesses,

@@ -152,6 +152,15 @@ export class ProcessFenceViolationError extends Error {
   }
 }
 
+/**
+ * One fence's last Windows command-line answer: the Node and Bun processes it
+ * covered (`key`) and the command line it found for each PID.
+ */
+export interface RuntimeCommandCache {
+  key?: string
+  commands?: Map<number, string>
+}
+
 /** List processes before filtering hosts; Windows PID 0 is a valid idle-process row. */
 export async function listSetupProcesses(
   runner: CommandRunner = defaultCommandRunner,
@@ -167,6 +176,13 @@ export async function listSetupProcesses(
      * a container this process can hold any small PID a fixture uses.
      */
     selfPid?: number
+    /**
+     * Where one fence keeps its last Windows command-line answer. When the
+     * Node and Bun processes in `tasklist` are exactly the ones that answer
+     * covered, by PID and image name, their command lines are reused instead
+     * of starting PowerShell again.
+     */
+    runtimeCommands?: RuntimeCommandCache
   } = {},
 ): Promise<Array<{ pid: number; command: string }>> {
   const windows = (options.platform ?? process.platform) === 'win32'
@@ -249,6 +265,19 @@ export async function listSetupProcesses(
         entry.pid !== selfPid && /^(?:node|bun)\.exe$/i.test(entry.command),
     )
     if (windows && runtimes.length && options.inspectRuntimes !== false) {
+      // Any Node or Bun process that appeared, exited, or now holds a PID
+      // under another image name changes this key, so a host started since
+      // the last listing is always queried and caught.
+      const key = runtimes
+        .map((entry) => `${entry.pid}:${entry.command.toLowerCase()}`)
+        .sort()
+        .join('\n')
+      const cached = options.runtimeCommands
+      if (cached?.key === key && cached.commands) {
+        for (const entry of runtimes)
+          entry.command = cached.commands.get(entry.pid) ?? ''
+        return processes
+      }
       const details = await inspect(
         'CIM',
         'powershell.exe',
@@ -283,6 +312,12 @@ export async function listSetupProcesses(
         // A process absent from the later CIM snapshot already exited.
         entry.command = commands.get(entry.pid) ?? ''
       }
+      if (cached) {
+        cached.key = key
+        cached.commands = new Map(
+          runtimes.map((entry) => [entry.pid, entry.command]),
+        )
+      }
     }
     return processes
   } catch (error) {
@@ -298,11 +333,14 @@ export function createProcessFence(
   const selfPid = options.selfPid ?? process.pid
   const isHost = (entry: { pid: number; command: string }) =>
     entry.pid !== selfPid && hostName(entry.command) !== null
+  // Lives as long as this fence, which setup creates once per run, so an
+  // answer is never reused across runs.
+  const runtimeCommands: RuntimeCommandCache = {}
   return {
     async listRunningHosts(env?: SetupEnvironment) {
-      return (await listSetupProcesses(runner, { ...options, env })).filter(
-        isHost,
-      )
+      return (
+        await listSetupProcesses(runner, { ...options, env, runtimeCommands })
+      ).filter(isHost)
     },
     async previewRunningHosts(env?: SetupEnvironment) {
       const processes = await listSetupProcesses(runner, {
