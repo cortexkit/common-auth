@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { connectClaustrumEnrollmentClient } from '../../src/claustrum/index.ts'
 import {
@@ -101,15 +101,50 @@ test('a vault that answers the proposal with unknown_method stops setup after on
   expect(term.lines.join('')).toBe(
     'Asking the vault to connect test-auth-opencode…\n',
   )
-  // No request exists, so nothing is blocked: the next run asks again.
-  const state = JSON.parse(
-    await readFile(
-      join(root, 'vault', 'opencode-enrollment-state.json'),
-      'utf8',
+  // The vault holds no request, so no enrollment state is left behind: status
+  // reads as not enrolled, and a reset or the next run starts afresh.
+  expect(
+    existsSync(join(root, 'vault', 'opencode-enrollment-state.json')),
+  ).toBe(false)
+})
+
+test('an enrollment that fails unexpectedly reports a named, fixed error with only a vetted code', async () => {
+  const { p, io } = await vault('unknown_method')
+  const secret = 'request-secret-0123456789abcdef'
+  const error = await rejection(
+    connectSetupHost(
+      p,
+      'opencode',
+      {
+        ...io,
+        connect: async (options) => {
+          const client = await io.connect?.(options)
+          if (!client) throw new Error('no client')
+          return {
+            ...client,
+            close: () => client.close(),
+            enrollPropose: () =>
+              Promise.reject(
+                Object.assign(new Error(`boom ${secret}`), {
+                  code: 'internal_fault',
+                }),
+              ),
+          }
+        },
+      },
+      terminal(),
+      async () => {},
     ),
   )
-  expect(state.phase).toBe('pending')
-  expect(state.requestId).toBeUndefined()
+  expect(error).toBeInstanceOf(HostNotEnrolledError)
+  expect(error.message).toBe(
+    'Claustrum enrollment did not complete. Inspect and approve with ck, then rerun setup.',
+  )
+  expect(error).toMatchObject({
+    reason: 'incomplete',
+    lastErrorCode: 'internal_fault',
+  })
+  expect(String(error.message)).not.toContain(secret)
 })
 
 test('an old client that masks unknown_method as transport_error is bounded by the overall wait', async () => {

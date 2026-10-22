@@ -931,15 +931,23 @@ export class ClaustrumEnrollmentManager {
               retryCode: refusal.code,
             }
           }
-          // A vault without the ceremony created no request, so nothing is
-          // blocked: the pending state (no request id) stays on disk and a
-          // later run against a vault that supports enrollment proposes again.
-          if (refusal.code === UNSUPPORTED_ENROLLMENT_CODE)
+          // A vault without the ceremony cannot hold a request for this
+          // proposal, now or from an earlier run (the state has no request
+          // id). So nothing is blocked and nothing is in progress: remove the
+          // pending state, still under the ceremony lock, so status reads as
+          // "not enrolled" and a reset or a later run starts afresh.
+          if (refusal.code === UNSUPPORTED_ENROLLMENT_CODE) {
+            await lock.assertOwned()
+            await unlink(this.#paths.statePath).catch((cause) => {
+              if ((cause as NodeJS.ErrnoException).code !== 'ENOENT')
+                throw cause
+            })
             return {
               state: 'unavailable',
               proposedName: state.proposedName,
               code: refusal.code,
             }
+          }
           return this.#block(state, refusal.code)
         }
       }

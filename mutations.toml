@@ -7697,3 +7697,31 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/fs/windows-addon-unav
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^Windows\srefuses\sprivate\sfiles\swith\sERR_PRIVATE_FILES_UNAVAILABLE\swhen\sthe\snative\saddon\scannot\sload,\swriting\snothing$']
 expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'setup-unsupported-vault-leaves-no-pending-state'
+guards = 'a vault without the enrollment ceremony leaves no pending enrollment state behind, so status reads as not enrolled and a reset or later run starts afresh'
+file = 'src/claustrum/enrollment.ts'
+old = '''            await unlink(this.#paths.statePath).catch((cause) => {'''
+new = '''            await Promise.resolve().catch((cause) => { // NON-VACUITY BREAK: keep the pending state'''
+test_file = 'test/claustrum/enrollment-unsupported.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment-unsupported.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/enrollment-unsupported.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^a\svault\sthat\sanswers\sthe\sproposal\swith\sunknown_method\sstops\ssetup\safter\sone\sproposal$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'setup-unexpected-enrollment-failure-is-named'
+guards = 'an unexpected enrollment failure is a HostNotEnrolledError with a fixed message and only a vetted code, so hosts can show it as written'
+file = 'src/setup/enroll.ts'
+old = '''    throw new HostNotEnrolledError(ENROLLMENT_INCOMPLETE_MESSAGE, {'''
+new = '''    throw Object.assign(new Error(ENROLLMENT_INCOMPLETE_MESSAGE), { // NON-VACUITY BREAK: plain Error'''
+test_file = 'test/claustrum/enrollment-unsupported.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/enrollment-unsupported.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/enrollment-unsupported.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^an\senrollment\sthat\sfails\sunexpectedly\sreports\sa\snamed,\sfixed\serror\swith\sonly\sa\svetted\scode$']
+expect_message = 'expect(received).toBeInstanceOf(expected)'

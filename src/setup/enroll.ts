@@ -48,11 +48,13 @@ export type HostNotEnrolledReason =
   | 'approval-pending'
   | 'refused'
   | 'invalid-request'
+  | 'incomplete'
 
 /**
  * Thrown when the enrollment ended without writing the host's token: the vault
  * could not be reached, it cannot enroll plugins, it refused the request, it
- * never created one, or approval never came before setup stopped waiting.
+ * never created one, approval never came before setup stopped waiting, or
+ * the enrollment failed in some other way (`incomplete`).
  * Setup can then report the host as not connected without reading its files.
  * The message is fixed text built only from vetted values, never from what
  * the vault or client threw. `lastErrorCode` is the last enrollment error code
@@ -204,8 +206,13 @@ export async function connectSetupHost(
       error instanceof HostNotEnrolledError
     )
       throw error
-    // Enrollment exceptions can carry request secrets or bearer tokens; never display them.
-    throw new Error(ENROLLMENT_INCOMPLETE_MESSAGE)
+    // Enrollment exceptions can carry request secrets or bearer tokens; never
+    // display them. Only a vetted error code goes into the diagnostics.
+    const code = (error as { code?: unknown } | null)?.code
+    throw new HostNotEnrolledError(ENROLLMENT_INCOMPLETE_MESSAGE, {
+      reason: 'incomplete',
+      ...(typeof code === 'string' && { lastErrorCode: code }),
+    })
   } finally {
     client.close()
   }
