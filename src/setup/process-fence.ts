@@ -13,6 +13,19 @@ const WINDOWS_CIM_TIMEOUT_MS = 45_000
 
 const HOSTS = new Set(['opencode', 'litecode', 'opencode2', 'pi'])
 const RUNTIMES = new Set(['node', 'bun'])
+
+/**
+ * The fence's one Windows query. It selects every image whose name starts
+ * with a host or runtime name, a superset of what `hostName` can recognize
+ * from an image (it strips only an extension), and returns image name, PID
+ * and command line from one snapshot. The answer always carries
+ * `complete: true`, so an empty or cut-off answer is never mistaken for an
+ * empty process list.
+ */
+const WINDOWS_FENCE_FILTER = [...HOSTS, ...RUNTIMES]
+  .map((name) => `Name LIKE '${name}%'`)
+  .join(' OR ')
+const WINDOWS_FENCE_QUERY = `$ErrorActionPreference = 'Stop'; $rows = @(Get-CimInstance Win32_Process -Filter "${WINDOWS_FENCE_FILTER}" | Select-Object Name,ProcessId,CommandLine); ConvertTo-Json -Compress -Depth 3 -InputObject @{ complete = $true; processes = $rows }`
 const PI_SCRIPT_PATTERN =
   /(?:^|[/\\])pi-coding-agent[/\\]dist[/\\](?:(?:bundle|bun)[/\\])?cli\.m?js$/i
 
@@ -152,15 +165,6 @@ export class ProcessFenceViolationError extends Error {
   }
 }
 
-/**
- * One fence's last Windows command-line answer: the Node and Bun processes it
- * covered (`key`) and the command line it found for each PID.
- */
-export interface RuntimeCommandCache {
-  key?: string
-  commands?: Map<number, string>
-}
-
 /** List processes before filtering hosts; Windows PID 0 is a valid idle-process row. */
 export async function listSetupProcesses(
   runner: CommandRunner = defaultCommandRunner,
@@ -177,12 +181,12 @@ export async function listSetupProcesses(
      */
     selfPid?: number
     /**
-     * Where one fence keeps its last Windows command-line answer. When the
-     * Node and Bun processes in `tasklist` are exactly the ones that answer
-     * covered, by PID and image name, their command lines are reused instead
-     * of starting PowerShell again.
+     * Windows only: answer with one CIM query for the images a fence cares
+     * about (host programs, Node and Bun), returning image name, PID and
+     * command line together, instead of `tasklist` followed by a second CIM
+     * query. The result lists only those processes.
      */
-    runtimeCommands?: RuntimeCommandCache
+    hostImagesOnly?: boolean
   } = {},
 ): Promise<Array<{ pid: number; command: string }>> {
   const windows = (options.platform ?? process.platform) === 'win32'
@@ -228,6 +232,53 @@ export async function listSetupProcesses(
     }
   }
   try {
+    if (windows && options.hostImagesOnly) {
+      const details = await inspect(
+        'CIM',
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_FENCE_QUERY],
+        WINDOWS_CIM_TIMEOUT_MS,
+      )
+      if (details.exitCode !== 0) throw new ProcessInspectionError(inspection)
+      // An empty or truncated answer fails to parse or lacks `complete`, so a
+      // query that silently printed nothing is never read as "no hosts".
+      const value: unknown = JSON.parse(details.stdout)
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('complete' in value) ||
+        value.complete !== true ||
+        !('processes' in value)
+      )
+        throw new ProcessInspectionError(inspection)
+      const listed = value.processes
+      const rows: unknown[] =
+        listed === null ? [] : Array.isArray(listed) ? listed : [listed]
+      const processes: Array<{ pid: number; command: string }> = []
+      for (const row of rows) {
+        if (
+          !row ||
+          typeof row !== 'object' ||
+          !('Name' in row) ||
+          typeof row.Name !== 'string' ||
+          !('ProcessId' in row) ||
+          !Number.isSafeInteger(row.ProcessId) ||
+          (row.ProcessId as number) < 0 ||
+          !('CommandLine' in row)
+        )
+          throw new ProcessInspectionError(inspection)
+        const pid = row.ProcessId as number
+        // As with tasklist, a host program is judged by its image name, and
+        // a Node or Bun process by the script on its command line. A runtime
+        // whose command line cannot be read cannot be cleared.
+        if (!/^(?:node|bun)\.exe$/i.test(row.Name))
+          processes.push({ pid, command: row.Name })
+        else if (typeof row.CommandLine === 'string')
+          processes.push({ pid, command: row.CommandLine })
+        else if (pid !== selfPid) throw new ProcessInspectionError(inspection)
+      }
+      return processes
+    }
     const result = await inspect(
       windows ? 'tasklist' : 'ps',
       windows ? 'tasklist.exe' : 'ps',
@@ -265,19 +316,6 @@ export async function listSetupProcesses(
         entry.pid !== selfPid && /^(?:node|bun)\.exe$/i.test(entry.command),
     )
     if (windows && runtimes.length && options.inspectRuntimes !== false) {
-      // Any Node or Bun process that appeared, exited, or now holds a PID
-      // under another image name changes this key, so a host started since
-      // the last listing is always queried and caught.
-      const key = runtimes
-        .map((entry) => `${entry.pid}:${entry.command.toLowerCase()}`)
-        .sort()
-        .join('\n')
-      const cached = options.runtimeCommands
-      if (cached?.key === key && cached.commands) {
-        for (const entry of runtimes)
-          entry.command = cached.commands.get(entry.pid) ?? ''
-        return processes
-      }
       const details = await inspect(
         'CIM',
         'powershell.exe',
@@ -312,12 +350,6 @@ export async function listSetupProcesses(
         // A process absent from the later CIM snapshot already exited.
         entry.command = commands.get(entry.pid) ?? ''
       }
-      if (cached) {
-        cached.key = key
-        cached.commands = new Map(
-          runtimes.map((entry) => [entry.pid, entry.command]),
-        )
-      }
     }
     return processes
   } catch (error) {
@@ -333,13 +365,14 @@ export function createProcessFence(
   const selfPid = options.selfPid ?? process.pid
   const isHost = (entry: { pid: number; command: string }) =>
     entry.pid !== selfPid && hostName(entry.command) !== null
-  // Lives as long as this fence, which setup creates once per run, so an
-  // answer is never reused across runs.
-  const runtimeCommands: RuntimeCommandCache = {}
   return {
     async listRunningHosts(env?: SetupEnvironment) {
       return (
-        await listSetupProcesses(runner, { ...options, env, runtimeCommands })
+        await listSetupProcesses(runner, {
+          ...options,
+          env,
+          hostImagesOnly: true,
+        })
       ).filter(isHost)
     },
     async previewRunningHosts(env?: SetupEnvironment) {

@@ -14,6 +14,22 @@ import {
 // every fence here is told the running process has a PID no row can have.
 const NO_SELF = -1
 
+/** The fence's CIM answer, as its PowerShell query prints it. */
+function cimAnswer(processes: unknown[]): string {
+  return JSON.stringify({ complete: true, processes })
+}
+
+// Answers that never reached the end of the query: empty, cut off, or
+// missing the `complete` marker. None of them may read as "no hosts".
+const WITHOUT_COMPLETION_MARKER = [
+  '',
+  'null',
+  '{"complete":true,"processes":[{"Name":"opencode.exe","Pro',
+  '{"processes":[]}',
+  '{"complete":false,"processes":[]}',
+  '[]',
+]
+
 describe('setup process fence', () => {
   test('Windows CIM uses a 45 second one-shot budget and still refuses past it', async () => {
     for (const durationMs of [20_000, 45_001]) {
@@ -21,15 +37,6 @@ describe('setup process fence', () => {
       const runner: CommandRunner = {
         async run(file, _args, options) {
           calls.push(file)
-          if (file === 'tasklist.exe') {
-            expect(options?.timeoutMs).toBeUndefined()
-            return {
-              exitCode: 0,
-              stdout: '"node.exe","111","Console","1","30 K"\n',
-              stderr: '',
-              durationMs: 300,
-            }
-          }
           expect(file).toBe('powershell.exe')
           const timedOut = durationMs > (options?.timeoutMs ?? 15_000)
           return {
@@ -39,11 +46,14 @@ describe('setup process fence', () => {
             durationMs,
             stdout: timedOut
               ? ''
-              : JSON.stringify({
-                  ProcessId: 111,
-                  CommandLine:
-                    'node C:\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js --secret hidden',
-                }),
+              : cimAnswer([
+                  {
+                    Name: 'node.exe',
+                    ProcessId: 111,
+                    CommandLine:
+                      'node C:\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js --secret hidden',
+                  },
+                ]),
             stderr: timedOut ? 'secret stderr' : '',
           }
         },
@@ -75,7 +85,8 @@ describe('setup process fence', () => {
           )
         }
       }
-      expect(calls).toEqual(['tasklist.exe', 'powershell.exe'])
+      // A fence is one CIM query: no tasklist pass before it.
+      expect(calls).toEqual(['powershell.exe'])
     }
   })
 
@@ -187,22 +198,27 @@ describe('setup process fence', () => {
       { pid: process.pid, command: 'node.exe' },
     ])
     expect(
-      await createProcessFence(runner, {
-        platform: 'win32',
-      }).listRunningHosts(),
+      await createProcessFence(
+        {
+          async run(file) {
+            expect(file).toBe('powershell.exe')
+            return {
+              exitCode: 0,
+              stdout: cimAnswer([
+                { Name: 'node.exe', ProcessId: process.pid, CommandLine: null },
+              ]),
+              stderr: '',
+            }
+          },
+        },
+        { platform: 'win32' },
+      ).listRunningHosts(),
     ).toEqual([])
   })
 
   test('Windows inspects Node and Bun command lines for host entry scripts', async () => {
     const runner = {
       async run(file: string, args: readonly string[]) {
-        if (file === 'tasklist.exe')
-          return {
-            exitCode: 0,
-            stdout:
-              '"node.exe","111","Console","1","30 K"\n"bun.exe","112","Console","1","20 K"\n"node.exe","113","Console","1","20 K"\n',
-            stderr: '',
-          }
         expect(file).toBe('powershell.exe')
         expect(args.slice(0, 3)).toEqual([
           '-NoProfile',
@@ -211,18 +227,21 @@ describe('setup process fence', () => {
         ])
         return {
           exitCode: 0,
-          stdout: JSON.stringify([
+          stdout: cimAnswer([
             {
+              Name: 'node.exe',
               ProcessId: 111,
               CommandLine:
                 '"C:\\node.exe" "C:\\npm\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js" --secret hidden',
             },
             {
+              Name: 'bun.exe',
               ProcessId: 112,
               CommandLine:
                 '"C:\\bun.exe" "C:\\npm\\node_modules\\opencode-ai\\bin\\opencode" --secret hidden',
             },
             {
+              Name: 'node.exe',
               ProcessId: 113,
               CommandLine: 'node.exe C:\\work\\ping.js --title pi',
             },
@@ -281,19 +300,22 @@ describe('setup process fence', () => {
       { exitCode: 0, stdout: 'broken JSON', stderr: '' },
       {
         exitCode: 0,
-        stdout: '{"ProcessId":111,"CommandLine":null}',
+        stdout: cimAnswer([
+          { Name: 'node.exe', ProcessId: 111, CommandLine: null },
+        ]),
         stderr: '',
       },
+      { exitCode: 0, stdout: cimAnswer([{ Name: 'node.exe' }]), stderr: '' },
+      ...WITHOUT_COMPLETION_MARKER.map((stdout) => ({
+        exitCode: 0,
+        stdout,
+        stderr: '',
+      })),
     ]) {
       const runner = {
         async run(file: string) {
-          return file === 'tasklist.exe'
-            ? {
-                exitCode: 0,
-                stdout: '"node.exe","111","Console","1","30 K"\n',
-                stderr: '',
-              }
-            : result
+          expect(file).toBe('powershell.exe')
+          return result
         },
       }
       await expect(
@@ -305,7 +327,7 @@ describe('setup process fence', () => {
     }
   })
 
-  test('a runtime exiting between Windows snapshots is not a running host', async () => {
+  test('a runtime exiting between the tasklist and CIM snapshots of a full listing is not a running host', async () => {
     const runner = {
       async run(file: string) {
         return file === 'tasklist.exe'
@@ -318,11 +340,8 @@ describe('setup process fence', () => {
       },
     }
     expect(
-      await createProcessFence(runner, {
-        selfPid: NO_SELF,
-        platform: 'win32',
-      }).listRunningHosts(),
-    ).toEqual([])
+      await listSetupProcesses(runner, { selfPid: NO_SELF, platform: 'win32' }),
+    ).toEqual([{ pid: 111, command: '' }])
   })
 
   test('POSIX runtime entry scripts for Pi are recognized without exposing arguments', async () => {
@@ -375,7 +394,7 @@ describe('setup process fence', () => {
     }
   })
 
-  test('Windows tasklist detects hosts with comma-containing memory columns', async () => {
+  test('a Windows preview detects hosts in tasklist rows with comma-containing memory columns', async () => {
     const fence = createProcessFence(
       {
         async run(file, args) {
@@ -391,9 +410,13 @@ describe('setup process fence', () => {
       },
       { selfPid: NO_SELF, platform: 'win32' },
     )
-    await expect(assertHostsStopped(fence)).rejects.toThrow(
-      'OpenCode or Pi processes',
-    )
+    expect(await fence.previewRunningHosts?.()).toEqual({
+      hosts: [
+        { pid: 100, command: 'opencode.exe' },
+        { pid: 101, command: 'pi.exe' },
+      ],
+      uncheckedRuntimes: 0,
+    })
   })
 
   test('failed or malformed inspection is not proof hosts are stopped', async () => {
@@ -487,15 +510,16 @@ describe('setup process fence', () => {
 })
 
 /**
- * A Windows process table a test edits between listings. `tasklist` lists every
- * row; the CIM query answers with the command line of each Node and Bun row.
+ * A Windows process table a test edits between fences. The fake PowerShell
+ * applies the query's own `Name LIKE 'prefix%'` filter to it, the way WQL
+ * matches (ignoring case), so a test sees only what the real query selects.
  */
 function windowsTable(
-  rows: Array<{ image: string; pid: number; command: string }>,
+  rows: Array<{ image: string; pid: number; command: string | null }>,
 ) {
   const calls = { tasklist: 0, powershell: 0 }
   const runner: CommandRunner = {
-    async run(file) {
+    async run(file, args, options) {
       if (file === 'tasklist.exe') {
         calls.tasklist++
         return {
@@ -507,13 +531,25 @@ function windowsTable(
         }
       }
       expect(file).toBe('powershell.exe')
+      expect(options?.timeoutMs).toBe(45_000)
       calls.powershell++
+      const prefixes = [
+        ...(args.at(-1) ?? '').matchAll(/Name LIKE '([^'%]+)%'/g),
+      ].map((match) => (match[1] ?? '').toLowerCase())
       return {
         exitCode: 0,
-        stdout: JSON.stringify(
+        stdout: cimAnswer(
           rows
-            .filter((row) => /^(?:node|bun)\.exe$/.test(row.image))
-            .map((row) => ({ ProcessId: row.pid, CommandLine: row.command })),
+            .filter((row) =>
+              prefixes.some((prefix) =>
+                row.image.toLowerCase().startsWith(prefix),
+              ),
+            )
+            .map((row) => ({
+              Name: row.image,
+              ProcessId: row.pid,
+              CommandLine: row.command,
+            })),
         ),
         stderr: '',
       }
@@ -532,43 +568,28 @@ const OPENCODE_NODE = {
   pid: 222,
   command: '"C:\\node.exe" "C:\\npm\\node_modules\\opencode-ai\\bin\\opencode"',
 }
+const BUSY_SYSTEM = [
+  { image: 'System Idle Process', pid: 0, command: null },
+  { image: 'svchost.exe', pid: 4, command: null },
+  { image: 'explorer.exe', pid: 5, command: 'explorer.exe' },
+]
 
-describe('Windows command-line answers within one setup run', () => {
-  test('an unchanged set of Node and Bun processes starts PowerShell once across many listings', async () => {
-    const table = windowsTable([
-      { image: 'System Idle Process', pid: 0, command: '' },
-      IDLE_NODE,
-      { image: 'bun.exe', pid: 112, command: 'bun.exe C:\\work\\tool.ts' },
-    ])
-    const fence = createProcessFence(table.runner, {
-      selfPid: NO_SELF,
-      platform: 'win32',
-    })
-    for (let tick = 0; tick < 10; tick++)
-      expect(await fence.listRunningHosts()).toEqual([])
-    expect(table.calls).toEqual({ tasklist: 10, powershell: 1 })
+describe('Windows fence is one CIM query', () => {
+  test('each fence spawns exactly one PowerShell and no tasklist, with or without Node running', async () => {
+    for (const rows of [BUSY_SYSTEM, [...BUSY_SYSTEM, IDLE_NODE]]) {
+      const table = windowsTable(rows)
+      const fence = createProcessFence(table.runner, {
+        selfPid: NO_SELF,
+        platform: 'win32',
+      })
+      for (let call = 0; call < 5; call++)
+        expect(await fence.listRunningHosts()).toEqual([])
+      expect(table.calls).toEqual({ tasklist: 0, powershell: 5 })
+    }
   })
 
-  test('a new Node PID in place of an exited one queries again and is caught', async () => {
-    const rows = [IDLE_NODE]
-    const table = windowsTable(rows)
-    const fence = createProcessFence(table.runner, {
-      selfPid: NO_SELF,
-      platform: 'win32',
-    })
-    expect(await fence.listRunningHosts()).toEqual([])
-    expect(await fence.listRunningHosts()).toEqual([])
-    // The idle Node process exits and OpenCode starts under a new PID: the
-    // image names alone are unchanged.
-    rows.splice(0, rows.length, OPENCODE_NODE)
-    expect((await fence.listRunningHosts()).map((host) => host.pid)).toEqual([
-      222,
-    ])
-    expect(table.calls.powershell).toBe(2)
-  })
-
-  test('a new Node PID beside the known ones queries again and is caught', async () => {
-    const rows = [IDLE_NODE]
+  test('a Node host started after the last fence is caught on the next one', async () => {
+    const rows = [...BUSY_SYSTEM, IDLE_NODE]
     const table = windowsTable(rows)
     const fence = createProcessFence(table.runner, {
       selfPid: NO_SELF,
@@ -577,39 +598,51 @@ describe('Windows command-line answers within one setup run', () => {
     expect(await fence.listRunningHosts()).toEqual([])
     rows.push(OPENCODE_NODE)
     await expect(assertHostsStopped(fence)).rejects.toThrow('PID 222: opencode')
-    expect(table.calls.powershell).toBe(2)
+    // In place of an exited one, under the same image name.
+    rows.splice(rows.indexOf(IDLE_NODE), 1)
+    expect((await fence.listRunningHosts()).map((host) => host.pid)).toEqual([
+      222,
+    ])
   })
 
-  test('a PID reused by a different runtime image queries again', async () => {
-    const rows = [IDLE_NODE]
-    const table = windowsTable(rows)
+  test('the query selects every image a host or runtime runs under, whatever its case', async () => {
+    const rows = [
+      ...BUSY_SYSTEM,
+      // A host program is judged by its image name; another user's process
+      // has no readable command line and needs none.
+      { image: 'OpenCode.exe', pid: 301, command: null },
+      { image: 'opencode2.exe', pid: 302, command: null },
+      { image: 'litecode.exe', pid: 303, command: null },
+      { image: 'pi.exe', pid: 304, command: null },
+      {
+        image: 'BUN.EXE',
+        pid: 305,
+        command:
+          '"C:\\bun.exe" "C:\\npm\\node_modules\\opencode-ai\\bin\\opencode"',
+      },
+      // Matched by the query's prefixes, then cleared as before.
+      { image: 'pip.exe', pid: 306, command: null },
+      { image: 'nodemon-helper.exe', pid: 307, command: null },
+    ]
+    const fence = createProcessFence(windowsTable(rows).runner, {
+      selfPid: NO_SELF,
+      platform: 'win32',
+    })
+    expect((await fence.listRunningHosts()).map((host) => host.pid)).toEqual([
+      301, 302, 303, 304, 305,
+    ])
+  })
+
+  test('a dry run still lists with tasklist alone', async () => {
+    const table = windowsTable([...BUSY_SYSTEM, IDLE_NODE, OPENCODE_NODE])
     const fence = createProcessFence(table.runner, {
       selfPid: NO_SELF,
       platform: 'win32',
     })
-    expect(await fence.listRunningHosts()).toEqual([])
-    rows.splice(0, rows.length, {
-      image: 'bun.exe',
-      pid: 111,
-      command:
-        '"C:\\bun.exe" "C:\\npm\\node_modules\\opencode-ai\\bin\\opencode"',
+    expect(await fence.previewRunningHosts?.()).toEqual({
+      hosts: [],
+      uncheckedRuntimes: 2,
     })
-    expect((await fence.listRunningHosts()).map((host) => host.pid)).toEqual([
-      111,
-    ])
-    expect(table.calls.powershell).toBe(2)
-  })
-
-  test('each fence keeps its own answer, so a new setup run queries again', async () => {
-    const table = windowsTable([IDLE_NODE])
-    for (let run = 0; run < 2; run++) {
-      const fence = createProcessFence(table.runner, {
-        selfPid: NO_SELF,
-        platform: 'win32',
-      })
-      await fence.listRunningHosts()
-      await fence.listRunningHosts()
-    }
-    expect(table.calls.powershell).toBe(2)
+    expect(table.calls).toEqual({ tasklist: 1, powershell: 0 })
   })
 })
