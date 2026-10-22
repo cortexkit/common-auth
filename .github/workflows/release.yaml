@@ -10,13 +10,27 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  # The full CI suite (build, typecheck, compatibility checks, lint, tests,
-  # source evidence, the real OpenCode 2 placement run) on the exact tagged
-  # commit. Publishing cannot start unless all of it passes.
-  ci:
-    uses: ./.github/workflows/ci.yml
+  # Release tags reuse the successful main-push checks for this exact commit.
+  verify-ci:
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Require successful CI and relevant Windows checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          TARGET_SHA: ${{ github.sha }}
+        run: node .github/scripts/verify-release-ci.mjs
   publish:
-    needs: ci
+    needs: verify-ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
