@@ -7639,3 +7639,47 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/insula.test
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^an\saccount\squota\swrite\sis\srefused\sfor\sanother\saccount\sor\san\sunbound\sroute$']
 expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'setup-enroll-unknown-method-terminal'
+guards = 'a vault without the enrollment ceremony ends setup after one proposal with the fixed unsupported-vault message, instead of re-proposing for the whole wait and then reporting a request that was never created'
+file = 'src/claustrum/enrollment.ts'
+old = '''  UNSUPPORTED_ENROLLMENT_CODE,
+  'invalid_params','''
+new = '''  // NON-VACUITY BREAK: unknown_method follows the client's retry action again.
+  'invalid_params','''
+test_file = 'test/setup/enroll.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/enroll.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/enroll.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\senrollment\swait\sa\sproposal\srefused\swith\sunknown_method\sstops\safter\sone\sattempt\swith\sthe\sfixed\smessage$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'setup-windows-cim-answer-keyed-on-pids'
+guards = 'a reused Windows command-line answer is keyed on each Node and Bun PID, so OpenCode started under a new PID in place of an exited Node process is queried and caught on the next fence'
+file = 'src/setup/process-fence.ts'
+old = '        .map((entry) => `${entry.pid}:${entry.command.toLowerCase()}`)'
+new = '        .map((entry) => entry.command.toLowerCase()) // NON-VACUITY BREAK: image names only, PIDs ignored.'
+test_file = 'test/setup/fence.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/setup/fence.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/fence.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Windows\scommand-line\sanswers\swithin\sone\ssetup\srun\sa\snew\sNode\sPID\sin\splace\sof\san\sexited\sone\squeries\sagain\sand\sis\scaught$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'fs-windows-private-files-addon-must-load'
+guards = 'on Windows a private-files addon that cannot load refuses every private-file operation with ERR_PRIVATE_FILES_UNAVAILABLE and writes nothing, instead of surfacing as an unrelated security refusal'
+file = 'src/fs/private-files.ts'
+old = '      if (windowsPrivateFiles) await assertNativeAddonLoads(api)'
+new = '      if (windowsPrivateFiles && !api) await assertNativeAddonLoads(api) // NON-VACUITY BREAK: trust the platform, not the loaded addon.'
+test_file = 'test/fs/windows-addon-unavailable.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/fs/windows-addon-unavailable.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/fs/windows-addon-unavailable.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Windows\srefuses\sprivate\sfiles\swith\sERR_PRIVATE_FILES_UNAVAILABLE\swhen\sthe\snative\saddon\scannot\sload,\swriting\snothing$']
+expect_message = 'expect(received).toBe(expected)'
