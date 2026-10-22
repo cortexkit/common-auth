@@ -55,8 +55,9 @@ export type HostNotEnrolledReason =
  * never created one, or approval never came before setup stopped waiting.
  * Setup can then report the host as not connected without reading its files.
  * The message is fixed text built only from vetted values, never from what
- * the vault or client threw. `lastErrorCode` is the vault's last refusal code,
- * for diagnostics; it carries no secret.
+ * the vault or client threw. `lastErrorCode` is the last enrollment error code
+ * setup saw, from the vault or from the client's transport (for example
+ * `transport_error`), for diagnostics; it carries no secret.
  */
 export class HostNotEnrolledError extends Error {
   readonly reason: HostNotEnrolledReason
@@ -105,8 +106,8 @@ export async function connectSetupHost(
       paths,
       // Each tick of the wait below checks the fence once, just before
       // reconcile proposes or polls. Checking again inside every vault call
-      // doubled the process listings per tick, which on Windows means a
-      // second tasklist and PowerShell query each second.
+      // doubled the process listings per tick, and on Windows each listing
+      // starts PowerShell.
       client,
       writeTokenFile: async (path, file) => {
         // Writing the token is what connects the host: check once more.
@@ -162,7 +163,7 @@ export async function connectSetupHost(
           )
         }
       } else if (status.state === 'pending' && status.retryCode) {
-        // The vault did not create the request. Back off instead of asking
+        // No request id came back. Back off instead of asking
         // again every second, and say so once per distinct code.
         pause =
           PROPOSE_BACKOFF_MS[

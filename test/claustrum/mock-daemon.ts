@@ -164,8 +164,8 @@ export interface MockDaemon {
    * `unknown_method` answers the way every published claustrum vault does,
    * since none has the ceremony yet: the daemon's transport Error frame with
    * no class. `unknown_method-then-unreachable` does the same and then refuses
-   * every new connection, so a client that reconnects after the refusal
-   * fails to.
+   * every new connection, so a client that tries to reconnect after the
+   * refusal cannot.
    */
   enrollment: 'supported' | 'unknown_method' | 'unknown_method-then-unreachable'
   /**
