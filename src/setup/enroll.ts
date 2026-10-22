@@ -18,7 +18,7 @@ const ENROLLMENT_INCOMPLETE_MESSAGE =
 
 /** Fixed text: no version, host or account detail, so it is safe to print anywhere. */
 export const UNSUPPORTED_VAULT_MESSAGE =
-  'This Claustrum vault does not support connecting plugins yet, so setup cannot connect to it. Run setup without --claustrum to use local accounts.'
+  'This Claustrum vault is too old to connect plugins. Update Claustrum to v0.2.0 or newer, or run setup without --claustrum to use local accounts.'
 
 /**
  * The longest setup waits, in total, for the vault to create the enrollment

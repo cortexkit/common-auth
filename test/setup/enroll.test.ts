@@ -97,7 +97,7 @@ describe('setup enrollment wait', () => {
     )
     expect(error).toBeInstanceOf(HostNotEnrolledError)
     expect(error.message).toBe(
-      'This Claustrum vault does not support connecting plugins yet, so setup cannot connect to it. Run setup without --claustrum to use local accounts.',
+      'This Claustrum vault is too old to connect plugins. Update Claustrum to v0.2.0 or newer, or run setup without --claustrum to use local accounts.',
     )
     expect(error).toMatchObject({
       reason: 'unsupported-vault',
@@ -127,7 +127,7 @@ describe('setup enrollment wait', () => {
       runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: term }),
     )
     expect(error.message).toBe(
-      'This Claustrum vault does not support connecting plugins yet, so setup cannot connect to it. Run setup without --claustrum to use local accounts.',
+      'This Claustrum vault is too old to connect plugins. Update Claustrum to v0.2.0 or newer, or run setup without --claustrum to use local accounts.',
     )
     expect(setupEnrollment(error)).toEqual([
       { host: 'opencode', outcome: 'not-enrolled' },
