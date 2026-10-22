@@ -68,7 +68,6 @@ jobs:
   # named test to fail. A pull request replays the rows its diff selects.
   mutations-pr:
     if: github.event_name == 'pull_request'
-    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -104,13 +103,12 @@ jobs:
           if-no-files-found: ignore
 
   # Replays every row of mutations.toml on a push to main, and every row with
-  # --broad nightly or on demand. release.yaml reuses this workflow through
-  # workflow_call for a tag push; github.ref is then refs/tags/v..., which the
-  # `if` below excludes, so a release waits only for the check and placement
-  # jobs, never for a mutation replay.
+  # --broad nightly or on demand. The mutation jobs run alongside `check` rather
+  # than after it: each sets itself up from scratch, so waiting on `check` only
+  # added its time to every run's wall time. A release does not rerun any of
+  # this; it verifies that this run passed on the tagged commit.
   mutations-main:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
