@@ -86,7 +86,7 @@ test('a vault that answers the proposal with unknown_method stops setup after on
   )
   expect(error).toBeInstanceOf(HostNotEnrolledError)
   expect(error.message).toBe(
-    'This Claustrum vault is too old to connect plugins. Update Claustrum to v0.2.0 or newer, or run setup without --claustrum to use local accounts.',
+    'This Claustrum vault is too old to connect plugins. Run ck upgrade to move to Claustrum v0.2.0 or newer (read "Upgrading from v0.1.3" in its release notes first), or run setup without --claustrum to use local accounts.',
   )
   expect(error).toMatchObject({
     reason: 'unsupported-vault',
@@ -165,7 +165,7 @@ test('an unknown_method proposal preserves each client version’s failure behav
 
   if (clientKeepsDefinitiveErrors) {
     expect(error.message).toBe(
-      'This Claustrum vault is too old to connect plugins. Update Claustrum to v0.2.0 or newer, or run setup without --claustrum to use local accounts.',
+      'This Claustrum vault is too old to connect plugins. Run ck upgrade to move to Claustrum v0.2.0 or newer (read "Upgrading from v0.1.3" in its release notes first), or run setup without --claustrum to use local accounts.',
     )
     expect(error).toMatchObject({
       reason: 'unsupported-vault',
