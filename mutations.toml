@@ -654,9 +654,9 @@ expect_message = 'toMatchObject'
 
 [[control]]
 id = 'pool-quota-lock-timeout-retains-mailbox'
-guards = 'detached lock timeouts retain all quota fields for retry'
+guards = 'detached lock timeouts retain every queued quota reading for retry'
 file = 'src/store/quota-writer.ts'
-old = '// Retain the mailbox on failure, including fresher fields queued meanwhile.'
+old = '// Retain the mailbox on failure, including fresher readings queued meanwhile.'
 new = 'this.pending.clear() // NON-VACUITY BREAK: drop quota on lock timeout.'
 test_file = 'test/store/quota-coalescer.test.ts'
 runner = 'command'
