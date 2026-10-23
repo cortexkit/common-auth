@@ -90,7 +90,8 @@ function executable(path: string) {
 
 /**
  * The `opencode2` launchers npm created and the file the package's `bin`
- * entry names, with each launcher's first lines, for failure reports.
+ * entry names, with the last lines of each small text launcher, for failure
+ * reports.
  */
 function describeCliResolution(cliDir: string) {
   const bin = join(cliDir, 'node_modules', '.bin')
@@ -260,7 +261,8 @@ async function waitForServer(
 
 /**
  * Runs one CLI command to completion. After 90 seconds, or when the scenario
- * is stopped, its process tree is ended and its exit is recorded as it was.
+ * is stopped, the command is stopped with stopHost (on Windows together with
+ * every process it started) and whatever exit status it reached is returned.
  */
 async function runCli(
   name: string,
@@ -558,6 +560,20 @@ async function runScenario(
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line) as PluginEvent)
+  try {
+    await rm(root, {
+      recursive: true,
+      force: true,
+      // Windows releases a killed process's files a moment after it exits.
+      maxRetries: 10,
+      retryDelay: 200,
+    })
+  } catch (error) {
+    // A process that outlived cleanup still holds files in the profile. The
+    // report below must still print, so this is recorded, not thrown.
+    phases.note(`profile removal failed: ${String(error)}`)
+    failure ??= error
+  }
   const diagnostics = [
     `--- phases (stopped at: ${phases.current}) ---\n${phases}`,
     `cli: ${cli}\n${cliResolution}`,
@@ -568,13 +584,6 @@ async function runScenario(
     ...(options.vault ? [`credentials: ${JSON.stringify(credentials)}`] : []),
     ...run.hosts.map((host) => describeHost(host)),
   ].join('\n')
-  await rm(root, {
-    recursive: true,
-    force: true,
-    // Windows releases a killed process's files a moment after it exits.
-    maxRetries: 10,
-    retryDelay: 200,
-  })
   if (failure) {
     console.error(diagnostics)
     throw failure

@@ -1,11 +1,16 @@
 // Process handling for the OpenCode 2 placement test: spawning the CLI,
 // recording what each step reached, and stopping a whole process tree.
 //
-// Windows does not stop a process's children when the process is killed, and
-// any child that inherited the stdout or stderr pipe keeps it open. A test
-// that waits for that output to end then waits forever. Every wait here is
-// therefore bounded, and the Windows stop uses `taskkill /T /F`, which ends
-// the process together with everything it started.
+// On Windows npm's `opencode2.cmd` launcher runs the native `opencode.exe` as
+// a child of cmd.exe. Bun's `kill()` ends only cmd.exe: `opencode.exe` keeps
+// running, orphaned, holding the inherited stdout and stderr pipes and files
+// in the test profile. A harness that stopped the host with `kill()` and then
+// read its output to the end hung in its first test on every Windows CI run
+// (2 of 2); with the reads bounded, `kill()` still left the profile locked
+// (removing it failed with EACCES in every scenario). Stopping the host with
+// `taskkill /T /F`, which ends the process together with everything it
+// started, passes. Every wait here is bounded as well, so a process that
+// outlives its stop fails the scenario with a report instead of hanging it.
 import { spawnSync } from 'node:child_process'
 
 const IS_WINDOWS = process.platform === 'win32'
