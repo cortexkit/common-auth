@@ -1018,13 +1018,15 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           const checkRetryActive = assertActive
           rec.judged = true
           const attempt = rec.attempt
-          if (attempt && !rec.outputStarted && !rec.limit) {
-            const signal = adapter.limitFromError?.(draft.error, attempt)
-            if (signal) noteLimit(rec, signal, 'error')
+          if (attempt && !rec.outputStarted) {
+            if (!rec.limit) {
+              const signal = adapter.limitFromError?.(draft.error, attempt)
+              if (signal) noteLimit(rec, signal, 'error')
+            }
+            // Account selection must observe all feedback from the refused send.
+            if (rec.ended) await rec.ended
+            if (rec.limit) await rec.limit.delivered
           }
-          // Account selection must observe all feedback from the refused send.
-          if (rec.ended) await rec.ended
-          if (rec.limit) await rec.limit.delivered
           checkRetryActive()
           const { decision, reason } = await inChoiceOrder(
             rec.scope.sessionID,
