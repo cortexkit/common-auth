@@ -122,8 +122,11 @@ export class PullScheduler {
           cause,
         })
       }
-      await recordQuota(
-        rt,
+      const publish =
+        rt.publishQuota ??
+        ((rowId, attribution, value) =>
+          recordQuota(rt, rowId, attribution, value))
+      await publish(
         id,
         {
           credentialEpoch: request.credentialEpoch,

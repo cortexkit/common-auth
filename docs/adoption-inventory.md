@@ -1037,8 +1037,52 @@ Repository caller inventory (other plugins adopt this API outside this repositor
 | `test/claustrum/insula.test.ts` | Awaits consumer/direct enqueue acknowledgements; persisted counter/fence checks explicitly drain, while cache/routing checks observe memory immediately. |
 | `test/windows/claustrum-vault.mjs` | Awaits the consumer enqueue promise through its test-lifetime operation helper, then explicitly drains before checking persisted quota. |
 
-`PoolStore.recordQuota` (`src/store`, `src/auth-menu/accounts.ts` and store tests)
-is a separate API and is not changed by roster publication.
+**Opt-in local pool quota publication (next minor).** The separate `/store`
+API now offers the same detached field mailbox for local accounts:
+
+```ts
+const store = openPoolStore({
+  provider, configPath, statePath,
+  quota: quotaCodec,
+  coalesceQuota: true,
+  quotaDrainTimeoutMs: 1_000, // optional shutdown budget
+})
+await store.recordQuota(id, { credentialEpoch, identity }, observation)
+// At plugin unload, not after each request:
+await store.dispose() // or await store.close()
+```
+
+Without `coalesceQuota: true`, `recordQuota` still awaits its locked write exactly
+as before, including for opaque plugin codecs. Opting in requires `/quota`'s
+`QuotaObservation` format and a codec supporting independent field merges (normally
+`quotaCodec`, which uses `mergeQuotaObservation`). The existing `Promise<void>`
+signature is unchanged: current-row refusals still reject with the same
+`PoolOperationError` before enqueue, including stale epoch/identity, reserved,
+unbound, missing and invalid rows. Success means accepted into memory, **not a
+durable receipt**. Stop plugin producers before disposal; new opted-in quota
+calls after close reject. Provider pulls already in flight are not joined by
+disposal; use `pullsSettled()` separately if the host needs that join.
+
+Each opted-in store handle owns one mailbox and at most one flush/lock waiter,
+batching accounts in a single config transaction. Use one long-lived handle per
+local pool. Its `read()` and `load()` overlay pending quota immediately, including
+clearing `needsFirstReading`. Other handles/processes see only committed quota.
+Pending windows/coverage, spend budget, counters and credits retain their own
+timestamps; partial headers cannot erase poll-only fields, and late older polls
+lose to newer observations both in memory and against disk. Equal times use the
+last enqueue. Every field keeps its epoch/identity binding; different bindings
+never coalesce. The locked flush checks the current row again and drops a stale
+binding with one stable warning, `pool quota publication dropped; account binding
+changed`, rather than attaching it to a replacement.
+
+Lock attempts are capped at 100 ms for the detached writer only. Failed attempts
+keep all pending fields and retry with jittered exponential backoff, warning once
+per uninterrupted failure run. `close()` and `dispose()` are idempotent promises
+for a bounded drain (default one second). A timed-out drain logs the remaining
+account and field counts with `pool quota drain timed out; pending readings left`
+and stops retries; shutdown can lose those pending readings. They are no-ops for
+the immediate writer. The existing atomic config writer and its Windows private
+file handling are unchanged.
 
 **Optional insula background quota.** Supply `insula: { provider: 'codex' | 'claude' | 'antigravity', normalize(entry, context) }` to `ClaustrumConsumer<Q>`; `Q` is the plugin's snapshot type (defaults to `/quota`'s `QuotaObservation`). `context` exposes `fetchedAt` as epoch milliseconds and `source`, and the entry retains the original timestamp and open usage fields. A normalizer returns `Q`, or `undefined` to keep the plugin's own poll. `connectClaustrumScopedClient` supplies an optional `insula` transport without changing its scoped methods; custom scoped clients can supply `insula: { connectionFile, getUsage(), watchUsage? }`. The transport imports the `@cortexkit/subc-client` peer statically: claustrum-client already loads it with `/claustrum`, and a dynamic import would make a plugin's bundler emit a separate chunk that a running host can lose on rebuild. The transport opens the literal management surface `insula` on the same daemon connection file and bind identity, and reads the full `usage.get` envelope. The quota read uses a short-lived, separately owned socket; the scoped credential connection is untouched. It does not resolve a catalog claimant by capability and needs no grant beyond the enrolled principal.
 

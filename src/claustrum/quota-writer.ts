@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { createLogger } from '../logger/index.js'
 import { isQuotaObservation, type QuotaObservation } from '../quota/index.js'
+import { type QuotaField, quotaFields } from '../quota/pending.js'
 import {
   applyVaultQuota,
   mutateVaultRoster,
@@ -15,12 +16,7 @@ export type VaultQuotaPublication = {
   observation: QuotaObservation
 }
 
-type Field = {
-  at: number
-  order: number
-  publication: VaultQuotaPublication
-  priorReading?: VaultQuotaPublication
-}
+type Field = QuotaField<VaultQuotaPublication>
 type Pending = Map<string, Map<string, Field>>
 type Listener = (publication: VaultQuotaPublication) => void
 interface Writer {
@@ -75,67 +71,17 @@ export function retainVaultQuotaWriter(
     })())
 }
 
-// Split one observation into its independently dated parts: each rate-limit
-// window (scope and label), each covered-but-unread window, the budget, each
-// counter and the credits record. The mailbox keeps the newest of each part on
-// its own, so a later observation that carries only some parts can't erase an
-// older but still newest reading of another part, which is how
-// mergeQuotaObservation treats them on disk. Each key also carries the
-// receipt's identity, so the identity fence still applies to every part.
+// Each field retains the receipt fence as well as its independent timestamp.
 function fields(publication: VaultQuotaPublication): Map<string, Field> {
-  const result = new Map<string, Field>()
-  const { observation } = publication
-  const witness = JSON.stringify([
-    publication.routeId,
-    publication.receipt?.credentialId,
-    publication.receipt?.accountIdentitySource,
-    publication.receipt?.expectedAccountIdentity,
-  ])
-  const add = (key: string, at: number, part: QuotaObservation) =>
-    result.set(`${witness}:${key}`, {
-      at,
-      order: 0,
-      publication: { ...publication, observation: part },
-    })
-  const keyFor = (scope: string | undefined, label: string) =>
-    JSON.stringify([scope ?? 'all', label])
-  const read = new Set<string>()
-  for (const reading of observation.readings ?? []) {
-    const key = keyFor(reading.scope, reading.label)
-    read.add(key)
-    add(key, observation.checkedAt, {
-      checkedAt: observation.checkedAt,
-      readings: [{ ...reading }],
-    })
-  }
-  for (const pair of observation.coverage ?? []) {
-    const key = keyFor(pair.scope, pair.label)
-    if (!read.has(key))
-      add(key, observation.checkedAt, {
-        checkedAt: observation.checkedAt,
-        coverage: [{ ...pair }],
-      })
-  }
-  if (observation.budget)
-    add('budget', observation.checkedAt, {
-      checkedAt: observation.checkedAt,
-      budget: { ...observation.budget },
-    })
-  for (const [name, counter] of Object.entries(observation.counters ?? {})) {
-    add(`counter:${name}`, counter.checkedAt, {
-      checkedAt: observation.checkedAt,
-      counters: { [name]: { ...counter } },
-    })
-  }
-  if (observation.credits)
-    add('credits', observation.credits.checkedAt, {
-      checkedAt: observation.checkedAt,
-      credits: { ...observation.credits },
-    })
-  // Even an empty observation can bind an account proved by its receipt.
-  if (!result.size)
-    add('empty', observation.checkedAt, { checkedAt: observation.checkedAt })
-  return result
+  return quotaFields(
+    publication,
+    JSON.stringify([
+      publication.routeId,
+      publication.receipt?.credentialId,
+      publication.receipt?.accountIdentitySource,
+      publication.receipt?.expectedAccountIdentity,
+    ]),
+  )
 }
 
 /** Enqueue without filesystem work; each quota field retains its own receipt fence. */

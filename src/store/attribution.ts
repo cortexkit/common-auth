@@ -1,5 +1,10 @@
 import { PoolOperationError } from './errors.js'
-import { type Progress, toFailure, withTransaction } from './mutate.js'
+import {
+  type Progress,
+  type StoreContext,
+  toFailure,
+  withTransaction,
+} from './mutate.js'
 import { LockStack } from './refresh-lock.js'
 import {
   refusal,
@@ -7,7 +12,7 @@ import {
   type StoreRuntime,
   unknownRow,
 } from './runtime.js'
-import { isCredentialEpoch } from './schema.js'
+import { isCredentialEpoch, type PoolRow } from './schema.js'
 
 /**
  * What a pull or refresh captured about its row (named by id alongside) when
@@ -31,6 +36,62 @@ export interface Attribution {
   identity?: string
 }
 
+export function assertQuotaEpoch(id: string, attribution: Attribution): void {
+  if (!isCredentialEpoch(attribution?.credentialEpoch))
+    throw refusal(
+      'pull',
+      id,
+      'invalid-input',
+      'the credential epoch the reading was issued for must be a positive safe integer',
+    )
+}
+
+// Shared by preflight and the locked commit: accepting into memory must never
+// hide a refusal the immediate writer would have returned to its caller.
+export function assertQuotaRow(
+  id: string,
+  attribution: Attribution,
+  row: PoolRow | undefined,
+): asserts row is PoolRow {
+  if (!row) throw unknownRow('pull', id)
+  if (row.invalid)
+    throw refusal('pull', id, 'invalid-row', `row ${id} is invalid`)
+  if (!row.credential)
+    throw refusal('pull', id, 'no-credential', `row ${id} holds no credential`)
+  requireBound('pull', row)
+  if (
+    row.torn ||
+    !row.hasEntry ||
+    row.credentialEpoch !== attribution.credentialEpoch ||
+    row.identity !== attribution.identity
+  )
+    throw new PoolOperationError({
+      operation: 'pull',
+      rowId: id,
+      phase: 'pull',
+      retryable: true,
+      kind: 'attribution',
+      message: `quota for ${id} was issued for a credential the row no longer holds`,
+    })
+}
+
+export function mergedQuota(
+  ctx: StoreContext,
+  id: string,
+  stored: unknown,
+  observation: unknown,
+): unknown {
+  const merged = ctx.codec.merge(stored, observation)
+  if (!ctx.codec.validate(merged))
+    throw refusal(
+      'pull',
+      id,
+      'invalid-quota',
+      'the quota codec rejected the merged map',
+    )
+  return merged
+}
+
 /**
  * Merges a quota observation into a row's stored map under the store locks,
  * after attribution passes. Needs no row lock, so it is permitted from
@@ -46,13 +107,7 @@ export async function recordQuota(
   const locks = new LockStack(ctx.lockDefaults, ctx.lockEnv)
   const progress: Progress = { writes: 0 }
   try {
-    if (!isCredentialEpoch(attribution?.credentialEpoch))
-      throw refusal(
-        'pull',
-        id,
-        'invalid-input',
-        'the credential epoch the reading was issued for must be a positive safe integer',
-      )
+    assertQuotaEpoch(id, attribution)
     await withTransaction(
       ctx,
       locks,
@@ -61,43 +116,13 @@ export async function recordQuota(
       async (tx) => {
         tx.assertNotStaged(id)
         const row = tx.row(id)
-        if (!row) throw unknownRow('pull', id)
-        if (row.invalid)
-          throw refusal('pull', id, 'invalid-row', `row ${id} is invalid`)
         // A reading belongs to one (epoch, identity, credential). A row
         // holding no credential, or torn between the writes of a replace,
         // has no such triple on disk, so no reading is recorded for it.
-        if (!row.credential)
-          throw refusal(
-            'pull',
-            id,
-            'no-credential',
-            `row ${id} holds no credential`,
-          )
-        requireBound('pull', row)
+        assertQuotaRow(id, attribution, row)
         const entry = tx.entry(id)
-        if (
-          row.torn ||
-          !entry ||
-          entry.credentialEpoch !== attribution.credentialEpoch ||
-          row.identity !== attribution.identity
-        )
-          throw new PoolOperationError({
-            operation: 'pull',
-            rowId: id,
-            phase: 'pull',
-            retryable: true,
-            kind: 'attribution',
-            message: `quota for ${id} was issued for a credential the row no longer holds`,
-          })
-        const merged = ctx.codec.merge(entry.quota, observation)
-        if (!ctx.codec.validate(merged))
-          throw refusal(
-            'pull',
-            id,
-            'invalid-quota',
-            'the quota codec rejected the merged map',
-          )
+        if (!entry) throw unknownRow('pull', id)
+        const merged = mergedQuota(ctx, id, entry.quota, observation)
         tx.setEntry(id, { ...entry, quota: merged, needsFirstReading: false })
         await tx.commitConfig()
       },

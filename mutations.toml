@@ -68,6 +68,93 @@ test_count_pattern = 'Ran {count} test'
 expect_red = ['^four\sprocesses\suse\sfar\sfewer\sroster\slocks\sthan\squota\sreadings\swithout\scontention$']
 expect_message = 'expect(received)'
 
+# --- opt-in local pool quota publication ---
+[[control]]
+id = 'pool-quota-merge-pending-fields'
+guards = 'partial headers preserve poll-only pending windows, counters, credits and spend'
+file = 'src/store/quota-writer.ts'
+old = 'const previous = this.pending.get(key)'
+new = 'this.pending.clear(); const previous = this.pending.get(key) // NON-VACUITY BREAK: replace pending observations.'
+test_file = 'test/store/quota-coalescer.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pool\smailbox\smerges\spoll\sfields\sacross\sheaders\sin\smemory\sand\son\sdisk$']
+expect_message = 'toHaveLength'
+
+[[control]]
+id = 'pool-quota-observation-time'
+guards = 'late older polls cannot overwrite newer pending window readings'
+file = 'src/store/quota-writer.ts'
+old = 'if (!previous || field.at >= previous.at)'
+new = 'if (!previous || field.at <= previous.at) // NON-VACUITY BREAK: prefer older readings.'
+test_file = 'test/store/quota-coalescer.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pool\smailbox\skeeps\snewer\sobservation\stimes\swhen\san\solder\spoll\sarrives\slate$']
+expect_message = 'toMatchObject'
+
+[[control]]
+id = 'pool-quota-binding-fence'
+guards = 'queued quota cannot land on a replaced account or a new credential epoch'
+file = 'src/store/quota-writer.ts'
+old = 'assertQuotaRow(id, attribution, tx.row(id))'
+new = 'void attribution // NON-VACUITY BREAK: omit the locked binding fence.'
+test_file = 'test/store/quota-coalescer.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pool\smailbox\sfences\sreplaced\sidentities\sand\sepochs\swithout\smerging\sbindings$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'pool-quota-dispose-drain'
+guards = 'disposal starts and awaits publication of quota that has not reached its timer'
+file = 'src/store/quota-writer.ts'
+old = '''      this.flush()
+      await Promise.race(['''
+new = '''      // NON-VACUITY BREAK: leave the pending mailbox unflushed on disposal.
+      await Promise.race(['''
+test_file = 'test/store/quota-coalescer.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pool\smailbox\sdispose\sdrains\sand\sbounds\sa\slocked\sshutdown$']
+expect_message = 'toMatchObject'
+
+[[control]]
+id = 'pool-quota-lock-timeout-retains-mailbox'
+guards = 'detached lock timeouts retain all quota fields for retry'
+file = 'src/store/quota-writer.ts'
+old = '// Retain the mailbox on failure, including fresher fields queued meanwhile.'
+new = 'this.pending.clear() // NON-VACUITY BREAK: drop quota on lock timeout.'
+test_file = 'test/store/quota-coalescer.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^four\sprocesses\sretain\severy\spool\sreading\swith\szero\sreturned\slock\stimeouts\sversus\splain\swrites$']
+expect_message = 'toHaveLength'
+
+[[control]]
+id = 'pool-quota-opt-in-not-bypassed'
+guards = 'opting in avoids synchronous write-lock contention and batches concurrent producers'
+file = 'src/store/pool.ts'
+old = 'const quotaWriter = options.coalesceQuota'
+new = 'const quotaWriter = options.coalesceQuota && false // NON-VACUITY BREAK: bypass coalescing.'
+test_file = 'test/store/quota-coalescer.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^four\sprocesses\sretain\severy\spool\sreading\swith\szero\sreturned\slock\stimeouts\sversus\splain\swrites$']
+expect_message = 'toBe'
+
 # --- lease clock domains ---
 [[control]]
 id = 'pool-lease-injected-clock'
@@ -1747,10 +1834,9 @@ expect_message = '/\+\s+"candidate": true/'
 id = 'store-pull-refuses-torn-row'
 guards = 'a quota reading is never recorded against a row torn between the two writes of an operation (here a first-identity record)'
 file = 'src/store/attribution.ts'
-old = '''
-          row.torn ||
-          !entry ||'''
-new = '          !entry ||'
+old = '''    row.torn ||
+    !row.hasEntry ||'''
+new = '    !row.hasEntry || // NON-VACUITY BREAK: accept torn quota rows.'
 test_file = 'test/store/torn.test.ts'
 runner = "command"
 command = ["bun", "test", "test/store/torn.test.ts", "-t", "{test}"]

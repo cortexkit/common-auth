@@ -1,3 +1,4 @@
+import type { Attribution } from './attribution.js'
 import { type PoolOperation, PoolOperationError } from './errors.js'
 import {
   notReadyError,
@@ -24,6 +25,11 @@ export interface StoreRuntime {
   providerLock: PoolLockSpec
   rowLockOptions: Partial<PoolLockOptions>
   firePull(id: string, reason: PullReason): void
+  publishQuota?: (
+    id: string,
+    attribution: Attribution,
+    observation: unknown,
+  ) => Promise<void>
 }
 
 /**

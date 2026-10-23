@@ -22,6 +22,7 @@ import {
   publishRoster,
 } from './publication.js'
 import { type PullHook, PullScheduler } from './pull.js'
+import { PoolQuotaWriter } from './quota-writer.js'
 import {
   type ProviderRefresh,
   type RefreshOptions,
@@ -82,6 +83,16 @@ export interface OpenPoolStoreOptions {
   configPath: string
   statePath: string
   quota: QuotaCodec
+  /**
+   * Opt in to detached, field-coalesced QuotaObservation publication (use
+   * quotaCodec). Accepted readings appear in read/load immediately; the returned
+   * promise still rejects current-row refusals before queueing. Await dispose
+   * or close at shutdown to drain. Other codecs retain the immediate writer
+   * unless explicitly opted in and must support QuotaObservation field merges.
+   */
+  coalesceQuota?: boolean
+  /** Bounded quota drain on close/dispose, in milliseconds; defaults to 1,000. */
+  quotaDrainTimeoutMs?: number
   /**
    * The codec of the provider state kept beside each row's credential (see
    * `ProviderStateCodec`). Without it no row shows a provider state, and
@@ -292,6 +303,10 @@ export interface PoolStore {
     attribution: Attribution,
     observation: unknown,
   ): Promise<void>
+  /** Drain opted-in quota publication; subsequent coalesced readings refuse. Idempotent. */
+  close(): Promise<void>
+  /** Same bounded quota drain as close(). Does not wait for provider pull hooks. */
+  dispose(): Promise<void>
   /** Fires a pull for a row admission refused for want of a reading. */
   requestReading(id: string): void
   /** Resolves once every pull fired so far has settled. */
@@ -382,10 +397,27 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     rowLockOptions: options.rowLockOptions ?? {},
     firePull: (id: string, reason: PullReason) => pulls.fire(id, reason),
   }
+  const quotaWriter = options.coalesceQuota
+    ? new PoolQuotaWriter(rt, options.quotaDrainTimeoutMs)
+    : undefined
+  const record = (
+    id: string,
+    attribution: Attribution,
+    observation: unknown,
+  ) =>
+    quotaWriter
+      ? quotaWriter.record(id, attribution, observation)
+      : recordQuota(rt, id, attribution, observation)
+  rt.publishQuota = record
+  const overlay = (result: Awaited<ReturnType<typeof readPool>>) => {
+    if (result.status === 'ready' && quotaWriter)
+      return { ...result, rows: quotaWriter.overlay(result.rows) }
+    return result
+  }
 
   return {
     async load() {
-      const result = await readPool(ctx)
+      const result = overlay(await readPool(ctx))
       if (result.status === 'ready') {
         // A torn row is no candidate, but its pull is fired too: the pull
         // completes the row on disk before reading it, so an interrupted
@@ -401,7 +433,7 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
       return toLoad(result)
     },
     async read() {
-      return toLoad(await readPool(ctx))
+      return toLoad(overlay(await readPool(ctx)))
     },
     async initialize(input = {}) {
       return { status: await initializePool(ctx, input.dropKeys ?? []) }
@@ -427,8 +459,9 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
       recordRowIdentity(rt, id, identity, attribution, callOptions),
     refresh: (id, provider, callOptions) =>
       refreshRow(rt, id, provider, callOptions),
-    recordQuota: (id, attribution, observation) =>
-      recordQuota(rt, id, attribution, observation),
+    recordQuota: record,
+    close: () => quotaWriter?.close() ?? Promise.resolve(),
+    dispose: () => quotaWriter?.close() ?? Promise.resolve(),
     requestReading: (id) => pulls.fire(id, 'admission'),
     pullsSettled: () => pulls.settled(),
   }
