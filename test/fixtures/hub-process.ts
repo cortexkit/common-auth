@@ -1,10 +1,12 @@
 // One discovery hub in a process of its own, for the hub's two-process test.
-// It lists a fake vault kept in a JSON file the test rewrites, and answers one
-// command per stdin line with one JSON line on stdout:
-//   refresh  list once and commit every member; replies with alpha's roster
-//   hold     alpha's next commit stops inside its roster write lock, replies
-//            "holding", and goes on once the file at `goPath` exists
-//   exit     close the hub and exit
+// It lists a fake vault kept in a JSON file the test rewrites. Each stdin
+// line is a command:
+//   refresh  list once and commit every member; prints alpha's roster as one
+//            JSON line
+//   hold     arms the next refresh: alpha's commit stops inside its roster
+//            write lock, prints the line "holding", and goes on once the file
+//            at `goPath` exists
+//   exit     close the hub and exit, printing nothing
 import { existsSync, readFileSync, writeSync } from 'node:fs'
 import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
 import {

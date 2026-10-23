@@ -106,7 +106,8 @@ export interface ClaustrumDiscoveryHubOptions {
    * How often the hub ticks (default 5 s). A tick reads authority, installs
    * member roster files another writer changed under the same view, and
    * lists when a list is due: on every tick while no vault watch is open,
-   * while a member is pending (below), otherwise every five minutes as a
+   * when a pending member's retry is due (a member the last list did not
+   * commit, retried with a backoff), otherwise every five minutes as a
    * safety net.
    */
   pollIntervalMs?: number

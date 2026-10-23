@@ -1095,7 +1095,7 @@ test('hub accessors: refusals and grant reach follow the committed view', async 
   expect(beta.grantReach()).toEqual(reach)
 })
 
-// --- slice 2b: roster keys, seeding, pending members, other processes, faults ---
+// --- roster keys, seeding, pending members, other processes, faults ---
 
 type HubFixture = Awaited<ReturnType<typeof hubFixture>>
 
