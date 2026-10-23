@@ -321,6 +321,45 @@ test('profile 401 retries the new record and reports its version if it also fail
   expect(f.reports[0]?.recordVersion).toBe(4)
 })
 
+test('cancelling as 401 reauthorization resolves rejects without reporting or refreshing', async () => {
+  const f = await fixture()
+  const id = f.route(await f.consumer.refresh(), 'oauth:test')
+  const controller = new AbortController()
+  const cancelled = new Error('caller cancelled')
+  const authorize = f.consumer.authorize.bind(f.consumer)
+  f.consumer.authorize = async (...args) => {
+    const attempt = await authorize(...args)
+    // Abort after custody has resolved, before send resumes with the receipt.
+    if (f.gets.length === 2) controller.abort(cancelled)
+    return attempt
+  }
+  const refresh = f.consumer.refresh.bind(f.consumer)
+  let refreshes = 0
+  f.consumer.refresh = () => {
+    refreshes++
+    return refresh()
+  }
+  let dispatches = 0
+  const outcome = await f.consumer
+    .send(
+      id,
+      async () => {
+        dispatches++
+        return unauthorized()
+      },
+      { site: 'model', signal: controller.signal },
+    )
+    .then(
+      (response) => response,
+      (error: unknown) => error,
+    )
+  expect(outcome).toBe(cancelled)
+  expect(f.gets).toHaveLength(2)
+  expect(dispatches).toBe(1)
+  expect(f.reports).toEqual([])
+  expect(refreshes).toBe(0)
+})
+
 test('refresh and authorize work without AbortSignal.any', async () => {
   const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, 'any')
   Reflect.deleteProperty(AbortSignal, 'any')

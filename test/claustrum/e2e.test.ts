@@ -15,8 +15,10 @@ import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   captureLogger,
   cleanupDirs,
+  deferred,
   family,
   tempDir,
+  until,
   writeToken,
 } from './helpers.ts'
 import {
@@ -210,6 +212,79 @@ test('a warm account goes cold after a served 401 and leaves routing', async () 
   await s.consumer.refresh()
   expect(s.consumer.routingRows()).toEqual([])
   expect(s.consumer.snapshot()?.rows[0]?.state).toBe('needs_reauth')
+})
+
+test('cancelling pending 401 reauthorization rejects without reporting or refreshing', async () => {
+  const s = await scenario({ 'oauth:test:work': credential() })
+  await s.consumer.refresh()
+  const controller = new AbortController()
+  const cancelled = new Error('caller cancelled')
+  const reply = deferred<void>()
+  hooks.lifetime.unpark(() => reply.resolve())
+  const refresh = s.consumer.refresh.bind(s.consumer)
+  let refreshes = 0
+  s.consumer.refresh = () => {
+    refreshes++
+    return refresh()
+  }
+  let dispatches = 0
+  const outcome = s.consumer
+    .send(
+      routeFor(s.consumer, 'oauth:test:work'),
+      async () => {
+        dispatches++
+        s.daemon.holdGets = reply.promise
+        return new Response(null, { status: 401 })
+      },
+      { site: 'model', signal: controller.signal },
+    )
+    .then(
+      (response) => response,
+      (error: unknown) => error,
+    )
+  try {
+    await until(() => s.daemon.gets.length === 2, '401 reauthorization')
+    controller.abort(cancelled)
+    // The caller must stop waiting even though the daemon has not replied yet.
+    expect(await outcome).toBe(cancelled)
+    reply.resolve()
+    // A fresh request drains the late reply on the same connection.
+    await s.consumer.authorize(routeFor(s.consumer, 'oauth:test:work'))
+    expect(dispatches).toBe(1)
+    expect(s.daemon.reports).toEqual([])
+    expect(refreshes).toBe(0)
+    expect(s.daemon.lists).toBe(1)
+  } finally {
+    reply.resolve()
+  }
+})
+
+test('a non-abort 401 reauthorization failure still reports the served receipt', async () => {
+  const record = credential({ record_version: 7 })
+  const s = await scenario({ 'oauth:test:work': record })
+  await s.consumer.refresh()
+  let dispatches = 0
+  const response = await s.consumer.send(
+    routeFor(s.consumer, 'oauth:test:work'),
+    async () => {
+      dispatches++
+      record.refuse = 'needs_reauth'
+      return new Response(null, { status: 401 })
+    },
+    { site: 'model' },
+  )
+  expect(response.status).toBe(401)
+  expect(dispatches).toBe(1)
+  expect(s.daemon.gets).toHaveLength(2)
+  expect(s.daemon.reports).toEqual([
+    {
+      credential_id: 'oauth:test:work',
+      enrollment_token: '01'.repeat(32),
+      provider_status: 401,
+      record_version: 7,
+      reporter_source: 'direct',
+    },
+  ])
 })
 
 test('a 401 is attributed to the record that served it', async () => {

@@ -665,7 +665,10 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       let current: ClaustrumScopedAttempt | undefined
       try {
         current = await this.authorize(routeId, signal)
-      } catch {
+        // Cancellation can land after authorize settles, before this continuation.
+        signal?.throwIfAborted()
+      } catch (error) {
+        if (signal?.aborted) throw error
         // Re-authorization failed: keep this 401 and report it against the
         // receipt (served record version) this request was sent with.
       }

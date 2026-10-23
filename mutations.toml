@@ -2134,6 +2134,20 @@ expect_red = ['^scoped\scustody\sdispatch\sauthorization\sreports\sonly\s401\sus
 expect_message = '/Expected length: 0\s+Received length: 1/'
 
 [[control]]
+id = 'claustrum-401-reauthorization-propagates-cancellation'
+guards = 'cancellation during 401 reauthorization rejects the send without reporting a credential failure or refreshing the roster'
+file = 'src/claustrum/consumer.ts'
+old = 'if (signal?.aborted) throw error'
+new = '// NON-VACUITY BREAK: swallow cancellation during 401 reauthorization.'
+test_file = 'test/claustrum/e2e.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/claustrum/e2e.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/e2e.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^cancelling\spending\s401\sreauthorization\srejects\swithout\sreporting\sor\srefreshing$']
+expect_message = 'toBe'
+
+[[control]]
 id = 'claustrum-401-reports-the-served-record-version'
 guards = 'a final 401 is reported against the receipt (record version) the failing send was actually served, including after a retry'
 file = 'src/claustrum/consumer.ts'

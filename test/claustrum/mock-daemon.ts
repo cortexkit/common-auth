@@ -173,6 +173,8 @@ export interface MockDaemon {
    * but the answer is sent only once this settles.
    */
   holdLists?: Promise<unknown>
+  /** As with holdLists, delay get_scoped replies after recording the request. */
+  holdGets?: Promise<unknown>
   onInsulaClose?: () => void
   onReport?: (report: MockReport) => void
   approve(requestId: string, token?: string, generation?: number): void
@@ -680,7 +682,9 @@ export async function startMockDaemon(input: {
         const hold =
           request.method === 'credential.list_scoped'
             ? state.holdLists
-            : undefined
+            : request.method === 'credential.get_scoped'
+              ? state.holdGets
+              : undefined
         if (hold) void hold.then(() => writeResponse(socket, header, reply))
         else writeResponse(socket, header, reply)
       }
