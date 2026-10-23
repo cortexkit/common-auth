@@ -1038,12 +1038,12 @@ Repository caller inventory (other plugins adopt this API outside this repositor
 | `test/windows/claustrum-vault.mjs` | Awaits the consumer enqueue promise through its test-lifetime operation helper, then explicitly drains before checking persisted quota. |
 
 **Opt-in local pool quota publication (next minor).** The separate `/store`
-API now offers the same detached field mailbox for local accounts:
+API now offers a detached quota mailbox for local accounts, with any pool codec:
 
 ```ts
 const store = openPoolStore({
   provider, configPath, statePath,
-  quota: quotaCodec,
+  quota: quotaCodec, // or the plugin's own codec, such as nativeQuotaCodec
   coalesceQuota: true,
   quotaDrainTimeoutMs: 1_000, // optional shutdown budget
 })
@@ -1053,36 +1053,62 @@ await store.dispose() // or await store.close()
 ```
 
 Without `coalesceQuota: true`, `recordQuota` still awaits its locked write exactly
-as before, including for opaque plugin codecs. Opting in requires `/quota`'s
-`QuotaObservation` format and a codec supporting independent field merges (normally
-`quotaCodec`, which uses `mergeQuotaObservation`). The existing `Promise<void>`
-signature is unchanged: current-row refusals still reject with the same
-`PoolOperationError` before enqueue, including stale epoch/identity, reserved,
-unbound, missing and invalid rows. Success means accepted into memory, **not a
-durable receipt**. Stop plugin producers before disposal; new opted-in quota
-calls after close reject. Provider pulls already in flight are not joined by
-disposal; use `pullsSettled()` separately if the host needs that join.
+as before. The existing `Promise<void>` signature is unchanged: current-row
+refusals still reject with the same `PoolOperationError` before enqueue,
+including stale epoch/identity, reserved, unbound, missing and invalid rows.
+Success means accepted into memory, **not a durable receipt**. Stop plugin
+producers before disposal; new opted-in quota calls after close reject. Provider
+pulls already in flight are not joined by disposal; use `pullsSettled()`
+separately if the host needs that join.
+
+**Codec contract.** The mailbox never looks inside an observation. Opting in asks
+nothing more of the codec than the immediate writer does: `merge(stored,
+observation)` returns the new stored map (`stored` is `undefined` for a row with
+no map yet) and `validate` accepts it. Each accepted observation is queued whole,
+per row, and applied at flush in arrival order through the codec's `merge`:
+`merge(merge(stored, first), second)`, and so on. `read()` and `load()` show the
+same fold over what is stored now. So the codec alone decides which fields a
+newer or older reading replaces, and keeps any fields the library has no name
+for (provider metadata, money, source and identity). It must also be safe to
+merge an observation into a map that another process changed after the reading
+was accepted: `recordQuota` refuses a reading the codec refuses against what
+`read()` shows at that moment, but a reading the codec refuses later, at flush,
+is dropped alone with the warning `pool quota publication dropped; the quota
+codec refused it` (once per binding) while the rest of the batch lands. With
+`quotaCodec`, `mergeQuotaObservation` keeps its per-key times: pending windows,
+coverage, spend budget, counters and credits keep their own timestamps, partial
+headers cannot erase poll-only fields, a header merges into a poll in either
+arrival order, and late older polls lose to newer observations both in memory
+and against disk. Equal times use the last enqueue.
 
 Each opted-in store handle owns one mailbox and at most one flush/lock waiter,
 batching accounts in a single config transaction. Use one long-lived handle per
 local pool. Its `read()` and `load()` overlay pending quota immediately, including
 clearing `needsFirstReading`. Other handles/processes see only committed quota.
-Pending windows/coverage, spend budget, counters and credits retain their own
-timestamps; partial headers cannot erase poll-only fields, and late older polls
-lose to newer observations both in memory and against disk. Equal times use the
-last enqueue. Every field keeps its epoch/identity binding; different bindings
-never coalesce. The locked flush checks the current row again and drops a stale
-binding with one stable warning, `pool quota publication dropped; account binding
-changed`, rather than attaching it to a replacement.
+Every queued reading keeps its row, credential epoch and identity binding;
+different bindings never coalesce. The locked flush checks the current row again
+and drops a stale binding with one stable warning, `pool quota publication
+dropped; account binding changed`, rather than attaching it to a replacement.
+
+Each row queues at most 128 readings. Hosts record
+one about every 100 ms at most, so for them a full queue means another writer
+has held the store locks for many seconds. Reaching the cap starts a flush at once
+instead of waiting for the coalescing timer or a retry backoff. A further
+reading for that row is never dropped and never displaces an older one: its
+`recordQuota` waits for room for up to the store's own lock budget (the longest
+`timeoutMs` of the store locks), then rejects with a retryable
+`lock-contention` `PoolOperationError`, just as the immediate writer would after
+the same wait. A reading still waiting when `close()` finishes its drain is
+refused then as closed.
 
 Lock attempts are capped at 100 ms for the detached writer only. Failed attempts
-keep all pending fields and retry with jittered exponential backoff, warning once
-per uninterrupted failure run. `close()` and `dispose()` are idempotent promises
-for a bounded drain (default one second). A timed-out drain logs the remaining
-account and field counts with `pool quota drain timed out; pending readings left`
-and stops retries; shutdown can lose those pending readings. They are no-ops for
-the immediate writer. The existing atomic config writer and its Windows private
-file handling are unchanged.
+keep every queued reading and retry with jittered exponential backoff, warning
+once per uninterrupted failure run. `close()` and `dispose()` are idempotent
+promises for a bounded drain (default one second). A timed-out drain logs the
+remaining account and reading counts with `pool quota drain timed out; pending
+readings left` and stops retries; shutdown can lose those pending readings. They
+are no-ops for the immediate writer. The existing atomic config writer and its
+Windows private file handling are unchanged.
 
 **Optional insula background quota.** Supply `insula: { provider: 'codex' | 'claude' | 'antigravity', normalize(entry, context) }` to `ClaustrumConsumer<Q>`; `Q` is the plugin's snapshot type (defaults to `/quota`'s `QuotaObservation`). `context` exposes `fetchedAt` as epoch milliseconds and `source`, and the entry retains the original timestamp and open usage fields. A normalizer returns `Q`, or `undefined` to keep the plugin's own poll. `connectClaustrumScopedClient` supplies an optional `insula` transport without changing its scoped methods; custom scoped clients can supply `insula: { connectionFile, getUsage(), watchUsage? }`. The transport imports the `@cortexkit/subc-client` peer statically: claustrum-client already loads it with `/claustrum`, and a dynamic import would make a plugin's bundler emit a separate chunk that a running host can lose on rebuild. The transport opens the literal management surface `insula` on the same daemon connection file and bind identity, and reads the full `usage.get` envelope. The quota read uses a short-lived, separately owned socket; the scoped credential connection is untouched. It does not resolve a catalog claimant by capability and needs no grant beyond the enrolled principal.
 

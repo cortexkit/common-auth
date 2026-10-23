@@ -70,25 +70,53 @@ expect_message = 'expect(received)'
 
 # --- opt-in local pool quota publication ---
 [[control]]
-id = 'pool-quota-merge-pending-fields'
-guards = 'partial headers preserve poll-only pending windows, counters, credits and spend'
+id = 'pool-quota-queue-whole-observations'
+guards = 'a row queues every accepted reading whole, so a header cannot replace a pending poll of a codec that stores its own map'
 file = 'src/store/quota-writer.ts'
-old = 'const previous = this.pending.get(key)'
-new = 'this.pending.clear(); const previous = this.pending.get(key) // NON-VACUITY BREAK: replace pending observations.'
-test_file = 'test/store/quota-coalescer.test.ts'
+old = 'queue.push(publication)'
+new = 'queue.splice(0, queue.length, publication) // NON-VACUITY BREAK: keep only the latest reading.'
+test_file = 'test/store/quota-coalescer-codec.test.ts'
 runner = 'command'
-command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
-list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer.test.ts', '{test}']
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer-codec.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer-codec.test.ts', '{test}']
 test_count_pattern = 'Ran {count} test'
-expect_red = ['^pool\smailbox\smerges\spoll\sfields\sacross\sheaders\sin\smemory\sand\son\sdisk$']
-expect_message = 'toHaveLength'
+expect_red = ['^pool\smailbox\scoalesces\swhole\sreadings\sof\sa\scodec\sthat\sstores\sits\sown\smap$']
+expect_message = 'toEqual'
 
 [[control]]
-id = 'pool-quota-observation-time'
-guards = 'late older polls cannot overwrite newer pending window readings'
+id = 'pool-quota-merge-in-order'
+guards = 'the flush applies the queued readings of each row in arrival order through the codec merge'
 file = 'src/store/quota-writer.ts'
-old = 'if (!previous || field.at >= previous.at)'
-new = 'if (!previous || field.at <= previous.at) /* NON-VACUITY BREAK: prefer older readings. */'
+old = 'const batch = [...this.pending.values()].flat()'
+new = 'const batch = [...this.pending.values()].flat().reverse() // NON-VACUITY BREAK: apply readings newest first.'
+test_file = 'test/store/quota-coalescer-codec.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer-codec.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer-codec.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pool\smailbox\scoalesces\swhole\sreadings\sof\sa\scodec\sthat\sstores\sits\sown\smap$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'pool-quota-overlay-in-order'
+guards = 'read and load show queued readings merged in arrival order through the codec merge'
+file = 'src/store/quota-writer.ts'
+old = 'for (const publication of this.pending.get(row.id) ?? []) {'
+new = 'for (const publication of (this.pending.get(row.id) ?? []).toReversed()) { // NON-VACUITY BREAK: overlay newest first.'
+test_file = 'test/store/quota-coalescer-codec.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer-codec.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer-codec.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pool\smailbox\scoalesces\swhole\sreadings\sof\sa\scodec\sthat\sstores\sits\sown\smap$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'pool-quota-codec-decides-freshness'
+guards = 'late older polls cannot overwrite newer pending window readings, because the codec merge compares observation times'
+file = 'src/quota/merge.ts'
+old = 'return existing === undefined || at >= entryTime(existing)'
+new = 'return true // NON-VACUITY BREAK: ignore observation time.'
 test_file = 'test/store/quota-coalescer.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
@@ -96,6 +124,34 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^pool\smailbox\skeeps\snewer\sobservation\stimes\swhen\san\solder\spoll\sarrives\slate$']
 expect_message = 'toMatchObject'
+
+[[control]]
+id = 'pool-quota-codec-refusal-drops-one'
+guards = 'a reading the codec refuses at flush is dropped alone instead of failing every flush'
+file = 'src/store/quota-writer.ts'
+old = 'const key = `codec:${witness}`'
+new = 'const key = `codec:${witness}`; if (key) throw error // NON-VACUITY BREAK: fail the whole flush.'
+test_file = 'test/store/quota-coalescer-codec.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer-codec.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer-codec.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pool\smailbox\sdrops\sone\sreading\sits\scodec\srefuses\sat\sflush\sand\slands\sthe\srest$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'pool-quota-full-queue-waits'
+guards = 'a reading past a full row queue waits for room instead of growing the queue past its cap'
+file = 'src/store/quota-writer.ts'
+old = 'await this.room(id)'
+new = 'void this.room // NON-VACUITY BREAK: never wait for room.'
+test_file = 'test/store/quota-coalescer.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; bun test test/store/quota-coalescer.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/store/quota-coalescer.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^pool\smailbox\sholds\sa\sreading\spast\sa\sfull\srow\squeue\sfor\sroom\sinstead\sof\sdropping\sone$']
+expect_message = 'toBe'
 
 [[control]]
 id = 'pool-quota-binding-fence'
