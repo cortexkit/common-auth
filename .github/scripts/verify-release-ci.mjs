@@ -55,14 +55,29 @@ if (!owner || !repo) {
   throw new Error(`GITHUB_REPOSITORY is not owner/repository: ${repository}`);
 }
 
+// A GitHub API error that may clear on its own (a 5xx, a rate limit or a
+// dropped connection). The wait loop retries these until its deadline instead
+// of failing the release on one bad answer; anything else still fails at once.
+class TransientApiError extends Error {}
+
 async function getJson(path) {
-  const response = await fetch(`${apiUrl}/repos/${owner}/${repo}${path}`, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  });
+  let response;
+  try {
+    response = await fetch(`${apiUrl}/repos/${owner}/${repo}${path}`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+  } catch (error) {
+    throw new TransientApiError(`GitHub API ${path} failed: ${error.message}`);
+  }
+  if (response.status >= 500 || response.status === 429) {
+    throw new TransientApiError(
+      `GitHub API ${path} returned HTTP ${response.status}`,
+    );
+  }
   if (!response.ok) {
     const body = (await response.text()).slice(0, 1000);
     throw new Error(`GitHub API ${path} returned HTTP ${response.status}: ${body}`);
@@ -123,6 +138,23 @@ let lastWindowsState = windowsRequired
   : 'not required';
 
 while (Date.now() < deadline) {
+  try {
+    await pollOnce();
+  } catch (error) {
+    if (!(error instanceof TransientApiError)) throw error;
+    console.log(`${error.message}; retrying.`);
+  }
+  if (ciVerified && windowsVerified) {
+    console.log('All required checks already passed on the tagged commit.');
+    process.exit(0);
+  }
+  const remaining = deadline - Date.now();
+  if (remaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remaining)));
+  }
+}
+
+async function pollOnce() {
   if (!ciVerified) {
     const run = await latestMainPushRun('ci.yml');
     if (run) {
@@ -157,16 +189,6 @@ while (Date.now() < deadline) {
         lastWindowsState = `Windows run ${run.id} is ${run.status}`;
       }
     }
-  }
-
-  if (ciVerified && windowsVerified) {
-    console.log('All required checks already passed on the tagged commit.');
-    process.exit(0);
-  }
-
-  const remaining = deadline - Date.now();
-  if (remaining > 0) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remaining)));
   }
 }
 
