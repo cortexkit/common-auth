@@ -64,6 +64,8 @@ export interface EventVerdict<Q> {
 export type HeaderEdits = Readonly<Record<string, string | null>>
 
 export interface ChooseAccountInput extends RequestScope {
+  /** Informational: the retry hook's advance choice, or a request's own choice. */
+  readonly phase: 'retry' | 'request'
   /**
    * The account of the attempt this one retries, when the retry hook just
    * asked the host to retry an attempt of this session and kind; otherwise
@@ -186,21 +188,34 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
   /** Every hook is scoped to this provider; other providers are untouched. */
   readonly providerID: string
   /**
-   * Picks the account for one model request. Called again for every retry,
-   * so a refused account can be skipped. Returning `undefined` stops the
-   * request with `OpenCode2AuthError` kind `no-account`.
+   * Commits an account for one attempt. An undefined answer commits nothing
+   * to routing state: no consumed retry entry, no queued choice, and no session
+   * pin created, moved or deleted. Idempotent maintenance (credential refresh
+   * to check usability and recording quota readings) is allowed. On a request,
+   * undefined stops with kind `no-account`.
    *
    * After a limit before any output, the retry hook makes this call itself,
-   * with `rerouteFrom` set, before the host retries. Another account is
-   * kept as the next attempt's account, and the host retries at once; that
-   * attempt does not call this again unless the host retries with another
-   * model or agent, which chooses afresh. `undefined` or the refused account
-   * is discarded: the host's own decision stands, and an attempt after its
-   * wait calls this again without `rerouteFrom`.
+   * with `phase: 'retry'` and `rerouteFrom` set. Every returned account,
+   * including the refused one, is kept for the next attempt of that session
+   * and kind: it does not choose again. Another account retries at once;
+   * the refused account keeps the host's decision and wait. `undefined` or a
+   * throw commits nothing: the host decides, and the next attempt chooses
+   * with `phase: 'request'`, `previousAccountId` and no `rerouteFrom`.
    */
   chooseAccount(
     input: ChooseAccountInput,
   ): Promise<string | undefined> | string | undefined
+  /**
+   * Releases a kept retry choice that will not be used: no retry, a changed
+   * model or agent, session forgetting/deletion, disposal or record eviction.
+   * Called once with the original choose input plus its returned accountId,
+   * never for a used choice. Awaited before any later chooseAccount for the
+   * same session; errors are logged and swallowed. A model/agent change
+   * releases the old choice before choosing afresh.
+   */
+  dropChoice?(
+    input: ChooseAccountInput & { readonly accountId: string },
+  ): Promise<void> | void
   /**
    * The credential and per-account headers for an account, applied in
    * `model.request`, `http.request` and `experimental.ws.handshake`. The last
