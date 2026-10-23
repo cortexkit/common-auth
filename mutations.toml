@@ -41,7 +41,7 @@ guards = 'foreign work arriving during retry selection prevents publication and 
 file = 'src/opencode2/install.ts'
 old = '''                  if (mixed(draft.sessionID)) {
                     if (next) await releaseChoice(next)'''
-new = '''                  if (false) { // NON-VACUITY BREAK: publish after becoming mixed
+new = '''                  if (Boolean(0)) { // NON-VACUITY BREAK: publish after becoming mixed
                     if (next) await releaseChoice(next)'''
 test_file = 'test/opencode2/mixed-ownership.test.ts'
 runner = 'command'
