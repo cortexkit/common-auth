@@ -1,6 +1,4 @@
 import { createLogger } from '../logger/index.js'
-import { isQuotaObservation, type QuotaObservation } from '../quota/index.js'
-import { type QuotaField, quotaFields } from '../quota/pending.js'
 import {
   type Attribution,
   assertQuotaEpoch,
@@ -13,18 +11,36 @@ import { LockStack } from './refresh-lock.js'
 import { readRow, refusal, type StoreRuntime } from './runtime.js'
 import { entryIn, type PoolRow } from './schema.js'
 
+/**
+ * One accepted reading: the pool codec's own observation, whole, with the
+ * row binding it was issued for. The writer never looks inside the
+ * observation; only the codec's `merge` and `validate` do.
+ */
 interface Publication {
   id: string
   attribution: Attribution
-  observation: QuotaObservation
+  observation: unknown
 }
-type Field = QuotaField<Publication>
 const COALESCE_MS = 100
 
-// Like the roster writer, keep fields in the mailbox until their exact snapshot
-// commits. A newer enqueue during lock acquisition must survive an older flush.
+/**
+ * The most readings one row keeps waiting for a flush. Hosts record a reading
+ * about every 100 ms at most, so for them a queue this long means another
+ * writer has held the store locks for many seconds. Reaching it starts
+ * a flush at once instead of waiting for the coalescing timer or a retry
+ * backoff; a further reading for the row waits for room (never dropping an
+ * older one) for as long as the store's normal lock budget, and is then
+ * refused with `lock-contention`, as the immediate writer would refuse it.
+ */
+export const POOL_QUOTA_QUEUE_LIMIT = 128
+
+// Readings are queued whole per row and applied at flush in arrival order
+// through the codec's own merge, so the codec alone decides which fields a
+// newer or older reading replaces. Like the roster writer, a reading stays
+// queued until the flush that took it commits: one queued while a flush waits
+// for its locks must survive that flush.
 export class PoolQuotaWriter {
-  private readonly pending = new Map<string, Field>()
+  private readonly pending = new Map<string, Publication[]>()
   private readonly warned = new Set<string>()
   private readonly wake = new Set<() => void>()
   private readonly logger
@@ -33,7 +49,6 @@ export class PoolQuotaWriter {
   private closing?: Promise<void>
   private closed = false
   private stopped = false
-  private order = 0
   private failures = 0
 
   constructor(
@@ -52,9 +67,15 @@ export class PoolQuotaWriter {
       this.assertOpen(id)
       assertQuotaEpoch(id, attribution)
       // Snapshot before the first await: callers may reuse their headers object.
-      const publication = structuredClone({ id, attribution, observation })
+      const publication: Publication = structuredClone({
+        id,
+        attribution,
+        observation,
+      })
       const { row, result } = await readRow(this.rt, 'pull', id)
       assertQuotaRow(id, publication.attribution, row)
+      // Merge into what read() shows now, so a reading the codec refuses is
+      // refused to its caller here, as the immediate writer would refuse it.
       mergedQuota(
         this.rt.ctx,
         id,
@@ -62,38 +83,56 @@ export class PoolQuotaWriter {
           .quota,
         publication.observation,
       )
-      if (!isQuotaObservation(publication.observation))
+      await this.room(id)
+      this.assertOpen(id)
+      // No await between the room check and the push, so the cap holds.
+      const queue = this.pending.get(id) ?? []
+      queue.push(publication)
+      this.pending.set(id, queue)
+      if (queue.length >= POOL_QUOTA_QUEUE_LIMIT) this.flushNow()
+      else this.schedule(COALESCE_MS)
+    } catch (error) {
+      throw toFailure(error, 'pull', id, { writes: 0 })
+    }
+  }
+
+  private queued(id: string): number {
+    return this.pending.get(id)?.length ?? 0
+  }
+
+  // Waits while the row's queue is full, flushing at once on every wake-up,
+  // for at most the store's own lock acquisition budget.
+  private async room(id: string): Promise<void> {
+    if (this.queued(id) < POOL_QUOTA_QUEUE_LIMIT) return
+    const { ctx } = this.rt
+    const budget = Math.max(
+      0,
+      ...ctx.storeLocks.map(
+        (spec) => spec.timeoutMs ?? ctx.lockDefaults.timeoutMs,
+      ),
+    )
+    const deadline = performance.now() + budget
+    while (this.queued(id) >= POOL_QUOTA_QUEUE_LIMIT) {
+      this.assertOpen(id)
+      this.flushNow()
+      const left = deadline - performance.now()
+      if (left <= 0)
         throw refusal(
           'pull',
           id,
-          'invalid-quota',
-          'coalescing requires a QuotaObservation',
+          'lock-contention',
+          `pool quota queue for ${id} is full (${POOL_QUOTA_QUEUE_LIMIT} readings) and the store locks stayed held`,
+          true,
         )
-      this.assertOpen(id)
-      const witness = JSON.stringify([
-        id,
-        publication.attribution.credentialEpoch,
-        publication.attribution.identity,
-      ])
-      for (const [key, field] of quotaFields(
-        publication as Publication,
-        witness,
-      )) {
-        const previous = this.pending.get(key)
-        if (!previous || field.at >= previous.at) {
-          field.order = ++this.order
-          // Coverage must retain a preceding unflushed reading to retire it,
-          // rather than turning a previously observed window into an absence.
-          if (field.publication.observation.coverage)
-            field.priorReading = previous?.publication.observation.readings
-              ? previous.publication
-              : previous?.priorReading
-          this.pending.set(key, field)
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer)
+          this.wake.delete(done)
+          resolve()
         }
-      }
-      this.schedule(COALESCE_MS)
-    } catch (error) {
-      throw toFailure(error, 'pull', id, { writes: 0 })
+        const timer = setTimeout(done, left)
+        this.wake.add(done)
+      })
     }
   }
 
@@ -102,41 +141,25 @@ export class PoolQuotaWriter {
       throw refusal('pull', id, 'invalid-input', 'pool quota writer is closed')
   }
 
-  private ordered(fields = this.pending): Field[] {
-    return [...fields.values()].sort((a, b) => a.order - b.order)
-  }
-
-  private apply(stored: unknown, field: Field): unknown {
-    const { ctx } = this.rt
-    if (field.priorReading)
-      stored = mergedQuota(
-        ctx,
-        field.publication.id,
-        stored,
-        field.priorReading.observation,
-      )
-    return mergedQuota(
-      ctx,
-      field.publication.id,
-      stored,
-      field.publication.observation,
-    )
-  }
-
+  // What read() and load() show: the stored map, then each queued reading of
+  // the row still bound to it, in arrival order through the codec's merge.
+  // A reading the codec now refuses is left out, as the flush drops it.
   private overlayRow(row: PoolRow): PoolRow {
     let next = row
-    for (const field of this.ordered()) {
-      if (field.publication.id !== row.id) continue
+    for (const publication of this.pending.get(row.id) ?? []) {
       try {
-        assertQuotaRow(row.id, field.publication.attribution, row)
-      } catch {
-        continue
-      }
-      next = {
-        ...next,
-        quota: this.apply(next.quota, field),
-        needsFirstReading: false,
-      }
+        assertQuotaRow(row.id, publication.attribution, row)
+        next = {
+          ...next,
+          quota: mergedQuota(
+            this.rt.ctx,
+            row.id,
+            next.quota,
+            publication.observation,
+          ),
+          needsFirstReading: false,
+        }
+      } catch {}
     }
     return next
   }
@@ -154,10 +177,20 @@ export class PoolQuotaWriter {
     if (!this.closed) this.timer.unref?.()
   }
 
+  // Starts a flush now rather than at the coalescing timer or retry backoff;
+  // a flush already running is left to finish.
+  private flushNow(): void {
+    if (this.running) return
+    clearTimeout(this.timer)
+    this.timer = undefined
+    this.flush()
+  }
+
   private flush(): void {
     if (this.running || this.stopped || !this.pending.size) return
-    const batch = new Map(this.pending)
-    // Short lock attempts allow retries to pick up fresh pending fields and
+    // Every queued reading, each row's in arrival order.
+    const batch = [...this.pending.values()].flat()
+    // Short lock attempts allow retries to pick up freshly queued readings and
     // bound shutdown even when the normal store acquisition budget is long.
     const ctx = {
       ...this.rt.ctx,
@@ -180,18 +213,18 @@ export class PoolQuotaWriter {
           async (tx) => {
             if (this.stopped) return
             let changed = false
-            for (const field of this.ordered(batch)) {
-              const { id, attribution } = field.publication
+            for (const publication of batch) {
+              const { id, attribution, observation } = publication
+              const witness = JSON.stringify([
+                id,
+                attribution.credentialEpoch,
+                attribution.identity,
+              ])
               try {
                 tx.assertNotStaged(id)
                 assertQuotaRow(id, attribution, tx.row(id))
               } catch (error) {
                 if (!(error instanceof PoolOperationError)) throw error
-                const witness = JSON.stringify([
-                  id,
-                  attribution.credentialEpoch,
-                  attribution.identity,
-                ])
                 if (!this.warned.has(witness)) {
                   this.warned.add(witness)
                   this.warn(
@@ -203,26 +236,48 @@ export class PoolQuotaWriter {
               }
               const entry = tx.entry(id)
               if (!entry) continue
-              tx.setEntry(id, {
-                ...entry,
-                quota: this.apply(entry.quota, field),
-                needsFirstReading: false,
-              })
+              let quota: unknown
+              try {
+                quota = mergedQuota(ctx, id, entry.quota, observation)
+              } catch (error) {
+                // The codec accepted this reading when it was queued, but not
+                // against what is stored now (another writer changed it).
+                // Drop only this reading: failing the transaction would retry
+                // the same refusal forever and hold back every other row.
+                const key = `codec:${witness}`
+                if (!this.warned.has(key)) {
+                  this.warned.add(key)
+                  this.warn(
+                    'pool quota publication dropped; the quota codec refused it',
+                    {
+                      id,
+                      error:
+                        error instanceof Error ? error.message : String(error),
+                    },
+                  )
+                }
+                continue
+              }
+              tx.setEntry(id, { ...entry, quota, needsFirstReading: false })
               changed = true
             }
             if (changed && !this.stopped) await tx.commitConfig()
           },
           { completeTorn: false },
         )
-        for (const [key, field] of batch)
-          if (this.pending.get(key) === field) this.pending.delete(key)
+        const flushed = new Set(batch)
+        for (const [id, queue] of this.pending) {
+          const rest = queue.filter((publication) => !flushed.has(publication))
+          if (rest.length) this.pending.set(id, rest)
+          else this.pending.delete(id)
+        }
         this.failures = 0
       } catch (error) {
         if (!this.stopped && this.failures++ === 0)
           this.warn('pool quota publication delayed; retrying', {
             error: error instanceof Error ? error.message : String(error),
           })
-        // Retain the mailbox on failure, including fresher fields queued meanwhile.
+        // Retain the mailbox on failure, including fresher readings queued meanwhile.
       } finally {
         await locks.releaseAll()
         this.running = undefined
@@ -278,12 +333,16 @@ export class PoolQuotaWriter {
       this.wake.delete(wake)
       if (this.pending.size)
         this.warn('pool quota drain timed out; pending readings left', {
-          accounts: new Set(
-            [...this.pending.values()].map((field) => field.publication.id),
-          ).size,
-          fields: this.pending.size,
+          accounts: this.pending.size,
+          readings: [...this.pending.values()].reduce(
+            (sum, queue) => sum + queue.length,
+            0,
+          ),
         })
       this.pending.clear()
+      // A reading waiting for room in a full queue is refused as closed when
+      // the drain ends, not when its own lock budget runs out.
+      for (const wake of this.wake) wake()
     }
   }
 }

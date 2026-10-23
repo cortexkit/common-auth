@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { type QuotaMap, quotaCodec } from '../../src/quota/index.js'
 import type { PoolStore } from '../../src/store/index.js'
+import { POOL_QUOTA_QUEUE_LIMIT } from '../../src/store/quota-writer.js'
 import {
   acquirePoolLock,
   POOL_LOCK_DEFAULTS,
@@ -282,6 +283,84 @@ test('pool mailbox keeps a newer enqueue while an older flush waits for the real
     checkedAt: 200,
     usedPercent: 70,
   })
+})
+
+const full = (label: string) =>
+  Array.from({ length: POOL_QUOTA_QUEUE_LIMIT }, (_, index) => ({
+    checkedAt: index + 1,
+    readings: [{ label: `${label}:${index}`, usedPercent: index }],
+  }))
+
+test('pool mailbox holds a reading past a full row queue for room instead of dropping one', async () => {
+  const { s, plain } = await fixture()
+  const contended = deferred()
+  const store = s.open({
+    quota: quotaCodec,
+    coalesceQuota: true,
+    onLockEvent: (event) => {
+      if (event.type === 'contended') contended.resolve()
+    },
+  })
+  hooks.lifetime.finish(() => store.dispose())
+  const lock = await acquirePoolLock(
+    { name: 'save', path: s.configPath },
+    POOL_LOCK_DEFAULTS,
+    {},
+  )
+  let extra: Promise<void> | undefined
+  try {
+    for (const observation of full('queued'))
+      await store.recordQuota('a', fence, observation)
+    await contended.promise
+    let settled = false
+    extra = store.recordQuota('a', fence, reading(1_000, 50))
+    void extra.then(() => {
+      settled = true
+    })
+    await Bun.sleep(300)
+    expect(settled).toBe(false)
+    expect((await quota(store))?.limits).toHaveLength(POOL_QUOTA_QUEUE_LIMIT)
+  } finally {
+    await lock.release()
+  }
+  await extra
+  expect((await quota(store))?.limits).toHaveLength(POOL_QUOTA_QUEUE_LIMIT + 1)
+  await store.dispose()
+  expect((await quota(plain))?.limits).toHaveLength(POOL_QUOTA_QUEUE_LIMIT + 1)
+})
+
+test('pool mailbox refuses a reading past a full row queue with lock contention after the lock budget', async () => {
+  const { s, plain } = await fixture()
+  const store = s.open({
+    quota: quotaCodec,
+    coalesceQuota: true,
+    lockOptions: { timeoutMs: 200 },
+  })
+  hooks.lifetime.finish(() => store.dispose())
+  const lock = await acquirePoolLock(
+    { name: 'save', path: s.configPath },
+    POOL_LOCK_DEFAULTS,
+    {},
+  )
+  try {
+    for (const observation of full('queued'))
+      await store.recordQuota('a', fence, observation)
+    const started = performance.now()
+    await expect(
+      store.recordQuota('a', fence, reading(1_000, 50)),
+    ).rejects.toMatchObject({
+      kind: 'lock-contention',
+      operation: 'pull',
+      retryable: true,
+    })
+    expect(performance.now() - started).toBeLessThan(2_000)
+  } finally {
+    await lock.release()
+  }
+  await store.dispose()
+  const saved = await quota(plain)
+  expect(saved?.limits).toHaveLength(POOL_QUOTA_QUEUE_LIMIT)
+  expect(saved?.limits.some((entry) => entry.label === '5h')).toBe(false)
 })
 
 interface Metrics {

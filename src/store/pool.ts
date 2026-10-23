@@ -84,11 +84,14 @@ export interface OpenPoolStoreOptions {
   statePath: string
   quota: QuotaCodec
   /**
-   * Opt in to detached, field-coalesced QuotaObservation publication (use
-   * quotaCodec). Accepted readings appear in read/load immediately; the returned
-   * promise still rejects current-row refusals before queueing. Await dispose
-   * or close at shutdown to drain. Other codecs retain the immediate writer
-   * unless explicitly opted in and must support QuotaObservation field merges.
+   * Opt in to detached, coalesced quota publication, with any `quota` codec.
+   * Each accepted observation is queued whole for its row and binding, and
+   * the queue is applied in arrival order through `quota.merge` under the
+   * store locks, so the codec's own merge decides which fields a newer or
+   * older reading replaces. Accepted readings appear in read/load
+   * immediately, merged the same way; the returned promise still rejects
+   * current-row refusals before queueing. Await dispose or close at shutdown
+   * to drain.
    */
   coalesceQuota?: boolean
   /** Bounded quota drain on close/dispose, in milliseconds; defaults to 1,000. */
