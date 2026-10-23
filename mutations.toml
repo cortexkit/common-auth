@@ -2783,7 +2783,7 @@ expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nRecei
 
 [[control]]
 id = 'opencode2-retry-limit-checks-revocation'
-guards = 'retry rechecks revocation after waiting for limit listeners, before recording or announcing a retry'
+guards = 'retry rechecks revocation after waiting for limit listeners, before asking chooseAccount for a reroute target or recording or announcing a retry'
 file = 'src/opencode2/install.ts'
 old = '''              await rec.limit.delivered
               assertActive()'''
@@ -2795,7 +2795,7 @@ command = ["bun", "test", "test/opencode2/revocation.test.ts", "-t", "{test}"]
 list_command = ["bun", "scripts/list-bun-tests.mjs", "test/opencode2/revocation.test.ts", "{test}"]
 test_count_pattern = "Ran {count} test"
 expect_red = ['^installOpenCode2Auth\srevocation\sforget\swhile\sretry\sawaits\slimit\slistener\srefuses\slocally\swithout\sremembering\sa\sretry$']
-expect_message = '/Expected constructor: \[class OpenCode2AuthError[^\n]*\nReceived value: \{/'
+expect_message = '/expect\(choices\[1\]\?\.previousAccountId\)\.toBeUndefined\(\)[\s\S]*Received: "A"/'
 
 [[control]]
 id = 'opencode2-forget-revokes-in-flight'
