@@ -47,108 +47,186 @@ const credential = (name: string): VaultCredential => ({
   state: 'active',
 })
 
-/** A vault roster of alpha then bravo, and the menu's view of its order. */
-async function vaultRoster() {
+/**
+ * A vault roster with one row per name, in name order (discovery sorts new
+ * rows by credential id), and the menu's view of its order. `labels` maps a
+ * name to the label the plugin shows; by default the label is the name.
+ */
+async function vaultRoster(
+  names: readonly string[],
+  labels: Record<string, string> = {},
+) {
   const path = join(await tempDir('command-vault-order-'), 'vault-roster.json')
   const roster = await refreshVaultRoster({
     path,
     custody: {
       discover: async () => ({
         view: 'v',
-        credentials: [credential('bravo'), credential('alpha')],
+        credentials: names.map(credential),
         skipped: [],
       }),
     },
+    projection: {
+      mapAccount: (vault) => {
+        const name = vault.credentialId.split(':').at(-1) ?? ''
+        return { label: labels[name] ?? name }
+      },
+    },
   })
-  const ids = roster?.rows.map((row) => row.routeId) ?? []
-  const [alpha, bravo] = ids
-  if (!alpha || !bravo) throw new Error('no roster')
+  const route: Record<string, string> = {}
+  for (const row of roster?.rows ?? [])
+    route[row.credentialId.split(':').at(-1) ?? ''] = row.routeId
   // What a plugin in vault mode wires (a plugin with a ClaustrumConsumer
-  // passes its `snapshot()` and `reorder` instead).
+  // passes its `snapshot()` rows and `reorder` instead).
   const order = async (): Promise<VaultRoutingOrder> => ({
-    ids: (await readVaultRoster(path))?.rows.map((row) => row.routeId) ?? [],
+    rows:
+      (await readVaultRoster(path))?.rows.map((row) => ({
+        id: row.routeId,
+        label: row.label,
+      })) ?? [],
     reorder: (next) => reorderVaultRoster(path, next),
   })
-  return { path, alpha, bravo, order }
+  const onDisk = async () =>
+    (await readVaultRoster(path))?.rows.map((row) => row.routeId)
+  const id = (name: string) => {
+    const found = route[name]
+    if (!found) throw new Error(`no route for ${name}`)
+    return found
+  }
+  return { path, id, order, onDisk }
+}
+
+function setOrder(menu: ReturnType<MenuScenario['menu']>, order: string) {
+  return apply(menu, notes().invocation, {
+    sectionId: 'routing',
+    actionId: 'order',
+    values: { order },
+  })
 }
 
 describe('routing set order in vault mode', () => {
-  it('shows and sets the vault accounts order through the roster, leaving the pool roster alone', async () => {
+  it('shows labels and sets the vault order from typed labels, leaving the pool roster alone', async () => {
     await populate(m.store)
-    const v = await vaultRoster()
+    const v = await vaultRoster(['alpha', 'bravo', 'charlie'], {
+      alpha: 'work',
+      bravo: 'personal account',
+      charlie: 'side',
+    })
     const menu = m.menu({ routing: { vaultOrder: v.order } })
-    const n = notes()
-    const routing = section(await menu.open(n.invocation), 'routing')
+    const routing = section(await menu.open(notes().invocation), 'routing')
     expect(routing.lines).toEqual([
       'Mode: Ordered (roster order)',
-      `Vault account order: ${v.alpha}, ${v.bravo}`,
+      'Vault account order: work, personal account, side',
     ])
     expect(
       routing.actions.find((action) => action.id === 'order')?.knobs[0],
     ).toMatchObject({
-      label: 'Vault route ids, first to last',
-      value: `${v.alpha}, ${v.bravo}`,
+      label: 'Vault accounts, first to last, separated by commas',
+      value: 'work, personal account, side',
     })
 
-    const ordered = await apply(menu, n.invocation, {
-      sectionId: 'routing',
-      actionId: 'order',
-      values: { order: `${v.bravo} ${v.alpha}` },
-    })
+    const ordered = await setOrder(menu, 'side, work,personal account')
     expect(ordered).toMatchObject({
       ok: true,
-      text: `Order set to ${v.bravo}, ${v.alpha}.`,
+      text: 'Order set to side, work, personal account.',
     })
-    expect(
-      (await readVaultRoster(v.path))?.rows.map((row) => row.routeId),
-    ).toEqual([v.bravo, v.alpha])
+    expect(await v.onDisk()).toEqual([
+      v.id('charlie'),
+      v.id('alpha'),
+      v.id('bravo'),
+    ])
     expect(await rosterIds(m.store)).toEqual(['a', 'b', 'k'])
     expect(
       ordered.menu.sections.find((entry) => entry.id === 'routing')?.lines,
-    ).toContain(`Vault account order: ${v.bravo}, ${v.alpha}`)
+    ).toContain('Vault account order: side, work, personal account')
   })
 
-  it('a bad vault order is refused with its reason and writes nothing', async () => {
-    const v = await vaultRoster()
+  it('accepts labels and route ids mixed in one order', async () => {
+    const v = await vaultRoster(['alpha', 'bravo', 'charlie'])
+    const menu = m.menu({ routing: { vaultOrder: v.order } })
+    const ordered = await setOrder(
+      menu,
+      `bravo, ${v.id('charlie')}, ${v.id('alpha')}`,
+    )
+    expect(ordered).toMatchObject({
+      ok: true,
+      text: 'Order set to bravo, charlie, alpha.',
+    })
+    expect(await v.onDisk()).toEqual([
+      v.id('bravo'),
+      v.id('charlie'),
+      v.id('alpha'),
+    ])
+  })
+
+  it('an unknown entry, a repeated account or a left-out account refuses, naming only what was typed, and writes nothing', async () => {
+    const v = await vaultRoster(['alpha', 'bravo'])
     const menu = m.menu({ routing: { vaultOrder: v.order } })
     const before = await readFile(v.path, 'utf8')
-    const missing = await apply(menu, notes().invocation, {
-      sectionId: 'routing',
-      actionId: 'order',
-      values: { order: v.bravo },
-    })
-    expect(missing).toMatchObject({
+    expect(await setOrder(menu, 'bravo, alpha, nobody')).toMatchObject({
       ok: false,
+      code: 'vault-invalid-order',
+      text: '"nobody" is not a vault account.',
+    })
+    expect(
+      await setOrder(menu, `alpha, bravo, ${v.id('alpha')}`),
+    ).toMatchObject({
+      ok: false,
+      code: 'vault-invalid-order',
+      text: `"${v.id('alpha')}" names an account already in the order.`,
+    })
+    expect(await setOrder(menu, 'bravo')).toMatchObject({
+      ok: false,
+      code: 'vault-invalid-order',
       text: 'the order leaves out 1 roster route id',
-    })
-    const unknown = await apply(menu, notes().invocation, {
-      sectionId: 'routing',
-      actionId: 'order',
-      values: { order: `${v.bravo}, ${v.alpha}, vault:other` },
-    })
-    expect(unknown).toMatchObject({
-      ok: false,
-      text: 'route id vault:other is not in the roster',
     })
     expect(await readFile(v.path, 'utf8')).toBe(before)
   })
 
+  it('a label two accounts share refuses as ambiguous and writes nothing; their route ids still work', async () => {
+    const v = await vaultRoster(['alpha', 'bravo', 'charlie'], {
+      alpha: 'team',
+      charlie: 'team',
+    })
+    const menu = m.menu({ routing: { vaultOrder: v.order } })
+    const routing = section(await menu.open(notes().invocation), 'routing')
+    expect(routing.lines).toContain('Vault account order: team, bravo, team')
+    // The input starts with route ids for the two accounts a label cannot
+    // tell apart, so its default is an order that can be applied as is.
+    expect(
+      routing.actions.find((action) => action.id === 'order')?.knobs[0],
+    ).toMatchObject({
+      value: `${v.id('alpha')}, bravo, ${v.id('charlie')}`,
+    })
+    const before = await readFile(v.path, 'utf8')
+    expect(await setOrder(menu, 'bravo, team, team')).toMatchObject({
+      ok: false,
+      code: 'vault-invalid-order',
+      text: '"team" matches more than one vault account; enter those accounts by route id.',
+    })
+    expect(await readFile(v.path, 'utf8')).toBe(before)
+    expect(
+      await setOrder(menu, `${v.id('charlie')}, bravo, ${v.id('alpha')}`),
+    ).toMatchObject({ ok: true, text: 'Order set to team, bravo, team.' })
+    expect(await v.onDisk()).toEqual([
+      v.id('charlie'),
+      v.id('bravo'),
+      v.id('alpha'),
+    ])
+  })
+
   it('outside vault mode the pool roster is shown and set as before', async () => {
     await populate(m.store)
-    const v = await vaultRoster()
+    const v = await vaultRoster(['alpha', 'bravo'])
     const before = await readFile(v.path, 'utf8')
     const menu = m.menu({ routing: { vaultOrder: () => undefined } })
-    const n = notes()
-    expect(section(await menu.open(n.invocation), 'routing').lines).toEqual([
-      'Mode: Ordered (roster order)',
-      'Roster order: a, b, k',
-    ])
-    const ordered = await apply(menu, n.invocation, {
-      sectionId: 'routing',
-      actionId: 'order',
-      values: { order: 'k, b, a' },
+    expect(
+      section(await menu.open(notes().invocation), 'routing').lines,
+    ).toEqual(['Mode: Ordered (roster order)', 'Roster order: a, b, k'])
+    expect(await setOrder(menu, 'k b, a')).toMatchObject({
+      ok: true,
+      text: 'Order set to k, b, a.',
     })
-    expect(ordered).toMatchObject({ ok: true, text: 'Order set to k, b, a.' })
     expect(await rosterIds(m.store)).toEqual(['k', 'b', 'a'])
     expect(await readFile(v.path, 'utf8')).toBe(before)
   })

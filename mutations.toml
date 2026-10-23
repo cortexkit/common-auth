@@ -7761,3 +7761,17 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/consumer.te
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^a\sreorder\sreaches\sthe\snext\srouting\sdecision\sin\sthis\sprocess\swithout\scontacting\sthe\svault$']
 expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'commands-vault-order-refuses-ambiguous-label'
+guards = 'a Set order entry that matches more than one vault account (a shared label) refuses and writes nothing, instead of silently picking one of the accounts'
+file = 'src/commands/builtins.ts'
+old = '''        if (found.length > 1)'''
+new = '''        if (found.length > 99) // NON-VACUITY BREAK: take the first of several matches.'''
+test_file = 'test/commands/vault-order.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/commands/vault-order.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/commands/vault-order.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^routing\sset\sorder\sin\svault\smode\sa\slabel\stwo\saccounts\sshare\srefuses\sas\sambiguous\sand\swrites\snothing;\stheir\sroute\sids\sstill\swork$']
+expect_message = 'expect(received).toMatchObject(expected)'

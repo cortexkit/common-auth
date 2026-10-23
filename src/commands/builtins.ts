@@ -94,10 +94,11 @@ export interface RoutingSectionOptions {
    * The vault accounts' routing order, for a plugin that can run in vault
    * mode. Called on each build; return the order while the plugin routes
    * through vault accounts and undefined otherwise. While it returns one, the
-   * section shows and sets the vault accounts' order (by route id) instead of
-   * the pool roster's. Wire it to `ClaustrumConsumer.snapshot()` and
-   * `ClaustrumConsumer.reorder`, or to `readVaultRoster` and
-   * `reorderVaultRoster` for a plugin without a consumer.
+   * section shows and sets the vault accounts' order (by the name the menu
+   * shows for each account) instead of the pool roster's. Wire it to
+   * `ClaustrumConsumer.snapshot()` and `ClaustrumConsumer.reorder`, or to
+   * `readVaultRoster` and `reorderVaultRoster` for a plugin without a
+   * consumer.
    */
   vaultOrder?: () =>
     | VaultRoutingOrder
@@ -111,10 +112,15 @@ export interface RoutingSectionOptions {
  * importing it, so the menu does not need the vault client.
  */
 export interface VaultRoutingOrder {
-  /** Every route id in the vault roster, in roster (routing) order. */
-  ids: readonly string[]
   /**
-   * Sets the order. `ids` names every route id exactly once. Wire it to
+   * Every vault roster row, in roster (routing) order: its route id and the
+   * name the plugin shows for that account (the roster row's `label`, or its
+   * email). Route ids are long and opaque, so the section shows and accepts
+   * labels; a route id is still accepted wherever a label is.
+   */
+  rows: readonly { id: string; label: string }[]
+  /**
+   * Sets the order. `ids` are route ids, every one exactly once. Wire it to
    * `ClaustrumConsumer.reorder` or `reorderVaultRoster`, which refuse any
    * other list without writing.
    */
@@ -507,10 +513,10 @@ function quotaSection(
 }
 
 /**
- * Sets the vault order. A refusal of the list itself (`invalid-order`, from
- * `/claustrum`'s roster) is shown with its own message, which quotes only ids
- * the user typed; any other failure is projected as usual. The kind is read
- * from the error object so the menu does not import the vault client.
+ * Sets the vault order. The roster's own refusal of the list (`invalid-order`:
+ * an account left out, which it counts without naming) is shown with its own
+ * message; any other failure is projected as usual. The kind is read from
+ * the error object so the menu does not import the vault client.
  */
 async function reorderVault(
   vault: VaultRoutingOrder,
@@ -528,6 +534,59 @@ async function reorderVault(
         cause: error,
       })
     throw error
+  }
+}
+
+function invalidVaultOrder(message: string): CommandError {
+  return new CommandError('vault-invalid-order', message)
+}
+
+/**
+ * How the Routing section names vault accounts: by label, since route ids
+ * are long and opaque. A typed entry may be a label or a route id, and must
+ * name exactly one account. Refusals quote only the entry the user typed.
+ */
+function vaultNames(vault: VaultRoutingOrder) {
+  const rows = vault.rows.map((row) => ({
+    id: row.id,
+    label: row.label.trim() || row.id,
+  }))
+  const matches = (entry: string) =>
+    rows.filter((row) => row.id === entry || row.label === entry)
+  return {
+    ids: rows.map((row) => row.id),
+    nameOf: (id: string) => rows.find((row) => row.id === id)?.label ?? id,
+    /**
+     * What the order input starts with for an account: its label when
+     * typing that label back names this account alone, else its route id
+     * (two accounts sharing a label, or a label with a comma in it).
+     */
+    entryOf: (id: string) => {
+      const row = rows.find((entry) => entry.id === id)
+      return row && !row.label.includes(',') && matches(row.label).length === 1
+        ? row.label
+        : id
+    },
+    /** The route ids the typed entries name, in order; refuses before any write. */
+    resolve: (entries: readonly string[]): string[] => {
+      const ids: string[] = []
+      for (const entry of entries) {
+        const found = matches(entry)
+        if (found.length === 0)
+          throw invalidVaultOrder(`"${entry}" is not a vault account.`)
+        if (found.length > 1)
+          throw invalidVaultOrder(
+            `"${entry}" matches more than one vault account; enter those accounts by route id.`,
+          )
+        const id = (found[0] as { id: string }).id
+        if (ids.includes(id))
+          throw invalidVaultOrder(
+            `"${entry}" names an account already in the order.`,
+          )
+        ids.push(id)
+      }
+      return ids
+    },
   }
 }
 
@@ -550,8 +609,9 @@ function routingSection(
   const resolved = resolveRoutingMode(current)
   // In vault mode routing tries the vault accounts, so their order is the
   // one shown and set here; the pool roster's order is not used.
-  const vault = snap.vault
-  const ids = vault ? [...vault.ids] : snap.rows.map((row) => row.id)
+  const vault = snap.vault ? vaultNames(snap.vault) : undefined
+  const ids = vault ? vault.ids : snap.rows.map((row) => row.id)
+  const nameOf = (id: string) => (vault ? vault.nameOf(id) : id)
   const tried = orderForPlacement(
     ids,
     resolved.placement,
@@ -562,10 +622,10 @@ function routingSection(
   const lines = [`Mode: ${label}`]
   if (ids.length > 0)
     lines.push(
-      `${vault ? 'Vault account order' : 'Roster order'}: ${ids.join(', ')}`,
+      `${vault ? 'Vault account order' : 'Roster order'}: ${ids.map(nameOf).join(', ')}`,
     )
   if (resolved.mode === 'ordered' && tried.join() !== ids.join())
-    lines.push(`Tried in order: ${tried.join(', ')}`)
+    lines.push(`Tried in order: ${tried.map(nameOf).join(', ')}`)
   const actions: ActionDefinition[] = [
     {
       id: 'mode',
@@ -594,22 +654,27 @@ function routingSection(
           kind: 'text',
           id: 'order',
           label: vault
-            ? 'Vault route ids, first to last'
+            ? 'Vault accounts, first to last, separated by commas'
             : 'Account ids, first to last',
-          value: ids.join(', '),
+          value: vault ? ids.map(vault.entryOf).join(', ') : ids.join(', '),
           required: true,
         },
       ],
       run: async ({ values }) => {
-        const order = String(values.order)
-          .split(/[\s,]+/)
-          .filter((id) => id.length > 0)
-        const result = vault
-          ? await reorderVault(vault, order)
-          : await store.reorder(order, locks)
+        const text = String(values.order)
+        // A vault label may contain spaces, so vault entries are separated by
+        // commas only; pool ids never contain spaces.
+        const entries = text
+          .split(vault ? /[,\n]+/ : /[\s,]+/)
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0)
+        const result =
+          snap.vault && vault
+            ? await reorderVault(snap.vault, vault.resolve(entries))
+            : await store.reorder(entries, locks)
         return result.outcome === 'unchanged'
           ? 'The order is unchanged.'
-          : `Order set to ${result.ids.join(', ')}.`
+          : `Order set to ${result.ids.map(nameOf).join(', ')}.`
       },
     })
   return {
