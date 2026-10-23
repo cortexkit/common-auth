@@ -72,8 +72,9 @@ export interface ChooseAccountInput extends RequestScope {
   readonly previousAccountId?: string
   /**
    * Set when the attempt this one retries was refused for a limit before any
-   * output and the retry hook asked the host to try again. The adapter
-   * should not pick `accountId` again unless it has nothing else.
+   * output. The adapter should not pick `accountId` again unless it has
+   * nothing else; returning it, or `undefined`, tells the retry hook that no
+   * other account can serve, so the host's own retry decision stands.
    */
   readonly rerouteFrom?: {
     readonly accountId: string
@@ -188,6 +189,14 @@ export interface OpenCode2AuthAdapter<Q = unknown, A = unknown> {
    * Picks the account for one model request. Called again for every retry,
    * so a refused account can be skipped. Returning `undefined` stops the
    * request with `OpenCode2AuthError` kind `no-account`.
+   *
+   * After a limit before any output, the retry hook makes this call itself,
+   * with `rerouteFrom` set, before the host retries. Another account is
+   * kept as the next attempt's account, and the host retries at once; that
+   * attempt does not call this again unless the host retries with another
+   * model or agent, which chooses afresh. `undefined` or the refused account
+   * is discarded: the host's own decision stands, and an attempt after its
+   * wait calls this again without `rerouteFrom`.
    */
   chooseAccount(
     input: ChooseAccountInput,
@@ -384,10 +393,24 @@ export interface InstallOpenCode2AuthOptions {
   readonly logger?: OpenCode2AuthLogger
 }
 
+/**
+ * Why the retry hook decided as it did:
+ *
+ * - `reroute`: refused for a limit before any output, and `chooseAccount`
+ *   named another account for the next attempt, so the host retries at once;
+ * - `output-started`: output had reached the user, so no retry;
+ * - `no-account`: the attempt had no account, so no retry;
+ * - `host-decides-last-account`: refused for a limit before any output, but
+ *   no other account can serve the next attempt, so the host's own decision
+ *   (its wait, or its refusal to retry) stands and the next attempt may go
+ *   to the refused account again;
+ * - `host-decides`: no limit was recognised, so the host's decision stands.
+ */
 export type RetryReason =
   | 'reroute'
   | 'output-started'
   | 'no-account'
+  | 'host-decides-last-account'
   | 'host-decides'
 
 /**

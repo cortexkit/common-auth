@@ -119,13 +119,15 @@ export function scopeFor(
 export type TestQuota = { used: number }
 
 /**
- * A provider-neutral adapter over two fake accounts, `A` and `B`. It picks the
- * account named in `plan.next`, or the other one when that account is in
- * `plan.limited`; tests change both between requests. Events are JSON objects:
- * `delta` starts output, `quota` reports usage, `refused` is a limit.
+ * A provider-neutral adapter over fake accounts, `A` and `B` unless
+ * `plan.accounts` names others. It picks the account named in `plan.next`, or
+ * the next one not in `plan.limited`; tests change both between requests. As
+ * the adapter contract asks, it skips `rerouteFrom.accountId` unless no other
+ * account is left. Events are JSON objects: `delta` starts output, `quota`
+ * reports usage, `refused` is a limit.
  */
 export function fakeAdapter<A = unknown>(
-  plan: { next: string; limited: Set<string> } = {
+  plan: { next: string; limited: Set<string>; accounts?: string[] } = {
     next: 'A',
     limited: new Set(),
   },
@@ -136,8 +138,13 @@ export function fakeAdapter<A = unknown>(
     providerID: PROVIDER,
     chooseAccount(input) {
       choices.push({ ...input })
-      const order = [plan.next, ...['A', 'B'].filter((id) => id !== plan.next)]
-      return order.find((id) => !plan.limited.has(id))
+      const accounts = plan.accounts ?? ['A', 'B']
+      const order = [
+        plan.next,
+        ...accounts.filter((id) => id !== plan.next),
+      ].filter((id) => accounts.includes(id) && !plan.limited.has(id))
+      const refused = input.rerouteFrom?.accountId
+      return order.find((id) => id !== refused) ?? order[0]
     },
     accountHeaders({ accountId }) {
       return {

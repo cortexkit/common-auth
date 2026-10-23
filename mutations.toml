@@ -2647,9 +2647,9 @@ expect_message = 'Received: ""'
 id = 'opencode2-selection-checks-after-choice'
 guards = 'a forgotten selection refuses immediately after chooseAccount, before starting accountHeaders'
 file = 'src/opencode2/install.ts'
-old = '''    const accountId = await adapter.chooseAccount(input)
+old = '''    const accountId = chosen ?? (await adapter.chooseAccount(input))
     assertActive()'''
-new = '''    const accountId = await adapter.chooseAccount(input)
+new = '''    const accountId = chosen ?? (await adapter.chooseAccount(input))
     // NON-VACUITY BREAK: omit the post-choice revocation check.'''
 test_file = 'test/opencode2/revocation.test.ts'
 runner = "command"
@@ -2827,6 +2827,67 @@ list_command = ["bun", "scripts/list-bun-tests.mjs", "test/opencode2/revocation.
 test_count_pattern = "Ran {count} test"
 expect_red = ['^installOpenCode2Auth\srevocation\sin-flight\stracking\sdrops\sforgotten\ssessions\simmediately\sand\sall\stokens\swhen\sselections\ssettle$']
 expect_message = '/expect\(tracking\?\.size\)\.toBe\(0\)[\s\S]*Expected: 0\nReceived: 1/'
+
+# --- OpenCode 2 retry on the last usable account ---
+
+[[control]]
+id = 'opencode2-retry-last-account-keeps-host-decision'
+guards = "a limit before output on the last usable account keeps the host's wait and never reroutes into a no-account refusal"
+file = 'src/opencode2/install.ts'
+old = 'if (accountId !== undefined && accountId !== rec.accountId) {'
+new = 'if (true) { // NON-VACUITY BREAK: reroute with no other account to serve.'
+test_file = 'test/opencode2/last-account.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/last-account.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/last-account.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\sretry\son\sthe\slast\susable\saccount\sone\saccount\srefused\sbefore\soutput\skeeps\sthe\shost\swait\sand\sretries\son\sthe\ssame\saccount$']
+expect_message = '/-\s+"delay": 30000,\n\+\s+"delay": 0,/'
+
+[[control]]
+id = 'opencode2-retry-refused-account-is-not-a-reroute'
+guards = "an adapter naming the refused account again is no reroute: the host's decision, including no retry, stands"
+file = 'src/opencode2/install.ts'
+old = 'if (accountId !== undefined && accountId !== rec.accountId) {'
+new = 'if (accountId !== undefined) { // NON-VACUITY BREAK: reroute back to the refused account.'
+test_file = 'test/opencode2/last-account.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/last-account.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/last-account.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\sretry\son\sthe\slast\susable\saccount\san\sadapter\snaming\sthe\srefused\saccount\sagain\skeeps\sthe\shost\sdecision,\sincluding\sno\sretry$']
+expect_message = '/\+\s+"delay": 0,\n\+\s+"retry": true,/'
+
+[[control]]
+id = 'opencode2-retry-choice-serves-next-attempt'
+guards = 'the account the retry hook rerouted to serves the retried attempt, so it becoming unavailable meanwhile never turns into a no-account refusal'
+file = 'src/opencode2/install.ts'
+old = '''        ? next.accountId
+        : undefined'''
+new = '''        ? undefined // NON-VACUITY BREAK: choose again at the retried attempt.
+        : undefined'''
+test_file = 'test/opencode2/last-account.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/last-account.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/last-account.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\sretry\son\sthe\slast\susable\saccount\sthe\sother\saccount\sbecoming\sunavailable\sbefore\sthe\sretry\sstill\sserves\sthe\sretry,\sand\sits\srefusal\skeeps\sthe\shost\swait$']
+expect_message = 'refused (no-account)'
+
+[[control]]
+id = 'opencode2-retry-probe-failure-keeps-host-decision'
+guards = "chooseAccount throwing in the retry hook (no route left) keeps the host's decision instead of rejecting the retry hook"
+file = 'src/opencode2/install.ts'
+old = '                // stands, and the next attempt asks the adapter again.'
+new = '''                // stands, and the next attempt asks the adapter again.
+                throw error // NON-VACUITY BREAK: reject the retry hook.'''
+test_file = 'test/opencode2/last-account.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/last-account.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/last-account.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^OpenCode\s2\sretry\son\sthe\slast\susable\saccount\schooseAccount\sthrowing\swhile\sthe\sretry\shook\slooks\sfor\sanother\saccount\skeeps\sthe\shost\sdecision$']
+expect_message = 'pool unreadable'
 
 # --- sidebar-file ---
 
@@ -3287,8 +3348,8 @@ expect_message = 'expect(received).toEqual(expected)'
 id = 'opencode2-owned-local-refusal'
 guards = 'no account means local refusal before dispatch, never fabricated credentials'
 file = 'src/opencode2/install.ts'
-old = 'const accountId = await adapter.chooseAccount(input)'
-new = "const accountId = (await adapter.chooseAccount(input)) ?? 'A' // NON-VACUITY BREAK: bypass refusal"
+old = 'const accountId = chosen ?? (await adapter.chooseAccount(input))'
+new = "const accountId = chosen ?? (await adapter.chooseAccount(input)) ?? 'A' // NON-VACUITY BREAK: bypass refusal"
 test_file = 'test/opencode2/ownership.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']

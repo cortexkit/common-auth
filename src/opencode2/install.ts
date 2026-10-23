@@ -87,6 +87,17 @@ interface PendingRetry {
     readonly accountId: string
     readonly limit: LimitSignal
   }
+  /**
+   * Set with `rerouteFrom`: the account `chooseAccount` already picked for
+   * the next attempt when the retry hook asked whether another account could
+   * serve. The next attempt uses it instead of choosing again, so the account
+   * that justified retrying at once is the one that serves, and the adapter
+   * is asked once per attempt.
+   */
+  readonly next?: {
+    readonly accountId: string
+    readonly scope: RequestScope
+  }
 }
 
 type HookDraft = {
@@ -192,8 +203,9 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
  *   whether output has started and when the response ended, attributed to
  *   an attempt by the rules below;
  * - `retry` asks the host to retry at once when an account was refused
- *   before any output, so `model.request` runs again and can pick another
- *   account, and refuses to retry once output has started.
+ *   before any output and `chooseAccount` names another account for the
+ *   next attempt, keeps the host's decision when the refused account was the
+ *   last one that can serve, and refuses to retry once output has started.
  *
  * Attribution. A send belongs to the attempt named by the mark
  * `model.request` left on it, so several attempts of one session and kind
@@ -441,7 +453,16 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         ? {}
         : { rerouteFrom: retried.rerouteFrom }),
     }
-    const accountId = await adapter.chooseAccount(input)
+    // A choice made by the retry hook holds only for the same request: a
+    // retry the host sends to another model or agent chooses afresh.
+    const next = retried?.next
+    const chosen =
+      next !== undefined &&
+      next.scope.modelID === scope.modelID &&
+      next.scope.agent === scope.agent
+        ? next.accountId
+        : undefined
+    const accountId = chosen ?? (await adapter.chooseAccount(input))
     assertActive()
     let headers: HeaderEdits = {}
     let data: A | undefined
@@ -952,6 +973,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           let decision: SessionRetryDecision = hostDecision
           let reason: RetryReason
           let rerouteFrom: PendingRetry['rerouteFrom']
+          let next: PendingRetry['next']
           const attempt = rec.attempt
           if (rec.accountId === undefined || !attempt) {
             decision = { retry: false }
@@ -975,16 +997,53 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             if (rec.limit) {
               await rec.limit.delivered
               assertActive()
-              rec.rerouted = true
-              rerouteFrom = {
+              const refused = {
                 accountId: rec.accountId,
                 limit: rec.limit.signal,
               }
-              // No delay: the next attempt goes to another account, and the
-              // host would otherwise wait out the refused account's backoff,
-              // or not retry at all for errors it deems final.
-              decision = { retry: true, delay: 0 }
-              reason = 'reroute'
+              // Ask the adapter now, with the same input the next attempt
+              // would give it, which account serves that attempt. Rerouting
+              // is right only when that is another account: otherwise the
+              // next attempt would find no account (a `no-account` refusal
+              // the host treats as a defect and does not retry) or go back
+              // at once to the account that just refused.
+              let accountId: string | undefined
+              try {
+                accountId = await adapter.chooseAccount({
+                  ...rec.scope,
+                  previousAccountId: rec.accountId,
+                  rerouteFrom: refused,
+                })
+              } catch (error) {
+                // Treated as no other account: the host's own decision
+                // stands, and the next attempt asks the adapter again.
+                warn(
+                  'opencode2 auth chooseAccount threw while the retry hook looked for another account; the host decides the retry',
+                  { sessionID: rec.scope.sessionID, error: describe(error) },
+                )
+              }
+              assertActive()
+              if (accountId !== undefined && accountId !== rec.accountId) {
+                rec.rerouted = true
+                rerouteFrom = refused
+                // The next attempt takes this choice rather than asking
+                // again, so an account limited between here and the host's
+                // retry costs one refused send, which this hook judges
+                // again, rather than a `no-account` refusal.
+                next = { accountId, scope: rec.scope }
+                // No delay: the next attempt goes to another account, and the
+                // host would otherwise wait out the refused account's backoff,
+                // or not retry at all for errors it deems final.
+                decision = { retry: true, delay: 0 }
+                reason = 'reroute'
+              } else {
+                // No other account to reroute to (the adapter named none, or
+                // only the refused one, or threw): keep the host's wait
+                // (retry-after or backoff) or its refusal to retry, and let
+                // the next attempt, after that wait, choose without
+                // excluding the refused account.
+                reason = 'host-decides-last-account'
+              }
             } else {
               reason = 'host-decides'
             }
@@ -998,6 +1057,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
               sessionID: rec.scope.sessionID,
               accountId: rec.accountId,
               ...(rerouteFrom === undefined ? {} : { rerouteFrom }),
+              ...(next === undefined ? {} : { next }),
             })
           }
           await emit('retry', {
