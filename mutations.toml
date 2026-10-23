@@ -8598,3 +8598,155 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^hub\smembers:\sa\scommitted\srow\sis\sauthorizable\sat\sonce\sbecause\sthe\spush\slands\sbefore\srefresh\sresolves$']
 expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-hub-roster-key-projection'
+guards = 'the roster key hashes the projection inputs (route prefix and account mapper) with the classifier input, so processes that would project differently never share a roster file'
+file = 'src/claustrum/hub.ts'
+old = '''    routePrefix: options.routePrefix ?? DEFAULT_ROUTE_PREFIX,'''
+new = '''    routePrefix: DEFAULT_ROUTE_PREFIX, // NON-VACUITY BREAK: leave the route prefix out of the roster key.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\skeys:\sthe\sroster\sdirectory\sis\sthe\shost\sgeneration\splus\sa\sfingerprint\sof\sthe\sclassifier\sinput,\sthe\smember\sset\sand\sthe\sprojection\sinputs$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-hub-base-view-rule'
+guards = "a hub commit never replaces a roster another process committed after the hub listed (the base-view rule on refreshVaultRoster's listedOver)"
+file = 'src/claustrum/roster.ts'
+old = '''          current?.view !== listedOver.view &&'''
+new = '''          false && // NON-VACUITY BREAK: project an older list over a newer commit.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\scommits:\sa\slist\solder\sthan\sanother\sprocess\scommit\snever\sreplaces\sit$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-hub-pending-list-due'
+guards = "a member that missed the hub's latest list makes the next tick list, even with the watch watching and no notice"
+file = 'src/claustrum/hub.ts'
+old = '''    if (this.#watch?.watch.mode !== 'watching' || pending) return true'''
+new = '''    if (this.#watch?.watch.mode !== 'watching' || (pending && false)) return true // NON-VACUITY BREAK: wait for a notice or the safety poll.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = [
+  '^hub\spending:\sa\smember\swhose\scommit\sfailed\sis\slisted\sfor\son\sthe\snext\stick,\swith\sthe\swatch\swatching\sand\sno\snotice$',
+  '^hub\spending:\sa\smember\swhose\sdiscovery\slease\sa\sstopped\sprocess\sstill\sholds\sis\slisted\sfor\sagain\suntil\sit\scommits$',
+]
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-hub-pending-backoff'
+guards = 'a member that misses every list backs off to the safety poll instead of keeping the hub listing every tick'
+file = 'src/claustrum/hub.ts'
+old = '''      failures <= PENDING_EVERY_TICK'''
+new = '''      failures > 0 // NON-VACUITY BREAK: list for a failing member on every tick.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\spending:\sa\smember\sthat\sfails\son\severy\slist\sbacks\soff\sto\sthe\ssafety\spoll,\sand\sa\snotice\sstill\slists\sat\sonce$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-hub-foreign-view-lists'
+guards = 'a member file holding a view this process did not commit, or a route id that is a local row here, makes the next tick list instead of being left to the safety poll'
+file = 'src/claustrum/hub.ts'
+old = '''        entry.pending ??= { failures: 0, wait: 0 }'''
+new = '''        void entry // NON-VACUITY BREAK: leave another process's roster to the safety poll.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = [
+  '^hub\sinstall:\sanother\sprocess\ssame-view\spreference\schange\sis\sinstalled,\sand\sits\sdifferent\sview\sis\slisted\sfor$',
+  '^hub\sinstall:\sa\sroster\swhose\sroute\sid\sis\sa\slocal\srow\shere\sis\snever\sinstalled;\sthe\shub\slists\sand\srenames\sthat\sroute$',
+]
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-hub-seed'
+guards = "a member's first roster under a new key keeps the declines and order of its newest roster under an older key"
+file = 'src/claustrum/hub.ts'
+old = '''        const seed = base.file ? undefined : await this.#seed(entry)'''
+new = '''        const seed = base.file ? undefined : (undefined as VaultRosterSeed | undefined) // NON-VACUITY BREAK: start a new key with no preferences.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = [
+  '^hub\sseeding:\sa\snew\skey\sstarts\sfrom\sthe\solder\skey\sdeclines\sand\sorder\sonly,\swrites\sits\sfirst\sfile\swith\sthe\sview\sunchanged,\sand\snever\swrites\sunder\sthe\sold\skey$',
+  '^hub\sseeding:\sthe\slayout\sbefore\sfingerprints\sseeds\sa\snew\skey\stoo,\sand\sthe\snewest\solder\sroster\swins$',
+]
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-hub-list-error-every-member'
+guards = "a failed list and a vault refusal of the watch reach every member's onError, not only the hub's"
+file = 'src/claustrum/hub.ts'
+old = '''    for (const entry of this.#open()) entry.hooks?.onError(error)'''
+new = '''    void error // NON-VACUITY BREAK: tell only the hub.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = [
+  '^hub\sfaults:\sa\sfailed\slist\sreaches\sthe\shub\sand\severy\smember\sonce;\sa\smember\scommit\serror\sreaches\sonly\sthat\smember$',
+  '^hub\sfaults:\sa\sconfirming\srefusal\sdrops\severy\skept\sreceipt\sand\sreaches\seach\smember\sonce,\swith\sno\sinactive\stransition$',
+]
+expect_message = 'expect(received).toHaveLength(expected)'
+
+[[control]]
+id = 'claustrum-hub-lock-refusal-not-member-error'
+guards = "a member commit lost to another writer's roster lock is retried, not published as that member's error"
+file = 'src/claustrum/hub.ts'
+old = '''        if (isVaultRosterLockRefusal(entry.path, error))'''
+new = '''        if (false && isVaultRosterLockRefusal(entry.path, error)) // NON-VACUITY BREAK: publish lock contention as a member error.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\spending:\sa\sfirst\scommit\srefused\sby\sanother\swriter\sholding\sthe\sroster\sis\sno\smember\serror\sand\sis\sretried$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-roster-lock-refusal-private-files'
+guards = "on Windows a PrivateFileError from a roster lock's eviction marker or staged owner record is the same refusal as a lost lock"
+file = 'src/claustrum/roster.ts'
+old = '''      return failed === lock || failed.startsWith(`${lock}.`)'''
+new = '''      return failed === lock // NON-VACUITY BREAK: only the lock file itself counts.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\sfaults:\sa\sprivate-files\serror\son\sa\sroster\slock\scounts\sas\sthe\ssame\srefusal\sas\sa\slost\slock$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-roster-write-lock-across-processes'
+guards = "a preference change in one process and another process's hub commit exclude each other through the roster write lock, so neither overwrites the other"
+file = 'src/claustrum/roster.ts'
+old = '''    { ...WRITE_LOCK, signal: options.signal },'''
+new = '''    { ...WRITE_LOCK, name: `${WRITE_LOCK.name}-${Math.random()}`, signal: options.signal }, // NON-VACUITY BREAK: every writer takes a lock of its own.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\sprocesses:\stwo\shubs\sin\sseparate\sprocesses\scommit\sindependently,\sa\sdecline\sand\san\saccept\sboth\ssurvive\sthe\sother\sprocess\sconcurrent\slist,\sand\sanother\sfingerprint\skeeps\sits\sown\sdirectory$']
+expect_message = 'expect(received).toEqual(expected)'

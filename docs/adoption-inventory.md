@@ -570,21 +570,29 @@ classifying family. It owns the only vault connection and the only
 `ClaustrumScopedCustody` (so kept receipts, outage state and the outage probe
 exist once), one vault watch, and one `list_scoped` per refresh, fanned out to
 one roster per provider. It refuses a legacy `ClaustrumFamily`. Options:
-`stateDir`, `hostGeneration` (for example `opencode2`), the fixed `members`
-set (lowercase file-safe ids; Windows device names are refused), `tokenPath`,
-`family`, `connect`, `isCustodyActive`, plus the custody and timer options a
-consumer passes today (`parseIdentity`, `requireAssertion`, `now`, `logger`,
+`stateDir`, `hostGeneration` (for example `opencode2`), `classifierInput` (the
+exact plain-JSON object the plugin hands its classifier: classifier version,
+supported-table entries, reserved provider set and host facts), the fixed
+`members` set (lowercase file-safe ids; Windows device names are refused),
+`routePrefix` and `mapAccount` for every member, `tokenPath`, `family`,
+`connect`, `isCustodyActive`, plus the custody and timer options a consumer
+passes today (`parseIdentity`, `requireAssertion`, `now`, `logger`,
 `setTimeoutImpl`, `clearTimeoutImpl`, `pollIntervalMs`) and `onError`.
 
 Members are built only by `hub.member(provider, options)` with the new
-`ClaustrumHubMemberOptions`: `reservedRouteIds`, `routePrefix`, `mapAccount`,
-`onRoster`, `onError` and `logger`, nothing else. The factory returns an
-ordinary `ClaustrumConsumer` and throws `wrong-consumer` for a provider outside
-the member set, a second build of one provider, or a hub-owned field
-(`rosterPath`, `tokenPath`, `family`, `connect`, `isCustodyActive`, `insula`,
-`pollIntervalMs`) passed through a cast. The hub gives member `P` the roster
-path `hub.rosterPath(P)` = `<stateDir>/rosters/<hostGeneration>/<P>.json`; the
-member's quota writer, `authorize` re-read and `close` use it. A member never
+`ClaustrumHubMemberOptions`: `reservedRouteIds`, `onRoster`, `onError` and
+`logger`, nothing else. The factory returns an ordinary `ClaustrumConsumer`
+and throws `wrong-consumer` for a provider outside the member set, a second
+build of one provider, or a hub-owned field (`rosterPath`, `tokenPath`,
+`family`, `connect`, `isCustodyActive`, `insula`, `pollIntervalMs`,
+`routePrefix`, `mapAccount`) passed through a cast. The hub gives member `P`
+the roster path `hub.rosterPath(P)` =
+`<stateDir>/rosters/<hostGeneration>/<fingerprint>/<P>.json`, where the
+fingerprint is 16 hex digits of a SHA-256 over the canonical JSON of
+`classifierInput`, the sorted member set, `routePrefix` and `mapAccount`'s
+source text (a `classifierInput` that is not plain JSON throws
+`invalid-state`). Every lock file of a roster sits beside it. The member's
+quota writer, `authorize` re-read and `close` use that path. A member never
 connects, lists, watches or ticks: `start()` starts the hub's tick;
 `refresh()` is the hub's coalesced refresh and resolves after the hub pushed
 this member's committed roster into memory (`undefined` while vault mode is
@@ -622,8 +630,35 @@ member commit, push, `retain`, committed view and watch opening checks the
 generation it started in, so work in flight across off and on publishes
 nothing. `hub.refusals()` (`{ view, refused, notMine }`) and `hub.grantReach()`
 describe the last discovery every member committed and are undefined while
-unknown. Leader election between processes, fingerprinted roster keys,
-seeding and the pending-member retry rule are not included yet.
+unknown.
+
+**Several processes on one profile.** Each process's hub lists for itself;
+there is no leader between processes. Each member commit is
+`refreshVaultRoster` with the new optional `listedOver: { view }`: the view the
+file held before the hub listed. The commit runs under the per-path discovery
+lease and the roster write lock, as a plain consumer's does, and projects only
+while the file still holds that view or the list's own view; otherwise another
+process committed since the list, and its roster is returned unchanged.
+Decline, accept, reorder and quota writes take the same write lock, so a
+preference changed in one process survives another process's concurrent
+commit. A tick installs a member file another writer changed under the same
+view; a different view (or no roster in memory, or a route id that is one of
+the member's `reservedRouteIds`) makes the member pending instead. A member is
+**pending** while it holds no commit of the hub's latest list (its commit
+failed, was refused, or returned another process's roster), and a pending
+member makes the next tick list even while the watch is `watching`: on each of
+the next three ticks, then after 2, 4, 8 ... ticks up to the five-minute safety
+poll. A commit lost to another writer's roster lock (`roster-busy`, a lock
+timeout or loss, or on Windows a `PrivateFileError` naming one of the roster's
+lock files) is retried and is not a member error;
+any other commit error goes to that member's `onError` only. A failed list and
+a vault refusal of the watch go to the hub's `onError` and once to every
+member's; a watch that only fails goes to the hub's alone. A member's first
+roster under a new key takes the declines and account order (never the rows)
+of its newest roster under an older key of the same host generation, the
+layout without a fingerprint included, through the new optional
+`ProjectionOptions.seed` (`vaultRosterSeed(roster)`); the older files are only
+read.
 
 ### ./logger
 
