@@ -221,9 +221,9 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
  * compares the host-prepared secret exactly, then selects a fresh attempt only
  * for an owned send. Request-object attribution therefore needs no attempt
  * header. Frames are owned by the latest handshake of their session and kind;
- * retry runs only when the session's latest transport was owned. The host's
- * retry hook has no request identity, so concurrent mixed-ownership calls
- * cannot be distinguished there; owned retries retain the heuristic above.
+ * retry runs only when the session's latest transport was owned and the session
+ * has never mixed owned and foreign transports. The host's retry hook has no
+ * request identity, so a mixed session must keep the host's retry decision.
  */
 export async function installOpenCode2Auth<Q, A = unknown>(
   ctx: OpenCode2HookContext,
@@ -252,6 +252,47 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   // A transport's prepared credential, never global login state, owns these.
   const ownedSockets = new Set<string>()
   const latestTransportOwned = new Map<string, boolean>()
+  const transportSeen = new Map<
+    string,
+    { ownedSeen: boolean; foreignSeen: boolean }
+  >()
+  const mixed = (sessionID: string) => {
+    const seen = transportSeen.get(sessionID)
+    return seen?.ownedSeen === true && seen.foreignSeen
+  }
+  const recordTransport = (sessionID: string, owned: boolean) => {
+    latestTransportOwned.set(sessionID, owned)
+    const seen = transportSeen.get(sessionID) ?? {
+      ownedSeen: false,
+      foreignSeen: false,
+    }
+    if (owned) seen.ownedSeen = true
+    else seen.foreignSeen = true
+    transportSeen.set(sessionID, seen)
+  }
+  const transportOwned = (scope: RequestScope, headers: Headers) => {
+    const refuse = ownership?.refuseMisplaced
+    const carriers = refuse
+      ? [...headers].filter(([, value]) =>
+          value.includes(placeholderSecret(providerID)),
+        )
+      : []
+    const owned = owns(headers) && (!refuse || carriers.length > 0)
+    if (refuse) {
+      if (carriers.length > 0 && (carriers.length !== 1 || !owned)) {
+        recordTransport(scope.sessionID, false)
+        throw new OpenCode2AuthError({
+          kind: 'placement-refused',
+          providerID,
+          sessionID: scope.sessionID,
+          requestKind: scope.kind,
+          message: refuse(carriers[0]?.[0] ?? ''),
+        })
+      }
+    }
+    recordTransport(scope.sessionID, owned)
+    return owned
+  }
   let warnedUnprovenResponse = false
   let warnedUnmarkedSend = false
   const listeners = new Map<
@@ -760,8 +801,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       'http.request',
       (draft) => {
         if (ownership) {
-          const owned = owns(draft.request.headers)
-          latestTransportOwned.set(draft.sessionID, owned)
+          const owned = transportOwned(scopeOf(draft), draft.request.headers)
           if (!owned) return
         }
         return withSelection(scopeOf(draft), async (assertActive) => {
@@ -905,12 +945,14 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       'experimental.ws.handshake',
       (draft) => {
         if (ownership) {
-          const owned = owns(new Headers(draft.headers))
           const key = keyOf(draft.sessionID, draft.kind)
-          latestTransportOwned.set(draft.sessionID, owned)
           // Clear the previous handshake's ownership before selecting: if no
           // account can serve, subsequent frames must not use the old attempt.
           ownedSockets.delete(key)
+          const owned = transportOwned(
+            scopeOf(draft),
+            new Headers(draft.headers),
+          )
           if (!owned) return
         }
         return withSelection(scopeOf(draft), async (assertActive) => {
@@ -939,13 +981,16 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           const attempt = rec.attempt
           if (!account || !attempt) throw noAccount(rec.scope)
           await failing(rec, async () => {
-            applyHeaderEdits(draft.headers, rec.headers)
+            if (!ownership?.refuseMisplaced)
+              applyHeaderEdits(draft.headers, rec.headers)
             const url = adapter.rewriteHandshakeURL?.({
               ...account,
               url: draft.url,
               attempt,
             })
             if (url !== undefined) draft.url = url
+            if (ownership?.refuseMisplaced)
+              applyHeaderEdits(draft.headers, rec.headers)
             guard(rec.scope, Object.entries(draft.headers))
             if (ownership) ownedSockets.add(rec.key)
           })
@@ -1003,9 +1048,21 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       async (draft) => {
         if (ownership && latestTransportOwned.get(draft.sessionID) !== true)
           return
+        const hostDecision = draft.decision
+        const hostDecides = () =>
+          emit('retry', {
+            sessionID: draft.sessionID,
+            attempt: draft.attempt,
+            reason: 'host-decides',
+            hostDecision,
+            decision: hostDecision,
+          })
+        if (mixed(draft.sessionID)) {
+          await hostDecides()
+          return
+        }
         const picked = pickForRetry(draft.sessionID)
         if (!picked) return
-        const hostDecision = draft.decision
         if (picked === 'ambiguous') {
           // Nothing tells which open attempt failed: keep the host's
           // decision and leave every attempt as it is.
@@ -1021,6 +1078,11 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         const rec = picked
         await withSelection(rec.scope, async (assertActive) => {
           const checkRetryActive = assertActive
+          // Recheck after entering selection before attributing an identity-less error.
+          if (mixed(draft.sessionID)) {
+            await hostDecides()
+            return
+          }
           rec.judged = true
           const attempt = rec.attempt
           if (attempt && !rec.outputStarted) {
@@ -1037,10 +1099,20 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             rec.scope.sessionID,
             async () => {
               checkRetryActive()
+              if (mixed(draft.sessionID))
+                return {
+                  decision: hostDecision,
+                  reason: 'host-decides' as const,
+                }
               const old = pendingRetries.get(rec.key)
               pendingRetries.delete(rec.key)
               if (old?.next) await releaseChoice(old.next)
               checkRetryActive()
+              if (mixed(draft.sessionID))
+                return {
+                  decision: hostDecision,
+                  reason: 'host-decides' as const,
+                }
               let decision: SessionRetryDecision = hostDecision
               let reason: RetryReason
               let rerouteFrom: PendingRetry['rerouteFrom']
@@ -1092,6 +1164,15 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                     // A selection revoked while the adapter was choosing cannot be used.
                     if (next) await releaseChoice(next)
                     throw error
+                  }
+                  // A foreign transport may have arrived while choosing. Do not
+                  // publish or retain a retry choice for an unidentified call.
+                  if (mixed(draft.sessionID)) {
+                    if (next) await releaseChoice(next)
+                    return {
+                      decision: hostDecision,
+                      reason: 'host-decides' as const,
+                    }
                   }
                   if (accountId !== undefined && accountId !== rec.accountId) {
                     rec.rerouted = true
@@ -1160,6 +1241,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   const forgetSession = (sessionID: string) => {
     revokeSelections(sessionID)
     latestTransportOwned.delete(sessionID)
+    // A foreign send can retry after forgetting and reuse of this session id.
+    // Retain its ownership history until disposal; owned-only ids need no tombstone.
+    if (!transportSeen.get(sessionID)?.foreignSeen)
+      transportSeen.delete(sessionID)
     for (const key of ownedSockets) {
       if (JSON.parse(key)[0] === sessionID) ownedSockets.delete(key)
     }
@@ -1223,6 +1308,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       for (const key of pendingRetries.keys()) discardPending(key)
       ownedSockets.clear()
       latestTransportOwned.clear()
+      transportSeen.clear()
       listeners.clear()
       await Promise.all(choiceWork.values())
       await Promise.all(
