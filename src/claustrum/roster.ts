@@ -461,6 +461,15 @@ function decodeRoster(value: unknown): VaultRosterFile {
   }
 }
 
+/**
+ * `roster` as `readVaultRoster` decodes it from the file that holds it, so a
+ * committed roster and a later read of its file compare equal. Package
+ * internal: not exported from `/claustrum`.
+ */
+export function decodedVaultRoster(roster: VaultRosterFile): VaultRosterFile {
+  return decodeRoster(JSON.parse(JSON.stringify(roster)))
+}
+
 export async function readVaultRoster(
   path: string,
 ): Promise<VaultRosterFile | undefined> {
