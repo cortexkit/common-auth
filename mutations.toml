@@ -4014,11 +4014,15 @@ expect_message = 'Expected promise that rejects'
 
 [[control]]
 id = 'opencode2-owned-switch-retry'
+# Two layers now protect this case: the latest-transport check, and the
+# mixed-ownership taint (a session that switched placeholder -> API key has seen
+# both). Breaking either alone leaves the other holding, so the row breaks both.
 guards = 'after switching to an API key, retry leaves the host decision untouched despite older owned refusals'
-file = 'src/opencode2/install.ts'
-old = '''        if (ownership && latestTransportOwned.get(draft.sessionID) !== true)
-          return'''
-new = '        // NON-VACUITY BREAK: let non-owned retries judge older owned attempts'
+edits = [
+  { file = 'src/opencode2/install.ts', old = '''        if (ownership && latestTransportOwned.get(draft.sessionID) !== true)
+          return''', new = '        // NON-VACUITY BREAK: let non-owned retries judge older owned attempts' },
+  { file = 'src/opencode2/install.ts', old = '    return seen?.ownedSeen === true && seen.foreignSeen', new = '    return false // NON-VACUITY BREAK: no mixed-ownership taint' },
+]
 test_file = 'test/opencode2/ownership.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/ownership.test.ts -t "$1"', 'mutation', '{test}']
