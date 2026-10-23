@@ -2834,8 +2834,11 @@ expect_message = '/expect\(tracking\?\.size\)\.toBe\(0\)[\s\S]*Expected: 0\nRece
 id = 'opencode2-retry-last-account-keeps-host-decision'
 guards = "a limit before output on the last usable account keeps the host's wait and never reroutes into a no-account refusal"
 file = 'src/opencode2/install.ts'
-old = 'if (accountId !== undefined && accountId !== rec.accountId) {'
-new = 'if (true) { // NON-VACUITY BREAK: reroute with no other account to serve.'
+old = "                reason = 'host-decides-last-account'"
+new = '''                rec.rerouted = true // NON-VACUITY BREAK: reroute with no other account to serve.
+                rerouteFrom = refused
+                decision = { retry: true, delay: 0 }
+                reason = 'reroute''''
 test_file = 'test/opencode2/last-account.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/last-account.test.ts -t "$1"', 'mutation', '{test}']
