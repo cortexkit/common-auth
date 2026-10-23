@@ -8452,3 +8452,93 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/commands/vault-order.
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^routing\sset\sorder\sin\svault\smode\sa\slabel\stwo\saccounts\sshare\srefuses\sas\sambiguous\sand\swrites\snothing;\stheir\sroute\sids\sstill\swork$']
 expect_message = 'expect(received).toMatchObject(expected)'
+
+# --- claustrum discovery hub ---
+[[control]]
+id = 'claustrum-hub-ticket-give-back'
+guards = 'an acquirer that aborts during connect, and every waiter of a rejected connect, gives its lease count back'
+file = 'src/claustrum/hub.ts'
+old = '''          // Aborted, or the connect failed: this acquirer holds nothing.
+          this.#giveBack(generation)'''
+new = '''          // NON-VACUITY BREAK: keep the count of an acquirer that holds nothing.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = [
+  '^hub\sleases:\san\sabort\sduring\sconnect\sgives\sits\sticket\sback\sand\sleaves\sthe\sother\swaiter\swaiting$',
+  '^hub\sleases:\sa\srejected\sconnect\srejects\severy\swaiter,\sgives\severy\sticket\sback\sand\sthe\snext\sacquire\sconnects\sanew$',
+]
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'claustrum-hub-late-connect-unpublished'
+guards = 'a connect that resolves after its generation ended closes its client and never becomes a custody'
+file = 'src/claustrum/hub.ts'
+old = '''        if (!this.#live(generation) || generation.count <= 0) {'''
+new = '''        if (generation.count < 0) { // NON-VACUITY BREAK: publish a late connect.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\sleases:\sa\sconnect\sof\san\sended\sgeneration\sis\sclosed\sunpublished\sand\sleaves\sthe\snext\spending\sconnect\sin\splace$']
+expect_message = 'timed out waiting for the old client to close'
+
+[[control]]
+id = 'claustrum-hub-fan-out-generation-fence'
+guards = 'a member commit of an ended generation writes nothing (its generation check and abort signal), even when vault mode is on again by the time it reaches the write lock'
+file = 'src/claustrum/hub.ts'
+old = '''          isActive: () => this.#live(generation) && this.#active === true,
+          signal: generation.controller.signal,'''
+new = '''          isActive: () => this.#active === true, // NON-VACUITY BREAK: fence on vault mode, not on the generation.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\sgenerations:\soff\sthen\son\spublishes\snothing\sof\sthe\sold\sgeneration\sfan-out$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'claustrum-hub-authority-transition'
+guards = "the hub's own false authority read revokes every lease, closes the connection and resets every member"
+file = 'src/claustrum/hub.ts'
+old = '''    if (!active && was !== false) this.#deactivate()'''
+new = '''    if (!active && was !== false) void was // NON-VACUITY BREAK: never run the inactive transition.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\sauthority:\svault\smode\soff\srevokes\severy\slease,\scloses\sthe\sclient\sonce\sand\sresets\severy\smember;\son\sagain\sstarts\sa\snew\sgeneration$']
+expect_message = 'expect(received).toThrow(expected)'
+
+[[control]]
+id = 'claustrum-hub-member-local-failure'
+guards = 'a hub member without a roster fails route-unavailable on its own instead of treating it as vault mode off'
+file = 'src/claustrum/consumer.ts'
+old = '''    if (!(await hub.readAuthority())) {'''
+new = '''    if (!roster || !(await hub.readAuthority())) { // NON-VACUITY BREAK: join a missing roster to not-active.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\smembers:\sone\smember\sfailing\sits\sfirst\scommit\sstays\slocal$']
+expect_message = 'toMatchObject(expected)'
+
+[[control]]
+id = 'claustrum-hub-push-before-resolve'
+guards = "the hub pushes each member's committed roster into its memory before refresh resolves, so a committed row is authorizable at once"
+file = 'src/claustrum/hub.ts'
+old = '''      if (!entry.closed) hooks.install(roster)'''
+new = '''      void hooks // NON-VACUITY BREAK: commit without the push.'''
+test_file = 'test/claustrum/hub.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/hub.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^hub\smembers:\sa\scommitted\srow\sis\sauthorizable\sat\sonce\sbecause\sthe\spush\slands\sbefore\srefresh\sresolves$']
+expect_message = 'expect(received).toBe(expected)'

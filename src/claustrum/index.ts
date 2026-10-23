@@ -93,6 +93,14 @@ export {
   isCustodyPlaceholderValue,
 } from './host-slot.js'
 export {
+  ClaustrumDiscoveryHub,
+  type ClaustrumDiscoveryHubOptions,
+  type ClaustrumHubMemberOptions,
+  type ClaustrumHubRefusals,
+  type ClaustrumLeasedCustody,
+  type CustodyLease,
+} from './hub.js'
+export {
   acquireInsulaQuotaSource,
   type InsulaQuotaContext,
   type InsulaQuotaLookup,
