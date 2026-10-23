@@ -20,6 +20,80 @@ prebuild = [
   { name = "build", command = ["bun", "run", "build"], timeout_s = 600 },
 ]
 
+# --- transport placement and mixed-ownership retry ---
+[[control]]
+id = 'opencode2-mixed-session-taint'
+guards = 'a foreign error cannot be attributed to an owned attempt in a mixed session'
+file = 'src/opencode2/install.ts'
+old = 'return seen?.ownedSeen === true && seen.foreignSeen'
+new = 'return false // NON-VACUITY BREAK: ignore mixed ownership'
+test_file = 'test/opencode2/mixed-ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/opencode2/install.ts; exec bun test test/opencode2/mixed-ownership.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/mixed-ownership.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^mixed\sownership\sretry\sL6\s1:\sforeign\sthen\sowned\scannot\sblame\sthe\sowned\saccount$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'opencode2-mixed-publish-recheck'
+guards = 'foreign work arriving during retry selection prevents publication and releases the choice'
+file = 'src/opencode2/install.ts'
+old = '''                  if (mixed(draft.sessionID)) {
+                    if (next) await releaseChoice(next)'''
+new = '''                  if (false) { // NON-VACUITY BREAK: publish after becoming mixed
+                    if (next) await releaseChoice(next)'''
+test_file = 'test/opencode2/mixed-ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/opencode2/install.ts; exec bun test test/opencode2/mixed-ownership.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/mixed-ownership.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^mixed\sownership\sretry\sL6\s7:\sbecoming\smixed\swhile\schoosing\sreleases\sthe\sretry\schoice$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'opencode2-mixed-dispose-only-reset'
+guards = 'forgetting cannot erase foreign ownership history before a delayed retry'
+file = 'src/opencode2/install.ts'
+old = '''if (!transportSeen.get(sessionID)?.foreignSeen)
+      transportSeen.delete(sessionID)'''
+new = 'transportSeen.delete(sessionID) // NON-VACUITY BREAK: clear taint at forget'
+test_file = 'test/opencode2/mixed-ownership.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/opencode2/install.ts; exec bun test test/opencode2/mixed-ownership.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/mixed-ownership.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^mixed\sownership\sretry\sL6\s5:\sforgetSession\sdoes\snot\sreset\sa\sreused\smixed\ssession\sid$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'opencode2-placement-reorder-opt-in'
+guards = 'without refuseMisplaced the handshake keeps the legacy header-before-URL order'
+file = 'src/opencode2/install.ts'
+old = 'if (!ownership?.refuseMisplaced)'
+new = 'if (false) // NON-VACUITY BREAK: reorder legacy handshake'
+test_file = 'test/opencode2/placement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/opencode2/install.ts; exec bun test test/opencode2/placement.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/placement.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^placeholder\splacement\sopt-in\sL5\shandshake\srefusal\sleaves\slegacy\saccount\sheaders\swith\soption\sfalse$']
+expect_message = 'expect(received).toBe(expected)'
+
+[[control]]
+id = 'opencode2-placement-count-every-carrier'
+guards = 'double placeholder carriers are refused before any account selection'
+file = 'src/opencode2/install.ts'
+old = 'if (carriers.length > 0 && (carriers.length !== 1 || !owned)) {'
+new = 'if (carriers.length > 0 && !owned) { // NON-VACUITY BREAK: ignore a second carrier'
+test_file = 'test/opencode2/placement.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/opencode2/install.ts; exec bun test test/opencode2/placement.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/placement.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^placeholder\splacement\sopt-in\sL5\srefuses\stwo-carriers\son\shttp\sbefore\sselection$']
+expect_message = 'placement-refused'
+
 # --- detached vault quota publication ---
 [[control]]
 id = 'claustrum-quota-timeout-retains-mailbox'

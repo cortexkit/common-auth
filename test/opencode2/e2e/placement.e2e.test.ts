@@ -7,11 +7,18 @@
 // holds the pinned CLI install, to skip the install while iterating.
 import { beforeAll, describe, expect } from 'bun:test'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { placeholderSecret } from '../../../src/opencode2/index.js'
 import { lifetimeHooks } from '../../fixtures/lifetime-hooks.js'
@@ -56,6 +63,72 @@ let scratch = ''
 let cli = ''
 let pluginDir = ''
 
+/** Prefer native executables and Windows batch shims over npm's POSIX shims. */
+function executable(path: string) {
+  const candidates =
+    process.platform === 'win32'
+      ? ['.exe', '.cmd', '.bat', ''].map((suffix) => path + suffix)
+      : [path]
+  return candidates.find((candidate) => existsSync(candidate))
+}
+
+/** Only fixed harness arguments are admitted to cmd.exe, never shell syntax. */
+function launch(file: string, args: string[]): [string, ...string[]] {
+  if (process.platform !== 'win32' || !/\.(cmd|bat)$/i.test(file))
+    return [file, ...args]
+  if ([file, ...args].some((value) => /["%!\r\n]/.test(value)))
+    throw new Error('Unsafe batch launcher argument')
+  return [
+    'cmd.exe',
+    '/d',
+    '/s',
+    '/c',
+    `""${file}" ${args.map((arg) => `"${arg}"`).join(' ')}"`,
+  ]
+}
+
+// Observe the real host directories without reading credentials. The isolated
+// host must not create, remove or change files outside the scratch profile.
+const realHostDirs = [
+  ...new Set([
+    join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'opencode'),
+    join(
+      process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'),
+      'opencode',
+    ),
+    join(
+      process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'),
+      'opencode',
+    ),
+    join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'opencode'),
+    ...(process.platform === 'win32'
+      ? [
+          join(
+            process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'),
+            'opencode',
+          ),
+          join(
+            process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'),
+            'opencode',
+          ),
+        ]
+      : []),
+  ]),
+]
+function profileSnapshot() {
+  const entries: Array<[string, number, number]> = []
+  const visit = (path: string) => {
+    if (!existsSync(path)) return
+    const stat = lstatSync(path)
+    entries.push([path, stat.size, stat.mtimeMs])
+    if (stat.isDirectory())
+      for (const child of readdirSync(path).sort()) visit(join(path, child))
+  }
+  for (const dir of realHostDirs) visit(dir)
+  return entries
+}
+let realProfileBefore: ReturnType<typeof profileSnapshot>
+
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = createServer()
@@ -71,15 +144,23 @@ function freePort(): Promise<number> {
 function isolatedEnv(root: string, extra: Record<string, string>) {
   const dirs = {
     HOME: join(root, 'home'),
+    USERPROFILE: join(root, 'home'),
+    APPDATA: join(root, 'appdata'),
+    LOCALAPPDATA: join(root, 'localappdata'),
     XDG_CONFIG_HOME: join(root, 'xdg-config'),
     XDG_DATA_HOME: join(root, 'xdg-data'),
     XDG_STATE_HOME: join(root, 'xdg-state'),
     XDG_CACHE_HOME: join(root, 'xdg-cache'),
     TMPDIR: join(root, 'tmp'),
+    TMP: join(root, 'tmp'),
+    TEMP: join(root, 'tmp'),
   }
   for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true })
   return {
     PATH: process.env.PATH ?? '',
+    ...(process.platform === 'win32'
+      ? { SystemRoot: process.env.SystemRoot ?? 'C:\\Windows' }
+      : {}),
     ...dirs,
     // Anything that is not the loopback mock goes to a dead proxy, so a
     // misrouted request fails instead of reaching the internet.
@@ -103,7 +184,8 @@ async function waitForServer(url: string, child: Bun.Subprocess) {
       await fetch(url, {
         signal: AbortSignal.any([
           hooks.lifetime.signal,
-          AbortSignal.timeout(1000),
+          // Windows may retry a refused loopback connection for two seconds.
+          AbortSignal.timeout(5000),
         ]),
       })
       return
@@ -130,7 +212,8 @@ async function runCli(
   cwd: string,
   env: Record<string, string>,
 ): Promise<{ exit: number | null; stdout: string; stderr: string }> {
-  const child = Bun.spawn([cli, ...args], {
+  const child = Bun.spawn(launch(cli, args), {
+    windowsVerbatimArguments: true,
     cwd,
     env,
     stdin: 'ignore',
@@ -220,8 +303,7 @@ async function runScenario(
   const serverURL = `http://127.0.0.1:${port}`
   const serverLog: string[] = []
   const server = Bun.spawn(
-    [
-      cli,
+    launch(cli, [
       'serve',
       '--hostname',
       '127.0.0.1',
@@ -230,8 +312,14 @@ async function runScenario(
       '--print-logs',
       '--log-level',
       'info',
-    ],
-    { cwd: project, env, stdout: 'pipe', stderr: 'pipe' },
+    ]),
+    {
+      cwd: project,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      windowsVerbatimArguments: true,
+    },
   )
   const serverOutput = Promise.all([
     collect(server.stdout, serverLog),
@@ -277,8 +365,7 @@ async function runScenario(
       writeFileSync(control, JSON.stringify({ next: turn.account }))
       if (turn.reject) mock.reject(turn.account, turn.reject)
       const child = Bun.spawn(
-        [
-          cli,
+        launch(cli, [
           'run',
           '--server',
           serverURL,
@@ -288,8 +375,14 @@ async function runScenario(
           `${PROVIDER}/mock-model`,
           ...(index > 0 ? ['--continue'] : []),
           turn.message ?? `Turn ${index + 1}: say hello.`,
-        ],
-        { cwd: project, env, stdout: 'pipe', stderr: 'pipe' },
+        ]),
+        {
+          cwd: project,
+          env,
+          stdout: 'pipe',
+          stderr: 'pipe',
+          windowsVerbatimArguments: true,
+        },
       )
       const out: string[] = []
       const err: string[] = []
@@ -311,6 +404,7 @@ async function runScenario(
     clearTimeout(timer)
     await serverOutput
     await mock.stop()
+    expect(profileSnapshot()).toEqual(realProfileBefore)
   }
   const plugin = readFileSync(pluginLog, 'utf8')
     .split('\n')
@@ -527,6 +621,7 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
   }, 120_000)
 
   beforeAll(async () => {
+    realProfileBefore = profileSnapshot()
     scratch = await mkdtemp(join(tmpdir(), 'common-auth-oc2-cli-'))
     const cliDir = REUSE_CLI_DIR ?? join(scratch, 'cli')
     if (!REUSE_CLI_DIR) {
@@ -534,26 +629,35 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
       writeFileSync(join(cliDir, 'package.json'), '{"private":true}\n')
       // npm, not bun: the CLI package installs its platform binary from a
       // lifecycle script, which bun does not run for untrusted packages.
-      const install = spawnSync(
-        'npm',
-        [
-          'install',
-          '--no-audit',
-          '--no-fund',
-          '--no-save',
-          `@opencode/cli@${OPENCODE_CLI_VERSION}`,
-        ],
-        { cwd: cliDir, encoding: 'utf8' },
-      )
+      const npm = (process.env.PATH ?? '')
+        .split(delimiter)
+        .map((dir) => executable(join(dir.replace(/^"|"$/g, ''), 'npm')))
+        .find(Boolean)
+      if (!npm) throw new Error('npm launcher not found')
+      const [command, ...args] = launch(npm, [
+        'install',
+        '--no-audit',
+        '--no-fund',
+        '--no-save',
+        `@opencode/cli@${OPENCODE_CLI_VERSION}`,
+      ])
+      const install = spawnSync(command, args, {
+        cwd: cliDir,
+        encoding: 'utf8',
+        windowsVerbatimArguments: true,
+      })
       if (install.status !== 0)
         throw new Error(
           `CLI install failed:\n${install.stdout}\n${install.stderr}`,
         )
     }
-    cli = join(cliDir, 'node_modules', '.bin', 'opencode2')
+    cli = executable(join(cliDir, 'node_modules', '.bin', 'opencode2')) ?? ''
     if (!existsSync(cli)) throw new Error(`no opencode2 binary at ${cli}`)
-    const version = spawnSync(cli, ['--version'], {
+    const [command, ...args] = launch(cli, ['--version'])
+    const version = spawnSync(command, args, {
       encoding: 'utf8',
+      windowsVerbatimArguments: true,
+      env: isolatedEnv(join(scratch, 'version-profile'), {}),
     }).stdout.trim()
     if (!version.includes(OPENCODE_CLI_VERSION)) {
       throw new Error(
@@ -598,6 +702,18 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
 
   afterAll(async () => {
     if (scratch) await rm(scratch, { recursive: true, force: true })
+  })
+
+  test('host home resolves inside the isolated profile on every OS', () => {
+    const env = isolatedEnv(join(scratch, 'profile-probe'), {})
+    const probe = spawnSync(
+      process.execPath,
+      ['-e', 'console.log(require("node:os").homedir())'],
+      { env, encoding: 'utf8' },
+    )
+    expect(probe.status).toBe(0)
+    expect(probe.stdout.trim()).toBe(env.HOME)
+    expect(profileSnapshot()).toEqual(realProfileBefore)
   })
 
   test('http carries the chosen account per request and switches mid-session', async () => {

@@ -395,6 +395,13 @@ export interface InstallOpenCode2AuthOptions {
    */
   readonly gateOnPlaceholder?: {
     readonly credential: (headers: Headers) => string | undefined
+    /**
+     * Refuse misplaced placeholders before selecting an account. The placeholder
+     * must occur in exactly one header and be the extracted secret. Receives a
+     * carrier header name for the refusal message. Also runs the handshake URL
+     * rewrite before applying account headers to the draft. Opt-in only.
+     */
+    readonly refuseMisplaced?: (header: string) => string
   }
   /**
    * Values that must never reach the wire, normally the placeholder the host
@@ -419,7 +426,9 @@ export interface InstallOpenCode2AuthOptions {
  *   no other account can serve the next attempt, so the host's own decision
  *   (its wait, or its refusal to retry) stands and the next attempt may go
  *   to the refused account again;
- * - `host-decides`: no limit was recognised, so the host's decision stands.
+ * - `host-decides`: no limit was recognised, or the failing call cannot be
+ *   attributed safely (ambiguous attempts or mixed ownership in a gated
+ *   session), so the host's decision stands.
  */
 export type RetryReason =
   | 'reroute'
@@ -503,6 +512,8 @@ export interface OpenCode2AuthInstallation<Q, A = unknown> {
   /**
    * Drops every attempt and revokes in-flight auth selections of a session.
    * Session deletion does this itself. Later requests may reuse the session id.
+   * Foreign transport history survives until dispose: an old foreign call can
+   * still retry under that reused id, so forgetting cannot clear retry taint.
    */
   forgetSession(sessionID: string): void
   /** Number of attempts held. */
