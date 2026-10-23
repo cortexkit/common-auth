@@ -13,6 +13,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   writeFileSync,
 } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -23,6 +24,17 @@ import { fileURLToPath } from 'node:url'
 import { placeholderSecret } from '../../../src/opencode2/index.js'
 import { lifetimeHooks } from '../../fixtures/lifetime-hooks.js'
 import {
+  describeHost,
+  describeTree,
+  type HostProcess,
+  killTree,
+  PhaseLog,
+  processesNaming,
+  spawnHost,
+  stopHost,
+  waitForExit,
+} from './host-process.js'
+import {
   type AccountName,
   type MockProvider,
   type RejectMode,
@@ -31,7 +43,7 @@ import {
 } from './mock-provider.js'
 
 const hooks = lifetimeHooks()
-const { afterAll, test } = hooks
+const { afterAll, test: lifetimeTest } = hooks
 
 const ENABLED = process.env.COMMON_AUTH_OPENCODE2_E2E === '1'
 const REUSE_CLI_DIR = process.env.COMMON_AUTH_OPENCODE2_E2E_CLI_DIR
@@ -61,6 +73,10 @@ const VAULT_METHOD_ID = 'common-auth-e2e-vault'
 
 let scratch = ''
 let cli = ''
+/** The CLI install directory; any process naming it belongs to this test. */
+let cliDirectory = ''
+/** How `cli` was found, for failure reports: the launchers and their target. */
+let cliResolution = ''
 let pluginDir = ''
 
 /** Prefer native executables and Windows batch shims over npm's POSIX shims. */
@@ -70,6 +86,37 @@ function executable(path: string) {
       ? ['.exe', '.cmd', '.bat', ''].map((suffix) => path + suffix)
       : [path]
   return candidates.find((candidate) => existsSync(candidate))
+}
+
+/**
+ * The `opencode2` launchers npm created and the file the package's `bin`
+ * entry names, with the last lines of each small text launcher, for failure
+ * reports.
+ */
+function describeCliResolution(cliDir: string) {
+  const bin = join(cliDir, 'node_modules', '.bin')
+  const lines: string[] = []
+  for (const name of readdirSync(bin).filter((entry) =>
+    entry.startsWith('opencode2'),
+  )) {
+    const path = join(bin, name)
+    const stat = lstatSync(path)
+    if (stat.isSymbolicLink() || stat.size > 4096) {
+      lines.push(`${path} (${stat.isSymbolicLink() ? 'link' : stat.size})`)
+      continue
+    }
+    const text = readFileSync(path, 'utf8')
+    lines.push(`${path}:\n${text.split(/\r?\n/).slice(-6).join('\n')}`)
+  }
+  const packageDir = join(cliDir, 'node_modules', '@opencode', 'cli')
+  const manifest = JSON.parse(
+    readFileSync(join(packageDir, 'package.json'), 'utf8'),
+  ) as { bin?: Record<string, string> }
+  const target = join(packageDir, manifest.bin?.opencode2 ?? '')
+  lines.push(
+    `package bin opencode2 -> ${target} (${existsSync(target) ? `${lstatSync(target).size} bytes` : 'missing'})`,
+  )
+  return lines.join('\n')
 }
 
 /** Only fixed harness arguments are admitted to cmd.exe, never shell syntax. */
@@ -176,60 +223,146 @@ function isolatedEnv(root: string, extra: Record<string, string>) {
   }
 }
 
-async function waitForServer(url: string, child: Bun.Subprocess) {
-  while (!hooks.lifetime.signal.aborted) {
-    if (child.exitCode !== null)
-      throw new Error(`host exited early with ${child.exitCode}`)
+/** Polls the host until it answers HTTP, or the scenario is stopped. */
+async function waitForServer(
+  url: string,
+  server: HostProcess,
+  stop: AbortSignal,
+  phases: PhaseLog,
+) {
+  let attempts = 0
+  let lastError = ''
+  while (!stop.aborted) {
+    if (server.child.exitCode !== null)
+      throw new Error(`host exited early with ${server.child.exitCode}`)
+    attempts += 1
     try {
-      await fetch(url, {
+      const response = await fetch(url, {
         signal: AbortSignal.any([
-          hooks.lifetime.signal,
+          stop,
           // Windows may retry a refused loopback connection for two seconds.
           AbortSignal.timeout(5000),
         ]),
       })
+      await response.body?.cancel()
+      phases.mark(
+        'host ready',
+        `HTTP ${response.status} after ${attempts} probes`,
+      )
       return
-    } catch {
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
       await Bun.sleep(250)
     }
   }
-  throw new Error(`host at ${url} did not start before test cancellation`)
+  phases.note(`readiness: ${attempts} probes, last error: ${lastError}`)
+  throw new Error(`host at ${url} did not answer before the scenario stopped`)
 }
 
-async function collect(
-  stream: ReadableStream<Uint8Array> | null | undefined,
-  into: string[],
-) {
-  if (!stream) return
-  const decoder = new TextDecoder()
-  for await (const chunk of stream)
-    into.push(decoder.decode(chunk, { stream: true }))
-}
-
-/** Runs one CLI command to completion, killing it after 90 seconds. */
+/**
+ * Runs one CLI command to completion. After 90 seconds, or when the scenario
+ * is stopped, the command is stopped with stopHost (on Windows together with
+ * every process it started) and whatever exit status it reached is returned.
+ */
 async function runCli(
+  name: string,
   args: string[],
   cwd: string,
   env: Record<string, string>,
+  run: ScenarioRun,
 ): Promise<{ exit: number | null; stdout: string; stderr: string }> {
-  const child = Bun.spawn(launch(cli, args), {
-    windowsVerbatimArguments: true,
-    cwd,
-    env,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const out: string[] = []
-  const err: string[] = []
-  const timer = setTimeout(() => child.kill('SIGKILL'), 90_000)
-  await Promise.all([
-    collect(child.stdout, out),
-    collect(child.stderr, err),
-    child.exited,
-  ])
-  clearTimeout(timer)
-  return { exit: child.exitCode, stdout: out.join(''), stderr: err.join('') }
+  const host = spawnHost(name, launch(cli, args), { cwd, env }, run.phases)
+  run.hosts.push(host)
+  await waitForExit(
+    host,
+    AbortSignal.any([run.stop, AbortSignal.timeout(90_000)]),
+  )
+  const finished = host.child.exitCode !== null && host.outputClosed
+  if (!finished) {
+    run.phases.mark(`${name} timed out`)
+    const problem = await stopHost(host, run.phases)
+    if (problem) run.problems.push(problem)
+  } else run.phases.mark(`${name} exited`, `exit ${host.child.exitCode}`)
+  if (run.stop.aborted)
+    throw new Error(`scenario stopped while ${name} was running`)
+  return {
+    exit: host.child.exitCode,
+    stdout: host.stdout.join(''),
+    stderr: host.stderr.join(''),
+  }
+}
+
+/** What a scenario started, and how far it got, for cleanup and reports. */
+interface ScenarioRun {
+  readonly phases: PhaseLog
+  readonly hosts: HostProcess[]
+  readonly stop: AbortSignal
+  /** Cleanup failures, such as a process that outlived its stop. */
+  readonly problems: string[]
+}
+
+/**
+ * Marks when the plugin first set up and when the first request reached the
+ * mock provider, so a report shows how far the host got. Returns a stop
+ * function.
+ */
+function watchProgress(
+  pluginLog: string,
+  mock: MockProvider,
+  phases: PhaseLog,
+) {
+  let pluginLoaded = false
+  let requested = false
+  const check = () => {
+    if (!pluginLoaded) {
+      const lines = readFileSync(pluginLog, 'utf8').split('\n')
+      if (lines.some((line) => line.includes('"event":"setup"'))) {
+        pluginLoaded = true
+        phases.mark('plugin loaded')
+      }
+    }
+    const first = mock.records[0]
+    if (!requested && first) {
+      requested = true
+      phases.mark(
+        'first request',
+        `${first.kind} ${first.transport} ${first.action} as ${first.identity}`,
+      )
+    }
+  }
+  const timer = setInterval(check, 100)
+  return () => {
+    clearInterval(timer)
+    check()
+  }
+}
+
+/** Time a scenario keeps, before the test deadline, to stop and report. */
+const REPORT_MARGIN_MS = 30_000
+let scenarioDeadline = Number.POSITIVE_INFINITY
+
+/**
+ * Every test in this file records its own deadline: a scenario stops itself
+ * REPORT_MARGIN_MS before the test's timeout, ends its processes and prints
+ * its phase log, so a hang names the step it hung in instead of only timing
+ * out.
+ */
+function test(
+  name: string,
+  body: () => Promise<unknown> | undefined,
+  timeout?: number,
+) {
+  lifetimeTest(
+    name,
+    () => {
+      scenarioDeadline =
+        timeout === undefined
+          ? Number.POSITIVE_INFINITY
+          : performance.now() + timeout - REPORT_MARGIN_MS
+      return body()
+    },
+    timeout,
+  )
 }
 
 async function runScenario(
@@ -249,6 +382,7 @@ async function runScenario(
     vault?: { refuse?: string }
   } = {},
 ): Promise<ScenarioResult> {
+  const phases = new PhaseLog()
   const root = await mkdtemp(join(tmpdir(), 'common-auth-oc2-e2e-'))
   const project = join(root, 'project')
   mkdirSync(project, { recursive: true })
@@ -257,6 +391,7 @@ async function runScenario(
   const control = join(root, 'control.json')
   writeFileSync(pluginLog, '')
   const mock: MockProvider = startMockProvider([PLACEHOLDER])
+  phases.mark('scenario prepared', `profile ${root}, mock ${mock.url}`)
   const env = isolatedEnv(root, {
     COMMON_AUTH_E2E_PLUGIN_LOG: pluginLog,
     COMMON_AUTH_E2E_CONTROL: control,
@@ -301,8 +436,19 @@ async function runScenario(
 
   const port = await freePort()
   const serverURL = `http://127.0.0.1:${port}`
-  const serverLog: string[] = []
-  const server = Bun.spawn(
+  const run: ScenarioRun = {
+    phases,
+    hosts: [],
+    stop: AbortSignal.any([
+      hooks.lifetime.signal,
+      AbortSignal.timeout(
+        Math.max(1, Math.round(scenarioDeadline - performance.now())),
+      ),
+    ]),
+    problems: [],
+  }
+  const server = spawnHost(
+    'host serve',
     launch(cli, [
       'serve',
       '--hostname',
@@ -313,29 +459,23 @@ async function runScenario(
       '--log-level',
       'info',
     ]),
-    {
-      cwd: project,
-      env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      windowsVerbatimArguments: true,
-    },
+    { cwd: project, env },
+    phases,
   )
-  const serverOutput = Promise.all([
-    collect(server.stdout, serverLog),
-    collect(server.stderr, serverLog),
-  ])
+  run.hosts.push(server)
+  const stopWatching = watchProgress(pluginLog, mock, phases)
   const stdout: string[] = []
-  const clientLog: string[] = []
   const exits: Array<number | null> = []
   let login: ScenarioResult['login']
   let credentials: unknown
+  let failure: unknown
   try {
-    await waitForServer(serverURL, server)
+    await waitForServer(serverURL, server, run.stop, phases)
     if (options.vault) {
       // The CLI's own login, as a user runs it, without a terminal: it
       // never prompts, and opens no browser.
-      const run = await runCli(
+      const result = await runCli(
+        'vault login',
         [
           'auth',
           'login',
@@ -347,25 +487,23 @@ async function runScenario(
         ],
         project,
         env,
+        run,
       )
-      login = { exit: run.exit, output: `${run.stdout}${run.stderr}` }
-      clientLog.push(`--- vault login ---\n${login.output}`)
+      login = { exit: result.exit, output: `${result.stdout}${result.stderr}` }
       const response = await fetch(`${serverURL}/api/credential`, {
         headers: {
           authorization: `Basic ${btoa(`opencode:${PASSWORD}`)}`,
         },
-        signal: AbortSignal.any([
-          hooks.lifetime.signal,
-          AbortSignal.timeout(10_000),
-        ]),
+        signal: AbortSignal.any([run.stop, AbortSignal.timeout(10_000)]),
       })
       credentials = await response.json()
     }
     for (const [index, turn] of turns.entries()) {
       writeFileSync(control, JSON.stringify({ next: turn.account }))
       if (turn.reject) mock.reject(turn.account, turn.reject)
-      const child = Bun.spawn(
-        launch(cli, [
+      const result = await runCli(
+        `turn ${index + 1}`,
+        [
           'run',
           '--server',
           serverURL,
@@ -375,50 +513,81 @@ async function runScenario(
           `${PROVIDER}/mock-model`,
           ...(index > 0 ? ['--continue'] : []),
           turn.message ?? `Turn ${index + 1}: say hello.`,
-        ]),
-        {
-          cwd: project,
-          env,
-          stdout: 'pipe',
-          stderr: 'pipe',
-          windowsVerbatimArguments: true,
-        },
+        ],
+        project,
+        env,
+        run,
       )
-      const out: string[] = []
-      const err: string[] = []
-      const timer = setTimeout(() => child.kill('SIGKILL'), 90_000)
-      await Promise.all([
-        collect(child.stdout, out),
-        collect(child.stderr, err),
-        child.exited,
-      ])
-      clearTimeout(timer)
-      exits.push(child.exitCode)
-      stdout.push(out.join(''))
-      clientLog.push(`--- turn ${index + 1} stderr ---\n${err.join('')}`)
+      exits.push(result.exit)
+      stdout.push(result.stdout)
     }
-  } finally {
-    server.kill('SIGTERM')
-    const timer = setTimeout(() => server.kill('SIGKILL'), 10_000)
-    await server.exited
-    clearTimeout(timer)
-    await serverOutput
-    await mock.stop()
-    expect(profileSnapshot()).toEqual(realProfileBefore)
+  } catch (error) {
+    failure = error
+  }
+  stopWatching()
+  phases.mark('cleanup', failure ? `after: ${String(failure)}` : '')
+  // The process tree as it stood before cleanup: on Windows this shows a
+  // process the host started that would outlive the host itself.
+  const trees = failure
+    ? run.hosts
+        .filter((host) => host.child.exitCode === null || !host.outputClosed)
+        .map((host) => describeTree(host.child.pid))
+    : []
+  for (const host of [...run.hosts].reverse()) {
+    const problem = await stopHost(host, phases)
+    if (problem) run.problems.push(problem)
+  }
+  await mock.stop()
+  // A CLI process still running from the install directory outlived the
+  // scenario that started it. End it so later scenarios start clean, and fail.
+  const orphans = processesNaming(cliDirectory)
+  for (const orphan of orphans) killTree(orphan.pid)
+  if (orphans.length)
+    run.problems.push(
+      `orphaned CLI processes after cleanup:\n${orphans.map((row) => `${row.pid} ${row.command}`).join('\n')}`,
+    )
+  phases.mark('cleanup done', run.problems.join('; '))
+  if (!failure && run.problems.length)
+    failure = new Error(`cleanup failed: ${run.problems.join('; ')}`)
+  if (!failure) {
+    try {
+      expect(profileSnapshot()).toEqual(realProfileBefore)
+    } catch (error) {
+      failure = error
+    }
   }
   const plugin = readFileSync(pluginLog, 'utf8')
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line) as PluginEvent)
+  try {
+    await rm(root, {
+      recursive: true,
+      force: true,
+      // Windows releases a killed process's files a moment after it exits.
+      maxRetries: 10,
+      retryDelay: 200,
+    })
+  } catch (error) {
+    // A process that outlived cleanup still holds files in the profile. The
+    // report below must still print, so this is recorded, not thrown.
+    phases.note(`profile removal failed: ${String(error)}`)
+    failure ??= error
+  }
   const diagnostics = [
+    `--- phases (stopped at: ${phases.current}) ---\n${phases}`,
+    `cli: ${cli}\n${cliResolution}`,
+    ...(trees.length ? [`--- process trees before cleanup ---`, ...trees] : []),
     `wire: ${JSON.stringify(mock.records)}`,
     `plugin: ${JSON.stringify(plugin)}`,
     `stdout: ${JSON.stringify(stdout)}`,
     ...(options.vault ? [`credentials: ${JSON.stringify(credentials)}`] : []),
-    ...clientLog,
-    `--- host log (tail) ---\n${serverLog.join('').slice(-6000)}`,
+    ...run.hosts.map((host) => describeHost(host)),
   ].join('\n')
-  await rm(root, { recursive: true, force: true })
+  if (failure) {
+    console.error(diagnostics)
+    throw failure
+  }
   return {
     wire: [...mock.records],
     plugin,
@@ -669,8 +838,11 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
           `CLI install failed:\n${install.stdout}\n${install.stderr}`,
         )
     }
-    cli = executable(join(cliDir, 'node_modules', '.bin', 'opencode2')) ?? ''
+    cliDirectory = realpathSync.native(cliDir)
+    cli =
+      executable(join(cliDirectory, 'node_modules', '.bin', 'opencode2')) ?? ''
     if (!existsSync(cli)) throw new Error(`no opencode2 binary at ${cli}`)
+    cliResolution = describeCliResolution(cliDirectory)
     const [command, ...args] = launch(cli, ['--version'])
     const version = spawnSync(command, args, {
       encoding: 'utf8',
