@@ -559,11 +559,12 @@ function vaultNames(vault: VaultRoutingOrder) {
     /**
      * What the order input starts with for an account: its label when
      * typing that label back names this account alone, else its route id
-     * (two accounts sharing a label, or a label with a comma in it).
+     * (two accounts sharing a label, or a label with a comma or line break
+     * in it, either of which would split it into two entries).
      */
     entryOf: (id: string) => {
       const row = rows.find((entry) => entry.id === id)
-      return row && !row.label.includes(',') && matches(row.label).length === 1
+      return row && !/[,\n]/.test(row.label) && matches(row.label).length === 1
         ? row.label
         : id
     },
@@ -663,7 +664,7 @@ function routingSection(
       run: async ({ values }) => {
         const text = String(values.order)
         // A vault label may contain spaces, so vault entries are separated by
-        // commas only; pool ids never contain spaces.
+        // commas or line breaks, not spaces; pool ids never contain spaces.
         const entries = text
           .split(vault ? /[,\n]+/ : /[\s,]+/)
           .map((entry) => entry.trim())
