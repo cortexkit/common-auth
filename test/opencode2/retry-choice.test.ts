@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  ATTEMPT_HEADER,
   type ChooseAccountInput,
   installOpenCode2Auth,
 } from '../../src/opencode2/index.js'
@@ -268,6 +269,37 @@ describe('committed retry choice', () => {
     expect(s.choices).toHaveLength(3)
     expect(JSON.stringify(s.warnings)).toContain('drop failed')
     await s.installation.dispose()
+  })
+
+  test('evicting the retry owner releases its choice even with another attempt of the same kind held', async () => {
+    const s = await setup({ maxRecords: 2 })
+    await s.request()
+    const sent = await s.host.fire('http.request', {
+      ...scopeFor(),
+      request: new Request('https://provider.invalid', {
+        headers: { [ATTEMPT_HEADER]: 'attempt-1' },
+      }),
+    })
+    await s.host.fire('http.response', {
+      ...scopeFor(),
+      request: sent.request,
+      response: new Response(null, { status: 429 }),
+    })
+    s.answer('B')
+    await s.retry()
+    await s.request(scopeFor('primary', 'ses_other'))
+    await s.request()
+    expect(s.drops).toHaveLength(1)
+    expect(s.drops[0]).toEqual({
+      ...retryInput,
+      rerouteFrom: {
+        accountId: 'A',
+        limit: { reason: 'too-many', status: 429 },
+      },
+      accountId: 'B',
+    })
+    await s.installation.dispose()
+    expect(s.drops).toHaveLength(1)
   })
 
   test('forgetting queues release before a different kind reuses the session', async () => {

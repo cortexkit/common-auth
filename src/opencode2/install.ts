@@ -81,6 +81,7 @@ interface AttemptRecord<A> {
  * waiting for the next attempt of the same session and kind.
  */
 interface PendingRetry {
+  readonly attemptId: string
   readonly sessionID: string
   readonly accountId: string
   readonly rerouteFrom?: {
@@ -368,10 +369,14 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     [...attempts.values()].filter((rec) => rec.key === key)
   const newestOf = (key: string) => attemptsOf(key).at(-1)
 
-  /** Forgets an attempt, and its key's pending retry once nothing else holds the key. */
+  /** Forgets an attempt and any pending retry it owns, or whose key is no longer held. */
   const drop = (rec: AttemptRecord<A>) => {
     attempts.delete(rec.id)
-    if (!attemptsOf(rec.key).length) discardPending(rec.key)
+    if (
+      pendingRetries.get(rec.key)?.attemptId === rec.id ||
+      !attemptsOf(rec.key).length
+    )
+      discardPending(rec.key)
   }
 
   const remember = (rec: AttemptRecord<A>) => {
@@ -1113,8 +1118,13 @@ export async function installOpenCode2Auth<Q, A = unknown>(
               // The host's retry runs `model.request` again for this attempt's
               // session and kind; that next attempt, and no other attempt of the
               // session, is told what this one ended with.
-              if (decision.retry && rec.accountId !== undefined) {
+              if (
+                decision.retry &&
+                rec.accountId !== undefined &&
+                attempts.has(rec.id)
+              ) {
                 pendingRetries.set(rec.key, {
+                  attemptId: rec.id,
                   sessionID: rec.scope.sessionID,
                   accountId: rec.accountId,
                   ...(rerouteFrom === undefined ? {} : { rerouteFrom }),
