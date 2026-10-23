@@ -30,10 +30,12 @@ import {
   declineVaultRoute,
   forgetPendingVaultDiscovery,
   type QuotaReceipt,
+  type ReorderVaultRosterResult,
   readVaultRoster,
   recordVaultAccountQuota,
   recordVaultQuota,
   refreshVaultRoster,
+  reorderVaultRoster,
   type VaultRosterFile,
   vaultRoutingRows,
 } from './roster.js'
@@ -713,6 +715,23 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#options.rosterPath,
       await readVaultRoster(this.#options.rosterPath),
     )
+  }
+
+  /**
+   * Set the order vault accounts are tried in (`reorderVaultRoster`), then
+   * re-read the roster, so the next routing decision in this process uses
+   * the new order without waiting for a discovery. Never contacts the vault.
+   */
+  async reorder(
+    routeIds: readonly string[],
+  ): Promise<ReorderVaultRosterResult> {
+    this.#assertOpen()
+    const result = await reorderVaultRoster(this.#options.rosterPath, routeIds)
+    this.#roster = pendingVaultQuota(
+      this.#options.rosterPath,
+      await readVaultRoster(this.#options.rosterPath),
+    )
+    return result
   }
 
   /**

@@ -24,6 +24,7 @@ export type ClaustrumConsumerFailureKind =
   | 'host-slot-login'
   | 'host-slot-placeholder'
   | 'placeholder-refresh'
+  | 'invalid-order'
 
 export class ClaustrumConsumerError extends Error {
   readonly kind: ClaustrumConsumerFailureKind

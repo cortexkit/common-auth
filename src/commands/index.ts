@@ -4,6 +4,7 @@ export type {
   LoginOutcome,
   QuotaSectionOptions,
   RoutingSectionOptions,
+  VaultRoutingOrder,
 } from './builtins.js'
 export { MENU_DISABLED_REASON } from './builtins.js'
 export type {

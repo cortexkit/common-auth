@@ -34,6 +34,7 @@ import type {
   MenuKnob,
 } from './model.js'
 import {
+  CommandError,
   projectFailure,
   type ResolvedItem,
   type ResolvedSection,
@@ -89,6 +90,38 @@ export interface RoutingSectionOptions {
    */
   orderedVariants?: MenuChoice[]
   formerMainId?: string
+  /**
+   * The vault accounts' routing order, for a plugin that can run in vault
+   * mode. Called on each build; return the order while the plugin routes
+   * through vault accounts and undefined otherwise. While it returns one, the
+   * section shows and sets the vault accounts' order (by route id) instead of
+   * the pool roster's. Wire it to `ClaustrumConsumer.snapshot()` and
+   * `ClaustrumConsumer.reorder`, or to `readVaultRoster` and
+   * `reorderVaultRoster` for a plugin without a consumer.
+   */
+  vaultOrder?: () =>
+    | VaultRoutingOrder
+    | undefined
+    | Promise<VaultRoutingOrder | undefined>
+}
+
+/**
+ * The order vault accounts are tried in, as the Routing section reads and
+ * sets it in vault mode. Shaped after `/claustrum`'s roster, without
+ * importing it, so the menu does not need the vault client.
+ */
+export interface VaultRoutingOrder {
+  /** Every route id in the vault roster, in roster (routing) order. */
+  ids: readonly string[]
+  /**
+   * Sets the order. `ids` names every route id exactly once. Wire it to
+   * `ClaustrumConsumer.reorder` or `reorderVaultRoster`, which refuse any
+   * other list without writing.
+   */
+  reorder(ids: readonly string[]): Promise<{
+    ids: readonly string[]
+    outcome: 'reordered' | 'unchanged'
+  }>
 }
 
 export interface LimitsSectionOptions {
@@ -183,15 +216,20 @@ interface Snapshot {
   load: PoolLoad
   rows: PoolRow[]
   settings: PoolSettings
+  /** Set while the plugin routes through vault accounts. */
+  vault?: VaultRoutingOrder
 }
 
-async function snapshot(store: PoolStore): Promise<Snapshot> {
+async function snapshot(options: BuiltinOptions): Promise<Snapshot> {
+  const { store } = options
   const load = await store.read()
   const read = await store.readSettings()
+  const vault = await options.routing?.vaultOrder?.()
   return {
     load,
     rows: distinctRows(load),
     settings: read.status === 'error' ? {} : read.settings,
+    ...(vault ? { vault } : {}),
   }
 }
 
@@ -468,6 +506,31 @@ function quotaSection(
   }
 }
 
+/**
+ * Sets the vault order. A refusal of the list itself (`invalid-order`, from
+ * `/claustrum`'s roster) is shown with its own message, which quotes only ids
+ * the user typed; any other failure is projected as usual. The kind is read
+ * from the error object so the menu does not import the vault client.
+ */
+async function reorderVault(
+  vault: VaultRoutingOrder,
+  order: readonly string[],
+): ReturnType<VaultRoutingOrder['reorder']> {
+  try {
+    return await vault.reorder(order)
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === 'ClaustrumConsumerError' &&
+      (error as { kind?: unknown }).kind === 'invalid-order'
+    )
+      throw new CommandError('vault-invalid-order', error.message, {
+        cause: error,
+      })
+    throw error
+  }
+}
+
 function routingSection(
   options: BuiltinOptions,
   snap: Snapshot,
@@ -485,7 +548,10 @@ function routingSection(
       ? raw
       : 'ordered'
   const resolved = resolveRoutingMode(current)
-  const ids = snap.rows.map((row) => row.id)
+  // In vault mode routing tries the vault accounts, so their order is the
+  // one shown and set here; the pool roster's order is not used.
+  const vault = snap.vault
+  const ids = vault ? [...vault.ids] : snap.rows.map((row) => row.id)
   const tried = orderForPlacement(
     ids,
     resolved.placement,
@@ -494,7 +560,10 @@ function routingSection(
   const label =
     choices.find((choice) => choice.value === current)?.label ?? current
   const lines = [`Mode: ${label}`]
-  if (ids.length > 0) lines.push(`Roster order: ${ids.join(', ')}`)
+  if (ids.length > 0)
+    lines.push(
+      `${vault ? 'Vault account order' : 'Roster order'}: ${ids.join(', ')}`,
+    )
   if (resolved.mode === 'ordered' && tried.join() !== ids.join())
     lines.push(`Tried in order: ${tried.join(', ')}`)
   const actions: ActionDefinition[] = [
@@ -524,7 +593,9 @@ function routingSection(
         {
           kind: 'text',
           id: 'order',
-          label: 'Account ids, first to last',
+          label: vault
+            ? 'Vault route ids, first to last'
+            : 'Account ids, first to last',
           value: ids.join(', '),
           required: true,
         },
@@ -533,7 +604,9 @@ function routingSection(
         const order = String(values.order)
           .split(/[\s,]+/)
           .filter((id) => id.length > 0)
-        const result = await store.reorder(order, locks)
+        const result = vault
+          ? await reorderVault(vault, order)
+          : await store.reorder(order, locks)
         return result.outcome === 'unchanged'
           ? 'The order is unchanged.'
           : `Order set to ${result.ids.join(', ')}.`
@@ -685,7 +758,7 @@ function limitsSection(
 export async function builtinSections(
   options: BuiltinOptions,
 ): Promise<ResolvedSection[]> {
-  const snap = await snapshot(options.store)
+  const snap = await snapshot(options)
   return [
     accountsSection(options, snap),
     quotaSection(options, snap),
