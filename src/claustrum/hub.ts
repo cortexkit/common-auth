@@ -224,7 +224,10 @@ function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   })
 }
 
-/** Which rows of a roster route, so a change of them can be retained. */
+/**
+ * Each row's credential id and enabled state, serialized. A change between two
+ * rosters means kept receipts must be retained against the new rows.
+ */
 function enabledRows(roster: VaultRosterFile | undefined): string {
   return JSON.stringify(
     (roster?.rows ?? []).map((row) => [row.credentialId, row.enabled]),

@@ -530,8 +530,8 @@ already completed before the extension's first opportunity to enter vault mode.
 `ClaustrumFamily` remains the same extendable interface, including required
 `refreshAdapter` and optional `apiKeys`; existing adapter families keep their
 discovery behavior and inventory shape. `ClaustrumConsumerOptions.family` still
-accepts only that legacy interface. Classifying families are currently a
-custody-only API; coordination of multiple provider consumers is not included.
+accepts only that legacy interface. Several provider consumers share one
+classifying family through `ClaustrumDiscoveryHub`, below.
 
 `ClassifyingClaustrumFamily<Code>` supplies `category`, `refusalCodes: readonly
 Code[]`, and `classify(row: VaultRowFacts)`. The library first requires `read`,
@@ -562,6 +562,67 @@ Admitted `VaultCredential` and malformed admitted `SkippedVaultRecord` values
 carry optional `member`. No refusal is admitted as a credential. These are
 in-memory discovery fields only: the roster file format is unchanged, including
 its rejected-record representation. No existing plugin adoption is included.
+
+**Discovery hub and hub members (next minor).** `ClaustrumDiscoveryHub` is one
+per host process for a plugin that serves several providers from one
+classifying family. It owns the only vault connection and the only
+`ClaustrumScopedCustody` (so kept receipts, outage state and the outage probe
+exist once), one vault watch, and one `list_scoped` per refresh, fanned out to
+one roster per provider. It refuses a legacy `ClaustrumFamily`. Options:
+`stateDir`, `hostGeneration` (for example `opencode2`), the fixed `members`
+set (lowercase file-safe ids; Windows device names are refused), `tokenPath`,
+`family`, `connect`, `isCustodyActive`, plus the custody and timer options a
+consumer passes today (`parseIdentity`, `requireAssertion`, `now`, `logger`,
+`setTimeoutImpl`, `clearTimeoutImpl`, `pollIntervalMs`) and `onError`.
+
+Members are built only by `hub.member(provider, options)` with the new
+`ClaustrumHubMemberOptions`: `reservedRouteIds`, `routePrefix`, `mapAccount`,
+`onRoster`, `onError` and `logger`, nothing else. The factory returns an
+ordinary `ClaustrumConsumer` and throws `wrong-consumer` for a provider outside
+the member set, a second build of one provider, or a hub-owned field
+(`rosterPath`, `tokenPath`, `family`, `connect`, `isCustodyActive`, `insula`,
+`pollIntervalMs`) passed through a cast. The hub gives member `P` the roster
+path `hub.rosterPath(P)` = `<stateDir>/rosters/<hostGeneration>/<P>.json`; the
+member's quota writer, `authorize` re-read and `close` use it. A member never
+connects, lists, watches or ticks: `start()` starts the hub's tick;
+`refresh()` is the hub's coalesced refresh and resolves after the hub pushed
+this member's committed roster into memory (`undefined` while vault mode is
+off; rejects with this member's own commit error while the others resolve);
+`watchState()` is the hub's watch; `grantReach()` is the hub's reach while the
+member's view equals the hub's committed view; `keptReceiptState()` is the
+shared custody's; `authorize()` holds one custody lease at a time;
+`reportFailure()` reports only through the lease that issued the receipt;
+`decline()` retains kept receipts against the union of every member's roster;
+`close()`/`dispose()` release the lease and never close the shared custody.
+A member without a roster while vault mode is on fails `route-unavailable` on
+its own. `ClaustrumConsumerOptions` and consumers built with them are
+unchanged.
+
+`hub.acquire(signal?)` returns a `CustodyLease { custody, generation, release()
+}`. Each connection is one generation; its lease count includes acquirers still
+waiting. An abort or a rejected connect gives the count back; a connect that
+resolves after its generation ended closes its client and never becomes a
+custody; a lease's narrowed `custody` (`authorize`, `reportFailure`, `forget`,
+`keptReceiptState`) throws `closed` after `release()` or once its generation
+ended. The hub's own discovery holds a lease while vault mode is on, so the
+connection stays open with no member lease. `hub.leaseState()` reports the
+current generation and count.
+
+`hub.start()` runs one unreferenced tick until `hub.close()`. Each tick reads
+`isCustodyActive()` (local state only), installs member files that changed
+under the same view (a decline, accept, reorder or quota reading written
+outside the member) without calling `onRoster`, and lists when due (every tick
+without an open watch, else on change notices and the five-minute safety
+poll). Only the hub's own false authority read runs the inactive transition:
+the current generation ends (every lease revoked, pending acquires reject
+`not-active`), the watch stops, the custody closes with its kept receipts and
+client, and every member is reset; later ticks make no vault request. Every
+member commit, push, `retain`, committed view and watch opening checks the
+generation it started in, so work in flight across off and on publishes
+nothing. `hub.refusals()` (`{ view, refused, notMine }`) and `hub.grantReach()`
+describe the last discovery every member committed and are undefined while
+unknown. Leader election between processes, fingerprinted roster keys,
+seeding and the pending-member retry rule are not included yet.
 
 ### ./logger
 

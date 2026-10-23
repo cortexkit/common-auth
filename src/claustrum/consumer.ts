@@ -817,8 +817,9 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
 
   /**
    * `authorize` for a hub member. Only the hub's own authority read decides
-   * that vault mode is off; a member with no roster yet fails on its own,
-   * with `route-unavailable`, and touches nothing shared.
+   * that vault mode is off. If the hub's refresh still leaves this member
+   * without a roster, it fails with `route-unavailable` before acquiring a
+   * lease or asking for a credential, and no other member is affected.
    */
   async #hubAuthorize(
     hub: HubMemberPort,
