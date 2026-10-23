@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as redaction from '@cortexkit/common-auth/redaction'
 
@@ -32,17 +34,22 @@ test('redaction keeps imports static and bundles without lazy chunks', async () 
       .scanImports(await readFile(entry, 'utf8'))
       .filter((item) => item.kind === 'dynamic-import'),
   ).toEqual([])
-  const result = await Bun.build({
-    entrypoints: [entry],
-    target: 'node',
-    format: 'esm',
-    splitting: true,
-    outdir: 'dist',
-  })
-  expect(result.success).toBe(true)
-  expect(result.outputs.map((output) => output.kind)).toEqual(['entry-point'])
-  const bundled = await result.outputs[0]!.text()
-  expect(scanner.scan(bundled).exports.sort()).toEqual(
-    Object.keys(redaction).sort(),
-  )
+  const outdir = await mkdtemp(join(tmpdir(), 'common-auth-redaction-bundle-'))
+  try {
+    const result = await Bun.build({
+      entrypoints: [entry],
+      target: 'node',
+      format: 'esm',
+      splitting: true,
+      outdir,
+    })
+    expect(result.success).toBe(true)
+    expect(result.outputs.map((output) => output.kind)).toEqual(['entry-point'])
+    const bundled = await result.outputs[0]!.text()
+    expect(scanner.scan(bundled).exports.sort()).toEqual(
+      Object.keys(redaction).sort(),
+    )
+  } finally {
+    await rm(outdir, { recursive: true, force: true })
+  }
 })
