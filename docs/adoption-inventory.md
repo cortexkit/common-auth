@@ -32,6 +32,7 @@ Component legend: 1 rpc, 2 tui-build, 3 tui-preferences, 4 fs, 5 logger, 6 sideb
 | openai-auth | e6837be | 4 fs | moves | packages/core/src/atomic-write.ts | writeJsonAtomic | — | — |
 | antigravity-auth | 44eb8fa | 4 fs | moves | packages/core/src/atomic-write.ts | writeJsonAtomic (staging cleanup) | — | — |
 | openai-auth | e6837be | 5 logger | moves | packages/core/src/logger.ts | Level, InitLoggerOptions, initLogger, setLogLevel, redact, redactStrings, flushLogs, createLogger, flushForTest, resetLoggerForTest | packages/core/src/tests/logger.test.ts | logger levels, logger safety and logger redaction titles in sources.md |
+| openai-auth | main | redaction | moves | packages/core/src/util/credential-redaction.ts | redactCredentialText, redactCredentialError, redactCredentialFrame, redactCredentialResponse | packages/core/src/tests/credential-redaction*.test.ts | All titles in the three dedicated redaction test files, copied to test/redaction/ |
 | anthropic-auth | b504bc84 | 5 logger | moves | packages/core/src/logger.ts | In-memory capture sink machinery | — | — |
 | openai-auth | e6837be | 5 logger | stays | packages/opencode/src/logger.ts | Host logger adapter, getLogFile, getEnvLogLevel, exit handler installation | — | — |
 | antigravity-auth | 44eb8fa | 5 logger | stays | packages/core/src/logger.ts | Separate debug stream | — | — |
@@ -556,6 +557,39 @@ Configuration is owned by an instance. `createLoggerInstance(options)` (added in
 **Errors in logged data (added in 0.9.0).** An Error anywhere in the data (top level, in an object or array, any subclass, or one from another realm such as a vm context) is rendered as a plain object: `name`, `message`, `stack`, then `code` and `status` when defined (own or inherited, so DOMException's `code` getter counts), then `cause`, then the error's other own enumerable properties. 0.8.0 rendered only those enumerable properties, so a plain Error came out as `{}`. Every field goes through the same scrubbing as any other value: a token inside a message or stack is masked, and a secret-shaped key on the error (`accessToken`) is redacted. A cause is rendered the same way, whether it is an Error or not. A cyclic chain ends in `'[Circular]'`, and a chain is followed eight errors deep (counting every Error nested inside another), after which the next Error is the string `'[Truncated]'`. Non-Error values render exactly as before.
 
 **Sink-only logger (added in 0.8.0).** `createLoggerInstance({ captureSink })` (and `initLogger`/`configure` with the same options) with no `file` delivers every record at or above its level to the sink, scrubbed exactly as with a file, prints nothing, buffers nothing and creates no file; it is for a host that forwards records to its own log (antigravity-auth forwards to the host's `app.log`). The options are `LoggerOptions = InitLoggerOptions | SinkOnlyLoggerOptions`: `InitLoggerOptions` keeps the file shape every earlier release accepted (`file` required), so a caller deriving a type from it with `Pick` or `extends` keeps compiling; `SinkOnlyLoggerOptions` requires `captureSink` and has no `file`. Options with neither do not type-check. A `file: () => ''` stand-in is not a supported mode. A logger with neither a file nor a sink (never configured) is still a silent no-op.
+
+### ./redaction
+
+`@cortexkit/common-auth/redaction` supplies `redactCredentialText`,
+`redactCredentialError`, `redactCredentialFrame` and
+`redactCredentialResponse`. These helpers are moved from openai-auth's
+`packages/core/src/util/credential-redaction.ts`, with its three dedicated test
+files, without changing their behavior. The only implementation change is the
+relative import of the shared logger's `redactStrings`. Imports are static; the
+subpath requires no host or vault peer dependencies and produces no lazy chunks.
+
+Text redaction scans literal and escaped credentials. Error redaction returns a
+fresh, scrubbed Error containing only the data needed for abort, quota and host
+retry decisions, with 16,384-character diagnostic fields and a 64 KiB
+`responseBody` projection that preserves retry markers. Frame redaction rewrites
+only JSON error envelopes, retaining ordinary model output byte for byte and
+keeping the escaped-error prefilters.
+
+`await redactCredentialResponse(response, secret)` scrubs non-2xx HTTP bodies,
+status text and diagnostic headers. Successful responses pass through unchanged
+in the default `'http'` mode. Pass `'event-stream'` when the caller will parse
+server-sent events (SSE), even if the provider omits or mislabels its content type:
+the wrapper streams ordinary output and scrubs error frames, including failures
+during reads and cancellation. It does not add a transport-error hook or scrub successful response
+headers; callers that own the fetch must separately catch and redact thrown
+errors, and scrub any successful headers they expose as diagnostics.
+
+openai-auth's dedicated plugins keep their existing imports until they adopt this
+subpath in a release; this move neither changes openai-auth nor makes common-auth
+depend on it. The three source test files live under `test/redaction/`; their
+existing mutation controls are carried into `mutations.toml`. Their separate
+test-only TypeScript configuration keeps the original DOM response declarations
+without changing the production compiler's libraries.
 
 ### ./sidebar-file
 

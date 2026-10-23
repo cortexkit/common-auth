@@ -20,6 +20,315 @@ prebuild = [
   { name = "build", command = ["bun", "run", "build"], timeout_s = 600 },
 ]
 
+# --- credential redaction moved from openai-auth ---
+[[control]]
+id = 'redaction-static-import'
+guards = 'the public redaction module loads statically and bundles without lazy chunks'
+file = 'src/redaction/index.ts'
+old = "import { redactStrings } from '../logger/redact.js'"
+new = "const { redactStrings } = await import('../logger/redact.js') // NON-VACUITY BREAK: load redaction lazily."
+test_file = 'test/redaction/subpath.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/subpath.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/subpath.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^redaction\skeeps\simports\sstatic\sand\sbundles\swithout\slazy\schunks$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'codex-sse-delta-no-json-parse'
+guards = 'ordinary and Unicode-escaped Codex delta frames do not pay for JSON parsing on the streaming request path'
+file = 'src/redaction/index.ts'
+old = "    !frame.includes('error') &&"
+new = '    false && // NON-VACUITY BREAK: parse every ordinary Codex delta.'
+test_file = 'test/redaction/credential-redaction.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^ordinary\sdelta\sframes\sbypass\sJSON\sparsing\sentirely$', '^escaped\sUnicode\sdelta\sframes\sbypass\sJSON\sparsing\sand\sremain\sbyte-identical$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-non-ok-header-redaction'
+guards = 'provider error headers cannot retain exact account credentials or JWT-shaped diagnostics'
+file = 'src/redaction/index.ts'
+old = '        init.headers.set(name, redactCredentialText(value, credential))'
+new = '        init.headers.set(name, value) // NON-VACUITY BREAK: forward echoed header credentials.'
+test_file = 'test/redaction/credential-redaction.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^non-ok\sresponse\sheaders\sredact\sexact\scredentials\sand\sJWTs\swhile\spreserving\sretry\smetadata$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-sse-cancel-rejection-redaction'
+guards = 'stream cancellation rejects with scrubbed diagnostics while forwarding the caller reason and releasing the reader'
+file = 'src/redaction/index.ts'
+old = '          throw redactCredentialError(error, credential)'
+new = '          throw error // NON-VACUITY BREAK: expose the cancellation rejection.'
+test_file = 'test/redaction/credential-redaction.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^SSE\scancellation\srejection\sredacts\scredentials\swithout\schanging\sthe\sreason\sand\sreleases\sthe\sreader$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-sse-escaped-error-redaction'
+guards = 'legal JSON escaping of error keys and type values cannot bypass SSE credential scrubbing'
+file = 'src/redaction/index.ts'
+old = '      (!escapedErrorField.test(frame) && !escapedErrorType.test(frame)))'
+new = '      true) // NON-VACUITY BREAK: ignore escaped error envelopes.'
+test_file = 'test/redaction/credential-redaction.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^escaped\sJSON\serror\skeys\sredact\sexact\scredentials\sand\sJWTs\sthrough\sthe\sSSE\swrapper$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-decoded-json-value-redaction'
+guards = 'Unicode-escaped credentials in HTTP and SSE error string values cannot reappear after JSON decoding'
+file = 'src/redaction/index.ts'
+old = '      if (hex) return String.fromCharCode(Number.parseInt(hex, 16))'
+new = '      if (hex) return sequence // NON-VACUITY BREAK: leave Unicode credentials encoded.'
+test_file = 'test/redaction/credential-redaction.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^failed\sHTTP\sJSON\sbodies\sredact\sdecoded\scredential\sJWT\sand\sBearer\svalues\swithout\schanging\sclassification$', '^SSE\serror\sframes\sredact\sdecoded\scredential\sJWT\sand\sBearer\svalues\swithout\schanging\sclassification$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-sse-missing-content-type'
+guards = 'a missing provider content-type cannot bypass caller-declared SSE error redaction'
+file = 'src/redaction/index.ts'
+old = "    if (!bodyStream || mode === 'http') return response"
+new = "    if (!bodyStream || mode === 'http' || !headers.has('content-type')) return response // NON-VACUITY BREAK: trust missing provider metadata."
+test_file = 'test/redaction/credential-redaction.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^explicit\sSSE\smode\sscrubs\scredentials\swith\smissing\scontent-type$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-sse-plain-content-type'
+guards = 'a text/plain provider content-type cannot bypass caller-declared SSE error redaction'
+file = 'src/redaction/index.ts'
+old = "    if (!bodyStream || mode === 'http') return response"
+new = "    if (!bodyStream || mode === 'http' || headers.get('content-type') === 'text/plain') return response // NON-VACUITY BREAK: trust mislabelled provider metadata."
+test_file = 'test/redaction/credential-redaction.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^explicit\sSSE\smode\sscrubs\scredentials\swith\stext/plain\scontent-type$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-duplicate-keys'
+guards = 'discarded duplicate JSON strings cannot leak from SSE error frames'
+file = 'src/redaction/index.ts'
+old = '    return redactCredentialJsonText(frame, credential)'
+new = '    return redactCredentialText(JSON.stringify(value), credential) === JSON.stringify(value) ? frame : redactCredentialJsonText(frame, credential) // NON-VACUITY BREAK: trust only surviving JSON values.'
+test_file = 'test/redaction/credential-redaction-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^audit\sduplicate\skeys\scannot\sconceal\scredentials\sin\sHTTP\sor\sSSE\serrors$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-escaped-text'
+guards = 'raw diagnostics have an independent escape-decoded credential scan'
+file = 'src/redaction/index.ts'
+old = '  const decoded = decodeEscapes(raw)'
+new = '  const decoded = raw // NON-VACUITY BREAK: skip the decoded diagnostic scan.'
+test_file = 'test/redaction/credential-redaction-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^audit\sraw\sand\sescape-decoded\sdiagnostics\sare\sscanned\sindependently$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-header-names'
+guards = 'diagnostic header names cannot carry the attempt credential'
+file = 'src/redaction/index.ts'
+old = '        if (redactCredentialText(name, credential?.toLowerCase()) !== name) {'
+new = '        if (false && redactCredentialText(name, credential?.toLowerCase()) !== name) { // NON-VACUITY BREAK: keep secret header names.'
+test_file = 'test/redaction/credential-redaction-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^audit\snon-ok\sheader\snames\scannot\scontain\scredentials$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-proxy-projection'
+guards = 'proxies in thrown prototype chains cannot run traps during projection'
+file = 'src/redaction/index.ts'
+old = '    if (types.isProxy(prototype)) return false'
+new = '    if (false && types.isProxy(prototype)) return false // NON-VACUITY BREAK: inspect caller proxies.'
+test_file = 'test/redaction/credential-redaction-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^audit\sproxied\sError\sprototype\sdoes\snot\sexecute\straps$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-leading-bom'
+guards = 'BOM bytes in successful streams remain identical'
+file = 'src/redaction/index.ts'
+old = "        bom +\n        event"
+new = "        '' + // NON-VACUITY BREAK: omit the original leading BOM.\n        event"
+test_file = 'test/redaction/credential-redaction-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^audit\sBOM\ssuccess\sbytes\sstay\sidentical\sat\sstart\sand\sinside\sstream\sunder\severy\sheader$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-response-getters'
+guards = 'Response subclass getters cannot execute at the credential boundary'
+file = 'src/redaction/index.ts'
+old = '    const status = responseStatus.call(response) as number'
+new = '    const status = response.status // NON-VACUITY BREAK: execute subclass status accessors.'
+test_file = 'test/redaction/credential-redaction-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^audit\sResponse\ssubclasses\sand\sreused\sbodies\sdo\snot\srun\sgetters\sor\sleak$']
+expect_message = '[credential]'
+
+[[control]]
+id = 'credential-audit-http-read-rejection'
+guards = 'a failed read of an eagerly consumed non-ok body cannot escape raw'
+file = 'src/redaction/index.ts'
+old = "  } catch (error) {\n    throw redactCredentialError(error, credential)\n  }\n}"
+new = "  } catch (error) {\n    throw error // NON-VACUITY BREAK: expose the body-read rejection.\n  }\n}"
+test_file = 'test/redaction/credential-redaction-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^audit\snon-ok\sbody\sread\srejections\sare\sscrubbed$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-inherited-accessor'
+guards = 'inherited error messages and names are never evaluated during projection'
+file = 'src/redaction/index.ts'
+old = "  let name = ownData(error, 'name')"
+new = '  let name = safeObject(error) ? (error as { name?: unknown }).name : undefined // NON-VACUITY BREAK: read inherited caller accessors.'
+test_file = 'test/redaction/credential-redaction-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^audit\sinherited\sError\saccessors\sand\sSymbol-keyed\smessages\sare\snot\sretained\sor\sexecuted$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-wrapped-known-token'
+guards = 'whitespace wrapping cannot leave a known credential suffix after Bearer prefix masking'
+file = 'src/redaction/index.ts'
+old = '  const masked = maskKnownCredential(text, credential)'
+new = "  const masked = credential ? text.split(credential).join('[credential]') : text // NON-VACUITY BREAK: ignore wrapped known credentials."
+test_file = 'test/redaction/credential-redaction-second-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-second-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-second-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^known\scredentials\swrapped\sacross\swhitespace\sare\sremoved\scompletely\sfrom\serror\stext$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-numeric-lexemes'
+guards = 'JSON numbers are never rounded or normalized when scrubbing an unrelated string'
+file = 'src/redaction/index.ts'
+old = 'function redactCredentialJsonText(text: string, credential?: string): string {'
+new = "function redactCredentialJsonText(text: string, credential?: string): string {\n  text = JSON.stringify(JSON.parse(text)) // NON-VACUITY BREAK: normalize numeric source lexemes."
+test_file = 'test/redaction/credential-redaction-second-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-second-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-second-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^JSON\sdiagnostic\srewrites\spreserve\sunrelated\snumeric\sliteral\sspelling\sexactly$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-numeric-secret'
+guards = 'numeric-looking credentials cannot escape unquoted JSON diagnostic values'
+file = 'src/redaction/index.ts'
+old = '''    /"(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g,'''
+new = '''    /"(?:\\.|[^"\\])*"/g, // NON-VACUITY BREAK: skip numeric credential literals.'''
+test_file = 'test/redaction/credential-redaction-second-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-second-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-second-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^numeric-looking\scredentials\sbecome\sJSON\sstrings\swithout\srounding\sother\snumbers$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-request-id'
+guards = 'the owned projection retains a scrubbed provider support request id'
+file = 'src/redaction/index.ts'
+old = "  if (typeof requestId === 'string')"
+new = "  if (typeof requestId === 'string' && requestId.length < 0) // NON-VACUITY BREAK: discard the support request id."
+test_file = 'test/redaction/credential-redaction-second-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-second-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-second-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^owned\serror\sprojection\spreserves\sscrubbed\sprovider\srequest\sids\sfrom\sheaders\sand\sbody$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-sse-scalars'
+guards = 'rebuilt error frames cannot retain Boolean or null values equal to the known credential'
+file = 'src/redaction/index.ts'
+old = '''    /"(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g,'''
+new = '''    /"(?:\\.|[^"\\])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g, // NON-VACUITY BREAK: copy Boolean and null credential values.'''
+test_file = 'test/redaction/credential-redaction-second-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-second-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-second-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^rebuilt\sSSE\serrors\snever\sretain\scredential-equal\sscalar\sretry\smetadata$']
+expect_message = 'expect(received)'
+
+[[control]]
+id = 'credential-audit-numeric-alias'
+guards = 'exponent and decimal scalar aliases of a numeric credential are masked without rounding ids'
+file = 'src/redaction/index.ts'
+old = '  const numericCredential = credential ? canonicalNumber(credential) : undefined'
+new = '  const numericCredential = undefined // NON-VACUITY BREAK: ignore mathematically equal numeric spellings.'
+test_file = 'test/redaction/credential-redaction-second-audit.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff --stat; git diff -- src/redaction/index.ts; bun test test/redaction/credential-redaction-second-audit.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/redaction/credential-redaction-second-audit.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^numeric\sscalar\saliases\sare\sscrubbed\swithout\srounding\sor\smasking\sunrelated\snumeric\sids$']
+expect_message = 'expect(received)'
+
 # --- detached vault quota publication ---
 [[control]]
 id = 'claustrum-quota-timeout-retains-mailbox'
