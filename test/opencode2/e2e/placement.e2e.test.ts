@@ -641,10 +641,28 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
         '--no-save',
         `@opencode/cli@${OPENCODE_CLI_VERSION}`,
       ])
+      // The CLI's install script may invoke the binary. Isolate that invocation
+      // too, but retain network access while npm fetches the pinned package.
+      const installEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        ...isolatedEnv(join(scratch, 'install-profile'), {}),
+      }
+      for (const key of [
+        'HTTP_PROXY',
+        'HTTPS_PROXY',
+        'http_proxy',
+        'https_proxy',
+        'NO_PROXY',
+        'no_proxy',
+      ]) {
+        if (process.env[key] === undefined) delete installEnv[key]
+        else installEnv[key] = process.env[key]
+      }
       const install = spawnSync(command, args, {
         cwd: cliDir,
         encoding: 'utf8',
         windowsVerbatimArguments: true,
+        env: installEnv,
       })
       if (install.status !== 0)
         throw new Error(
