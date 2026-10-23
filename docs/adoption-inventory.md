@@ -525,6 +525,44 @@ already completed before the extension's first opportunity to enter vault mode.
 
 `mutateVaultRoster` callbacks receive `{ assertOwned }` for ownership fencing immediately before a caller-managed rename; existing one-argument callbacks remain compatible. If the assertion rejects, the caller must not rename.
 
+**Classifying families (next minor).** `ClaustrumScopedCustody` accepts the new
+`ClaustrumFamilyInput = ClaustrumFamily | ClassifyingClaustrumFamily<string>`.
+`ClaustrumFamily` remains the same extendable interface, including required
+`refreshAdapter` and optional `apiKeys`; existing adapter families keep their
+discovery behavior and inventory shape. `ClaustrumConsumerOptions.family` still
+accepts only that legacy interface. Classifying families are currently a
+custody-only API; coordination of multiple provider consumers is not included.
+
+`ClassifyingClaustrumFamily<Code>` supplies `category`, `refusalCodes: readonly
+Code[]`, and `classify(row: VaultRowFacts)`. The library first requires `read`,
+the family category, and type `oauth` or `api_key`. Then the policy is called
+once per eligible row, returning `{ kind: 'not-mine' }`, `{ kind: 'mine', member
+}` or `{ kind: 'refused', code }`. It may admit several OAuth refresh adapters
+and static keys together; provider tables, reserved ids and host policy belong
+to the caller, not this library.
+
+`VaultRowFacts` is common-auth's own non-secret structure: `credentialId`,
+`credentialType`, `categories`, and optional `refreshAdapter`, `providerIds` and
+`authMethod`. It does not depend on newer client declarations. A decoded row
+with no `providerIds` (including claustrum-client 0.12 rows) is refused as the
+fixed library code `unmapped` before calling policy. An empty array still reaches
+policy: it can mean an old daemon or a row without provider mapping. Remedy text
+should name both an old client and an old daemon. A missing `authMethod` on a
+row with provider ids remains the policy's decision.
+
+Only declared refusal codes matching `^[a-z][a-z0-9-]{0,31}$` are published.
+Thrown classifier errors, invalid results and undeclared or malformed codes
+become the fixed library code `unclassified`; error messages are never published.
+Callers should account for the library codes `unmapped` and `unclassified` in
+addition to their declared codes.
+
+For classifying families only, `VaultInventory.refused` lists `{ credentialId?,
+code }` (blank ids omitted), and `notMine` counts rows without listing them.
+Admitted `VaultCredential` and malformed admitted `SkippedVaultRecord` values
+carry optional `member`. No refusal is admitted as a credential. These are
+in-memory discovery fields only: the roster file format is unchanged, including
+its rejected-record representation. No existing plugin adoption is included.
+
 ### ./logger
 
 On Windows `flushLogs()` returns a promise and hosts **must await it before

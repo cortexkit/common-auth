@@ -44,10 +44,37 @@ export interface ClaustrumFamily {
   apiKeys?: boolean
 }
 
+/** Non-secret classification facts, including rows decoded by older clients. */
+export interface VaultRowFacts {
+  readonly credentialId: string
+  readonly credentialType: string
+  readonly authMethod?: string
+  readonly refreshAdapter?: string
+  readonly providerIds?: readonly string[]
+  readonly categories: readonly string[]
+}
+
+/** A policy that partitions one category without requiring one OAuth adapter. */
+export interface ClassifyingClaustrumFamily<Code extends string> {
+  category: string
+  refusalCodes: readonly Code[]
+  classify(
+    row: VaultRowFacts,
+  ):
+    | { kind: 'not-mine' }
+    | { kind: 'mine'; member: string }
+    | { kind: 'refused'; code: Code }
+}
+
+export type ClaustrumFamilyInput =
+  | ClaustrumFamily
+  | ClassifyingClaustrumFamily<string>
+
 /** One vault credential this consumer may serve. Never carries bearer material. */
 export interface VaultCredential {
   readonly credentialId: string
   readonly credentialType: VaultCredentialType
+  readonly member?: string
   /**
    * The provider account the credential logs into, when the vault's adapter
    * claims one. Absent means the adapter makes no claim, not a mismatch.
@@ -75,6 +102,7 @@ export type SkippedVaultReason =
  */
 export interface SkippedVaultRecord {
   readonly credentialId?: string
+  readonly member?: string
   readonly reason: SkippedVaultReason
 }
 
@@ -123,6 +151,10 @@ export interface VaultInventory {
   readonly view: string
   readonly credentials: readonly VaultCredential[]
   readonly skipped: readonly SkippedVaultRecord[]
+  /** Classifying families only: fixed refusal codes, never classifier errors. */
+  readonly refused?: readonly { credentialId?: string; code: string }[]
+  /** Classifying families only: rows outside this family's responsibility. */
+  readonly notMine?: number
   /**
    * The consumer's grants, as the vault's list reply named them. Undefined means unknown
    * (the vault or client predates the fields), never zero grants.
@@ -348,17 +380,69 @@ function accessTokenFromMaterial(material: string): string {
   return access
 }
 
+type ClassifiedCredential =
+  | { kind: 'not-mine' }
+  | { kind: 'mine'; type: VaultCredentialType; member?: string }
+  | { kind: 'refused'; code: string }
+
 function credentialTypeOf(
   row: ScopedInventoryRow,
-  family: ClaustrumFamily,
-): VaultCredentialType | undefined {
-  if (!row.operations.includes('read')) return undefined
-  if (!row.categories.includes(family.category)) return undefined
+  family: ClaustrumFamilyInput,
+): ClassifiedCredential {
+  const notMine = { kind: 'not-mine' } as const
+  if (!row.operations.includes('read')) return notMine
+  if (!row.categories.includes(family.category)) return notMine
+  if (row.credentialType !== 'oauth' && row.credentialType !== 'api_key')
+    return notMine
+  if ('classify' in family) {
+    // Older clients omit these facts entirely; do not call a policy that needs them.
+    const facts: VaultRowFacts = {
+      credentialId: row.id,
+      credentialType: row.credentialType,
+      categories: row.categories,
+      refreshAdapter: row.refreshAdapter,
+      ...rowFactsOf(row),
+    }
+    if (facts.providerIds === undefined)
+      return { kind: 'refused', code: 'unmapped' }
+    try {
+      const result = family.classify(facts)
+      if (result.kind === 'not-mine') return notMine
+      if (result.kind === 'mine' && typeof result.member === 'string')
+        return { kind: 'mine', type: row.credentialType, member: result.member }
+      if (
+        result.kind === 'refused' &&
+        typeof result.code === 'string' &&
+        /^[a-z][a-z0-9-]{0,31}$/.test(result.code) &&
+        !result.code.includes('\n') &&
+        family.refusalCodes.includes(result.code)
+      )
+        return { kind: 'refused', code: result.code }
+    } catch {
+      // A classifier error may contain vault data; expose only a fixed code.
+    }
+    return { kind: 'refused', code: 'unclassified' }
+  }
   if (row.credentialType === 'oauth')
-    return row.refreshAdapter === family.refreshAdapter ? 'oauth' : undefined
+    return row.refreshAdapter === family.refreshAdapter
+      ? { kind: 'mine', type: 'oauth' }
+      : notMine
   if (row.credentialType === 'api_key' && family.apiKeys)
-    return row.refreshAdapter === undefined ? 'api_key' : undefined
-  return undefined
+    return row.refreshAdapter === undefined
+      ? { kind: 'mine', type: 'api_key' }
+      : notMine
+  return notMine
+}
+
+/** Structural access keeps the public facts independent of client declarations. */
+function rowFactsOf(row: {
+  readonly id: string
+}): Pick<VaultRowFacts, 'providerIds' | 'authMethod'> {
+  const metadata = row as {
+    readonly providerIds?: readonly string[]
+    readonly authMethod?: string
+  }
+  return { providerIds: metadata.providerIds, authMethod: metadata.authMethod }
 }
 
 /**
@@ -394,7 +478,7 @@ export class ClaustrumScopedCustody {
   readonly #client: ClaustrumScopedClient
   readonly #readToken: () => Promise<EnrollmentTokenFile>
   readonly #now: () => number
-  readonly #family: ClaustrumFamily
+  readonly #family: ClaustrumFamilyInput
   readonly #parseIdentity?: IdentityParser
   readonly #requireAssertion: boolean
   readonly #logger: ClaustrumLogger
@@ -417,7 +501,7 @@ export class ClaustrumScopedCustody {
 
   constructor(options: {
     client: ClaustrumScopedClient
-    family: ClaustrumFamily
+    family: ClaustrumFamilyInput
     tokenPath?: string
     readToken?: () => Promise<EnrollmentTokenFile>
     parseIdentity?: IdentityParser
@@ -612,19 +696,36 @@ export class ClaustrumScopedCustody {
       throw error
     }
     const skipped: SkippedVaultRecord[] = []
+    const refused: { credentialId?: string; code: string }[] = []
+    let notMine = 0
     const candidates: Array<{
       row: ScopedInventoryRow
       type: VaultCredentialType
+      member?: string
     }> = []
     const counts = new Map<string, number>()
     for (const row of inventory.rows) {
-      const type = credentialTypeOf(row, this.#family)
-      if (!type) continue
-      candidates.push({ row, type })
+      const classified = credentialTypeOf(row, this.#family)
+      if (classified.kind === 'not-mine') {
+        notMine++
+        continue
+      }
+      if (classified.kind === 'refused') {
+        refused.push({
+          ...(row.id.trim() && { credentialId: row.id }),
+          code: classified.code,
+        })
+        continue
+      }
+      candidates.push({
+        row,
+        type: classified.type,
+        ...(classified.member !== undefined && { member: classified.member }),
+      })
       counts.set(row.id, (counts.get(row.id) ?? 0) + 1)
     }
     const credentials: VaultCredential[] = []
-    for (const { row, type } of candidates) {
+    for (const { row, type, member } of candidates) {
       let reason: SkippedVaultReason | undefined
       if (!row.id.trim()) reason = 'empty credential id'
       else if ((counts.get(row.id) ?? 0) > 1) reason = 'duplicate credential id'
@@ -632,13 +733,18 @@ export class ClaustrumScopedCustody {
         reason = 'blank account identity'
       else if (!row.state.trim()) reason = 'empty state'
       if (reason) {
-        skipped.push({ ...(row.id.trim() && { credentialId: row.id }), reason })
+        skipped.push({
+          ...(row.id.trim() && { credentialId: row.id }),
+          ...(member !== undefined && { member }),
+          reason,
+        })
         continue
       }
       credentials.push(
         Object.freeze({
           credentialId: row.id,
           credentialType: type,
+          ...(member !== undefined && { member }),
           ...(row.accountId !== undefined && {
             accountIdentity: row.accountId,
           }),
@@ -655,6 +761,10 @@ export class ClaustrumScopedCustody {
       view: inventory.view,
       credentials: Object.freeze(credentials),
       skipped: Object.freeze(skipped),
+      ...('classify' in this.#family && {
+        refused: Object.freeze(refused),
+        notMine,
+      }),
       ...(grantReach && { grantReach }),
     }
   }

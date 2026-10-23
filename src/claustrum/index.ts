@@ -29,7 +29,9 @@ export {
 } from './consumer.js'
 export {
   type AccountIdentitySource,
+  type ClassifyingClaustrumFamily,
   type ClaustrumFamily,
+  type ClaustrumFamilyInput,
   type ClaustrumRosterWatch,
   type ClaustrumRosterWatchOptions,
   type ClaustrumScopedAttempt,
@@ -50,6 +52,7 @@ export {
   type VaultGrantReach,
   type VaultGrantTuple,
   type VaultInventory,
+  type VaultRowFacts,
 } from './custody.js'
 export {
   type ClaustrumEnrollmentClient,

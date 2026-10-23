@@ -20,6 +20,92 @@ prebuild = [
   { name = "build", command = ["bun", "run", "build"], timeout_s = 600 },
 ]
 
+# --- classifying vault families ---
+[[control]]
+id = 'claustrum-classifier-mine'
+guards = 'one classifying family admits distinct OAuth adapters and static keys with their member'
+file = 'src/claustrum/custody.ts'
+old = "return { kind: 'mine', type: row.credentialType, member: result.member }"
+new = "return notMine // NON-VACUITY BREAK: discard admitted members."
+test_file = 'test/claustrum/classifying-family.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/classifying-family.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/classifying-family.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^classifying\sfamily\sadmits\sdistinct\sOAuth\sadapters\sand\sstatic\skeys\sin\sone\spass$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'claustrum-classifier-not-mine'
+guards = 'not-mine rows are counted without listing vault identifiers'
+file = 'src/claustrum/custody.ts'
+old = "if (result.kind === 'not-mine') return notMine"
+new = "if (result.kind === 'not-mine') return { kind: 'refused', code: 'unclassified' } // NON-VACUITY BREAK: expose not-mine ids."
+test_file = 'test/claustrum/classifying-family.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/classifying-family.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/classifying-family.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^classifying\snot-mine\srows\sare\scounted\sbut\snever\slisted$']
+expect_message = 'toMatchObject'
+
+[[control]]
+id = 'claustrum-classifier-refused'
+guards = 'refused rows retain only credential ids and declared refusal codes'
+file = 'src/claustrum/custody.ts'
+old = "return { kind: 'refused', code: result.code }"
+new = "return notMine // NON-VACUITY BREAK: silently discard refused rows."
+test_file = 'test/claustrum/classifying-family.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/classifying-family.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/classifying-family.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^classifying\srefusals\sretain\sonly\scredential\sids\sand\sdeclared\scodes$']
+expect_message = 'toMatchObject'
+
+[[control]]
+id = 'claustrum-classifier-closed-codes'
+guards = 'a syntactically valid but undeclared refusal cannot echo vault data'
+file = 'src/claustrum/custody.ts'
+old = 'family.refusalCodes.includes(result.code)'
+new = 'true // NON-VACUITY BREAK: allow undeclared refusal codes.'
+test_file = 'test/claustrum/classifying-family.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/classifying-family.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/classifying-family.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^classifying\sundeclared\srefusal\scodes\sbecome\sunclassified$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'claustrum-classifier-code-grammar'
+guards = 'declaring a refusal code cannot bypass the closed code grammar'
+file = 'src/claustrum/custody.ts'
+old = '''/^[a-z][a-z0-9-]{0,31}$/.test(result.code) &&
+        !result.code.includes('\n') &&'''
+new = '''true && // NON-VACUITY BREAK: permit arbitrary declared strings.'''
+test_file = 'test/claustrum/classifying-family.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/classifying-family.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/classifying-family.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^classifying\sdeclared\scodes\smust\salso\ssatisfy\sthe\sclosed\scode\sgrammar$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'claustrum-classifier-old-client'
+guards = 'pre-providerIds client rows are refused unmapped without entering the policy'
+file = 'src/claustrum/custody.ts'
+old = 'if (facts.providerIds === undefined)'
+new = 'if (false) // NON-VACUITY BREAK: send old-client rows into policy.'
+test_file = 'test/claustrum/classifying-family.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/classifying-family.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/classifying-family.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^classifying\sold-client\srows\sare\srefused\sunmapped\swithout\sinvoking\spolicy$']
+expect_message = 'toEqual'
+
 # --- detached vault quota publication ---
 [[control]]
 id = 'claustrum-quota-timeout-retains-mailbox'
@@ -2162,10 +2248,10 @@ expect_message = 'expected a rejection'
 id = 'claustrum-admits-captured-antigravity-wire'
 guards = 'the captured antigravity auth_method and refresh adapter reach an asserted OAuth receipt through the real client decoder, rather than silently disappearing from the roster'
 file = 'src/claustrum/custody.ts'
-old = "  if (!row.operations.includes('read')) return undefined"
-new = '''  if (!row.operations.includes('read')) return undefined
+old = "  if (!row.operations.includes('read')) return notMine"
+new = '''  if (!row.operations.includes('read')) return notMine
   // NON-VACUITY BREAK: refuse the antigravity refresh adapter.
-  if (row.refreshAdapter === 'antigravity') return undefined'''
+  if (row.refreshAdapter === 'antigravity') return notMine'''
 test_file = 'test/claustrum/antigravity-wire.test.ts'
 runner = "command"
 command = ["bun", "test", "test/claustrum/antigravity-wire.test.ts", "-t", "{test}"]
