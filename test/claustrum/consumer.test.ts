@@ -178,6 +178,34 @@ test('metadata refresh and connection coalesce, but dispatch authorization never
   expect(f.gets).toHaveLength(2)
 })
 
+test('a reorder reaches the next routing decision in this process without contacting the vault', async () => {
+  const f = await fixture()
+  const roster = await f.consumer.refresh()
+  const named = f.route(roster, 'oauth:test')
+  const work = f.route(roster, 'oauth:test:work')
+  expect(f.consumer.routingRows().map((row) => row.id)).toEqual([named, work])
+  const before = f.counts()
+  expect(await f.consumer.reorder([work, named])).toEqual({
+    ids: [work, named],
+    outcome: 'reordered',
+  })
+  // No refresh ran: the order comes from the re-read roster in memory.
+  expect(f.consumer.routingRows().map((row) => row.id)).toEqual([work, named])
+  expect(f.consumer.snapshot()?.rows.map((row) => row.routeId)).toEqual([
+    work,
+    named,
+  ])
+  await expect(f.consumer.reorder([work])).rejects.toMatchObject({
+    kind: 'invalid-order',
+  })
+  expect(f.consumer.routingRows().map((row) => row.id)).toEqual([work, named])
+  expect(f.counts()).toEqual(before)
+  expect(f.gets).toHaveLength(0)
+  // The next discovery keeps the new order.
+  await f.consumer.refresh()
+  expect(f.consumer.routingRows().map((row) => row.id)).toEqual([work, named])
+})
+
 test('a disabled route is refused even before the next metadata poll', async () => {
   const f = await fixture()
   const id = f.route(await f.consumer.refresh(), 'oauth:test:work')

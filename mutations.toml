@@ -7739,3 +7739,53 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/enrollment-
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^an\senrollment\sthat\sfails\sunexpectedly\sreports\sa\snamed,\sfixed\serror\swith\sonly\sa\svetted\scode$']
 expect_message = 'expect(received).toBeInstanceOf(expected)'
+
+# --- vault routing order (0.25.0) ---
+[[control]]
+id = 'claustrum-reorder-refuses-non-permutation'
+guards = 'a vault order that is not a permutation of the roster route ids refuses and writes nothing, so a typo cannot drop or duplicate an account'
+file = 'src/claustrum/roster.ts'
+old = '''      if (problem) throw invalidOrder(problem)'''
+new = '''      if (problem) void problem // NON-VACUITY BREAK: skip the permutation check.'''
+test_file = 'test/claustrum/roster-reorder.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/roster-reorder.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/roster-reorder.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^an\sorder\sthat\sis\snot\sa\spermutation\sof\sthe\sroster\srefuses\sand\sleaves\sthe\sfile\sbyte-identical$']
+expect_message = 'expect(received).toBeInstanceOf(expected)'
+
+[[control]]
+id = 'claustrum-consumer-reorder-updates-memory'
+guards = 'a consumer reorder re-reads the roster into memory, so the next routing decision in the same process uses the new order without waiting for a discovery'
+file = 'src/claustrum/consumer.ts'
+old = '''    const result = await reorderVaultRoster(this.#options.rosterPath, routeIds)
+    this.#roster = pendingVaultQuota(
+      this.#options.rosterPath,
+      await readVaultRoster(this.#options.rosterPath),
+    )
+    return result'''
+new = '''    const result = await reorderVaultRoster(this.#options.rosterPath, routeIds)
+    // NON-VACUITY BREAK: keep the stale in-memory roster.
+    return result'''
+test_file = 'test/claustrum/consumer.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/claustrum/consumer.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/consumer.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^a\sreorder\sreaches\sthe\snext\srouting\sdecision\sin\sthis\sprocess\swithout\scontacting\sthe\svault$']
+expect_message = 'expect(received).toEqual(expected)'
+
+[[control]]
+id = 'commands-vault-order-refuses-ambiguous-label'
+guards = 'a Set order entry that matches more than one vault account (a shared label) refuses and writes nothing, instead of silently picking one of the accounts'
+file = 'src/commands/builtins.ts'
+old = '''        if (found.length > 1)'''
+new = '''        if (found.length > 99) // NON-VACUITY BREAK: take the first of several matches.'''
+test_file = 'test/commands/vault-order.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/commands/vault-order.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/commands/vault-order.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^routing\sset\sorder\sin\svault\smode\sa\slabel\stwo\saccounts\sshare\srefuses\sas\sambiguous\sand\swrites\snothing;\stheir\sroute\sids\sstill\swork$']
+expect_message = 'expect(received).toMatchObject(expected)'
