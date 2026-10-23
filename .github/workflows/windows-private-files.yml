@@ -24,6 +24,7 @@ on:
       - 'test/setup/**'
       - 'test/windows/**'
       - 'test/claustrum/**'
+      - 'test/fixtures/hub-process.ts'
       - '.github/workflows/windows-private-files.yml'
       - 'package.json'
       - 'bun.lock'

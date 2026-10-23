@@ -3,6 +3,9 @@ import { resolve } from 'node:path'
 import {
   acquireRefreshFileLock,
   LockContentionError,
+  LockOwnershipError,
+  lockPathFor,
+  PrivateFileError,
   withLock,
   writeJsonAtomic,
 } from '../fs/index.js'
@@ -98,6 +101,54 @@ export interface ProjectionOptions {
   routePrefix?: string
   mapAccount?: AccountMapper
   now?: number
+  /**
+   * Preferences carried over from another roster file, used only when there
+   * is no previous roster: its declines become this roster's declines, and
+   * its account order sorts the rows this inventory produces. No row of the
+   * seed is ever projected, so a seed cannot make an account routable.
+   */
+  seed?: VaultRosterSeed
+}
+
+/** The preferences one roster file can pass to a first projection elsewhere. */
+export interface VaultRosterSeed {
+  readonly declined: readonly DeclinedAccount[]
+  /** Accounts in the seed roster's order, matched by account, then by id. */
+  readonly order: readonly {
+    readonly credentialId: string
+    readonly accountIdentity?: string
+  }[]
+}
+
+/** Declines and account order of `roster`, and nothing else of it. */
+export function vaultRosterSeed(roster: VaultRosterFile): VaultRosterSeed {
+  return {
+    declined: roster.declined.map((entry) => ({ ...entry })),
+    order: roster.rows.flatMap((row) =>
+      memberIds(row).map((credentialId) => ({
+        credentialId,
+        ...(row.accountIdentity !== undefined && {
+          accountIdentity: row.accountIdentity,
+        }),
+      })),
+    ),
+  }
+}
+
+/** Where a projected row falls in the seed's order; unknown rows go last. */
+function seedIndex(seed: VaultRosterSeed, row: VaultRosterRow): number {
+  const ids = memberIds(row)
+  const byAccount =
+    row.accountIdentity === undefined
+      ? -1
+      : seed.order.findIndex(
+          (entry) => entry.accountIdentity === row.accountIdentity,
+        )
+  const index =
+    byAccount >= 0
+      ? byAccount
+      : seed.order.findIndex((entry) => ids.includes(entry.credentialId))
+  return index >= 0 ? index : Infinity
 }
 
 export const DEFAULT_ROUTE_PREFIX = 'vault:'
@@ -158,8 +209,9 @@ export function projectVaultRoster(
   const prefix = options.routePrefix ?? DEFAULT_ROUTE_PREFIX
   const reserved = options.reservedRouteIds ?? new Set<string>()
   const previousRows = previous?.rows ?? []
+  const seed = previous ? undefined : options.seed
   // Declines follow the account and outlive its records, so none is pruned.
-  const declined = [...(previous?.declined ?? [])]
+  const declined = [...(previous?.declined ?? seed?.declined ?? [])]
   const complete = inventory.skipped.length === 0
   const listed = new Set(
     inventory.credentials.map((credential) => credential.credentialId),
@@ -285,6 +337,10 @@ export function projectVaultRoster(
         ...(!chosen.claimed && identity !== undefined && { unclaimed: true }),
       },
     })
+    // With no previous roster every row is new; a seed from another key
+    // sorts them by that key's order instead of by credential id.
+    const pushed = projected.at(-1)
+    if (seed && pushed) pushed.previousIndex = seedIndex(seed, pushed.row)
   }
 
   // An account the reply does not account for keeps its last good projection:
@@ -861,6 +917,39 @@ export function forgetPendingVaultDiscovery(path: string): void {
 }
 
 /**
+ * Whether `error` from a roster commit at `path` means another writer had the
+ * roster at that moment, not that the commit itself failed: the discovery
+ * lease was busy before any roster existed, the write lock stayed busy, or a
+ * lock this commit held was lost. On Windows the same lock steps can reject
+ * with a PrivateFileError instead (a lock file that could not be read or
+ * replaced while another process held it), so a PrivateFileError naming one
+ * of this roster's lock files counts the same on every OS.
+ */
+export function isVaultRosterLockRefusal(
+  path: string,
+  error: unknown,
+): boolean {
+  const target = resolve(path)
+  if (error instanceof ClaustrumConsumerError)
+    return error.kind === 'roster-busy'
+  if (
+    error instanceof LockContentionError ||
+    error instanceof LockOwnershipError
+  )
+    return resolve(error.details.target) === target
+  if (error instanceof PrivateFileError) {
+    const failed = resolve(error.path)
+    return [WRITE_LOCK.name, DISCOVERY_LEASE.name].some((name) => {
+      const lock = lockPathFor(target, name)
+      // The lock file itself, its eviction marker and the temporary files
+      // its owner record is staged in all start with the lock path.
+      return failed === lock || failed.startsWith(`${lock}.`)
+    })
+  }
+  return false
+}
+
+/**
  * Discover and commit the roster. The lease covers the list call and the
  * commit, not just the write: an opaque view cannot tell a delayed old reply
  * from a newer one, so a run that lost its lease is refused at commit. A
@@ -876,6 +965,17 @@ export async function refreshVaultRoster(options: {
   signal?: AbortSignal
   projection?: ProjectionOptions | (() => ProjectionOptions)
   onInventory?: (inventory: VaultInventory) => void
+  /**
+   * For a caller that listed before taking this path's discovery lease (the
+   * discovery hub lists once for several rosters): the view this roster file
+   * held before that list. `custody.discover` then returns that list. It is
+   * held to the rule a kept discovery is held to below: it is projected only
+   * while the file still holds this view or the list's own view. Otherwise
+   * another process committed since the list, and the file is returned
+   * unchanged. No discovery is kept for a later call, because such a caller
+   * lists again.
+   */
+  listedOver?: { readonly view: string | undefined }
 }): Promise<VaultRosterFile | undefined> {
   options.signal?.throwIfAborted()
   const active = async () => (await options.isActive?.()) ?? true
@@ -899,12 +999,13 @@ export async function refreshVaultRoster(options: {
     return persisted
   }
   const key = resolve(options.path)
+  const listedOver = options.listedOver
   let discovered:
     | { inventory: VaultInventory; previousView: string | undefined }
     | undefined
   try {
     const previous = await readVaultRoster(options.path)
-    const pending = pendingDiscoveries.get(key)
+    const pending = listedOver ? undefined : pendingDiscoveries.get(key)
     // Opaque view cursors cannot be ordered. Reuse a discovery only while no
     // peer has committed a different view since it was read.
     discovered =
@@ -926,6 +1027,12 @@ export async function refreshVaultRoster(options: {
         if (!(await active())) return { result: undefined }
         options.signal?.throwIfAborted()
         await lease.assertOwned()
+        if (
+          listedOver &&
+          current?.view !== listedOver.view &&
+          current?.view !== inventory.view
+        )
+          return { result: current }
         const projection =
           typeof options.projection === 'function'
             ? options.projection()
@@ -945,6 +1052,7 @@ export async function refreshVaultRoster(options: {
     if (
       error instanceof LockContentionError &&
       discovered &&
+      !listedOver &&
       !options.signal?.aborted &&
       (await active())
     )

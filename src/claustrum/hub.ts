@@ -3,6 +3,15 @@
 // each with its own roster file; the hub builds those consumers as its
 // members, lists once, commits each member's share of the listing to that
 // member's roster and pushes it into the member's memory.
+//
+// Several processes on one profile (an OpenCode server, Pi, a second
+// OpenCode) each run their own hub and list for themselves. Nothing elects a
+// leader between them: each hub commits every member through the same
+// per-path discovery lease and roster write lock that plain consumers in
+// different processes already share, plus the base-view rule, so a commit
+// never replaces a view another process committed after this hub listed.
+import { createHash } from 'node:crypto'
+import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createLogger } from '../logger/index.js'
 import type { QuotaObservation } from '../quota/index.js'
@@ -28,18 +37,22 @@ import {
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import {
   type AccountMapper,
+  DEFAULT_ROUTE_PREFIX,
   decodedVaultRoster,
   forgetPendingVaultDiscovery,
+  isVaultRosterLockRefusal,
   readVaultRoster,
   refreshVaultRoster,
   type VaultRosterFile,
+  type VaultRosterSeed,
+  vaultRosterSeed,
 } from './roster.js'
 import { SAFETY_POLL_MS, type WatchMode } from './watch.js'
 
 export interface ClaustrumDiscoveryHubOptions {
   /**
    * The plugin's owner-only state directory. Member rosters live under
-   * `<stateDir>/rosters/<hostGeneration>/<provider>.json`.
+   * `<stateDir>/rosters/<hostGeneration>/<fingerprint>/<provider>.json`.
    */
   stateDir: string
   /**
@@ -49,11 +62,28 @@ export interface ClaustrumDiscoveryHubOptions {
    */
   hostGeneration: string
   /**
+   * Everything the plugin's classifier decides with, as plain JSON: the
+   * exact object it hands the classifier (its version, the supported-table
+   * entries, the reserved provider set and every host fact it reads). The
+   * hub hashes it, with the member set, `routePrefix` and `mapAccount`, into
+   * the roster key, so processes whose classifiers or projections could
+   * disagree never share a roster file. Configuration that `mapAccount`
+   * reads, beyond its own source text, belongs here too.
+   */
+  classifierInput: unknown
+  /**
    * Every provider the plugin serves on this host, fixed for the hub's life.
    * Each is the `member` a classified row names and a roster file name, so
    * it is lowercase ASCII: letters, digits, `.`, `_` and `-`.
    */
   members: readonly string[]
+  /** Prefix of every member's vault route ids; part of the roster key. */
+  routePrefix?: string
+  /**
+   * How every member presents a vault credential (the credential names its
+   * member). Part of the roster key by its source text.
+   */
+  mapAccount?: AccountMapper
   /** This host's enrollment token, written by setup. */
   tokenPath: string
   /**
@@ -74,31 +104,37 @@ export interface ClaustrumDiscoveryHubOptions {
   requireAssertion?: boolean
   /**
    * How often the hub ticks (default 5 s). A tick reads authority, installs
-   * member roster files changed under the same view, and lists when a list
-   * is due: on every tick while no vault watch is open, otherwise every
-   * five minutes as a safety net.
+   * member roster files another writer changed under the same view, and
+   * lists when a list is due: on every tick while no vault watch is open,
+   * while a member is pending (below), otherwise every five minutes as a
+   * safety net.
    */
   pollIntervalMs?: number
   setTimeoutImpl?: typeof setTimeout
   clearTimeoutImpl?: typeof clearTimeout
   now?: () => number
   logger?: ClaustrumLogger
-  /** Errors of the hub's own tick, list and watch. */
+  /**
+   * Errors of the hub's own tick, list and watch. A failed list and a vault
+   * refusal of the watch also reach every member's `onError`.
+   */
   onError?: (error: unknown) => void
 }
 
 /**
  * What one hub member takes: only what is per provider. The hub owns the
  * roster path, the enrollment token, the family, the connection, the
- * authority check and the poll timer, so none of them can be given here.
- * The type parameter matches the consumer `member` returns; members have no
- * insula source.
+ * authority check, the poll timer and the projection inputs that are part of
+ * the roster key (`routePrefix`, `mapAccount`), so none of them can be given
+ * here. The type parameter matches the consumer `member` returns; members
+ * have no insula source.
  */
 export interface ClaustrumHubMemberOptions<_Q = QuotaObservation> {
-  /** Ids of the plugin's local pool rows; no vault route id may equal one. */
+  /**
+   * Ids of the plugin's local pool rows; no vault route id may equal one.
+   * Read on every projection and install, so it may change at any time.
+   */
   reservedRouteIds?: () => Iterable<string>
-  routePrefix?: string
-  mapAccount?: AccountMapper
   /** As `ClaustrumConsumerOptions.onRoster`: once per change of view. */
   onRoster?: (roster: VaultRosterFile) => void
   /** This member's own failures, such as a roster commit that failed. */
@@ -157,6 +193,13 @@ interface MemberEntry {
   closed: boolean
   /** The file content the hub last committed or installed, as JSON text. */
   seen?: string
+  /**
+   * Set while this member holds no commit of the hub's latest list, or its
+   * file holds a view this process did not commit or install: the next
+   * list is due after `wait` more ticks. `failures` counts the lists in a
+   * row that did not commit it, for the backoff.
+   */
+  pending?: { failures: number; wait: number }
 }
 
 /** The last discovery every member committed, and its view. */
@@ -177,6 +220,72 @@ interface Run {
 const FILE_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/
 /** Device names Windows reserves in every directory, with any extension. */
 const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/
+/** A roster key's directory name: the first 16 hex digits of a SHA-256. */
+const FINGERPRINT = /^[0-9a-f]{16}$/
+/** A failing member is listed for on each of this many ticks before backing off. */
+const PENDING_EVERY_TICK = 3
+
+/**
+ * `value` as JSON with every object's keys sorted, so equal inputs give equal
+ * text in every process. Undefined for anything that is not plain JSON
+ * (functions, undefined, non-finite numbers, class instances, cycles).
+ */
+function canonicalJson(
+  value: unknown,
+  path: ReadonlySet<object> = new Set(),
+): string | undefined {
+  if (value === null) return 'null'
+  if (typeof value === 'string' || typeof value === 'boolean')
+    return JSON.stringify(value)
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? JSON.stringify(value) : undefined
+  if (typeof value !== 'object' || path.has(value)) return undefined
+  const inner = new Set(path).add(value)
+  const parts: string[] = []
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) {
+      const part = canonicalJson(value[index], inner)
+      if (part === undefined) return undefined
+      parts.push(part)
+    }
+    return `[${parts.join(',')}]`
+  }
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) return undefined
+  for (const key of Object.keys(value).sort()) {
+    const part = canonicalJson((value as Record<string, unknown>)[key], inner)
+    if (part === undefined) return undefined
+    parts.push(`${JSON.stringify(key)}:${part}`)
+  }
+  return `{${parts.join(',')}}`
+}
+
+/**
+ * The roster key's fingerprint: a hash of everything that decides which rows
+ * a member's roster holds and how they are projected, other than the host
+ * generation (the directory above it) and the reserved route ids (local pool
+ * rows, which change at runtime; see `#collides`).
+ */
+function rosterFingerprint(
+  options: ClaustrumDiscoveryHubOptions,
+  members: readonly string[],
+): string {
+  const input = canonicalJson({
+    format: 1,
+    classifier: options.classifierInput,
+    members: [...members].sort(),
+    routePrefix: options.routePrefix ?? DEFAULT_ROUTE_PREFIX,
+    // A function cannot be compared across processes; its source text
+    // changes with the plugin build that ships it.
+    mapAccount: options.mapAccount ? String(options.mapAccount) : null,
+  })
+  if (input === undefined)
+    throw new ClaustrumConsumerError(
+      'invalid-state',
+      'Claustrum hub classifierInput must be plain JSON',
+    )
+  return createHash('sha256').update(input).digest('hex').slice(0, 16)
+}
 
 function fileId(value: unknown, what: string): string {
   if (
@@ -272,6 +381,10 @@ export class ClaustrumDiscoveryHub {
   #discoveredAt?: number
   #timer?: ReturnType<typeof setTimeout>
   #started = false
+  /** This host generation's roster directory, which holds every key. */
+  readonly #generationDirectory: string
+  /** This hub's roster key: the fingerprint directory under it. */
+  readonly #key: string
 
   constructor(options: ClaustrumDiscoveryHubOptions) {
     if (!options.family || !('classify' in options.family))
@@ -279,25 +392,32 @@ export class ClaustrumDiscoveryHub {
         'wrong-consumer',
         'Claustrum discovery hub requires a classifying family',
       )
-    const key = fileId(options.hostGeneration, 'host generation')
+    const hostGeneration = fileId(options.hostGeneration, 'host generation')
+    const providers = options.members.map((member) => fileId(member, 'member'))
+    if (new Set(providers).size !== providers.length)
+      throw new ClaustrumConsumerError(
+        'invalid-state',
+        'Claustrum hub members must be distinct',
+      )
     this.#options = options
     this.#logger = options.logger ?? createLogger('claustrum')
-    // The roster key: one directory per host generation. Every member keeps
-    // the path it is given here for its whole life.
-    const directory = join(options.stateDir, 'rosters', key)
-    for (const member of options.members) {
-      const provider = fileId(member, 'member')
-      if (this.#members.has(provider))
-        throw new ClaustrumConsumerError(
-          'invalid-state',
-          'Claustrum hub members must be distinct',
-        )
+    // The roster key: the host generation, then a fingerprint of the
+    // classifier's whole input and the projection inputs. Every member keeps
+    // the path it is given here for its whole life, and every lock and
+    // temporary file of a roster sits beside it, inside the key's directory.
+    this.#generationDirectory = join(
+      options.stateDir,
+      'rosters',
+      hostGeneration,
+    )
+    this.#key = rosterFingerprint(options, providers)
+    const directory = join(this.#generationDirectory, this.#key)
+    for (const provider of providers)
       this.#members.set(provider, {
         provider,
         path: join(directory, `${provider}.json`),
         closed: false,
       })
-    }
   }
 
   #assertOpen(): void {
@@ -346,6 +466,8 @@ export class ClaustrumDiscoveryHub {
       'isCustodyActive',
       'insula',
       'pollIntervalMs',
+      'routePrefix',
+      'mapAccount',
     ])
       if (owned in options)
         throw new ClaustrumConsumerError(
@@ -376,10 +498,10 @@ export class ClaustrumDiscoveryHub {
       ...(options.reservedRouteIds && {
         reservedRouteIds: options.reservedRouteIds,
       }),
-      ...(options.routePrefix !== undefined && {
-        routePrefix: options.routePrefix,
+      ...(this.#options.routePrefix !== undefined && {
+        routePrefix: this.#options.routePrefix,
       }),
-      ...(options.mapAccount && { mapAccount: options.mapAccount }),
+      ...(this.#options.mapAccount && { mapAccount: this.#options.mapAccount }),
       ...(options.onRoster && { onRoster: options.onRoster }),
       ...(options.onError && { onError: options.onError }),
       logger: options.logger ?? this.#logger,
@@ -630,6 +752,7 @@ export class ClaustrumDiscoveryHub {
     this.#discoveredAt = undefined
     for (const entry of this.#members.values()) {
       entry.seen = undefined
+      entry.pending = undefined
       entry.hooks?.reset()
       forgetPendingVaultDiscovery(entry.path)
     }
@@ -684,9 +807,11 @@ export class ClaustrumDiscoveryHub {
   }
 
   /**
-   * List once, then commit each member's share of the listing to its roster,
-   * push it into the member, and retain the union. Each publication step
-   * checks first that the generation it started in is still current.
+   * Read each member's base view, list once, then commit each member's share
+   * of the listing to its roster, push it into the member, and retain the
+   * union. Each publication step checks first that the generation it started
+   * in is still current. A member that this list did not commit is marked
+   * pending, so a later tick lists again.
    */
   async #discover(run: {
     generation?: Generation
@@ -696,11 +821,28 @@ export class ClaustrumDiscoveryHub {
     const generation = own.generation
     run.generation = generation
     if (!this.#live(generation)) return undefined
+    // What each member's file held before the list. Another process may
+    // commit while this list runs; the base-view rule then keeps its newer
+    // roster rather than replacing it with this older listing.
+    const bases = new Map<MemberEntry, { file?: VaultRosterFile } | Error>()
+    for (const entry of this.#members.values())
+      bases.set(
+        entry,
+        await readVaultRoster(entry.path).then(
+          (file) => (file ? { file } : {}),
+          (error: unknown) =>
+            error instanceof Error ? error : new Error(String(error)),
+        ),
+      )
+    if (!this.#live(generation)) return undefined
     let inventory: VaultInventory
     try {
       inventory = await own.custody.discover(generation.controller.signal)
     } catch (error) {
       if (!this.#live(generation)) return undefined
+      // Every pending member missed this list too.
+      for (const entry of this.#members.values())
+        if (entry.pending) this.#markPending(entry)
       throw error
     }
     const errors = new Map<string, unknown>()
@@ -718,8 +860,14 @@ export class ClaustrumDiscoveryHub {
           (record) => record.member === entry.provider,
         ),
       }
+      const base = bases.get(entry)
       let roster: VaultRosterFile | undefined
       try {
+        if (!base) throw closed('Claustrum hub member has no base view')
+        if (base instanceof Error) throw base
+        // A member's first roster under this key carries the declines and
+        // order of its newest roster under an older key.
+        const seed = base.file ? undefined : await this.#seed(entry)
         roster = await refreshVaultRoster({
           path: entry.path,
           custody: { discover: async () => share },
@@ -727,20 +875,37 @@ export class ClaustrumDiscoveryHub {
           // that vault mode is on, so off-then-on cannot let it into g+1.
           isActive: () => this.#live(generation) && this.#active === true,
           signal: generation.controller.signal,
-          projection: () => hooks.projection(),
+          projection: () => ({ ...hooks.projection(), ...(seed && { seed }) }),
+          listedOver: { view: base.file?.view },
         })
       } catch (error) {
         if (!this.#live(generation)) return undefined
-        errors.set(entry.provider, error)
         complete = false
+        this.#markPending(entry)
+        // Another writer holding or taking this roster's locks is not this
+        // member's failure: the member keeps what it has and is retried.
+        if (isVaultRosterLockRefusal(entry.path, error))
+          this.#logger.debug('claustrum hub member commit refused', {
+            member: entry.provider,
+          })
+        else errors.set(entry.provider, error)
         continue
       }
       if (!this.#live(generation)) return undefined
-      if (!roster) {
+      // Not this list's roster: vault mode went off, the file was removed
+      // since the list, or another process holds or committed it (a peer's
+      // newer view, or a peer that stopped mid-commit holding the lease).
+      if (roster?.view !== inventory.view) {
         complete = false
+        this.#markPending(entry)
+      } else entry.pending = undefined
+      if (!roster) continue
+      if (this.#collides(hooks, roster)) {
+        // Another process projected a route id that is a local row here.
+        complete = false
+        this.#markPending(entry)
         continue
       }
-      if (roster.view !== inventory.view) complete = false
       // The push: memory holds the committed roster before refresh resolves.
       entry.seen = JSON.stringify(decodedVaultRoster(roster))
       if (!entry.closed) hooks.install(roster)
@@ -760,6 +925,65 @@ export class ClaustrumDiscoveryHub {
     return { errors }
   }
 
+  /**
+   * The preferences a member's first roster under this key starts from: the
+   * declines and order of the newest roster of the same host generation and
+   * member under any other key, the layout without a fingerprint included.
+   * Those files are only read. Undefined when there is none.
+   */
+  async #seed(entry: MemberEntry): Promise<VaultRosterSeed | undefined> {
+    const name = `${entry.provider}.json`
+    const candidates = [join(this.#generationDirectory, name)]
+    try {
+      for (const key of await readdir(this.#generationDirectory))
+        if (key !== this.#key && FINGERPRINT.test(key))
+          candidates.push(join(this.#generationDirectory, key, name))
+    } catch {
+      // No directory for this host generation yet: nothing to seed from.
+    }
+    let newest: { modified: number; roster: VaultRosterFile } | undefined
+    for (const path of candidates) {
+      try {
+        const modified = (await stat(path)).mtimeMs
+        const roster = await readVaultRoster(path)
+        if (roster && (!newest || modified > newest.modified))
+          newest = { modified, roster }
+      } catch {
+        // A missing or unreadable older roster seeds nothing.
+      }
+    }
+    return newest && vaultRosterSeed(newest.roster)
+  }
+
+  /**
+   * Whether `roster` routes through an id this member's plugin uses for a
+   * local row. Only a roster another process projected can: this process's
+   * own projection gives such a route a new id. Rather than serve it, the
+   * hub lists, and its own projection renames that route.
+   */
+  #collides(hooks: HubMemberHooks, roster: VaultRosterFile): boolean {
+    const reserved = hooks.projection().reservedRouteIds
+    return (
+      !!reserved?.size && roster.rows.some((row) => reserved.has(row.routeId))
+    )
+  }
+
+  /**
+   * This member missed a list: due again on each of the next three ticks,
+   * then after 2, 4, 8 ... ticks, up to the five-minute safety poll, so one
+   * broken member file never keeps the hub listing every tick.
+   */
+  #markPending(entry: MemberEntry): void {
+    const failures = (entry.pending?.failures ?? 0) + 1
+    const tick = Math.max(1, this.#options.pollIntervalMs ?? 5_000)
+    const longest = Math.max(1, Math.ceil(SAFETY_POLL_MS / tick))
+    const interval =
+      failures <= PENDING_EVERY_TICK
+        ? 1
+        : Math.min(2 ** (failures - PENDING_EVERY_TICK), longest)
+    entry.pending = { failures, wait: interval - 1 }
+  }
+
   /** Retain kept receipts against every open member's roster in memory. */
   #retainUnion(): void {
     const custody = this.#current?.custody
@@ -770,10 +994,15 @@ export class ClaustrumDiscoveryHub {
   }
 
   /**
-   * Install member files that changed under the view in memory: a decline,
-   * accept, reorder or quota reading written by another writer. Local reads
-   * only. A file with a different view is left to the next list, which
-   * projects it.
+   * Take member files another writer changed. The same view as in memory
+   * means a decline, accept, reorder or quota reading, which moves no view:
+   * it is installed, as a plain consumer's `authorize` and `decline` read
+   * such a file back (`consumer.ts`, `authorize` and `decline`). A different
+   * view, or a member with no roster in memory, means another process
+   * committed a listing: the member is marked pending and the next tick
+   * lists, then commits over that file or takes it, as a plain consumer's
+   * refresh does (`refreshVaultRoster`, which serves a peer's roster while
+   * the peer holds the discovery lease). Local reads only.
    */
   async #install(): Promise<void> {
     const epoch = this.#epoch
@@ -789,9 +1018,12 @@ export class ClaustrumDiscoveryHub {
       const hooks = entry.hooks
       if (!file || !hooks || entry.closed) continue
       const content = JSON.stringify(file)
+      if (content === entry.seen) continue
       const memory = hooks.roster()
-      if (content === entry.seen || !memory || memory.view !== file.view)
+      if (!memory || memory.view !== file.view || this.#collides(hooks, file)) {
+        entry.pending ??= { failures: 0, wait: 0 }
         continue
+      }
       const before = enabledRows(memory)
       entry.seen = content
       hooks.install(file)
@@ -799,9 +1031,19 @@ export class ClaustrumDiscoveryHub {
     }
   }
 
-  /** Whether a tick must list now; the consumer's rule, once for every member. */
+  /**
+   * Whether a tick must list now: the consumer's rule, once for every
+   * member, and also when a pending member's wait is over. Called once per
+   * tick, which is what counts a pending member's wait down.
+   */
   #listDue(): boolean {
-    if (this.#watch?.watch.mode !== 'watching') return true
+    let pending = false
+    for (const entry of this.#members.values()) {
+      if (!entry.pending) continue
+      if (entry.pending.wait <= 0) pending = true
+      else entry.pending.wait--
+    }
+    if (this.#watch?.watch.mode !== 'watching' || pending) return true
     const now = (this.#options.now ?? Date.now)()
     return (
       this.#discoveredAt === undefined ||
@@ -824,9 +1066,12 @@ export class ClaustrumDiscoveryHub {
         // announced, so wait for it and list again.
         while (this.#run) await this.#run.promise.catch(() => {})
         if (!this.#live(generation)) return
-        this.#publish(await this.#refresh())
+        await this.#list()
       },
-      onRefused: (error) => this.#error(error),
+      // The vault refused the watch: custody has dropped every kept receipt,
+      // which every member served from, as a refused list would.
+      onRefused: (error) => this.#everyone(error),
+      // The watch alone failed; listing goes on and every member is served.
       onError: (error) => this.#error(error),
     })
     this.#watch = { generation, watch }
@@ -836,17 +1081,36 @@ export class ClaustrumDiscoveryHub {
     if (!this.#shutdown.signal.aborted) this.#options.onError?.(error)
   }
 
+  /** A failure of every member's discovery: the hub's and each member's. */
+  #everyone(error: unknown): void {
+    if (this.#shutdown.signal.aborted) return
+    this.#options.onError?.(error)
+    for (const entry of this.#open()) entry.hooks?.onError(error)
+  }
+
   /** Each member's own commit error goes to that member's `onError` only. */
   #publish(outcome: HubRefreshOutcome | undefined): void {
     for (const [provider, error] of outcome?.errors ?? [])
       this.#members.get(provider)?.hooks?.onError(error)
   }
 
+  /** One list the hub itself decided on, with its errors published. */
+  async #list(): Promise<void> {
+    let outcome: HubRefreshOutcome | undefined
+    try {
+      outcome = await this.#refresh()
+    } catch (error) {
+      this.#everyone(error)
+      return
+    }
+    this.#publish(outcome)
+  }
+
   async #tick(): Promise<void> {
     try {
       if (await this.#readAuthority()) {
         await this.#install()
-        if (this.#listDue()) this.#publish(await this.#refresh())
+        if (this.#listDue()) await this.#list()
         this.#openWatch()
       }
     } catch (error) {

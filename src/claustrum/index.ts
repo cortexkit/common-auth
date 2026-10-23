@@ -146,6 +146,8 @@ export {
   type VaultRosterFile,
   type VaultRosterLockContext,
   type VaultRosterRow,
+  type VaultRosterSeed,
+  vaultRosterSeed,
   vaultRoutingRows,
 } from './roster.js'
 export {
