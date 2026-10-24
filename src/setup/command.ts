@@ -39,6 +39,9 @@ import type {
 export const AMBIGUOUS_OPENCODE_MESSAGE =
   'Multiple OpenCode generations found. Choose --opencode=1|2|both before running noninteractive setup.'
 
+const UNAVAILABLE_HOST_MESSAGE =
+  'Requested setup host is unknown or unavailable. Use --host=opencode or --host=pi with a detected host.'
+
 function flags(argv: readonly string[]) {
   const result = {
     yes: false,
@@ -46,6 +49,8 @@ function flags(argv: readonly string[]) {
     claustrum: false,
     noClaustrum: false,
     login: false,
+    enrollOnly: false,
+    hosts: [] as SetupHost[],
     opencode: undefined as OpenCodeGeneration | undefined,
   }
   for (const arg of argv) {
@@ -54,7 +59,13 @@ function flags(argv: readonly string[]) {
     else if (arg === '--claustrum') result.claustrum = true
     else if (arg === '--no-claustrum') result.noClaustrum = true
     else if (arg === '--login') result.login = true
-    else if (/^--opencode=(1|2|both)$/.test(arg))
+    else if (arg === '--enroll-only') result.enrollOnly = true
+    else if (arg.startsWith('--host=')) {
+      const host = arg.slice('--host='.length)
+      if (host !== 'opencode' && host !== 'pi')
+        throw new Error(UNAVAILABLE_HOST_MESSAGE)
+      result.hosts.push(host)
+    } else if (/^--opencode=(1|2|both)$/.test(arg))
       result.opencode = arg.slice('--opencode='.length) as OpenCodeGeneration
     else throw new Error(`Unknown setup argument: ${arg}`)
   }
@@ -62,6 +73,10 @@ function flags(argv: readonly string[]) {
     throw new Error('--claustrum and --no-claustrum cannot be used together.')
   if (result.login && result.claustrum)
     throw new Error('--login and --claustrum cannot be used together.')
+  if (result.enrollOnly && result.login)
+    throw new Error('--enroll-only and --login cannot be used together.')
+  if (result.enrollOnly && result.noClaustrum)
+    throw new Error('--enroll-only and --no-claustrum cannot be used together.')
   return result
 }
 
@@ -148,14 +163,18 @@ export async function runSetup(
   const found = (['opencode', 'pi'] as const).filter(
     (host) => detection[host].installed && !(host === 'pi' && piWithoutCli),
   )
+  if (options.hosts.some((host) => !found.includes(host)))
+    throw new Error(UNAVAILABLE_HOST_MESSAGE)
   // A dry run changes nothing, so without a terminal it plans the --yes path
   // instead of refusing; scripts and CI can preview setup with --dry-run alone.
   const assumeYes = options.yes || (options.dryRun && !isInteractive(terminal))
   if (!assumeYes && !isInteractive(terminal))
     throw new Error('Setup requires a TTY or --yes.')
-  const hosts: SetupHost[] = assumeYes
-    ? found
-    : ((await selectSetupHosts(terminal, found)) ?? [])
+  const hosts: SetupHost[] = options.hosts.length
+    ? found.filter((host) => options.hosts.includes(host))
+    : assumeYes
+      ? found
+      : ((await selectSetupHosts(terminal, found)) ?? [])
   let generation: OpenCodeGeneration =
     options.opencode ??
     (detection.opencode.generation === 'ambiguous'
@@ -232,11 +251,14 @@ export async function runSetup(
         printLine(terminal, error.refusalText)
     }
   } else await stopped()
-  if (options.claustrum && !detection.claustrum.available)
+  if (
+    (options.claustrum || options.enrollOnly) &&
+    !detection.claustrum.available
+  )
     throw new Error(
-      'Claustrum is not available. Start ck or use --no-claustrum for local sign-in.',
+      'Claustrum is not available. Start ck, or omit vault-only flags and use --no-claustrum for local sign-in.',
     )
-  let useVault = Boolean(options.claustrum)
+  let useVault = options.claustrum || options.enrollOnly
   if (
     !useVault &&
     !options.login &&
@@ -262,10 +284,11 @@ export async function runSetup(
     useVault = choice === true
   }
   const mode = useVault ? 'claustrum' : 'local'
-  // Validate every config before login or enrollment can change credential state.
-  const writes = hosts.includes('opencode')
-    ? planOpenCodeRegistration(plugin, generation, io)
-    : []
+  // Validate configs before changing credentials; enrollment-only needs no registration plan.
+  const writes =
+    !options.enrollOnly && hosts.includes('opencode')
+      ? planOpenCodeRegistration(plugin, generation, io)
+      : []
   if (options.dryRun) {
     printLine(
       terminal,
@@ -281,7 +304,7 @@ export async function runSetup(
           `Would Connect ${host}: write ${paths.statePath} and ${paths.tokenPath}; wait for ck auth enroll approve.`,
         )
       } else printLine(terminal, `Would sign in locally for ${host}.`)
-      if (plugin.beforeRegister)
+      if (!options.enrollOnly && plugin.beforeRegister)
         printLine(terminal, `Would run beforeRegister(${host}, ${mode}).`)
     }
     for (const write of writes)
@@ -289,16 +312,17 @@ export async function runSetup(
         terminal,
         `${write.changed ? 'Would write' : 'Unchanged'} ${write.path}:\n${write.content}`,
       )
-    if (hosts.includes('pi'))
+    if (!options.enrollOnly && hosts.includes('pi'))
       printLine(
         terminal,
         `Would run ${detection.pi.executable} install npm:${plugin.packages.pi}@${plugin.version}`,
       )
-    for (const host of hosts)
-      printLine(
-        terminal,
-        `Would migrate ${host} using the plugin callback (provider-specific writes).`,
-      )
+    if (!options.enrollOnly)
+      for (const host of hosts)
+        printLine(
+          terminal,
+          `Would migrate ${host} using the plugin callback (provider-specific writes).`,
+        )
   } else {
     const context: SetupCallbackContext = {
       opencodeGeneration: generation,
@@ -326,6 +350,7 @@ export async function runSetup(
           enrollment.set(host, 'enrolled')
         } else await plugin.signInLocal(host, context)
         await stopped()
+        if (options.enrollOnly) continue
         await plugin.beforeRegister?.(host, mode, context)
         await stopped()
         if (host === 'opencode') await registerOpenCode(writes, stopped)
@@ -351,11 +376,21 @@ export async function runSetup(
   }
   printLine(
     terminal,
-    `${options.dryRun ? 'Planned' : 'Configured'} ${plugin.displayName} for ${hosts.join(', ')} (${mode}).`,
+    `${options.dryRun ? 'Planned' : options.enrollOnly ? 'Enrolled' : 'Configured'} ${plugin.displayName} for ${hosts.join(', ')} (${mode}).`,
   )
-  printLine(
-    terminal,
-    `Next: ${hosts.includes('opencode') ? 'start OpenCode' : 'start Pi'} and run ${plugin.slashCommand}.`,
-  )
+  if (options.enrollOnly) {
+    printLine(
+      terminal,
+      `Enroll-only: no host config or plugin registration ${options.dryRun ? 'will be' : 'was'} written.`,
+    )
+    printLine(
+      terminal,
+      'Next: register the plugin yourself in each selected host and enable vault access as required by the plugin.',
+    )
+  } else
+    printLine(
+      terminal,
+      `Next: ${hosts.includes('opencode') ? 'start OpenCode' : 'start Pi'} and run ${plugin.slashCommand}.`,
+    )
   return { hosts, dryRun: options.dryRun, mode, detection }
 }

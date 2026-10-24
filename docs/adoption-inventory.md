@@ -154,15 +154,39 @@ so npm Pi/OpenCode entry scripts are recognized as hosts. The exported
 process) for inspection tests; callers must not print its command-line arguments.
 process diagnostics retain only recognized executable names, not arguments.
 
-Flags: `--yes`, `--dry-run`, `--claustrum`, `--no-claustrum`, `--login`, and
-`--opencode=1|2|both`. `--yes` selects found hosts but does **not** implicitly
-authorize vault enrollment. `--login` chooses local sign-in and conflicts with
+Flags: `--yes`, `--dry-run`, `--claustrum`, `--no-claustrum`, `--login`,
+`--opencode=1|2|both`, `--host=opencode|pi`, and `--enroll-only`.
+`--host` is repeatable (not a comma list): `--host=opencode --host=pi` selects
+both, with duplicates ignored. It bypasses the host picker and selects only
+requested hosts, in OpenCode/Pi order. Unknown or unavailable hosts refuse with
+the fixed message `Requested setup host is unknown or unavailable. Use
+--host=opencode or --host=pi with a detected host.` A Pi folder without its CLI
+is unavailable. `--host` works with `--yes`, `--opencode=1|2|both`, and
+`--dry-run`; a dry run's final summary names the selection. Without `--host`,
+interactive selection is unchanged and `--yes` selects all found hosts.
+`--yes` does **not** implicitly authorize vault enrollment.
+`--login` chooses local sign-in and conflicts with
 `--claustrum`; the two Claustrum flags also conflict. Without a TTY, `--yes` is
 required. A Pi agent folder counts as installed but registration still requires
 its CLI on PATH. Dry runs print exact shared config paths and contents,
 enrollment paths, the Pi install command, and which opaque plugin callbacks
 would run. Temporary, isolated version-probe profiles are removed; the user's
 profile and callback-owned files are not changed.
+
+`--enroll-only` implies vault mode and requires an available Claustrum vault,
+with or without `--claustrum`. It conflicts with `--login` and
+`--no-claustrum`, refusing with `--enroll-only and --login cannot be used
+together.` or `--enroll-only and --no-claustrum cannot be used together.`
+It still runs `beforeSignIn` preconditions, proposes enrollment and waits for
+approval, writing the selected hosts' enrollment state and token files. It
+does not plan or validate registration config, call `beforeRegister` (vault
+activation/category grants), register either plugin, or call `migrate`.
+The final report says that no host config or plugin registration was written
+and tells the user to register the plugin themselves and enable vault access
+as required by the plugin. A dry run reports just enrollment and preconditions,
+without any writes. Failure outcomes from `setupEnrollment` are unchanged.
+The existing process fence still applies, including enrollment-only runs:
+this flag does not yet allow setup while another OpenCode or Pi is running.
 
 OpenCode uses `OPENCODE_CONFIG_DIR`, else `XDG_CONFIG_HOME/opencode`, else
 `~/.config/opencode` on **all** OSes. A config folder alone, an AFT Desktop

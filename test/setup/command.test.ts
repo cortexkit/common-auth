@@ -65,6 +65,250 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
 }
 
 describe('setup flow', () => {
+  test('host flag selects only the requested host with every OpenCode generation', async () => {
+    for (const generation of ['1', '2', 'both']) {
+      const io = fakeIO()
+      io.files.set('/bin/opencode', '')
+      io.files.set('/bin/opencode2', '')
+      io.files.set('/bin/pi', '')
+      const term = terminal()
+      const result = await runSetup(
+        plugin(),
+        ['--yes', '--dry-run', '--host=opencode', `--opencode=${generation}`],
+        { ...io, terminal: term },
+      )
+      expect(result.hosts).toEqual(['opencode'])
+      const output = term.lines.join('')
+      expect(output).toContain('for opencode (local).')
+      expect(output).toContain(
+        `"${generation === '2' ? 'plugins' : 'plugin'}":`,
+      )
+      expect(output).not.toContain('Would run /bin/pi install')
+      expect(output).not.toContain('Would migrate pi')
+    }
+  })
+
+  test('repeatable host flags deduplicate and explicit Pi skips OpenCode ambiguity', async () => {
+    const io = fakeIO()
+    io.files.set('/bin/opencode', '')
+    io.files.set('/bin/opencode2', '')
+    io.files.set('/bin/pi', '')
+    const term = terminal()
+    const result = await runSetup(
+      plugin(),
+      ['--yes', '--dry-run', '--host=pi', '--host=pi'],
+      { ...io, terminal: term },
+    )
+    expect(result.hosts).toEqual(['pi'])
+    expect(term.lines.join('')).not.toContain('Would write')
+    expect(term.lines.join('')).toContain('Would run /bin/pi install')
+    const both = await runSetup(
+      plugin(),
+      ['--yes', '--dry-run', '--host=pi', '--host=opencode', '--opencode=both'],
+      { ...io, terminal: terminal() },
+    )
+    expect(both.hosts).toEqual(['opencode', 'pi'])
+  })
+
+  test('explicit host bypasses the interactive host picker', async () => {
+    const io = fakeIO()
+    io.files.set('/bin/opencode', '')
+    io.files.set('/bin/pi', '')
+    const term = terminal([])
+    const result = await runSetup(plugin(), ['--dry-run', '--host=pi'], {
+      ...io,
+      terminal: term,
+    })
+    expect(result.hosts).toEqual(['pi'])
+    expect(term.lines.join('')).not.toContain('[x]')
+  })
+
+  test('unknown and unavailable requested hosts refuse with one fixed message', async () => {
+    const message =
+      'Requested setup host is unknown or unavailable. Use --host=opencode or --host=pi with a detected host.'
+    for (const host of [
+      '',
+      'other',
+      'OpenCode',
+      'opencode,pi',
+      'opencode',
+      'pi',
+    ]) {
+      const io = fakeIO()
+      io.folders.add('/home/test/.pi/agent')
+      const error = await rejection(
+        runSetup(plugin(), ['--yes', '--dry-run', `--host=${host}`], {
+          ...io,
+          terminal: terminal(),
+        }),
+      )
+      expect(error.message).toBe(message)
+      expect(io.files.size).toBe(0)
+    }
+  })
+
+  test('enroll-only conflicts reject before detection with fixed messages', async () => {
+    for (const flag of ['--login', '--no-claustrum']) {
+      const io = fakeIO()
+      const error = await rejection(
+        runSetup(plugin(), ['--enroll-only', flag], io),
+      )
+      expect(error.message).toBe(
+        `--enroll-only and ${flag} cannot be used together.`,
+      )
+      expect(io.commands).toEqual([])
+    }
+  })
+
+  test('enroll-only dry run plans only vault enrollment and consent', async () => {
+    const io = fakeIO()
+    io.files.set('/bin/opencode', '')
+    io.files.set('/bin/pi', '')
+    io.files.set('/bin/ck', '')
+    io.files.set('/fixture/connection.json', '{}')
+    io.files.set('/home/test/.config/opencode/opencode.jsonc', 'invalid JSON')
+    io.connect = async () => approvingVault()
+    const p = plugin()
+    p.beforeSignIn = p.beforeRegister = async () => {
+      throw new Error('dry run must not call callbacks')
+    }
+    const before = new Map(io.files)
+    const term = terminal()
+    const result = await runSetup(p, ['--yes', '--enroll-only', '--dry-run'], {
+      ...io,
+      terminal: term,
+    })
+    expect(result.mode).toBe('claustrum')
+    expect(result.hosts).toEqual(['opencode', 'pi'])
+    expect(io.files).toEqual(before)
+    const output = term.lines.join('')
+    expect(output).toContain('Would Connect opencode:')
+    expect(output).toContain('Would Connect pi:')
+    expect(output).toContain('Would run beforeSignIn(opencode, claustrum).')
+    expect(output).not.toContain('Would write')
+    expect(output).not.toContain('Would run beforeRegister')
+    expect(output).not.toContain('install npm:')
+    expect(output).not.toContain('Would migrate')
+    expect(output).toContain('no host config or plugin registration')
+    expect(output).toContain('register the plugin yourself')
+  })
+
+  test('enroll-only requires an available vault even without --claustrum', async () => {
+    const io = fakeIO()
+    io.files.set('/bin/opencode', '')
+    await expect(
+      runSetup(plugin(), ['--yes', '--enroll-only', '--dry-run'], {
+        ...io,
+        terminal: terminal(),
+      }),
+    ).rejects.toThrow('Claustrum is not available.')
+  })
+
+  test('enroll-only waits for approval without activation registration or migration', async () => {
+    for (const host of ['opencode', 'pi'] as const) {
+      const root = await profile()
+      const p = plugin(root)
+      const io = fakeIO()
+      io.env = { PATH: '/bin', OPENCODE_CONFIG_DIR: join(root, 'config') }
+      for (const name of ['opencode', 'pi', 'ck'])
+        io.files.set(`/bin/${name}`, '')
+      io.files.set(p.vault.connectionFile, '{}')
+      const config = join(root, 'config', 'opencode.jsonc')
+      io.files.set(config, 'invalid JSON')
+      const calls: string[] = []
+      let polls = 0
+      io.connect = async () => ({
+        ...approvingVault(),
+        async enrollPoll() {
+          polls++
+          return polls === 1
+            ? { status: 'pending' }
+            : {
+                status: 'approved',
+                token: 'f'.repeat(64),
+                tokenGeneration: 1,
+                name: `test-auth-${host}`,
+              }
+        },
+      })
+      io.wait = async () => {}
+      p.beforeSignIn = async (selected) => {
+        calls.push(`consent:${selected}`)
+      }
+      p.signInLocal =
+        p.beforeRegister =
+        p.migrate =
+          async () => {
+            throw new Error(
+              'enrollment must not activate or configure the plugin',
+            )
+          }
+      const before = new Map(io.files)
+      const term = terminal()
+      const result = await runSetup(
+        p,
+        ['--yes', '--enroll-only', `--host=${host}`, '--opencode=2'],
+        { ...io, terminal: term },
+      )
+      expect(result.hosts).toEqual([host])
+      expect(result.mode).toBe('claustrum')
+      expect(calls).toEqual([`consent:${host}`])
+      expect(polls).toBe(2)
+      expect(io.files).toEqual(before)
+      expect(
+        io.commands.some((command) => command.args.includes('install')),
+      ).toBe(false)
+      expect(await readdir(root)).toEqual(['vault'])
+      expect((await readdir(join(root, 'vault'))).sort()).toEqual([
+        `${host}-enrollment-state.json`,
+        `${host}-enrollment.json`,
+      ])
+      expect(
+        JSON.parse(
+          await readFile(
+            join(root, 'vault', `${host}-enrollment.json`),
+            'utf8',
+          ),
+        ).token,
+      ).toBe('f'.repeat(64))
+      const output = term.lines.join('')
+      expect(output).toContain('ck auth enroll approve')
+      expect(output).toContain(`Enrolled Test Auth for ${host} (claustrum).`)
+      expect(output).toContain('no host config or plugin registration')
+      expect(output).toContain('register the plugin yourself')
+      expect(output).not.toContain('start OpenCode and run')
+    }
+  })
+
+  test('enroll-only preserves per-host enrollment outcomes on a later refusal', async () => {
+    const root = await profile()
+    const p = plugin(root)
+    const io = fakeIO()
+    for (const name of ['opencode', 'pi', 'ck'])
+      io.files.set(`/bin/${name}`, '')
+    io.files.set(p.vault.connectionFile, '{}')
+    io.connect = async () => approvingVault()
+    const refusal = new Error('Pi consent declined.')
+    p.beforeSignIn = async (host) => {
+      if (host === 'pi') throw refusal
+    }
+    const term = terminal()
+    const error = await rejection(
+      runSetup(p, ['--yes', '--claustrum', '--enroll-only'], {
+        ...io,
+        terminal: term,
+      }),
+    )
+    expect(error).toBe(refusal)
+    expect(setupEnrollment(error)).toEqual([
+      { host: 'opencode', outcome: 'enrolled' },
+      { host: 'pi', outcome: 'not-enrolled' },
+    ])
+    expect(term.lines.join('')).toContain(
+      'OpenCode: connected to the vault\nPi: not connected',
+    )
+  })
+
   test('real and dry runs print progress before process inspection begins', async () => {
     for (const dryRun of [false, true]) {
       const io = fakeIO()

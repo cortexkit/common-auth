@@ -6886,6 +6886,190 @@ test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sCtrl-C\sat\sthe\svault\squestion\sstops\ssetup\sbefore\sanything\schanges$']
 
 [[control]]
+id = 'setup-host-selection-is-explicit'
+guards = 'an explicit host selects only that host even with --yes and any OpenCode generation'
+file = 'src/setup/command.ts'
+old = '    ? found.filter((host) => options.hosts.includes(host))'
+new = '    ? found /* NON-VACUITY BREAK: ignore the requested host. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\shost\sflag\sselects\sonly\sthe\srequested\shost\swith\severy\sOpenCode\sgeneration$']
+expect_message = 'opencode'
+
+[[control]]
+id = 'setup-host-must-be-detected'
+guards = 'an unavailable requested host refuses with the same fixed message as an unknown host'
+file = 'src/setup/command.ts'
+old = '  if (options.hosts.some((host) => !found.includes(host)))'
+new = '  if (false as boolean) /* NON-VACUITY BREAK: accept an unavailable host. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sunknown\sand\sunavailable\srequested\shosts\srefuse\swith\sone\sfixed\smessage$']
+expect_message = 'setup did not fail'
+
+[[control]]
+id = 'setup-host-must-be-known'
+guards = 'unknown host values refuse with a fixed message rather than an empty selection'
+file = 'src/setup/command.ts'
+old = """      if (host !== 'opencode' && host !== 'pi')
+        throw new Error(UNAVAILABLE_HOST_MESSAGE)"""
+new = """      if (host !== 'opencode' && host !== 'pi')
+        throw new Error('Unknown setup host') /* NON-VACUITY BREAK: change the fixed refusal. */"""
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\sunknown\sand\sunavailable\srequested\shosts\srefuse\swith\sone\sfixed\smessage$']
+expect_message = 'Unknown setup host'
+
+[[control]]
+id = 'setup-host-flags-accumulate'
+guards = 'repeatable host flags accumulate instead of silently replacing an earlier selection'
+file = 'src/setup/command.ts'
+old = '      result.hosts.push(host)'
+new = '      result.hosts = [host] /* NON-VACUITY BREAK: keep only the last host. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\srepeatable\shost\sflags\sdeduplicate\sand\sexplicit\sPi\sskips\sOpenCode\sambiguity$']
+expect_message = 'pi'
+
+[[control]]
+id = 'setup-enroll-only-rejects-login'
+guards = 'vault-only enrollment refuses local login before detection or side effects'
+file = 'src/setup/command.ts'
+old = '  if (result.enrollOnly && result.login)'
+new = '  if (false as boolean) /* NON-VACUITY BREAK: allow conflicting login. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\sconflicts\sreject\sbefore\sdetection\swith\sfixed\smessages$']
+expect_message = '--enroll-only and --login cannot be used together.'
+
+[[control]]
+id = 'setup-enroll-only-rejects-no-claustrum'
+guards = 'enrollment never silently overrides an explicit request not to use Claustrum'
+file = 'src/setup/command.ts'
+old = '  if (result.enrollOnly && result.noClaustrum)'
+new = '  if (false as boolean) /* NON-VACUITY BREAK: allow conflicting local mode. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\sconflicts\sreject\sbefore\sdetection\swith\sfixed\smessages$']
+expect_message = '--enroll-only and --no-claustrum cannot be used together.'
+
+[[control]]
+id = 'setup-enroll-only-implies-vault'
+guards = 'enroll-only without --claustrum plans vault enrollment, never local sign-in'
+file = 'src/setup/command.ts'
+old = '  let useVault = options.claustrum || options.enrollOnly'
+new = '  let useVault = options.claustrum /* NON-VACUITY BREAK: ignore enrollment-only mode. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\sdry\srun\splans\sonly\svault\senrollment\sand\sconsent$']
+expect_message = 'claustrum'
+
+[[control]]
+id = 'setup-enroll-only-needs-available-vault'
+guards = 'enroll-only refuses an unavailable vault even when --claustrum was not supplied'
+file = 'src/setup/command.ts'
+old = '    (options.claustrum || options.enrollOnly) &&'
+new = '    options.claustrum && /* NON-VACUITY BREAK: ignore enrollment-only availability. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\srequires\san\savailable\svault\seven\swithout\s--claustrum$']
+expect_message = 'Claustrum is not available.'
+
+[[control]]
+id = 'setup-enroll-only-skips-registration-plan'
+guards = 'enrollment does not parse or plan writes to unrelated host config'
+file = 'src/setup/command.ts'
+old = "    !options.enrollOnly && hosts.includes('opencode')"
+new = "    hosts.includes('opencode') /* NON-VACUITY BREAK: plan host registration. */"
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\sdry\srun\splans\sonly\svault\senrollment\sand\sconsent$']
+expect_message = 'Invalid OpenCode config'
+
+[[control]]
+id = 'setup-enroll-only-stops-after-enrollment'
+guards = 'real enrollment-only runs skip activation, OpenCode/Pi registration and migration'
+file = 'src/setup/command.ts'
+old = '        if (options.enrollOnly) continue'
+new = '        if (false as boolean) continue /* NON-VACUITY BREAK: activate and register. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\swaits\sfor\sapproval\swithout\sactivation\sregistration\sor\smigration$']
+expect_message = 'enrollment must not activate or configure the plugin'
+
+[[control]]
+id = 'setup-enroll-only-dry-run-skips-activation'
+guards = 'enrollment-only dry runs do not advertise activation that real runs omit'
+file = 'src/setup/command.ts'
+old = '      if (!options.enrollOnly && plugin.beforeRegister)'
+new = '      if (plugin.beforeRegister) /* NON-VACUITY BREAK: plan activation. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\sdry\srun\splans\sonly\svault\senrollment\sand\sconsent$']
+expect_message = 'Would run beforeRegister'
+
+[[control]]
+id = 'setup-enroll-only-dry-run-skips-pi-install'
+guards = 'enrollment-only dry runs omit the Pi plugin installation'
+file = 'src/setup/command.ts'
+old = "    if (!options.enrollOnly && hosts.includes('pi'))"
+new = "    if (hosts.includes('pi')) /* NON-VACUITY BREAK: plan Pi installation. */"
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\sdry\srun\splans\sonly\svault\senrollment\sand\sconsent$']
+expect_message = 'install npm:'
+
+[[control]]
+id = 'setup-enroll-only-dry-run-skips-migration'
+guards = 'enrollment-only dry runs omit provider-specific migration writes'
+file = 'src/setup/command.ts'
+old = '    if (!options.enrollOnly)'
+new = '    if (true) /* NON-VACUITY BREAK: plan migration. */'
+test_file = 'test/setup/command.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/setup/command.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/command.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\sflow\senroll-only\sdry\srun\splans\sonly\svault\senrollment\sand\sconsent$']
+expect_message = 'Would migrate'
+
+[[control]]
 id = 'setup-enrollment-report-is-recorded'
 guards = 'a setup failure reports each host as setup recorded it (a host never asked is not connected), not from a fresh probe of its files after the failure'
 file = 'src/setup/command.ts'
