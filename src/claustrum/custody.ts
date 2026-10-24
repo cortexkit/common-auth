@@ -14,6 +14,7 @@ import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
 import type { InsulaUsageTransport } from './insula.js'
+import { drainShutdown, shutdownWarning } from './shutdown.js'
 import {
   ScopedRosterWatch,
   type ScopedWatchSource,
@@ -498,6 +499,9 @@ export class ClaustrumScopedCustody {
   /** The view of the last successful `discover()`, for `watchRoster`. */
   #discoveredView?: string
   readonly #watches = new Set<ScopedRosterWatch>()
+  readonly #tokenReads = new Set<Promise<EnrollmentTokenFile>>()
+  readonly #warnShutdown: (pendingOperations: number) => void
+  #disposing?: Promise<void>
 
   constructor(options: {
     client: ClaustrumScopedClient
@@ -535,6 +539,7 @@ export class ClaustrumScopedCustody {
     this.#requireAssertion = options.requireAssertion ?? false
     this.#now = options.now ?? Date.now
     this.#logger = options.logger ?? defaultLogger
+    this.#warnShutdown = shutdownWarning(this.#logger)
     this.#setTimeout = options.setTimeoutImpl ?? setTimeout
     this.#clearTimeout = options.clearTimeoutImpl ?? clearTimeout
   }
@@ -609,7 +614,14 @@ export class ClaustrumScopedCustody {
 
   async #token(signal?: AbortSignal): Promise<string> {
     this.#check(signal)
-    const value = await this.#readToken()
+    const pending = this.#readToken()
+    this.#tokenReads.add(pending)
+    let value: EnrollmentTokenFile
+    try {
+      value = await pending
+    } finally {
+      this.#tokenReads.delete(pending)
+    }
     this.#check(signal)
     if (
       !/^[0-9a-f]{64}$/.test(value.token) ||
@@ -1153,5 +1165,12 @@ export class ClaustrumScopedCustody {
     this.#watches.clear()
     this.#kept.clear()
     this.#client.close()
+  }
+
+  /** Stop immediately; allow token reads 2 s and share an owner's timeout warning. */
+  async dispose(onTimeout = this.#warnShutdown): Promise<void> {
+    this.close()
+    this.#disposing ??= drainShutdown(this.#tokenReads, onTimeout)
+    await this.#disposing
   }
 }

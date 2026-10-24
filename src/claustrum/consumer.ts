@@ -41,6 +41,7 @@ import {
   type VaultRosterFile,
   vaultRoutingRows,
 } from './roster.js'
+import { drainShutdown, shutdownWarning } from './shutdown.js'
 import { SAFETY_POLL_MS, type WatchMode } from './watch.js'
 
 export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
@@ -207,6 +208,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   readonly #options: ClaustrumConsumerOptions<Q>
   readonly #shutdown = new AbortController()
   readonly #logger: ClaustrumLogger
+  readonly #warnShutdown: (pendingOperations: number) => void
   #custody?: ClaustrumScopedCustody
   #connecting?: Promise<ClaustrumScopedCustody>
   #refreshing?: Promise<VaultRosterFile | undefined>
@@ -218,6 +220,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #grantReach?: { readonly view: string; readonly reach: VaultGrantReach }
   #timer?: ReturnType<typeof setTimeout>
   #started = false
+  readonly #pending = new Set<Promise<unknown>>()
+  #disposing?: Promise<void>
   #insula?: ReturnType<typeof acquireInsulaQuotaSource>
   #vaultWatch?: ClaustrumRosterWatch
   #releaseInsulaWatch?: () => void
@@ -246,6 +250,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   constructor(options: ClaustrumConsumerOptions<Q>) {
     this.#options = options
     this.#logger = options.logger ?? createLogger('claustrum')
+    this.#warnShutdown = shutdownWarning(this.#logger, this.#shutdown.signal)
     this.#releaseQuotaWriter = retainVaultQuotaWriter(
       options.rosterPath,
       (publication) => {
@@ -257,6 +262,15 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #assertOpen(signal?: AbortSignal) {
     this.#shutdown.signal.throwIfAborted()
     signal?.throwIfAborted()
+  }
+
+  #track<T>(pending: Promise<T>): Promise<T> {
+    this.#pending.add(pending)
+    void pending.then(
+      () => this.#pending.delete(pending),
+      () => this.#pending.delete(pending),
+    )
+    return pending
   }
 
   async #active(): Promise<boolean> {
@@ -328,6 +342,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
         .finally(() => {
           this.#connecting = undefined
         })
+      this.#track(this.#connecting)
     }
     return this.#wait(this.#connecting)
   }
@@ -395,14 +410,17 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
 
   refresh(): Promise<VaultRosterFile | undefined> {
     this.#assertOpen()
-    if (this.#hub) return this.#hubRefresh(this.#hub)
+    if (this.#hub) return this.#track(this.#hubRefresh(this.#hub))
     if (this.#refreshing) return this.#refreshing
     this.#refreshing = (async () => {
       if (!(await this.#active())) {
         this.#roster = undefined
         this.#grantReach = undefined
         this.#stopWatch()
-        this.#custody?.close()
+        if (this.#custody) {
+          this.#custody.close()
+          this.#track(this.#custody.dispose(this.#warnShutdown))
+        }
         this.#custody = undefined
         this.#insula?.release()
         this.#insula = undefined
@@ -446,6 +464,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     })().finally(() => {
       this.#refreshing = undefined
     })
+    this.#track(this.#refreshing)
     return this.#refreshing
   }
 
@@ -481,11 +500,11 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       if (delay <= 0) return
       this.#timer = (this.#options.setTimeoutImpl ?? setTimeout)(() => {
         this.#timer = undefined
-        void tick()
+        void this.#track(tick())
       }, delay)
       this.#timer.unref?.()
     }
-    void tick()
+    void this.#track(tick())
   }
 
   /** Whether a background tick must list the vault now. */
@@ -516,10 +535,14 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       // re-applies it to kept receipts exactly as a poll does. A refresh
       // already in flight may have listed before the change was announced,
       // so wait for it and list again.
-      onView: async () => {
-        while (this.#refreshing) await this.#refreshing.catch(() => {})
-        await this.refresh()
-      },
+      onView: () =>
+        this.#track(
+          (async () => {
+            while (this.#refreshing) await this.#refreshing.catch(() => {})
+            if (this.#shutdown.signal.aborted) return
+            await this.refresh()
+          })(),
+        ),
       // Custody has dropped kept receipts, as a poll meeting the same
       // refusal from list_scoped would.
       onRefused: (error) => this.#options.onError?.(error),
@@ -1093,7 +1116,10 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       (this.#options.clearTimeoutImpl ?? clearTimeout)(this.#timer)
     this.#timer = undefined
     this.#stopWatch()
-    this.#custody?.close()
+    if (this.#custody) {
+      this.#custody.close()
+      this.#track(this.#custody.dispose(this.#warnShutdown))
+    }
     // A hub member gives back its lease; the shared custody stays open.
     this.#lease?.release()
     this.#lease = undefined
@@ -1106,9 +1132,13 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     forgetPendingVaultDiscovery(this.#options.rosterPath)
   }
 
-  /** Close immediately; the last consumer also waits for the writer's bounded drain. */
+  /** Close immediately; background work gets 2 s and the quota writer its own 1 s. */
   async dispose(): Promise<void> {
     this.close()
-    await this.#releaseQuotaWriter()
+    this.#disposing ??= Promise.all([
+      drainShutdown(this.#pending, this.#warnShutdown),
+      this.#releaseQuotaWriter(),
+    ]).then(() => {})
+    await this.#disposing
   }
 }

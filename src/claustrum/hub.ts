@@ -47,6 +47,7 @@ import {
   type VaultRosterSeed,
   vaultRosterSeed,
 } from './roster.js'
+import { drainShutdown, shutdownWarning } from './shutdown.js'
 import { SAFETY_POLL_MS, type WatchMode } from './watch.js'
 
 export interface ClaustrumDiscoveryHubOptions {
@@ -357,6 +358,7 @@ function enabledRows(roster: VaultRosterFile | undefined): string {
 export class ClaustrumDiscoveryHub {
   readonly #options: ClaustrumDiscoveryHubOptions
   readonly #logger: ClaustrumLogger
+  readonly #warnShutdown: (pendingOperations: number) => void
   readonly #shutdown = new AbortController()
   readonly #members = new Map<string, MemberEntry>()
   readonly #leases = new WeakMap<CustodyLease, LeaseState>()
@@ -382,6 +384,8 @@ export class ClaustrumDiscoveryHub {
   #discoveredAt?: number
   #timer?: ReturnType<typeof setTimeout>
   #started = false
+  readonly #pending = new Set<Promise<unknown>>()
+  #disposing?: Promise<void>
   /** This host generation's roster directory, which holds every key. */
   readonly #generationDirectory: string
   /** This hub's roster key: the fingerprint directory under it. */
@@ -402,6 +406,7 @@ export class ClaustrumDiscoveryHub {
       )
     this.#options = options
     this.#logger = options.logger ?? createLogger('claustrum')
+    this.#warnShutdown = shutdownWarning(this.#logger, this.#shutdown.signal)
     // The roster key: the host generation, then a fingerprint of the
     // classifier's whole input and the projection inputs. Every member keeps
     // the path it is given here for its whole life, and every lock and
@@ -419,6 +424,15 @@ export class ClaustrumDiscoveryHub {
         path: join(directory, `${provider}.json`),
         closed: false,
       })
+  }
+
+  #track<T>(pending: Promise<T>): Promise<T> {
+    this.#pending.add(pending)
+    void pending.then(
+      () => this.#pending.delete(pending),
+      () => this.#pending.delete(pending),
+    )
+    return pending
   }
 
   #assertOpen(): void {
@@ -556,7 +570,10 @@ export class ClaustrumDiscoveryHub {
       this.#watch = undefined
     }
     generation.controller.abort(reason)
-    generation.custody?.close()
+    if (generation.custody) {
+      generation.custody.close()
+      this.#track(generation.custody.dispose(this.#warnShutdown))
+    }
   }
 
   /** Return one waiting acquirer's count to a generation that still runs. */
@@ -571,26 +588,28 @@ export class ClaustrumDiscoveryHub {
     if (pending?.generation === generation) return pending.promise
     const entry = {
       generation,
-      promise: this.#options.connect().then((client) => {
-        // A connect resolves into its generation only while that generation
-        // is current and still wanted; otherwise its client never serves.
-        if (!this.#live(generation) || generation.count <= 0) {
-          client.close()
-          throw closed('Claustrum connection is no longer wanted')
-        }
-        generation.custody = new ClaustrumScopedCustody({
-          client,
-          family: this.#options.family,
-          tokenPath: this.#options.tokenPath,
-          parseIdentity: this.#options.parseIdentity,
-          requireAssertion: this.#options.requireAssertion,
-          now: this.#options.now,
-          logger: this.#logger,
-          setTimeoutImpl: this.#options.setTimeoutImpl,
-          clearTimeoutImpl: this.#options.clearTimeoutImpl,
-        })
-        return generation.custody
-      }),
+      promise: this.#track(
+        this.#options.connect().then((client) => {
+          // A connect resolves into its generation only while that generation
+          // is current and still wanted; otherwise its client never serves.
+          if (!this.#live(generation) || generation.count <= 0) {
+            client.close()
+            throw closed('Claustrum connection is no longer wanted')
+          }
+          generation.custody = new ClaustrumScopedCustody({
+            client,
+            family: this.#options.family,
+            tokenPath: this.#options.tokenPath,
+            parseIdentity: this.#options.parseIdentity,
+            requireAssertion: this.#options.requireAssertion,
+            now: this.#options.now,
+            logger: this.#logger,
+            setTimeoutImpl: this.#options.setTimeoutImpl,
+            clearTimeoutImpl: this.#options.clearTimeoutImpl,
+          })
+          return generation.custody
+        }),
+      ),
     }
     // Clear only this connect: an older generation's connect settling late
     // must leave a newer generation's pending connect in place.
@@ -799,9 +818,11 @@ export class ClaustrumDiscoveryHub {
     const running = this.#run
     if (running && !running.generation?.ended) return running.promise
     const run: { generation?: Generation; promise?: Run['promise'] } = {}
-    const promise = this.#discover(run).finally(() => {
-      if (this.#run === run) this.#run = undefined
-    })
+    const promise = this.#track(
+      this.#discover(run).finally(() => {
+        if (this.#run === run) this.#run = undefined
+      }),
+    )
     run.promise = promise
     this.#run = run as Run
     return promise
@@ -1062,13 +1083,16 @@ export class ClaustrumDiscoveryHub {
       return
     const watch = state.custody.watchRoster({
       view: () => this.#committed?.view,
-      onView: async () => {
-        // A refresh already in flight may have listed before the change was
-        // announced, so wait for it and list again.
-        while (this.#run) await this.#run.promise.catch(() => {})
-        if (!this.#live(generation)) return
-        await this.#list()
-      },
+      onView: () =>
+        this.#track(
+          (async () => {
+            // A refresh already in flight may have listed before the change was
+            // announced, so wait for it and list again.
+            while (this.#run) await this.#run.promise.catch(() => {})
+            if (!this.#live(generation)) return
+            await this.#list()
+          })(),
+        ),
       // The vault refused the watch: custody has dropped every kept receipt,
       // which every member served from, as a refused list would.
       onRefused: (error) => this.#everyone(error),
@@ -1122,7 +1146,7 @@ export class ClaustrumDiscoveryHub {
     if (delay <= 0) return
     this.#timer = (this.#options.setTimeoutImpl ?? setTimeout)(() => {
       this.#timer = undefined
-      void this.#tick()
+      void this.#track(this.#tick())
     }, delay)
     this.#timer.unref?.()
   }
@@ -1135,7 +1159,7 @@ export class ClaustrumDiscoveryHub {
     if (this.#started) return
     this.#assertOpen()
     this.#started = true
-    void this.#tick()
+    void this.#track(this.#tick())
   }
 
   /**
@@ -1187,7 +1211,8 @@ export class ClaustrumDiscoveryHub {
 
   /**
    * Stop the tick and the watch and close the connection. Members are not
-   * closed; they fail `closed` from then on.
+   * closed; they fail `closed` from then on. Use `dispose()` to also allow
+   * in-flight discovery up to two seconds to release its file handles.
    */
   close(): void {
     if (this.#shutdown.signal.aborted) return
@@ -1200,5 +1225,12 @@ export class ClaustrumDiscoveryHub {
     this.#own = undefined
     this.#watch?.watch.close()
     this.#watch = undefined
+  }
+
+  /** Close immediately, then join background work for at most two seconds. */
+  async dispose(): Promise<void> {
+    this.close()
+    this.#disposing ??= drainShutdown(this.#pending, this.#warnShutdown)
+    await this.#disposing
   }
 }
