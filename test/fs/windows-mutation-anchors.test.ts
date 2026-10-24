@@ -3,7 +3,7 @@ import { checkWindowsMutationAnchors } from '../../scripts/check-windows-mutatio
 import { applyMutation } from '../windows/mutation-source.mjs'
 
 test('Windows mutation anchors match committed LF and CRLF sources exactly once', async () => {
-  expect(await checkWindowsMutationAnchors()).toEqual({ rows: 16, checks: 32 })
+  expect(await checkWindowsMutationAnchors()).toEqual({ rows: 17, checks: 34 })
 })
 
 test('Windows mutation matching normalizes both sides and retains checkout line endings', () => {

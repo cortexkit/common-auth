@@ -51,9 +51,16 @@
   {
     "id": "private-lease-contention",
     "file": "src/fs/refresh-file-lock.ts",
-    "old": "if (code === 'EEXIST') {",
-    "new": "if (['EEXIST', 'EBUSY', 'EPERM', 'EACCES'].includes(code ?? '') /* NON-VACUITY BREAK */) {",
+    "old": "if (code !== 'EEXIST' && code !== 'EISDIR') return false",
+    "new": "if (!['EEXIST', 'EISDIR', 'EBUSY', 'EPERM', 'EACCES'].includes(code ?? '') /* NON-VACUITY BREAK */) return false",
     "test": "Windows lease acquire does not convert access or sharing errors into success"
+  },
+  {
+    "id": "fs-windows-vanishing-contention-owner",
+    "file": "src/fs/refresh-file-lock.ts",
+    "old": "if ((readError as NodeJS.ErrnoException).code !== 'ENOENT')",
+    "new": "if (true) // NON-VACUITY BREAK: refuse a vanished contention owner instead of retrying",
+    "test": "Windows lease retries when the contention owner read finds a vanished lock"
   },
   {
     "id": "private-lease-release",
