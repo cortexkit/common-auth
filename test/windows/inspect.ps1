@@ -1,19 +1,32 @@
 $ErrorActionPreference = 'Stop'
+$clock = [Diagnostics.Stopwatch]::StartNew()
+function Progress($message) { [Console]::Error.WriteLine("inspector: +$($clock.ElapsedMilliseconds)ms $message"); [Console]::Error.Flush() }
+Progress 'start'
 # Only Windows PowerShell's built-in modules are needed by this helper or its credentialed child.
 $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
-function Progress($message) { [Console]::Error.WriteLine("inspector: $message"); [Console]::Error.Flush() }
 trap {
   $errorObject = $_.Exception
   while ($errorObject.InnerException) { $errorObject = $errorObject.InnerException }
   [Console]::Error.WriteLine((@{ event = 'powershell-error'; type = $errorObject.GetType().FullName; message = $errorObject.Message; hresult = $errorObject.HResult; nativeCode = $errorObject.NativeErrorCode } | ConvertTo-Json -Compress))
   break
 }
+Progress 'module load begin: Microsoft.PowerShell.Utility'
+Import-Module Microsoft.PowerShell.Utility
+Progress 'module load done: Microsoft.PowerShell.Utility'
+Progress 'request read begin'
 $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
 Progress $request.action
 if ($request.action -eq 'inspect') {
+  # JSON uses Utility; ACL and volume inspection must not autoload Storage or query CIM.
+  $PSModuleAutoLoadingPreference = 'None'
+  Progress 'type load begin: identity, ACL, DriveInfo'
+  $null = [Security.Principal.WindowsIdentity], [Security.AccessControl.AccessControlSections], [Security.AccessControl.DirectorySecurity], [Security.AccessControl.FileSecurity], [Security.AccessControl.RawSecurityDescriptor], [IO.DriveInfo]
+  Progress 'type load done: identity, ACL, DriveInfo'
+  Progress 'identity read begin'
   $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-  $objects = @($request.paths | ForEach-Object {
-    $path = $_
+  Progress 'identity read done'
+  $objects = @(foreach ($path in $request.paths) {
+    Progress "ACL read begin: $path"
     $isDir = [IO.Directory]::Exists($path)
     $sections = [Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Access
     if ($isDir) { $security = [Security.AccessControl.DirectorySecurity]::new($path, $sections) }
@@ -23,8 +36,14 @@ if ($request.action -eq 'inspect') {
       @{ type = [int]$_.AceType; flags = [int]$_.AceFlags; mask = $_.AccessMask; sid = $_.SecurityIdentifier.Value }
     })
     @{ path = $path; directory = $isDir; owner = $raw.Owner.Value; control = [int]$raw.ControlFlags; aces = $aces }
+    Progress "ACL read done: $path"
   })
-  @{ sid = $sid; objects = $objects; os = [Environment]::OSVersion.ToString(); filesystem = (Get-Volume -DriveLetter ([IO.Path]::GetPathRoot($request.paths[0]).Substring(0,1))).FileSystem } | ConvertTo-Json -Depth 8 -Compress
+  Progress 'filesystem read begin: DriveInfo.DriveFormat'
+  $filesystem = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($request.paths[0])).DriveFormat
+  Progress 'filesystem read done: DriveInfo.DriveFormat'
+  Progress 'JSON write begin'
+  @{ sid = $sid; objects = $objects; os = [Environment]::OSVersion.ToString(); filesystem = $filesystem } | ConvertTo-Json -Depth 8 -Compress
+  Progress 'inspect done'
   exit
 }
 if ($request.action -eq 'grant') {

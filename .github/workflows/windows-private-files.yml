@@ -100,6 +100,13 @@ jobs:
           if ($LASTEXITCODE) { throw 'Build failed' }
           bun run types
           if ($LASTEXITCODE) { throw 'Types failed' }
+      - name: Warm ACL inspector and measure fresh-process timings
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force windows-vault-evidence | Out-Null
+          node test/windows/warm-inspector.mjs 2>&1 | Tee-Object windows-vault-evidence/inspector-warmup.log
+          if ($LASTEXITCODE) { throw 'ACL inspector warm-up failed' }
       - name: Real profile vault enrollment, serving, rewrite and disconnect
         timeout-minutes: 6
         shell: pwsh

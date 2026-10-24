@@ -77,6 +77,8 @@ const powershell = join(
 
 /** @param {Record<string, unknown>} request */
 async function inspector(request) {
+  const started = performance.now()
+  const timeout = 30_000
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
       ([key]) => key.toUpperCase() !== 'PSMODULEPATH',
@@ -110,14 +112,21 @@ async function inspector(request) {
       new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           child.kill()
-          reject(new Error(`ACL inspector timed out: ${stderr}`))
-        }, 30_000)
+          reject(
+            new Error(
+              `ACL inspector ${request.action} timed out after ${Math.round(performance.now() - started)}ms (limit ${timeout}ms): ${stderr || 'PowerShell has not reported start; waiting for process startup'}`,
+            ),
+          )
+        }, timeout)
         child.once('error', (error) => {
           clearTimeout(timer)
           reject(error)
         })
         child.once('close', (code) => {
           clearTimeout(timer)
+          console.error(
+            `ACL inspector ${request.action} exited ${code} after ${Math.round(performance.now() - started)}ms\n${stderr}`,
+          )
           if (code !== 0)
             reject(
               new Error(`ACL inspector failed (${code}): ${stdout}\n${stderr}`),
