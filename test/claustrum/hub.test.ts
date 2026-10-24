@@ -56,12 +56,80 @@ import {
 } from './helpers.ts'
 
 const hooks = lifetimeHooks()
-const { afterEach, test } = hooks
+const { afterEach } = hooks
+
+interface PhaseTrace {
+  mark(phase: string): void
+  dump(): void
+}
+
+const traces: PhaseTrace[] = []
+let failed = false
+
+/** Keep phase timings quiet unless the body or teardown fails. */
+function test(name: string, body: () => Promise<void>, timeout?: number) {
+  hooks.test(
+    name,
+    async () => {
+      const cancelled = () => {
+        failed = true
+      }
+      hooks.lifetime.signal.addEventListener('abort', cancelled, { once: true })
+      try {
+        await body()
+      } catch (error) {
+        failed = true
+        throw error
+      } finally {
+        hooks.lifetime.signal.removeEventListener('abort', cancelled)
+      }
+    },
+    timeout,
+  )
+}
+
+function phaseTrace(label: string): PhaseTrace {
+  const start = performance.now()
+  const events: string[] = []
+  const trace = {
+    mark(phase: string) {
+      events.push(`+${(performance.now() - start).toFixed(1)} ms ${phase}`)
+    },
+    dump() {
+      console.error(`Hub phases (${label}):\n${events.join('\n')}`)
+    },
+  }
+  traces.push(trace)
+  return trace
+}
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  await cleanupDirs()
+  const errors: unknown[] = []
+  try {
+    for (const cleanup of cleanups.splice(0).reverse()) {
+      try {
+        await cleanup()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+  } finally {
+    try {
+      for (const trace of traces)
+        trace.mark('cleanup: remove directories begin')
+      await cleanupDirs()
+      for (const trace of traces) trace.mark('cleanup: remove directories done')
+    } catch (error) {
+      errors.push(error)
+    } finally {
+      failed ||= errors.length > 0
+      if (failed) for (const trace of traces) trace.dump()
+      traces.length = 0
+      failed = false
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, 'Hub cleanup failed')
 })
 
 const CATEGORY = 'llm-provider'
@@ -115,7 +183,9 @@ interface FakeConnection {
  * the vault was listed, watched and asked for a credential; gates park a
  * list, a credential read or a connect until the test releases it.
  */
-function fakeVault(options: { watch?: boolean } = {}) {
+function fakeVault(
+  options: { watch?: boolean; mark?: (phase: string) => void } = {},
+) {
   const vault = {
     rows: [
       ...MEMBERS.map((provider) => keyRow(provider)),
@@ -166,6 +236,7 @@ function fakeVault(options: { watch?: boolean } = {}) {
     },
     async connect(): Promise<ClaustrumScopedClient> {
       vault.connects++
+      options.mark?.(`connect ${vault.connects} begin`)
       if (vault.holdConnects) {
         const held = deferred<void>()
         vault.held.push(held)
@@ -176,9 +247,14 @@ function fakeVault(options: { watch?: boolean } = {}) {
         client: {
           listScoped: async () => {
             vault.lists++
+            options.mark?.(`list ${vault.lists} begin`)
             if (vault.listGate) await vault.listGate
-            if (vault.listFails) throw vault.listFails()
+            if (vault.listFails) {
+              options.mark?.(`list ${vault.lists} failed`)
+              throw vault.listFails()
+            }
             const listed = { rows: vault.rows, view: vault.view }
+            options.mark?.(`list ${vault.lists} done`)
             return vault.grants === undefined
               ? { ...listed, ...unknownGrants }
               : {
@@ -211,6 +287,7 @@ function fakeVault(options: { watch?: boolean } = {}) {
           },
           close: () => {
             connection.closed = true
+            options.mark?.('connection closed')
           },
           ...(vault.watch && {
             watchScoped: (
@@ -235,6 +312,7 @@ function fakeVault(options: { watch?: boolean } = {}) {
         },
       }
       vault.connections.push(connection)
+      options.mark?.(`connect ${vault.connects} done`)
       return connection.client
     },
   }
@@ -250,8 +328,11 @@ async function hubFixture(
   } = {},
 ) {
   const dir = options.dir ?? (await tempDir('claustrum-hub-'))
+  const trace = phaseTrace(dir)
+  trace.mark('fixture: write token begin')
   const tokenPath = await writeToken(dir)
-  const vault = fakeVault({ watch: options.watch })
+  trace.mark('fixture: write token done')
+  const vault = fakeVault({ watch: options.watch, mark: trace.mark })
   const timers = fakeTimers()
   let active = true
   const errors: unknown[] = []
@@ -266,13 +347,20 @@ async function hubFixture(
       connect: () => vault.connect(),
       isCustodyActive: () => active,
       pollIntervalMs: TICK,
-      setTimeoutImpl: timers.setTimeoutImpl,
+      setTimeoutImpl: ((run: () => void, delay: number) => {
+        if (delay === TICK) trace.mark('tick re-armed')
+        return timers.setTimeoutImpl(run, delay)
+      }) as typeof setTimeout,
       clearTimeoutImpl: timers.clearTimeoutImpl,
       onError: (error) => errors.push(error),
       ...options.hub,
     }),
   )
-  cleanups.push(() => hub.close())
+  cleanups.push(() => {
+    trace.mark('cleanup: hub close begin')
+    hub.close()
+    trace.mark('cleanup: hub close done')
+  })
   const rosters = {} as Record<Member, VaultRosterFile[]>
   const memberErrors = {} as Record<Member, unknown[]>
   const member = (
@@ -282,11 +370,23 @@ async function hubFixture(
     rosters[provider] = []
     memberErrors[provider] = []
     const consumer = hub.member(provider, {
-      onRoster: (roster) => rosters[provider].push(roster),
-      onError: (error) => memberErrors[provider].push(error),
       ...memberOptions,
+      onRoster: (roster) => {
+        trace.mark(`member ${provider} commit: ${roster.view}`)
+        if (memberOptions.onRoster) memberOptions.onRoster(roster)
+        else rosters[provider].push(roster)
+      },
+      onError: (error) => {
+        trace.mark(`member ${provider} error: ${String(error)}`)
+        if (memberOptions.onError) memberOptions.onError(error)
+        else memberErrors[provider].push(error)
+      },
     })
-    cleanups.push(() => consumer.dispose())
+    cleanups.push(async () => {
+      trace.mark(`cleanup: member ${provider} dispose begin`)
+      await consumer.dispose()
+      trace.mark(`cleanup: member ${provider} dispose done`)
+    })
     return consumer
   }
   const members = () => MEMBERS.map((provider) => member(provider))
@@ -305,11 +405,13 @@ async function hubFixture(
   }
   /** Fire the hub's tick and wait until it has armed the next one. */
   const tick = async () => {
+    trace.mark('tick begin')
     timers.fire(TICK)
     await until(() => timers.pending().includes(TICK), 'the next hub tick')
   }
   /** Start the hub and wait for its first tick to finish. */
   const start = async () => {
+    trace.mark('start begin')
     hub.start()
     await until(() => timers.pending().includes(TICK), 'the first hub tick')
   }
