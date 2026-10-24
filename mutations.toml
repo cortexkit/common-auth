@@ -7848,10 +7848,10 @@ expect_message = 'timed out waiting for watch closed'
 id = 'claustrum-watch-discover-commits'
 guards = 'a watched change runs the full discovery, so kept receipts follow the roster'
 file = 'src/claustrum/consumer.ts'
-old = '''while (this.#refreshing) await this.#refreshing.catch(() => {})
-        await this.refresh()'''
-new = '''while (this.#refreshing) await this.#refreshing.catch(() => {})
-        await this.#custody?.discover() // NON-VACUITY BREAK: list without committing'''
+old = '''if (this.#shutdown.signal.aborted) return
+            await this.refresh()'''
+new = '''if (this.#shutdown.signal.aborted) return
+            await this.#custody?.discover() // NON-VACUITY BREAK: list without committing'''
 test_file = 'test/claustrum/watch.test.ts'
 runner = 'command'
 command = ["sh", "-c", 'git diff --stat; bun test "$1" -t "$2"', "sh", "test/claustrum/watch.test.ts", "{test}"]

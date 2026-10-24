@@ -4,6 +4,7 @@
 import { expect, spyOn } from 'bun:test'
 import {
   mkdir,
+  open,
   readdir,
   readFile,
   rm,
@@ -34,6 +35,7 @@ import {
   type ScopedWatchNoticeShape,
   type VaultRosterFile,
 } from '../../src/claustrum/index.ts'
+import * as rosterModule from '../../src/claustrum/roster.ts'
 import { isVaultRosterLockRefusal } from '../../src/claustrum/roster.ts'
 import {
   acquireRefreshFileLock,
@@ -61,9 +63,15 @@ const { afterEach } = hooks
 interface PhaseTrace {
   mark(phase: string): void
   dump(): void
+  events: string[]
 }
 
 const traces: PhaseTrace[] = []
+const commitTraces = new Map<
+  string,
+  Array<{ provider: string; trace: PhaseTrace }>
+>()
+let restoreCommitTrace: (() => void) | undefined
 let failed = false
 
 /** Keep phase timings quiet unless the body or teardown fails. */
@@ -92,6 +100,7 @@ function phaseTrace(label: string): PhaseTrace {
   const start = performance.now()
   const events: string[] = []
   const trace = {
+    events,
     mark(phase: string) {
       events.push(`+${(performance.now() - start).toFixed(1)} ms ${phase}`)
     },
@@ -123,6 +132,9 @@ afterEach(async () => {
     } catch (error) {
       errors.push(error)
     } finally {
+      restoreCommitTrace?.()
+      restoreCommitTrace = undefined
+      commitTraces.clear()
       failed ||= errors.length > 0
       if (failed) for (const trace of traces) trace.dump()
       traces.length = 0
@@ -239,6 +251,7 @@ function fakeVault(
       options.mark?.(`connect ${vault.connects} begin`)
       if (vault.holdConnects) {
         const held = deferred<void>()
+        hooks.lifetime.unpark(() => held.resolve())
         vault.held.push(held)
         await held.promise
       }
@@ -334,6 +347,7 @@ async function hubFixture(
   trace.mark('fixture: write token done')
   const vault = fakeVault({ watch: options.watch, mark: trace.mark })
   const timers = fakeTimers()
+  let tickArmed = deferred<void>()
   let active = true
   const errors: unknown[] = []
   const hub = hooks.lifetime.manage(
@@ -348,7 +362,10 @@ async function hubFixture(
       isCustodyActive: () => active,
       pollIntervalMs: TICK,
       setTimeoutImpl: ((run: () => void, delay: number) => {
-        if (delay === TICK) trace.mark('tick re-armed')
+        if (delay === TICK) {
+          trace.mark('tick re-armed')
+          tickArmed.resolve()
+        }
         return timers.setTimeoutImpl(run, delay)
       }) as typeof setTimeout,
       clearTimeoutImpl: timers.clearTimeoutImpl,
@@ -356,10 +373,57 @@ async function hubFixture(
       ...options.hub,
     }),
   )
-  cleanups.push(() => {
+  const consumers: Array<{ provider: Member; consumer: ClaustrumConsumer }> = []
+  for (const provider of MEMBERS) {
+    const path = hub.rosterPath(provider)
+    const entries = commitTraces.get(path) ?? []
+    entries.push({ provider, trace })
+    commitTraces.set(path, entries)
+  }
+  if (!restoreCommitTrace) {
+    const refreshRoster = rosterModule.refreshVaultRoster
+    const commit = spyOn(rosterModule, 'refreshVaultRoster').mockImplementation(
+      async (options) => {
+        const entries = commitTraces.get(options.path) ?? []
+        const mark = (phase: string) => {
+          for (const { provider, trace } of entries)
+            trace.mark(`member ${provider} commit ${phase}`)
+        }
+        mark('begin')
+        try {
+          const roster = await refreshRoster(options)
+          mark('done')
+          return roster
+        } catch (error) {
+          mark(`failed: ${String(error)}`)
+          throw error
+        }
+      },
+    )
+    restoreCommitTrace = () => commit.mockRestore()
+  }
+  cleanups.push(async () => {
     trace.mark('cleanup: hub close begin')
     hub.close()
     trace.mark('cleanup: hub close done')
+    try {
+      const results = await Promise.allSettled(
+        consumers.map(async ({ provider, consumer }) => {
+          trace.mark(`cleanup: member ${provider} dispose begin`)
+          await consumer.dispose()
+          trace.mark(`cleanup: member ${provider} dispose done`)
+        }),
+      )
+      const errors = results.flatMap((result) =>
+        result.status === 'rejected' ? [result.reason] : [],
+      )
+      if (errors.length)
+        throw new AggregateError(errors, 'Member cleanup failed')
+    } finally {
+      trace.mark('cleanup: hub drain begin')
+      await hub.dispose()
+      trace.mark('cleanup: hub drain done')
+    }
   })
   const rosters = {} as Record<Member, VaultRosterFile[]>
   const memberErrors = {} as Record<Member, unknown[]>
@@ -372,7 +436,7 @@ async function hubFixture(
     const consumer = hub.member(provider, {
       ...memberOptions,
       onRoster: (roster) => {
-        trace.mark(`member ${provider} commit: ${roster.view}`)
+        trace.mark(`member ${provider} published: ${roster.view}`)
         if (memberOptions.onRoster) memberOptions.onRoster(roster)
         else rosters[provider].push(roster)
       },
@@ -382,11 +446,7 @@ async function hubFixture(
         else memberErrors[provider].push(error)
       },
     })
-    cleanups.push(async () => {
-      trace.mark(`cleanup: member ${provider} dispose begin`)
-      await consumer.dispose()
-      trace.mark(`cleanup: member ${provider} dispose done`)
-    })
+    consumers.push({ provider, consumer })
     return consumer
   }
   const members = () => MEMBERS.map((provider) => member(provider))
@@ -406,14 +466,31 @@ async function hubFixture(
   /** Fire the hub's tick and wait until it has armed the next one. */
   const tick = async () => {
     trace.mark('tick begin')
+    tickArmed = deferred<void>()
     timers.fire(TICK)
-    await until(() => timers.pending().includes(TICK), 'the next hub tick')
+    await waitForTick()
+  }
+  // The hub re-arms only after all tick work finishes. Let the test's own
+  // deadline cancel this wait, rather than racing real private-file I/O with
+  // a second, shorter wall-clock budget.
+  const waitForTick = async () => {
+    const signal = hooks.lifetime.signal
+    signal.throwIfAborted()
+    const cancelled = deferred<never>()
+    const abort = () => cancelled.reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      await Promise.race([tickArmed.promise, cancelled.promise])
+    } finally {
+      signal.removeEventListener('abort', abort)
+    }
   }
   /** Start the hub and wait for its first tick to finish. */
   const start = async () => {
     trace.mark('start begin')
+    tickArmed = deferred<void>()
     hub.start()
-    await until(() => timers.pending().includes(TICK), 'the first hub tick')
+    await waitForTick()
   }
   return {
     dir,
@@ -422,6 +499,7 @@ async function hubFixture(
     vault,
     timers,
     errors,
+    trace,
     member,
     members,
     rosters,
@@ -464,6 +542,165 @@ async function holdWriteLock(path: string) {
   cleanups.push(() => lock.release())
   return lock
 }
+
+/** Model an authority reader whose file handle outlives synchronous close(). */
+function heldAuthority(path: () => string) {
+  const lifetime = hooks.lifetime
+  const entered = deferred<void>()
+  const release = deferred<void>()
+  lifetime.unpark(() => {
+    release.resolve()
+    entered.resolve()
+  })
+  let closed = false
+  return {
+    entered: entered.promise.then(() => lifetime.signal.throwIfAborted()),
+    release: () => release.resolve(),
+    closed: () => closed,
+    async read() {
+      const handle = await open(path(), 'r').catch((error: unknown) => {
+        entered.reject(error)
+        throw error
+      })
+      entered.resolve()
+      try {
+        await release.promise
+        return true
+      } finally {
+        await handle.close()
+        closed = true
+      }
+    },
+  }
+}
+
+test('hub fixture: first tick waits for completion beyond the socket wait budget', async () => {
+  const f = await hubFixture({
+    hub: {
+      isCustodyActive: async () => {
+        // Deliberately longer than helpers.until's socket-traffic deadline.
+        await Bun.sleep(2_100)
+        return false
+      },
+    },
+  })
+  await f.start()
+  expect(f.timers.pending()).toEqual([TICK])
+  expect(f.vault.connects).toBe(0)
+}, 10_000)
+
+test('hub fixture: phase trace includes each member commit even without a view change', async () => {
+  const f = await hubFixture()
+  f.members()
+  await f.start()
+  await f.tick()
+  for (const provider of MEMBERS) {
+    for (const phase of ['begin', 'done']) {
+      expect(
+        f.trace.events.filter((event) =>
+          event.endsWith(`member ${provider} commit ${phase}`),
+        ),
+      ).toHaveLength(2)
+    }
+    expect(f.rosters[provider]).toHaveLength(1)
+  }
+})
+
+test('hub disposal: joins a detached tick holding a file before directory removal', async () => {
+  let tokenPath = ''
+  const authority = heldAuthority(() => tokenPath)
+  const f = await hubFixture({ hub: { isCustodyActive: authority.read } })
+  tokenPath = f.tokenPath
+  f.members()
+  f.hub.start()
+  await authority.entered
+  f.hub.close()
+  let done = false
+  const disposed = f.hub.dispose().then(() => {
+    done = true
+  })
+  try {
+    await Bun.sleep(0)
+    expect(done).toBe(false)
+    expect(authority.closed()).toBe(false)
+  } finally {
+    authority.release()
+    await disposed
+  }
+  expect(authority.closed()).toBe(true)
+  expect(f.vault.connects).toBe(0)
+  expect(f.timers.pending()).toEqual([])
+  await rm(f.dir, { recursive: true })
+})
+
+test('hub disposal: a plain consumer joins its detached tick before directory removal', async () => {
+  const dir = await tempDir('claustrum-hub-plain-disposal-')
+  const tokenPath = await writeToken(dir)
+  const authority = heldAuthority(() => tokenPath)
+  const vault = fakeVault()
+  const timers = fakeTimers()
+  const consumer = new ClaustrumConsumer({
+    rosterPath: join(dir, 'plain.json'),
+    tokenPath,
+    family,
+    connect: () => vault.connect(),
+    isCustodyActive: authority.read,
+    ...timers,
+  })
+  cleanups.push(() => consumer.dispose())
+  consumer.start()
+  await authority.entered
+  let done = false
+  const disposed = consumer.dispose().then(() => {
+    done = true
+  })
+  try {
+    await Bun.sleep(0)
+    expect(done).toBe(false)
+    expect(authority.closed()).toBe(false)
+  } finally {
+    authority.release()
+    await disposed
+  }
+  expect(authority.closed()).toBe(true)
+  expect(vault.connects).toBe(0)
+  expect(timers.pending()).toEqual([])
+  await rm(dir, { recursive: true })
+})
+
+test('hub disposal: custody joins a watch-opening token read before directory removal', async () => {
+  const dir = await tempDir('claustrum-hub-watch-disposal-')
+  const tokenPath = await writeToken(dir)
+  const tokenRead = heldAuthority(() => tokenPath)
+  const vault = fakeVault({ watch: true })
+  const custody = new ClaustrumScopedCustody({
+    client: await vault.connect(),
+    family,
+    readToken: async () => {
+      await tokenRead.read()
+      return { token: '01'.repeat(32), token_generation: 1 }
+    },
+  })
+  cleanups.push(() => custody.dispose())
+  custody.watchRoster({ onView: async () => {} })
+  await tokenRead.entered
+  let done = false
+  const disposed = custody.dispose().then(() => {
+    done = true
+  })
+  try {
+    await Bun.sleep(0)
+    expect(done).toBe(false)
+    expect(tokenRead.closed()).toBe(false)
+  } finally {
+    tokenRead.release()
+    await disposed
+  }
+  expect(tokenRead.closed()).toBe(true)
+  expect(vault.watches).toBe(0)
+  expect(vault.closes()).toBe(1)
+  await rm(dir, { recursive: true })
+})
 
 // --- custody leases ---
 
@@ -1251,7 +1488,7 @@ test('hub keys: the roster directory is the host generation plus a fingerprint o
       connect: () => Promise.reject(new Error('never connects')),
       ...options,
     })
-    cleanups.push(() => hub.close())
+    cleanups.push(() => hub.dispose())
     return hub
   }
   const hub = build()

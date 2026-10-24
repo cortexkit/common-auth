@@ -498,6 +498,7 @@ export class ClaustrumScopedCustody {
   /** The view of the last successful `discover()`, for `watchRoster`. */
   #discoveredView?: string
   readonly #watches = new Set<ScopedRosterWatch>()
+  readonly #tokenReads = new Set<Promise<EnrollmentTokenFile>>()
 
   constructor(options: {
     client: ClaustrumScopedClient
@@ -609,7 +610,14 @@ export class ClaustrumScopedCustody {
 
   async #token(signal?: AbortSignal): Promise<string> {
     this.#check(signal)
-    const value = await this.#readToken()
+    const pending = this.#readToken()
+    this.#tokenReads.add(pending)
+    let value: EnrollmentTokenFile
+    try {
+      value = await pending
+    } finally {
+      this.#tokenReads.delete(pending)
+    }
     this.#check(signal)
     if (
       !/^[0-9a-f]{64}$/.test(value.token) ||
@@ -1153,5 +1161,11 @@ export class ClaustrumScopedCustody {
     this.#watches.clear()
     this.#kept.clear()
     this.#client.close()
+  }
+
+  /** Stop immediately, then join token-file reads started by watches or probes. */
+  async dispose(): Promise<void> {
+    this.close()
+    await Promise.allSettled([...this.#tokenReads])
   }
 }
