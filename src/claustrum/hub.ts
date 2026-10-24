@@ -47,6 +47,7 @@ import {
   type VaultRosterSeed,
   vaultRosterSeed,
 } from './roster.js'
+import { drainShutdown } from './shutdown.js'
 import { SAFETY_POLL_MS, type WatchMode } from './watch.js'
 
 export interface ClaustrumDiscoveryHubOptions {
@@ -383,6 +384,7 @@ export class ClaustrumDiscoveryHub {
   #timer?: ReturnType<typeof setTimeout>
   #started = false
   readonly #pending = new Set<Promise<unknown>>()
+  #disposing?: Promise<void>
   /** This host generation's roster directory, which holds every key. */
   readonly #generationDirectory: string
   /** This hub's roster key: the fingerprint directory under it. */
@@ -1207,8 +1209,8 @@ export class ClaustrumDiscoveryHub {
 
   /**
    * Stop the tick and the watch and close the connection. Members are not
-   * closed; they fail `closed` from then on. Use `dispose()` to also join
-   * in-flight discovery and local file work before removing the state directory.
+   * closed; they fail `closed` from then on. Use `dispose()` to also allow
+   * in-flight discovery up to two seconds to release its file handles.
    */
   close(): void {
     if (this.#shutdown.signal.aborted) return
@@ -1223,9 +1225,10 @@ export class ClaustrumDiscoveryHub {
     this.#watch = undefined
   }
 
-  /** Close immediately, then wait for in-flight ticks, connects and commits. */
+  /** Close immediately, then join background work for at most two seconds. */
   async dispose(): Promise<void> {
     this.close()
-    while (this.#pending.size) await Promise.allSettled([...this.#pending])
+    this.#disposing ??= drainShutdown(this.#pending, this.#logger)
+    await this.#disposing
   }
 }

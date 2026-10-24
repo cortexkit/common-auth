@@ -1042,6 +1042,7 @@ export async function refreshVaultRoster(options: {
         return { ...(changed && { next }), result: next }
       },
       {
+        signal: options.signal,
         beforePublish: async () => {
           options.signal?.throwIfAborted()
           await lease.assertOwned()

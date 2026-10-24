@@ -44,8 +44,10 @@ import {
   PrivateFileError,
   writeJsonAtomic,
 } from '../../src/fs/index.js'
+import * as lockModule from '../../src/fs/with-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
+  captureLogger,
   cleanupDirs,
   deferred,
   fakeTimers,
@@ -215,6 +217,8 @@ function fakeVault(
     connections: [] as FakeConnection[],
     /** While set, a list waits for it after counting itself. */
     listGate: undefined as Promise<void> | undefined,
+    /** Observe entry before a list parks on its gate. */
+    onList: undefined as (() => void) | undefined,
     /** While set, a credential read waits for it after counting itself. */
     getGate: undefined as Promise<void> | undefined,
     /** While set, a credential read throws it. */
@@ -261,6 +265,7 @@ function fakeVault(
           listScoped: async () => {
             vault.lists++
             options.mark?.(`list ${vault.lists} begin`)
+            vault.onList?.()
             if (vault.listGate) await vault.listGate
             if (vault.listFails) {
               options.mark?.(`list ${vault.lists} failed`)
@@ -701,6 +706,211 @@ test('hub disposal: custody joins a watch-opening token read before directory re
   expect(vault.closes()).toBe(1)
   await rm(dir, { recursive: true })
 })
+
+/** Bound the test's wait; callers release held operations in their own finally blocks. */
+async function boundedDisposal(pending: Promise<void>) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('timed out waiting for bounded disposal')),
+          4_000,
+        )
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+test('hub disposal deadline: a stuck connect returns and warns once with only the pending count', async () => {
+  const log = captureLogger()
+  const f = await hubFixture({ hub: { logger: log.logger } })
+  f.vault.holdConnects = true
+  const waiting = f.hub.acquire().catch((error: unknown) => error)
+  await until(() => f.vault.held.length === 1, 'the held connect')
+  const disposed = f.hub.dispose()
+  try {
+    await boundedDisposal(
+      Promise.all([disposed, f.hub.dispose()]).then(() => {}),
+    )
+    await f.hub.dispose()
+    expect(log.records.filter((record) => record.level === 'warn')).toEqual([
+      {
+        level: 'warn',
+        message: 'claustrum shutdown drain timed out',
+        data: { pendingOperations: 1 },
+      },
+    ])
+  } finally {
+    f.vault.held[0]?.resolve()
+    await waiting
+    await disposed
+  }
+  await until(() => f.vault.closes() === 1, 'the late client to close')
+})
+
+test('hub disposal deadline: a plain consumer stuck connecting returns and warns once with only the pending count', async () => {
+  const dir = await tempDir('claustrum-hub-plain-deadline-')
+  const tokenPath = await writeToken(dir)
+  const log = captureLogger()
+  const vault = fakeVault()
+  vault.holdConnects = true
+  const consumer = new ClaustrumConsumer({
+    rosterPath: join(dir, 'plain.json'),
+    tokenPath,
+    family,
+    connect: () => vault.connect(),
+    logger: log.logger,
+  })
+  cleanups.push(() => consumer.dispose())
+  consumer.start()
+  await until(() => vault.held.length === 1, 'the held plain connect')
+  const disposed = consumer.dispose()
+  try {
+    await boundedDisposal(
+      Promise.all([disposed, consumer.dispose()]).then(() => {}),
+    )
+    await consumer.dispose()
+    expect(log.records.filter((record) => record.level === 'warn')).toEqual([
+      {
+        level: 'warn',
+        message: 'claustrum shutdown drain timed out',
+        data: { pendingOperations: 1 },
+      },
+    ])
+  } finally {
+    vault.held[0]?.resolve()
+    await disposed
+  }
+  await until(() => vault.closes() === 1, 'the late plain client to close')
+})
+
+test('hub disposal deadline: a custody token read that never settles returns and warns once with only the pending count', async () => {
+  const log = captureLogger()
+  const vault = fakeVault({ watch: true })
+  const token = deferred<{ token: string; token_generation: number }>()
+  hooks.lifetime.unpark(() =>
+    token.resolve({ token: '01'.repeat(32), token_generation: 1 }),
+  )
+  const entered = deferred<void>()
+  const custody = new ClaustrumScopedCustody({
+    client: await vault.connect(),
+    family,
+    logger: log.logger,
+    readToken: () => {
+      entered.resolve()
+      return token.promise
+    },
+  })
+  cleanups.push(() => custody.dispose())
+  custody.watchRoster({ onView: async () => {} })
+  await entered.promise
+  const disposed = custody.dispose()
+  try {
+    await boundedDisposal(
+      Promise.all([disposed, custody.dispose()]).then(() => {}),
+    )
+    await custody.dispose()
+    expect(log.records.filter((record) => record.level === 'warn')).toEqual([
+      {
+        level: 'warn',
+        message: 'claustrum shutdown drain timed out',
+        data: { pendingOperations: 1 },
+      },
+    ])
+  } finally {
+    token.resolve({ token: '01'.repeat(32), token_generation: 1 })
+    await disposed
+  }
+  expect(vault.watches).toBe(0)
+  expect(vault.closes()).toBe(1)
+})
+
+test('hub disposal cancellation: a roster write-lock wait observes shutdown before the deadline', async () => {
+  const log = captureLogger()
+  const f = await hubFixture({ hub: { logger: log.logger } })
+  const alpha = f.member('alpha')
+  await alpha.refresh()
+  const path = f.hub.rosterPath('alpha')
+  const lock = await holdWriteLock(path)
+  const entered = deferred<void>()
+  hooks.lifetime.unpark(() => entered.resolve())
+  const withLock = lockModule.withLock
+  const attempt = spyOn(lockModule, 'withLock').mockImplementation(
+    (target, options, run) => {
+      if (target === path && options.name === 'claustrum-roster-write')
+        entered.resolve()
+      return withLock(target, options, run)
+    },
+  )
+  f.vault.view = 'v2'
+  const refreshing = f.hub.refresh()
+  try {
+    await entered.promise
+    const disposed = f.hub.dispose()
+    await boundedDisposal(disposed)
+    expect(log.records.filter((record) => record.level === 'warn')).toEqual([])
+    await refreshing
+    expect(alpha.snapshot()?.view).toBe('v1')
+  } finally {
+    await lock.release()
+    await refreshing
+    attempt.mockRestore()
+  }
+}, 15_000)
+
+for (const owner of ['hub', 'plain consumer'] as const) {
+  test(`hub disposal cancellation: ${owner} list wait cancels without a deadline warning`, async () => {
+    const log = captureLogger()
+    const entered = deferred<void>()
+    const gate = deferred<void>()
+    hooks.lifetime.unpark(() => {
+      gate.resolve()
+      entered.resolve()
+    })
+    let vault: ReturnType<typeof fakeVault>
+    let dispose: () => Promise<void>
+    if (owner === 'hub') {
+      const f = await hubFixture({ hub: { logger: log.logger } })
+      f.members()
+      vault = f.vault
+      dispose = () => f.hub.dispose()
+      vault.onList = () => entered.resolve()
+      vault.listGate = gate.promise
+      f.hub.start()
+    } else {
+      const dir = await tempDir('claustrum-hub-plain-list-cancel-')
+      vault = fakeVault()
+      const consumer = new ClaustrumConsumer({
+        rosterPath: join(dir, 'plain.json'),
+        tokenPath: await writeToken(dir),
+        family,
+        connect: () => vault.connect(),
+        logger: log.logger,
+      })
+      dispose = () => consumer.dispose()
+      cleanups.push(dispose)
+      vault.onList = () => entered.resolve()
+      vault.listGate = gate.promise
+      consumer.start()
+    }
+    try {
+      await entered.promise
+      hooks.lifetime.signal.throwIfAborted()
+      await boundedDisposal(dispose())
+      expect(log.records.filter((record) => record.level === 'warn')).toEqual(
+        [],
+      )
+      expect(vault.closes()).toBe(1)
+    } finally {
+      gate.resolve()
+      await dispose()
+    }
+  }, 15_000)
+}
 
 // --- custody leases ---
 

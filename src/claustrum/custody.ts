@@ -14,6 +14,7 @@ import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
 import type { InsulaUsageTransport } from './insula.js'
+import { drainShutdown } from './shutdown.js'
 import {
   ScopedRosterWatch,
   type ScopedWatchSource,
@@ -499,6 +500,7 @@ export class ClaustrumScopedCustody {
   #discoveredView?: string
   readonly #watches = new Set<ScopedRosterWatch>()
   readonly #tokenReads = new Set<Promise<EnrollmentTokenFile>>()
+  #disposing?: Promise<void>
 
   constructor(options: {
     client: ClaustrumScopedClient
@@ -1163,9 +1165,10 @@ export class ClaustrumScopedCustody {
     this.#client.close()
   }
 
-  /** Stop immediately, then join token-file reads started by watches or probes. */
+  /** Stop immediately, then allow token-file reads up to two seconds to finish. */
   async dispose(): Promise<void> {
     this.close()
-    await Promise.allSettled([...this.#tokenReads])
+    this.#disposing ??= drainShutdown(this.#tokenReads, this.#logger)
+    await this.#disposing
   }
 }

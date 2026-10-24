@@ -41,6 +41,7 @@ import {
   type VaultRosterFile,
   vaultRoutingRows,
 } from './roster.js'
+import { drainShutdown } from './shutdown.js'
 import { SAFETY_POLL_MS, type WatchMode } from './watch.js'
 
 export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
@@ -219,6 +220,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   #timer?: ReturnType<typeof setTimeout>
   #started = false
   readonly #pending = new Set<Promise<unknown>>()
+  #disposing?: Promise<void>
   #insula?: ReturnType<typeof acquireInsulaQuotaSource>
   #vaultWatch?: ClaustrumRosterWatch
   #releaseInsulaWatch?: () => void
@@ -1128,14 +1130,13 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     forgetPendingVaultDiscovery(this.#options.rosterPath)
   }
 
-  /** Close immediately, then join discovery and the quota writer's bounded drain. */
+  /** Close immediately; background work gets 2 s and the quota writer its own 1 s. */
   async dispose(): Promise<void> {
     this.close()
-    await Promise.all([
-      (async () => {
-        while (this.#pending.size) await Promise.allSettled([...this.#pending])
-      })(),
+    this.#disposing ??= Promise.all([
+      drainShutdown(this.#pending, this.#logger),
       this.#releaseQuotaWriter(),
-    ])
+    ]).then(() => {})
+    await this.#disposing
   }
 }
