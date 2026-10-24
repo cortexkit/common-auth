@@ -214,6 +214,10 @@ test('streamed overflow keeps the socket open until the client finishes sending'
       : payload
     expect(JSON.parse(body ?? '')).toEqual({ error: 'body too large' })
     await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(
+      phases.events.some((event) => event.phase === 'server-response-finish'),
+      'streamed 413 must defer response finish until upload end',
+    ).toBe(false)
     expect(phases.refusedSocket).toBeDefined()
     expect(phases.refusedSocket?.destroyed).toBe(false)
     expect(
@@ -222,6 +226,16 @@ test('streamed overflow keeps the socket open until the client finishes sending'
     await new Promise<void>((resolve) =>
       socket.end(`40000\r\n${chunk}\r\n0\r\n\r\n`, resolve),
     )
+    await phases.closed
+    expect(phases.refusedSocket?.destroyed).toBe(true)
+    const bodyEnd = phases.events.findIndex(
+      (event) => event.phase === 'body-end',
+    )
+    const responseFinish = phases.events.findIndex(
+      (event) => event.phase === 'server-response-finish',
+    )
+    expect(bodyEnd).toBeGreaterThanOrEqual(0)
+    expect(responseFinish).toBeGreaterThan(bodyEnd)
     phases.succeeded()
   } finally {
     socket.destroy()
