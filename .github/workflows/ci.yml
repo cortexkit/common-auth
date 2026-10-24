@@ -108,7 +108,9 @@ jobs:
   # added its time to every run's wall time. A release does not rerun any of
   # this; it verifies that this run passed on the tagged commit.
   mutations-main:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # A release-* branch carries a patch release cut off main, so it gets the
+    # same full catalogue main does before its tag can publish.
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-'))) || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:

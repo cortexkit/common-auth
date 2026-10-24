@@ -85,6 +85,8 @@ async function getJson(path) {
   return response.json();
 }
 
+// A push run on main, or on a release-* branch (a patch release cut off main,
+// which gets the same full catalogue and Windows checks), counts.
 async function latestMainPushRun(workflowFile) {
   const query = new URLSearchParams({ head_sha: targetSha, per_page: '100' });
   const result = await getJson(
@@ -95,7 +97,8 @@ async function latestMainPushRun(workflowFile) {
       (run) =>
         run.head_sha === targetSha &&
         run.event === 'push' &&
-        run.head_branch === 'main',
+        (run.head_branch === 'main' ||
+          run.head_branch?.startsWith('release-') === true),
     )
     .sort((left, right) => right.run_number - left.run_number)[0];
 }
