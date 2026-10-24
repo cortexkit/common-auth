@@ -87,6 +87,7 @@ type RefreshFileLockOptions = {
       | 'stale-marker-stat'
       | 'stale-marker-claimed'
       | 'stale-lock-observed'
+      | 'lease-contention-read-ready'
       | 'lock-read-ready'
       | 'lock-missing'
       | 'stale-lock-confirmed'
@@ -270,18 +271,23 @@ export async function acquireRefreshFileLockWithClock(
   }
   async function leaseContention(error: unknown): Promise<boolean> {
     const code = (error as NodeJS.ErrnoException).code
-    if (code === 'EEXIST') {
-      if (windowsPrivateFiles) await readOwner()
-      return true
-    }
-    if (code === 'EISDIR') {
-      if (windowsPrivateFiles) {
-        await verifyPrivate(lockPath, 'directory', true)
-        await readPrivateText(legacyOwnerPath, true)
+    if (code !== 'EEXIST' && code !== 'EISDIR') return false
+    if (windowsPrivateFiles) {
+      if (options.onStep) await options.onStep('lease-contention-read-ready')
+      try {
+        if (code === 'EISDIR') {
+          await verifyPrivate(lockPath, 'directory', true)
+          await readPrivateText(legacyOwnerPath, true)
+        } else await readOwner()
+      } catch (readError) {
+        // The holder can release after exclusive creation reports a collision.
+        // Only absence permits another acquisition attempt; security and sharing
+        // refusals must still escape rather than being treated as contention.
+        if ((readError as NodeJS.ErrnoException).code !== 'ENOENT')
+          throw readError
       }
-      return true
     }
-    return false
+    return true
   }
   async function tryAcquire() {
     if (windowsPrivateFiles) await ensurePrivateDirectory(dirname(lockPath))

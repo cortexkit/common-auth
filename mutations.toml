@@ -680,6 +680,21 @@ test_count_pattern = 'Ran {count} test'
 expect_red = ['^four\sprocesses\sretain\severy\spool\sreading\swith\szero\sreturned\slock\stimeouts\sversus\splain\swrites$']
 expect_message = 'toBe'
 
+# --- Windows lease contention ---
+[[control]]
+id = 'fs-windows-vanishing-contention-owner'
+guards = 'A Windows lease released after exclusive creation collides is an acquisition opportunity, while ownership checks remain fail-closed'
+file = 'src/fs/refresh-file-lock.ts'
+old = "if ((readError as NodeJS.ErrnoException).code !== 'ENOENT')"
+new = "if (true) // NON-VACUITY BREAK: refuse a vanished contention owner instead of retrying"
+test_file = 'test/fs/windows-private-files.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/fs/windows-private-files.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/fs/windows-private-files.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^Windows\slease\sretries\swhen\sthe\scontention\sowner\sread\sfinds\sa\svanished\slock$']
+expect_message = 'vanished contention lock must be retried'
+
 # --- lease clock domains ---
 [[control]]
 id = 'pool-lease-injected-clock'
@@ -6336,8 +6351,8 @@ expect_red = ["failure before publication keeps old bytes and cleans only its ow
 id = "private-lease-contention"
 guards = "Windows lease acquire does not convert access or sharing errors into success"
 file = "src/fs/refresh-file-lock.ts"
-old = "if (code === 'EEXIST') {"
-new = "if (['EEXIST', 'EBUSY', 'EPERM', 'EACCES'].includes(code ?? '') /* NON-VACUITY BREAK */) {"
+old = "if (code !== 'EEXIST' && code !== 'EISDIR') return false"
+new = "if (!['EEXIST', 'EISDIR', 'EBUSY', 'EPERM', 'EACCES'].includes(code ?? '') /* NON-VACUITY BREAK */) return false"
 test_file = "test/fs/windows-private-files.test.ts"
 runner = "command"
 command = ['sh', '-c', 'git diff --stat; bun test "$1" -t "$2"', 'sh', "test/fs/windows-private-files.test.ts", '{test}']

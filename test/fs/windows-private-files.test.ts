@@ -447,6 +447,76 @@ for (const mode of ['acquire', 'release', 'renew'] as const) {
   })
 }
 
+test('Windows lease retries when the contention owner read finds a vanished lock', async () => {
+  const child = Bun.spawn(
+    [process.execPath, 'test/fs/windows-lease-probe.mjs', 'vanishing-acquire'],
+    { stdout: 'pipe', stderr: 'pipe' },
+  )
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exit !== 0)
+    throw new Error(`vanished contention lock must be retried\n${stderr}`)
+  expect(stderr).toBe('')
+  expect(JSON.parse(stdout)).toEqual({
+    mode: 'vanishing-acquire',
+    errno: 'EBUSY',
+    checked: true,
+  })
+})
+
+test('Windows contention owner reads still refuse access sharing and wrong ownership', async () => {
+  for (const errno of ['EACCES', 'EBUSY', 'wrong-owner']) {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        'test/fs/windows-lease-probe.mjs',
+        'contention-refusal',
+        errno,
+      ],
+      { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const [stdout, stderr, exit] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+    expect(stderr).toBe('')
+    expect(exit).toBe(0)
+    expect(JSON.parse(stdout)).toEqual({
+      mode: 'contention-refusal',
+      errno,
+      checked: true,
+    })
+  }
+})
+
+for (const state of ['missing', 'replaced']) {
+  for (const operation of ['assert', 'renew']) {
+    test(`Windows lease ${operation} reports lost ownership for a ${state} lock while release stays idempotent`, async () => {
+      const mode = `${state}-${operation}`
+      const child = Bun.spawn(
+        [process.execPath, 'test/fs/windows-lease-probe.mjs', mode],
+        { stdout: 'pipe', stderr: 'pipe' },
+      )
+      const [stdout, stderr, exit] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      expect(stderr).toBe('')
+      expect(exit).toBe(0)
+      expect(JSON.parse(stdout)).toEqual({
+        mode,
+        errno: 'EBUSY',
+        checked: true,
+      })
+    })
+  }
+}
+
 test('Windows atomic stage stays in the verified destination directory', async () => {
   let writes = 0
   setPrivateFilesBackendForTest({
