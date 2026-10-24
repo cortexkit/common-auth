@@ -5,6 +5,7 @@ export {
   applyHeaderEdits,
   DEFAULT_MAX_RECORDS,
   installOpenCode2Auth,
+  MAX_RETRY_HOLD_MS,
 } from './install.js'
 export type {
   FormAnswer,
@@ -33,6 +34,7 @@ export type {
   AttemptEndReason,
   AttemptOutcome,
   ChooseAccountInput,
+  ChooseAccountResult,
   EventVerdict,
   HeaderEdits,
   HostError,
@@ -47,6 +49,7 @@ export type {
   RequestKind,
   RequestScope,
   ResponseAccount,
+  RetryHold,
   RetryReason,
   SelectingHook,
   Transport,

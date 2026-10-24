@@ -3487,8 +3487,12 @@ expect_message = '/-\s+"delay": 30000,\n\+\s+"delay": 0,/'
 id = 'opencode2-retry-refused-account-is-not-a-reroute'
 guards = "an adapter naming the refused account again is no reroute: the host's decision, including no retry, stands"
 file = 'src/opencode2/install.ts'
-old = 'if (accountId !== undefined && accountId !== rec.accountId) {'
-new = 'if (accountId !== undefined) { // NON-VACUITY BREAK: reroute back to the refused account.'
+old = '''} else if (
+                    !hold &&
+                    accountId !== undefined &&
+                    accountId !== rec.accountId
+                  ) {'''
+new = '''} else if (!hold && accountId !== undefined) { // NON-VACUITY BREAK: reroute back to the refused account.'''
 test_file = 'test/opencode2/last-account.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/last-account.test.ts -t "$1"', 'mutation', '{test}']
@@ -3501,10 +3505,10 @@ expect_message = '/\+\s+"delay": 0,\n\+\s+"retry": true,/'
 id = 'opencode2-retry-choice-serves-next-attempt'
 guards = 'the account the retry hook rerouted to serves the retried attempt, so it becoming unavailable meanwhile never turns into a no-account refusal'
 file = 'src/opencode2/install.ts'
-old = '''        const accountId = matches
+old = '''        const choice = matches
           ? next.accountId
           : await adapter.chooseAccount(input)'''
-new = '        const accountId = await adapter.chooseAccount(input) // NON-VACUITY BREAK: choose again at the retried attempt.'
+new = '        const choice = await adapter.chooseAccount(input) // NON-VACUITY BREAK: choose again at the retried attempt.'
 test_file = 'test/opencode2/last-account.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; exec bun test test/opencode2/last-account.test.ts -t "$1"', 'mutation', '{test}']
@@ -3534,10 +3538,10 @@ expect_message = 'pool unreadable'
 id = 'opencode2-retry-kept-choice-has-no-second-call'
 guards = 'a committed last-account choice serves the next attempt without a second chooseAccount call'
 file = 'src/opencode2/install.ts'
-old = '''        const accountId = matches
+old = '''        const choice = matches
           ? next.accountId
           : await adapter.chooseAccount(input)'''
-new = '        const accountId = await adapter.chooseAccount(input) // NON-VACUITY BREAK: choose twice for the kept attempt.'
+new = '        const choice = await adapter.chooseAccount(input) // NON-VACUITY BREAK: choose twice for the kept attempt.'
 test_file = 'test/opencode2/retry-choice.test.ts'
 runner = 'command'
 command = ['sh', '-c', 'git diff --stat; python3 -c "from pathlib import Path; print(*[s for s in Path(\"src/opencode2/install.ts\").read_text().splitlines() if \"NON-VACUITY BREAK\" in s], sep=\"\n\")"; exec bun test test/opencode2/retry-choice.test.ts -t "$1"', 'mutation', '{test}']
@@ -8765,3 +8769,78 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/claustrum/hub.test.ts
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^hub\sprocesses:\stwo\shubs\sin\sseparate\sprocesses\scommit\sindependently,\sa\sdecline\sand\san\saccept\sboth\ssurvive\sthe\sother\sprocess\sconcurrent\slist,\sand\sanother\sfingerprint\skeeps\sits\sown\sdirectory$']
 expect_message = 'expect(received).toEqual(expected)'
+
+# --- explicit same-account holds ---
+[[control]]
+id = 'opencode2-hold-adapter-delay'
+guards = 'a same-account hold must use the adapter delay rather than the host wait or immediate failover'
+file = 'src/opencode2/install.ts'
+old = 'delay: Math.min(hold.delayMs, MAX_RETRY_HOLD_MS),'
+new = 'delay: 0, // NON-VACUITY BREAK: discard the account reset wait.'
+test_file = 'test/opencode2/retry-hold.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff -- src/opencode2/install.ts; exec bun test test/opencode2/retry-hold.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/retry-hold.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^same-account\sretry\shold\sadapter\sdelay\sreplaces\sa\sshort\shost\swait\swithout\smoving\saccount\sor\spin\sor\schoosing\stwice$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'opencode2-hold-host-veto'
+guards = 'a recognised account limit can hold before output even when the host misclassifies the refusal as final'
+file = 'src/opencode2/install.ts'
+old = '''                    hold &&
+                    Number.isFinite(hold.delayMs) &&'''
+new = '''                    hostDecision.retry && hold && // NON-VACUITY BREAK: trust the host veto on usage limits.
+                    Number.isFinite(hold.delayMs) &&'''
+test_file = 'test/opencode2/retry-hold.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff -- src/opencode2/install.ts; exec bun test test/opencode2/retry-hold.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/retry-hold.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^same-account\sretry\shold\sa\srecognised\saccount\slimit\shold\soverrides\shost\sno\sretry\sbefore\soutput$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'opencode2-hold-delay-cap'
+guards = 'an adapter cannot stall the host beyond the bounded same-account wait'
+file = 'src/opencode2/install.ts'
+old = 'delay: Math.min(hold.delayMs, MAX_RETRY_HOLD_MS),'
+new = 'delay: hold.delayMs, // NON-VACUITY BREAK: allow unbounded adapter waits.'
+test_file = 'test/opencode2/retry-hold.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff -- src/opencode2/install.ts; exec bun test test/opencode2/retry-hold.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/retry-hold.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^same-account\sretry\shold\sdelay\sjust\sunder\sthe\scap\sis\sunchanged\sand\sabove\sthe\scap\sis\sclamped$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'opencode2-hold-cancel-release'
+guards = 'cancelling the host wait releases the queued same-account choice instead of leaking it into a later turn'
+file = 'src/opencode2/install.ts'
+old = "event.data.status.type === 'idle'"
+new = "event.data.status.type === 'busy' // NON-VACUITY BREAK: ignore idle cancellation."
+test_file = 'test/opencode2/retry-hold.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff -- src/opencode2/install.ts; exec bun test test/opencode2/retry-hold.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/retry-hold.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^same-account\sretry\shold\scancelling\sthe\shost\swait\sreleases\sa\shold\sexactly\sonce$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'opencode2-hold-keeps-committed-account'
+guards = 'a hold serves the refused account without a second account choice or prompt-cache migration'
+file = 'src/opencode2/install.ts'
+old = '''        const choice = matches
+          ? next.accountId
+          : await adapter.chooseAccount(input)'''
+new = '        const choice = await adapter.chooseAccount(input) // NON-VACUITY BREAK: choose again after a hold.'
+test_file = 'test/opencode2/retry-hold.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff -- src/opencode2/install.ts; exec bun test test/opencode2/retry-hold.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/retry-hold.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^same-account\sretry\shold\sadapter\sdelay\sreplaces\sa\sshort\shost\swait\swithout\smoving\saccount\sor\spin\sor\schoosing\stwice$']
+expect_message = 'toHaveLength'

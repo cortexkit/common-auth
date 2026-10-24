@@ -9,6 +9,7 @@ Rows for the gated tests in `placement.e2e.test.ts`. They run only with `COMMON_
 | opencode2 placement | WebSocket carries the chosen account per socket and switches mid-session; quota frames land on the right account | new (neither copy) | websocket carries the chosen account per socket and switches mid-session |
 | opencode2 placement | A WebSocket rate limit before output moves the turn to the next account | new (neither copy) | websocket refusal before output moves the turn to the next account |
 | opencode2 placement | An HTTP usage limit the host would not retry moves the turn to the next account | new (neither copy) | http usage-limit refusal the host would not retry moves to the next account |
+| opencode2 placement | An explicit same-account hold overrides a usage-limit veto, carries the adapter delay and reuses the committed account without another choice | new (neither copy) | http usage-limit hold overrides the host veto and retries on the same account |
 | opencode2 placement | A WebSocket refusal after output is not retried | new (neither copy) | websocket refusal after output is not retried |
 | opencode2 placement | An HTTP refusal after output is not retried | new (neither copy) | http refusal after output is not retried |
 | opencode2 placement | An HTTP 401 ends the attempt whose receipt went out on that request, with its status and its value; error-response classification and title requests get their own attempts | new (neither copy) | an http 401 is attributed to the attempt that sent it, with its value |

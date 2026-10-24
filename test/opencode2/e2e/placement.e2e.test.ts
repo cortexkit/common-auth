@@ -374,6 +374,7 @@ async function runScenario(
     apiKey?: string
     gateOnPlaceholder?: boolean
     singularPackage?: boolean
+    holdDelayMs?: number
     /**
      * Leave the provider without a configured key and sign in with the test
      * plugin's vault method through `opencode auth login` before the turns;
@@ -395,6 +396,9 @@ async function runScenario(
   const env = isolatedEnv(root, {
     COMMON_AUTH_E2E_PLUGIN_LOG: pluginLog,
     COMMON_AUTH_E2E_CONTROL: control,
+    ...(options.holdDelayMs === undefined
+      ? {}
+      : { COMMON_AUTH_E2E_HOLD_DELAY_MS: String(options.holdDelayMs) }),
     ...(options.markFrames ? { COMMON_AUTH_E2E_MARK_FRAMES: '1' } : {}),
     ...(options.receiptOnWire ? { COMMON_AUTH_E2E_RECEIPT_ON_WIRE: '1' } : {}),
     ...(options.gateOnPlaceholder
@@ -1003,6 +1007,36 @@ describe.skipIf(!ENABLED)('OpenCode 2 placement contract', () => {
         ]),
       ).toEqual([['reroute', { retry: false }, { retry: true, delay: 0 }]])
       expect(result.stdout[0]).toContain('-B')
+    })
+  }, 180_000)
+
+  test('http usage-limit hold overrides the host veto and retries on the same account', async () => {
+    const result = await runScenario(
+      'http',
+      [{ account: 'A', reject: 'usage-limit' }],
+      { holdDelayMs: 30 },
+    )
+    verify(result, () => {
+      expect(result.exits).toEqual([0])
+      expectRecipeFired(result)
+      expect(pick(primaries(result.wire), 'identity', 'rejected')).toEqual([
+        'A:usage-limit',
+        'A:',
+      ])
+      expect(
+        events(result.plugin, 'retry').map((entry) => [
+          entry.reason,
+          entry.hostDecision,
+          entry.decision,
+        ]),
+      ).toEqual([['hold', { retry: false }, { retry: true, delay: 30 }]])
+      expect(events(result.plugin, 'choose-hold')).toHaveLength(1)
+      expect(
+        events(result.plugin, 'choose').filter(
+          (entry) => entry.kind === 'primary',
+        ),
+      ).toHaveLength(1)
+      expect(result.stdout[0]).toContain('-A')
     })
   }, 180_000)
 

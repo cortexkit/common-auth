@@ -8,6 +8,7 @@ import type {
   Attempt,
   AttemptOutcome,
   ChooseAccountInput,
+  ChooseAccountResult,
   HeaderEdits,
   InstallOpenCode2AuthOptions,
   LimitSignal,
@@ -25,6 +26,9 @@ import type {
 } from './types.js'
 
 export const DEFAULT_MAX_RECORDS = 512
+
+/** Bound adapter waits while allowing a 15-minute reset plus session jitter. */
+export const MAX_RETRY_HOLD_MS = 20 * 60 * 1000
 
 /**
  * The request header `model.request` sets to the attempt it started. The
@@ -227,7 +231,7 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
  */
 export async function installOpenCode2Auth<Q, A = unknown>(
   ctx: OpenCode2HookContext,
-  adapter: OpenCode2AuthAdapter<Q, A>,
+  adapter: OpenCode2AuthAdapter<Q, A, ChooseAccountResult>,
   options: InstallOpenCode2AuthOptions = {},
 ): Promise<OpenCode2AuthInstallation<Q, A>> {
   const { providerID } = adapter
@@ -549,9 +553,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           await inChoiceOrder(scope.sessionID, () => releaseChoice(next))
           assertActive()
         }
-        const accountId = matches
+        const choice = matches
           ? next.accountId
           : await adapter.chooseAccount(input)
+        const accountId = typeof choice === 'string' ? choice : undefined
         return { input, accountId }
       },
     )
@@ -1137,7 +1142,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   // next attempt would find no account (a `no-account` refusal
                   // the host treats as a defect and does not retry) or go back
                   // at once to the account that just refused.
-                  let accountId: string | undefined
+                  let choice: Awaited<ReturnType<typeof adapter.chooseAccount>>
                   const input: ChooseAccountInput = {
                     ...rec.scope,
                     phase: 'retry',
@@ -1145,7 +1150,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                     rerouteFrom: refused,
                   }
                   try {
-                    accountId = await adapter.chooseAccount(input)
+                    choice = await adapter.chooseAccount(input)
                   } catch (error) {
                     // Treated as no other account: the host's own decision
                     // stands, and the next attempt asks the adapter again.
@@ -1157,6 +1162,14 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                       },
                     )
                   }
+                  const hold =
+                    typeof choice === 'object' ? choice.hold : undefined
+                  const accountId =
+                    typeof choice === 'string'
+                      ? choice
+                      : hold
+                        ? rec.accountId
+                        : undefined
                   if (accountId !== undefined) next = { accountId, input }
                   try {
                     checkRetryActive()
@@ -1174,7 +1187,23 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                       reason: 'host-decides' as const,
                     }
                   }
-                  if (accountId !== undefined && accountId !== rec.accountId) {
+                  if (
+                    hold &&
+                    Number.isFinite(hold.delayMs) &&
+                    hold.delayMs >= 0
+                  ) {
+                    // A recognised account limit can be recoverable even when
+                    // the host treats its provider error as final.
+                    decision = {
+                      retry: true,
+                      delay: Math.min(hold.delayMs, MAX_RETRY_HOLD_MS),
+                    }
+                    reason = 'hold'
+                  } else if (
+                    !hold &&
+                    accountId !== undefined &&
+                    accountId !== rec.accountId
+                  ) {
                     rec.rerouted = true
                     rerouteFrom = refused
                     // The next attempt takes this choice rather than asking
@@ -1187,6 +1216,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                     decision = { retry: true, delay: 0 }
                     reason = 'reroute'
                   } else {
+                    if (hold && next) {
+                      await releaseChoice(next)
+                      next = undefined
+                    }
                     // The refused account keeps the host's wait and serves the
                     // retry. Undefined or a throw commits nothing: choose later.
                     reason = 'host-decides-last-account'
@@ -1266,6 +1299,17 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         for await (const event of events.subscribe({ signal: abort.signal })) {
           if (event.type === 'session.deleted')
             forgetSession(event.data.sessionID)
+          else if (
+            event.type === 'session.status' &&
+            event.data.status.type === 'idle'
+          ) {
+            // An idle session will not consume a retry queued before cancellation.
+            revokeSelections(event.data.sessionID)
+            for (const [key, pending] of pendingRetries) {
+              if (pending.sessionID === event.data.sessionID)
+                discardPending(key)
+            }
+          }
         }
       } catch (error) {
         if (!abort.signal.aborted) {

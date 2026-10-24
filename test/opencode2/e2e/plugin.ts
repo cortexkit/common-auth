@@ -26,6 +26,7 @@ const CONTROL = process.env.COMMON_AUTH_E2E_CONTROL ?? ''
 const MARK_FRAMES = process.env.COMMON_AUTH_E2E_MARK_FRAMES === '1'
 /** Set by the test to send each attempt's receipt in a header. */
 const RECEIPT_ON_WIRE = process.env.COMMON_AUTH_E2E_RECEIPT_ON_WIRE === '1'
+const HOLD_DELAY_MS = Number(process.env.COMMON_AUTH_E2E_HOLD_DELAY_MS)
 /**
  * Set by the test to register a vault activation method. Its value is the
  * method ID; `COMMON_AUTH_E2E_VAULT_REFUSE` makes activation refuse with the
@@ -133,6 +134,17 @@ export default {
       {
         providerID: 'openai',
         chooseAccount(input) {
+          if (
+            input.phase === 'retry' &&
+            input.rerouteFrom &&
+            Number.isFinite(HOLD_DELAY_MS)
+          ) {
+            log('choose-hold', {
+              kind: input.kind,
+              accountId: input.rerouteFrom.accountId,
+            })
+            return { hold: { delayMs: HOLD_DELAY_MS } }
+          }
           const order = [preferred(), 'A', 'B']
           const accountId = order.find((id) => !limited.has(id))
           log('choose', {
