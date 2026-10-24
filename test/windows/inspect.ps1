@@ -104,5 +104,20 @@ try {
   $result | ConvertTo-Json -Depth 10 -Compress
 } finally {
   Progress 'public control cleanup'
-  if ([IO.Directory]::Exists($public)) { Remove-Item -LiteralPath $public -Recurse -Force }
+  # The copied runtime's image can stay mapped for a moment after the
+  # credentialed process exits (seen on windows-11-arm with Bun 1.3.14), so a
+  # sharing violation on removal is retried for a bounded time. Anything still
+  # holding it after that is named and the original error is rethrown.
+  $deadline = [DateTime]::UtcNow.AddSeconds(10)
+  while ([IO.Directory]::Exists($public)) {
+    try { Remove-Item -LiteralPath $public -Recurse -Force -ErrorAction Stop; break }
+    catch [IO.IOException] {
+      if ([DateTime]::UtcNow -ge $deadline) {
+        $holders = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($public, [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { "$($_.ProcessId) $($_.ExecutablePath)" })
+        Progress ("public control still held after 10 s by: " + ($(if ($holders.Count) { $holders -join '; ' } else { 'no running process' })))
+        throw
+      }
+      Start-Sleep -Milliseconds 250
+    }
+  }
 }
