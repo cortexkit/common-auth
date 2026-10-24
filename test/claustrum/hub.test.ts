@@ -15,6 +15,7 @@ import {
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
+import * as enrollmentModule from '../../src/claustrum/enrollment.js'
 import {
   acceptVaultRoute,
   type ClassifyingClaustrumFamily,
@@ -863,6 +864,62 @@ test('hub disposal cancellation: a roster write-lock wait observes shutdown befo
 }, 15_000)
 
 for (const owner of ['hub', 'plain consumer'] as const) {
+  test(`hub disposal deadline: ${owner} shares one warning with its stuck custody read`, async () => {
+    const log = captureLogger()
+    const entered = deferred<void>()
+    const gate = deferred<void>()
+    hooks.lifetime.unpark(() => {
+      gate.resolve()
+      entered.resolve()
+    })
+    const readToken = enrollmentModule.readClaustrumEnrollmentToken
+    const read = spyOn(
+      enrollmentModule,
+      'readClaustrumEnrollmentToken',
+    ).mockImplementation(async (...args) => {
+      entered.resolve()
+      await gate.promise
+      return readToken(...args)
+    })
+    let dispose: (() => Promise<void>) | undefined
+    let refreshing: Promise<unknown> | undefined
+    try {
+      if (owner === 'hub') {
+        const f = await hubFixture({ hub: { logger: log.logger } })
+        f.members()
+        dispose = () => f.hub.dispose()
+        refreshing = f.hub.refresh().catch(() => {})
+      } else {
+        const dir = await tempDir('claustrum-hub-plain-token-deadline-')
+        const vault = fakeVault()
+        const consumer = new ClaustrumConsumer({
+          rosterPath: join(dir, 'plain.json'),
+          tokenPath: await writeToken(dir),
+          family,
+          connect: () => vault.connect(),
+          logger: log.logger,
+        })
+        dispose = () => consumer.dispose()
+        cleanups.push(dispose)
+        refreshing = consumer.refresh().catch(() => {})
+      }
+      await entered.promise
+      hooks.lifetime.signal.throwIfAborted()
+      await boundedDisposal(dispose())
+      expect(log.records.filter((record) => record.level === 'warn')).toEqual([
+        {
+          level: 'warn',
+          message: 'claustrum shutdown drain timed out',
+          data: { pendingOperations: 1 },
+        },
+      ])
+    } finally {
+      gate.resolve()
+      await refreshing
+      read.mockRestore()
+    }
+  }, 15_000)
+
   test(`hub disposal cancellation: ${owner} list wait cancels without a deadline warning`, async () => {
     const log = captureLogger()
     const entered = deferred<void>()

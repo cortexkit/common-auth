@@ -47,7 +47,7 @@ import {
   type VaultRosterSeed,
   vaultRosterSeed,
 } from './roster.js'
-import { drainShutdown } from './shutdown.js'
+import { drainShutdown, shutdownWarning } from './shutdown.js'
 import { SAFETY_POLL_MS, type WatchMode } from './watch.js'
 
 export interface ClaustrumDiscoveryHubOptions {
@@ -358,6 +358,7 @@ function enabledRows(roster: VaultRosterFile | undefined): string {
 export class ClaustrumDiscoveryHub {
   readonly #options: ClaustrumDiscoveryHubOptions
   readonly #logger: ClaustrumLogger
+  readonly #warnShutdown: (pendingOperations: number) => void
   readonly #shutdown = new AbortController()
   readonly #members = new Map<string, MemberEntry>()
   readonly #leases = new WeakMap<CustodyLease, LeaseState>()
@@ -405,6 +406,7 @@ export class ClaustrumDiscoveryHub {
       )
     this.#options = options
     this.#logger = options.logger ?? createLogger('claustrum')
+    this.#warnShutdown = shutdownWarning(this.#logger, this.#shutdown.signal)
     // The roster key: the host generation, then a fingerprint of the
     // classifier's whole input and the projection inputs. Every member keeps
     // the path it is given here for its whole life, and every lock and
@@ -570,7 +572,7 @@ export class ClaustrumDiscoveryHub {
     generation.controller.abort(reason)
     if (generation.custody) {
       generation.custody.close()
-      this.#track(generation.custody.dispose())
+      this.#track(generation.custody.dispose(this.#warnShutdown))
     }
   }
 
@@ -1228,7 +1230,7 @@ export class ClaustrumDiscoveryHub {
   /** Close immediately, then join background work for at most two seconds. */
   async dispose(): Promise<void> {
     this.close()
-    this.#disposing ??= drainShutdown(this.#pending, this.#logger)
+    this.#disposing ??= drainShutdown(this.#pending, this.#warnShutdown)
     await this.#disposing
   }
 }

@@ -14,7 +14,7 @@ import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
 import type { InsulaUsageTransport } from './insula.js'
-import { drainShutdown } from './shutdown.js'
+import { drainShutdown, shutdownWarning } from './shutdown.js'
 import {
   ScopedRosterWatch,
   type ScopedWatchSource,
@@ -500,6 +500,7 @@ export class ClaustrumScopedCustody {
   #discoveredView?: string
   readonly #watches = new Set<ScopedRosterWatch>()
   readonly #tokenReads = new Set<Promise<EnrollmentTokenFile>>()
+  readonly #warnShutdown: (pendingOperations: number) => void
   #disposing?: Promise<void>
 
   constructor(options: {
@@ -538,6 +539,7 @@ export class ClaustrumScopedCustody {
     this.#requireAssertion = options.requireAssertion ?? false
     this.#now = options.now ?? Date.now
     this.#logger = options.logger ?? defaultLogger
+    this.#warnShutdown = shutdownWarning(this.#logger)
     this.#setTimeout = options.setTimeoutImpl ?? setTimeout
     this.#clearTimeout = options.clearTimeoutImpl ?? clearTimeout
   }
@@ -1165,10 +1167,10 @@ export class ClaustrumScopedCustody {
     this.#client.close()
   }
 
-  /** Stop immediately, then allow token-file reads up to two seconds to finish. */
-  async dispose(): Promise<void> {
+  /** Stop immediately; allow token reads 2 s and share an owner's timeout warning. */
+  async dispose(onTimeout = this.#warnShutdown): Promise<void> {
     this.close()
-    this.#disposing ??= drainShutdown(this.#tokenReads, this.#logger)
+    this.#disposing ??= drainShutdown(this.#tokenReads, onTimeout)
     await this.#disposing
   }
 }

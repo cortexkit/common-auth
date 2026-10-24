@@ -41,7 +41,7 @@ import {
   type VaultRosterFile,
   vaultRoutingRows,
 } from './roster.js'
-import { drainShutdown } from './shutdown.js'
+import { drainShutdown, shutdownWarning } from './shutdown.js'
 import { SAFETY_POLL_MS, type WatchMode } from './watch.js'
 
 export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
@@ -208,6 +208,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   readonly #options: ClaustrumConsumerOptions<Q>
   readonly #shutdown = new AbortController()
   readonly #logger: ClaustrumLogger
+  readonly #warnShutdown: (pendingOperations: number) => void
   #custody?: ClaustrumScopedCustody
   #connecting?: Promise<ClaustrumScopedCustody>
   #refreshing?: Promise<VaultRosterFile | undefined>
@@ -249,6 +250,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   constructor(options: ClaustrumConsumerOptions<Q>) {
     this.#options = options
     this.#logger = options.logger ?? createLogger('claustrum')
+    this.#warnShutdown = shutdownWarning(this.#logger, this.#shutdown.signal)
     this.#releaseQuotaWriter = retainVaultQuotaWriter(
       options.rosterPath,
       (publication) => {
@@ -417,7 +419,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
         this.#stopWatch()
         if (this.#custody) {
           this.#custody.close()
-          this.#track(this.#custody.dispose())
+          this.#track(this.#custody.dispose(this.#warnShutdown))
         }
         this.#custody = undefined
         this.#insula?.release()
@@ -1116,7 +1118,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     this.#stopWatch()
     if (this.#custody) {
       this.#custody.close()
-      this.#track(this.#custody.dispose())
+      this.#track(this.#custody.dispose(this.#warnShutdown))
     }
     // A hub member gives back its lease; the shared custody stays open.
     this.#lease?.release()
@@ -1134,7 +1136,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   async dispose(): Promise<void> {
     this.close()
     this.#disposing ??= Promise.all([
-      drainShutdown(this.#pending, this.#logger),
+      drainShutdown(this.#pending, this.#warnShutdown),
       this.#releaseQuotaWriter(),
     ]).then(() => {})
     await this.#disposing
