@@ -87,6 +87,7 @@ interface AttemptRecord<A> {
 interface PendingRetry {
   readonly attemptId: string
   readonly sessionID: string
+  readonly order: number
   readonly accountId: string
   readonly rerouteFrom?: {
     readonly accountId: string
@@ -252,6 +253,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   const byRequest = new WeakMap<Request, AttemptRecord<A>>()
   /** Retries the retry hook asked for, by `sessionID:kind`. */
   const pendingRetries = new Map<string, PendingRetry>()
+  // A shared clock orders each session's retries without retaining idle session state.
+  let retryOrder = 0
   // The host names only session/kind for frames and only session for retry.
   // A transport's prepared credential, never global login state, owns these.
   const ownedSockets = new Set<string>()
@@ -1240,6 +1243,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                 pendingRetries.set(rec.key, {
                   attemptId: rec.id,
                   sessionID: rec.scope.sessionID,
+                  order: ++retryOrder,
                   accountId: rec.accountId,
                   ...(rerouteFrom === undefined ? {} : { rerouteFrom }),
                   ...(next === undefined ? {} : { next }),
@@ -1303,12 +1307,21 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             event.type === 'session.status' &&
             event.data.status.type === 'idle'
           ) {
-            // An idle session will not consume a retry queued before cancellation.
-            revokeSelections(event.data.sessionID)
-            for (const [key, pending] of pendingRetries) {
-              if (pending.sessionID === event.data.sessionID)
-                discardPending(key)
-            }
+            const sessionID = event.data.sessionID
+            const idleOrder = ++retryOrder
+            // Idle can arrive late from an earlier turn. Release only choices
+            // already queued when observed, never a selection still in flight.
+            void inChoiceOrder(sessionID, async () => {
+              for (const [key, pending] of pendingRetries) {
+                if (
+                  pending.sessionID === sessionID &&
+                  pending.order < idleOrder
+                ) {
+                  pendingRetries.delete(key)
+                  if (pending.next) await releaseChoice(pending.next)
+                }
+              }
+            })
           }
         }
       } catch (error) {

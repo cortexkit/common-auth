@@ -230,7 +230,7 @@ export interface OpenCode2AuthAdapter<
   chooseAccount(input: ChooseAccountInput): Promise<Choice> | Choice
   /**
    * Releases a kept retry choice that will not be used: no retry, a changed
-   * model or agent, cancellation (session idle), session forgetting/deletion,
+   * model or agent, cancellation of a queued retry (session idle), session forgetting/deletion,
    * disposal or record eviction. A hold releases the refused account's choice.
    * Called once with the original choose input plus its returned accountId,
    * never for a used choice. Awaited before any later chooseAccount for the

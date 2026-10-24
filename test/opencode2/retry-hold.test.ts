@@ -24,12 +24,19 @@ async function setup(gated = false) {
   let result: ChooseAccountResult = { hold: { delayMs: 920_000 } }
   let recognised = true
   let retryChoice: (() => Promise<ChooseAccountResult>) | undefined
+  let requestChoice: (() => Promise<string | undefined>) | undefined
   const adapter: OpenCode2AuthAdapter<TestQuota, unknown, ChooseAccountResult> =
     {
       ...fakeAdapter().adapter,
       chooseAccount(input) {
         choices.push(input)
         if (input.phase === 'retry') return retryChoice ? retryChoice() : result
+        if (requestChoice) {
+          return requestChoice().then((accountId) => {
+            if (accountId !== undefined) pin = accountId
+            return accountId
+          })
+        }
         pin = input.previousAccountId ?? 'A'
         return pin
       },
@@ -91,6 +98,9 @@ async function setup(gated = false) {
     },
     onRetryChoice(value: () => Promise<ChooseAccountResult>) {
       retryChoice = value
+    },
+    onRequestChoice(value: () => Promise<string | undefined>) {
+      requestChoice = value
     },
   }
 }
@@ -167,6 +177,42 @@ describe('same-account retry hold', () => {
     expect(s.drops).toHaveLength(1)
   })
 
+  test('a delayed idle event does not refuse the next turn while it selects an account', async () => {
+    const s = await setup()
+    let answer!: (accountId: string) => void
+    let entered!: () => void
+    const choosing = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const choice = new Promise<string>((resolve) => {
+      answer = resolve
+    })
+    s.onRequestChoice(() => {
+      entered()
+      return choice
+    })
+    const requested = s.request().then(
+      () => ({ ok: true }),
+      (error: unknown) => ({ error }),
+    )
+    try {
+      await choosing
+      await s.host.publish('session.status', {
+        sessionID: 'ses_1',
+        status: { type: 'idle' },
+      })
+      answer('B')
+      expect(await requested).toEqual({ ok: true })
+      expect(s.headers).toEqual(['A', 'B'])
+      expect(s.auth.accountFor('ses_1', 'primary')).toBe('B')
+      expect(s.drops).toEqual([])
+    } finally {
+      answer('B')
+      await requested
+      await s.auth.dispose()
+    }
+  })
+
   test('a hold cannot retry a refusal after output', async () => {
     const s = await setup()
     try {
@@ -185,7 +231,7 @@ describe('same-account retry hold', () => {
     }
   })
 
-  test('cancelling during selection releases the late hold without publishing a retry', async () => {
+  test('a retry queued after idle observation survives deferred idle cleanup', async () => {
     const s = await setup()
     let answer!: (choice: ChooseAccountResult) => void
     let entered!: () => void
@@ -199,17 +245,20 @@ describe('same-account retry hold', () => {
       entered()
       return choice
     })
-    const retried = s.retry().catch((error: unknown) => error)
+    const retried = s.retry()
     await choosing
     await s.host.publish('session.status', {
       sessionID: 'ses_1',
       status: { type: 'idle' },
     })
     answer({ hold: { delayMs: 920_000 } })
-    expect(await retried).toBeInstanceOf(Error)
-    expect(s.drops).toEqual([expectedDrop])
+    expect((await retried).decision).toEqual({ retry: true, delay: 920_000 })
+    await s.request()
+    expect(s.drops).toEqual([])
+    expect(s.choices).toHaveLength(2)
+    expect(s.headers).toEqual(['A', 'A'])
     await s.auth.dispose()
-    expect(s.drops).toHaveLength(1)
+    expect(s.drops).toEqual([])
   })
 
   test('a hold cannot change the host decision in a tainted session', async () => {

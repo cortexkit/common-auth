@@ -8817,7 +8817,7 @@ expect_message = 'toEqual'
 
 [[control]]
 id = 'opencode2-hold-cancel-release'
-guards = 'cancelling the host wait releases the queued same-account choice instead of leaking it into a later turn'
+guards = 'cancelling the host wait releases a predating queued same-account choice instead of leaking it into a later turn'
 file = 'src/opencode2/install.ts'
 old = "event.data.status.type === 'idle'"
 new = "event.data.status.type === 'busy' // NON-VACUITY BREAK: ignore idle cancellation."
@@ -8844,3 +8844,32 @@ list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/retry-hold.
 test_count_pattern = 'Ran {count} test'
 expect_red = ['^same-account\sretry\shold\sadapter\sdelay\sreplaces\sa\sshort\shost\swait\swithout\smoving\saccount\sor\spin\sor\schoosing\stwice$']
 expect_message = 'toHaveLength'
+
+[[control]]
+id = 'opencode2-hold-idle-preserves-selection'
+guards = 'a delayed idle notification cannot revoke a healthy next turn while it selects an account'
+file = 'src/opencode2/install.ts'
+old = 'const idleOrder = ++retryOrder'
+new = '''revokeSelections(sessionID) // NON-VACUITY BREAK: abort the next turn on a stale idle event.
+            const idleOrder = ++retryOrder'''
+test_file = 'test/opencode2/retry-hold.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff -- src/opencode2/install.ts; exec bun test test/opencode2/retry-hold.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/retry-hold.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^same-account\sretry\shold\sa\sdelayed\sidle\sevent\sdoes\snot\srefuse\sthe\snext\sturn\swhile\sit\sselects\san\saccount$']
+expect_message = 'toEqual'
+
+[[control]]
+id = 'opencode2-hold-idle-generation'
+guards = 'deferred idle cleanup cannot discard a retry recorded after that idle was observed'
+file = 'src/opencode2/install.ts'
+old = 'pending.order < idleOrder'
+new = 'true /* NON-VACUITY BREAK: release newer retry choices too. */'
+test_file = 'test/opencode2/retry-hold.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff -- src/opencode2/install.ts; exec bun test test/opencode2/retry-hold.test.ts -t "$1"', 'mutation', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/opencode2/retry-hold.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^same-account\sretry\shold\sa\sretry\squeued\safter\sidle\sobservation\ssurvives\sdeferred\sidle\scleanup$']
+expect_message = 'toEqual'
