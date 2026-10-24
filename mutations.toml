@@ -2965,8 +2965,8 @@ expect_message = '/assert\.equal\(pending\.length, 1\)[\s\S]*actual: 0,/'
 id = 'rpc-declared-oversize-413-half-closes'
 guards = 'a declared-oversize upload gets its 413 and then a bounded half-close of the connection, so the refused socket is not reused'
 file = 'src/rpc/rpc-server.ts'
-old = 'if (error.declaredOversize) {'
-new = 'if (error.declaredOversize && !error.declaredOversize) {'
+old = '          socket.end()'
+new = '          void 0'
 test_file = 'test/rpc/request-errors.test.ts'
 runner = "command"
 command = ["bun", "test", "test/rpc/request-errors.test.ts", "-t", "{test}"]
@@ -2974,6 +2974,20 @@ list_command = ["bun", "scripts/list-bun-tests.mjs", "test/rpc/request-errors.te
 test_count_pattern = "Ran {count} test"
 expect_red = ['^a\srequest\sbody\sover\sthe\s1\sMiB\scap\sanswers\s413$']
 expect_message = "/event\\.phase === 'socket-local-end'[\\s\\S]*Received: false/"
+
+[[control]]
+id = 'rpc-streamed-413-defers-finish-until-upload-end'
+guards = 'a streamed overflow delivers complete 413 JSON before the upload ends without finishing the response and closing the socket prematurely'
+file = 'src/rpc/rpc-server.ts'
+old = "          req.once('end', () => res.end())"
+new = '          res.end()'
+test_file = 'test/rpc/request-errors.test.ts'
+runner = 'command'
+command = ['bun', 'test', 'test/rpc/request-errors.test.ts', '-t', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/rpc/request-errors.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^streamed\soverflow\skeeps\sthe\ssocket\sopen\suntil\sthe\sclient\sfinishes\ssending$']
+expect_message = 'streamed 413 must defer response finish until upload end'
 
 [[control]]
 id = 'rpc-streamed-body-is-capped'
