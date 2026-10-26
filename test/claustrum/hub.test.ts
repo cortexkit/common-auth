@@ -28,6 +28,7 @@ import {
   type ClaustrumScopedClient,
   ClaustrumScopedCustody,
   ClaustrumUnreachableError,
+  DEFAULT_CONNECT_TIMEOUT_MS,
   declineVaultRoute,
   drainVaultQuota,
   readVaultRoster,
@@ -1102,10 +1103,30 @@ test('hub leases: a connect that never settles times out for every waiter and th
   const waiters = [f.hub.acquire(), f.hub.acquire()]
   await until(() => f.vault.held.length === 1, 'the held connect')
   expect(f.vault.connects).toBe(1)
-  // One shared connect is bounded, so neither waiter is left holding a ticket.
+  // One shared connect is bounded by the default limit, not by any retry:
+  // without that bound neither waiter would ever be answered.
   f.timers.fire(DEFAULT_CONNECT_TIMEOUT_MS)
-  for (const waiter of waiters)
-    await expect(waiter).rejects.toBeInstanceOf(ClaustrumUnreachableError)
+  const outcomes = await Promise.race([
+    Promise.all(
+      waiters.map((waiter) =>
+        waiter.then(
+          () => 'connected',
+          (error: unknown) => error,
+        ),
+      ),
+    ),
+    // Neither waiter may still be waiting when the answer is read.
+    new Promise<never>((_resolve, reject) =>
+      setTimeout(
+        () => reject(new Error('a lease waiter is still waiting')),
+        1_000,
+      ),
+    ),
+  ])
+  for (const outcome of outcomes) {
+    expect(outcome).not.toBe('connected')
+    expect(outcome).toBeInstanceOf(ClaustrumUnreachableError)
+  }
   expect(f.hub.leaseState()).toEqual({ generation: undefined, count: 0 })
   // The stalled attempt did not stay latched: a later acquire connects again.
   f.vault.holdConnects = false
@@ -1144,6 +1165,56 @@ test('hub leases: a connect of an ended generation is closed unpublished and lea
   expect(lease.generation).toBe(2)
   expect(f.vault.connects).toBe(2)
   expect(f.vault.connections[1]?.closed).toBe(false)
+})
+
+test('hub connections: several directories in one process open one connection each, and a closed directory gives its own back', async () => {
+  const stateDir = await tempDir('claustrum-hub-leak-')
+  const vault = fakeVault()
+  const timers = fakeTimers()
+  const hubs: ClaustrumDiscoveryHub[] = []
+  const tokenPaths: string[] = []
+  const openHubs = async (count: number) => {
+    for (let index = 0; index < count; index++) {
+      tokenPaths.push(
+        await writeToken(stateDir, '01'.repeat(32), `token-${index}.json`),
+      )
+      const hub = new ClaustrumDiscoveryHub({
+        stateDir,
+        hostGeneration: 'opencode2',
+        classifierInput: CLASSIFIER_INPUT,
+        members: MEMBERS,
+        tokenPath: tokenPaths[index] as string,
+        family: hubFamily,
+        connect: () => vault.connect(),
+        pollIntervalMs: 0,
+        ...timers,
+      })
+      hubs.push(hub)
+      cleanups.push(() => hub.dispose())
+    }
+  }
+  // Each project directory runs its own hub: one connection per directory,
+  // opened once and shared by every member of that hub.
+  await openHubs(3)
+  for (const hub of hubs) {
+    await hub.refresh()
+    const lease = await hub.acquire()
+    lease.release()
+  }
+  expect(vault.connects).toBe(3)
+  expect(vault.closes()).toBe(0)
+  // In vault mode every directory keeps its connection while it serves.
+  expect(vault.connects - vault.closes()).toBe(3)
+  // Closing one directory gives back only that directory's connection.
+  await hubs[0]?.dispose()
+  hubs.shift()
+  await until(() => vault.closes() === 1, 'the closed directory connection')
+  expect(vault.connects - vault.closes()).toBe(2)
+  await Promise.all(hubs.map((hub) => hub.dispose()))
+  hubs.length = 0
+  await until(() => vault.closes() === 3, 'every directory connection')
+  // Nothing was left open, and nothing was opened behind this count.
+  expect(vault.connects).toBe(3)
 })
 
 // --- hub-mode consumer: construction ---
