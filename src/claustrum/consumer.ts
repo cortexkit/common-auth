@@ -287,8 +287,6 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
 
   #track<T>(pending: Promise<T>): Promise<T> {
     this.#pending.add(pending)
-    // A tracked promise may lose its race and reject while its caller still
-    // waits on something else, so its rejection is observed here too.
     void pending.then(
       () => this.#pending.delete(pending),
       () => this.#pending.delete(pending),
