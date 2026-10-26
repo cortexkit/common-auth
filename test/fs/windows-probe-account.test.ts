@@ -46,13 +46,7 @@ test('Windows probe credentials are masked and cleanup is mandatory even after s
   expect(provision.indexOf('user=$name')).toBeLessThan(
     provision.indexOf('Add-LocalGroupMember'),
   )
-  for (const id of [
-    'node_acl',
-    'bun142_acl',
-    'bun142_mutations',
-    'bun1314_acl',
-    'bun1314_mutations',
-  ]) {
+  for (const id of ['node_acl', 'bun142_acl', 'bun1314_acl']) {
     expect(step(id)).toContain(
       `COMMON_AUTH_PROBE_PASSWORD: \${{ steps.probe_account.outputs.password }}`,
     )

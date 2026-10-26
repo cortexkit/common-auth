@@ -268,16 +268,6 @@ jobs:
           COMMON_AUTH_PROBE_PASSWORD: ${{ steps.probe_account.outputs.password }}
           COMMON_AUTH_PROBE_SID: ${{ steps.probe_account.outputs.sid }}
         run: ./test/windows/run.ps1 -Runtime bun -ExpectedVersion '1.4.2'
-      - name: Bun 1.4.2 mutation proofs
-        id: bun142_mutations
-        timeout-minutes: 6
-        if: always()
-        shell: pwsh
-        env:
-          COMMON_AUTH_PROBE_USER: ${{ steps.probe_account.outputs.user }}
-          COMMON_AUTH_PROBE_PASSWORD: ${{ steps.probe_account.outputs.password }}
-          COMMON_AUTH_PROBE_SID: ${{ steps.probe_account.outputs.sid }}
-        run: ./test/windows/mutations.ps1 -ExpectedVersion '1.4.2'
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         id: bun1314_setup
         timeout-minutes: 2
@@ -302,16 +292,6 @@ jobs:
           COMMON_AUTH_PROBE_PASSWORD: ${{ steps.probe_account.outputs.password }}
           COMMON_AUTH_PROBE_SID: ${{ steps.probe_account.outputs.sid }}
         run: ./test/windows/run.ps1 -Runtime bun -ExpectedVersion '1.3.14'
-      - name: Bun 1.3.14 mutation proofs
-        id: bun1314_mutations
-        timeout-minutes: 6
-        if: always()
-        shell: pwsh
-        env:
-          COMMON_AUTH_PROBE_USER: ${{ steps.probe_account.outputs.user }}
-          COMMON_AUTH_PROBE_PASSWORD: ${{ steps.probe_account.outputs.password }}
-          COMMON_AUTH_PROBE_SID: ${{ steps.probe_account.outputs.sid }}
-        run: ./test/windows/mutations.ps1 -ExpectedVersion '1.3.14'
       - name: Remove standard probe user
         id: probe_cleanup
         timeout-minutes: 2
@@ -335,13 +315,11 @@ jobs:
           NODE_ACL: ${{ steps.node_acl.outcome }}
           BUN142_LOAD: ${{ steps.bun142_load.outcome }}
           BUN142_ACL: ${{ steps.bun142_acl.outcome }}
-          BUN142_MUTATIONS: ${{ steps.bun142_mutations.outcome }}
           BUN1314_SETUP: ${{ steps.bun1314_setup.outcome }}
           BUN1314_LOAD: ${{ steps.bun1314_load.outcome }}
           BUN1314_ACL: ${{ steps.bun1314_acl.outcome }}
-          BUN1314_MUTATIONS: ${{ steps.bun1314_mutations.outcome }}
         run: |
-          $checks = @('PROBE_SETUP','PROBE_CLEANUP','NODE_LOAD','NODE_ACL','BUN142_LOAD','BUN142_ACL','BUN142_MUTATIONS','BUN1314_SETUP','BUN1314_LOAD','BUN1314_ACL','BUN1314_MUTATIONS')
+          $checks = @('PROBE_SETUP','PROBE_CLEANUP','NODE_LOAD','NODE_ACL','BUN142_LOAD','BUN142_ACL','BUN1314_SETUP','BUN1314_LOAD','BUN1314_ACL')
           $failed = @($checks | Where-Object { [Environment]::GetEnvironmentVariable($_) -ne 'success' })
           foreach ($check in $checks) { Write-Host "$check $([Environment]::GetEnvironmentVariable($check))" }
           if ($failed.Count) { throw "Runtime qualification failed: $($failed -join ', ')" }

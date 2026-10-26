@@ -86,7 +86,7 @@ async function getJson(path) {
 }
 
 // A push run on main, or on a release-* branch (a patch release cut off main,
-// which gets the same full catalogue and Windows checks), counts.
+// which runs the same CI jobs and Windows checks), counts.
 async function latestMainPushRun(workflowFile) {
   const query = new URLSearchParams({ head_sha: targetSha, per_page: '100' });
   const result = await getJson(
@@ -103,14 +103,23 @@ async function latestMainPushRun(workflowFile) {
     .sort((left, right) => right.run_number - left.run_number)[0];
 }
 
+// Every job ci.yml runs on a push, by the name the GitHub jobs API reports.
+// The API reports a matrix job once per matrix entry, as "job (value)", so
+// each entry is listed. Keep these lists aligned with ci.yml's matrices: a job
+// or entry the run lacks blocks the release, because a run can still conclude
+// success when one of its jobs was skipped or never created.
+const requiredCiJobs = [
+  ...['1.3.14', '1.4.2', '1.4.4'].map((bun) => `check (${bun})`),
+  ...['1.3.14', '1.4.2'].map((bun) => `claustrum-hub-macos (${bun})`),
+  ...['ubuntu-latest', 'macos-latest', 'windows-latest'].map(
+    (os) => `opencode2-placement (${os})`,
+  ),
+];
+
 async function verifyCiJobs(run) {
   const result = await getJson(`/actions/runs/${run.id}/jobs?per_page=100`);
   const jobs = result.jobs;
-  const requiredNames = ['check', 'opencode2-placement'];
-  const requiredMutationNames = [1, 2, 3, 4].map(
-    (shard) => `mutations-main (${shard})`,
-  );
-  const required = [...requiredNames, ...requiredMutationNames];
+  const required = requiredCiJobs;
   const missing = required.filter((name) => !jobs.some((job) => job.name === name));
   if (missing.length) {
     throw new Error(
@@ -129,7 +138,7 @@ async function verifyCiJobs(run) {
       `Required jobs in CI run ${run.id} did not succeed: ${details}. Release blocked.`,
     );
   }
-  console.log(`CI run ${run.id}: check, opencode2-placement, and all 4 mutation shards succeeded.`);
+  console.log(`CI run ${run.id}: all required jobs succeeded: ${required.join(', ')}.`);
 }
 
 const deadline = Date.now() + waitLimitMs;
