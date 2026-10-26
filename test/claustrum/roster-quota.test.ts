@@ -1,7 +1,11 @@
 import { expect } from 'bun:test'
-import { access } from 'node:fs/promises'
+import { access, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  pendingVaultQuota,
+  retainVaultQuotaWriter,
+} from '../../src/claustrum/quota-writer.js'
 import {
   drainVaultQuota,
   mutateVaultRoster,
@@ -17,6 +21,7 @@ import {
   lockPathFor,
 } from '../../src/fs/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { manualQuotaTimer } from '../quota/commit-timer.js'
 import { cleanupDirs, tempDir } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -82,6 +87,96 @@ async function fixture() {
   await mutateVaultRoster(path, () => ({ next: initial(), result: undefined }))
   return path
 }
+
+test('50 roster publications within the commit interval make one commit with the newest fields', async () => {
+  const path = await fixture()
+  const timer = manualQuotaTimer()
+  const release = retainVaultQuotaWriter(path, () => {}, timer.clock)
+  hooks.lifetime.finish(release)
+  await recordVaultQuota(path, { ...receipt, observation: reading(1) })
+  await timer.advance(100)
+  let inode = (await stat(path)).ino
+  let commits = 0
+  const countCommit = async () => {
+    const next = (await stat(path)).ino
+    if (next !== inode) commits++
+    inode = next
+  }
+  for (let i = 1; i <= 50; i++) {
+    await recordVaultQuota(path, {
+      ...receipt,
+      observation: {
+        ...reading(i + 1, i),
+        ...(i === 1 && { counters: { tokens: { checkedAt: 500, value: 42 } } }),
+      },
+    })
+    await timer.advance(500)
+    await countCommit()
+  }
+  expect(commits).toBe(0)
+  const memory = pendingVaultQuota(path, await readVaultRoster(path))
+  expect(memory?.rows[0]?.quota?.limits[0]).toMatchObject({
+    checkedAt: 51,
+    usedPercent: 50,
+  })
+  expect(memory?.rows[0]?.quota?.counters?.tokens).toEqual({
+    checkedAt: 500,
+    value: 42,
+  })
+  expect(
+    (await readVaultRoster(path))?.rows[0]?.quota?.limits[0],
+  ).toMatchObject({
+    checkedAt: 1,
+  })
+  await timer.advance(5_000)
+  await countCommit()
+  expect(commits).toBe(1)
+  expect((await readVaultRoster(path))?.rows[0]?.quota).toEqual(
+    memory?.rows[0]?.quota,
+  )
+
+  await timer.advance(30_000)
+  await recordVaultQuota(path, { ...receipt, observation: reading(100, 80) })
+  await timer.advance(100)
+  await countCommit()
+  expect(commits).toBe(2)
+  expect(
+    (await readVaultRoster(path))?.rows[0]?.quota?.limits[0],
+  ).toMatchObject({
+    checkedAt: 100,
+    usedPercent: 80,
+  })
+})
+
+test('roster shutdown drains pending readings before the commit interval ends', async () => {
+  const path = await fixture()
+  const timer = manualQuotaTimer()
+  const release = retainVaultQuotaWriter(path, () => {}, timer.clock)
+  hooks.lifetime.finish(release)
+  await recordVaultQuota(path, { ...receipt, observation: reading(1) })
+  await timer.advance(100)
+  await recordVaultQuota(path, { ...receipt, observation: reading(2) })
+  await release()
+  expect(
+    (await readVaultRoster(path))?.rows[0]?.quota?.limits[0],
+  ).toMatchObject({
+    checkedAt: 2,
+  })
+  expect(timer.clock.now()).toBe(100)
+})
+
+test('identical serialized quota leaves the roster file untouched', async () => {
+  const path = await fixture()
+  const timer = manualQuotaTimer()
+  const release = retainVaultQuotaWriter(path, () => {}, timer.clock)
+  hooks.lifetime.finish(release)
+  await recordVaultQuota(path, { ...receipt, observation: reading(1) })
+  await timer.advance(100)
+  const inode = (await stat(path)).ino
+  await recordVaultQuota(path, { ...receipt, observation: reading(1) })
+  await timer.advance(30_000)
+  expect((await stat(path)).ino).toBe(inode)
+})
 
 test('coalesced fields retain independent times coverage and receipt fences', async () => {
   const path = await fixture()
