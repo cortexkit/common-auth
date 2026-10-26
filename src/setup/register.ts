@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url'
+import { domainToUnicode } from 'node:url'
 import {
   applyEdits,
   createScanner,
@@ -43,6 +43,22 @@ function packageOf(value: unknown): string | null {
   return at < 0 ? entry : entry.slice(0, at)
 }
 
+function localFileURL(entry: string, windows: boolean): string {
+  const url = new URL(entry)
+  if (/%2f/i.test(url.pathname) || (windows && /%5c/i.test(url.pathname)))
+    throw new Error('Encoded path separators are not valid in a file URL.')
+  const decoded = decodeURIComponent(url.pathname)
+  if (!windows) {
+    if (url.hostname) throw new Error('A POSIX file URL must be local.')
+    return decoded
+  }
+  const pathname = decoded.replaceAll('/', '\\')
+  if (url.hostname) return `\\\\${domainToUnicode(url.hostname)}${pathname}`
+  if (!/^\\[a-z]:/i.test(pathname))
+    throw new Error('A Windows file URL must have an absolute drive path.')
+  return pathname.slice(1)
+}
+
 function localPackageOf(
   entry: string,
   configFile: string,
@@ -53,8 +69,10 @@ function localPackageOf(
     // Relative paths use the declaring config's directory, not setup's working directory:
     // https://github.com/anomalyco/opencode/blob/b6478dce/packages/opencode/src/config/plugin.ts#L40-L60
     // https://github.com/anomalyco/opencode/blob/v2.0.22/packages/core/src/config/plugin/source.ts#L139-L145
+    // Decode file URLs explicitly: Bun 1.3 ignores fileURLToPath's Windows override.
+    // The requested platform, not the OS running setup's tests, determines path rules.
     const directory = /^file:\/\//i.test(entry)
-      ? fileURLToPath(new URL(entry), { windows: platform === 'win32' })
+      ? localFileURL(entry, platform === 'win32')
       : path.isAbsolute(entry) || entry.startsWith('.')
         ? path.resolve(path.dirname(configFile), entry)
         : null
