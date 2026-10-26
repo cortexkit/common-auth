@@ -2096,7 +2096,10 @@ test('hub pending: a member whose discovery lease a stopped process still holds 
   expect(f.hub.refusals()?.view).toBe('v2')
   await f.tick()
   expect(f.vault.lists).toBe(lists + 3)
-})
+  // Four ticks of real roster commits for three members: on a Windows runner
+  // each private-file commit can take over a second, so the default 5 s limit
+  // ends this test while it is still progressing, like its neighbours above.
+}, 20_000)
 
 test('hub pending: a first commit refused by another writer holding the roster is no member error and is retried', async () => {
   const f = await hubFixture()
