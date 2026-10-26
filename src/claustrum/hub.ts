@@ -222,6 +222,13 @@ interface Committed {
   readonly notMine: number
 }
 
+interface PendingConnect {
+  readonly generation: Generation
+  promise?: Promise<ClaustrumScopedCustody>
+  /** Set once the attempt passed its time limit, so a late client closes. */
+  timedOut: boolean
+}
+
 interface Run {
   /** Known once the run holds the hub's own lease. */
   generation?: Generation
@@ -606,10 +613,7 @@ export class ClaustrumDiscoveryHub {
     const pending = this.#connecting
     if (pending?.generation === generation && pending.promise)
       return pending.promise
-    const entry: NonNullable<typeof this.#connecting> = {
-      generation,
-      timedOut: false,
-    }
+    const entry: PendingConnect = { generation, timedOut: false }
     // Every acquirer waits on this one connect, so it is bounded: a connect
     // that never settles would otherwise hold them all for the hub's life.
     const connectTimeoutMs =
