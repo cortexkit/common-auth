@@ -7,6 +7,7 @@ import {
   ClaustrumClient,
   type ClaustrumClientOptions,
 } from '@cortexkit/claustrum-client'
+import { ClaustrumUnreachableError } from './availability.js'
 import type { ClaustrumScopedClient } from './custody.js'
 import { insulaUsageTransport } from './insula.js'
 
@@ -165,14 +166,49 @@ export {
   type WatchMode,
 } from './watch.js'
 
+/** How long `connectClaustrumScopedClient` waits by default. */
+export const SCOPED_CONNECT_TIMEOUT_MS = 10_000
+
 /**
  * Connect the client that lists and fetches this consumer's vault credentials
  * on the request path. `connectionFile` is required: this library
  * reads no environment, so the plugin resolves the vault's connection file.
+ *
+ * The wait is bounded by `connectTimeoutMs` (default 10 s) so a connect that
+ * never settles cannot leave a consumer with a pending connection forever; the
+ * caller then gets an unreachable error and may try again. A socket handshake
+ * has its own limit, but local reads before it (the connection file) do not,
+ * and a client that arrives after this deadline is closed, not returned.
  */
 export async function connectClaustrumScopedClient(
-  options: ClaustrumClientOptions & { connectionFile: string },
+  options: ClaustrumClientOptions & {
+    connectionFile: string
+    connectTimeoutMs?: number
+  },
 ): Promise<ClaustrumScopedClient> {
-  const client = await ClaustrumClient.connect(options)
-  return Object.assign(client, { insula: insulaUsageTransport(options) })
+  const { connectTimeoutMs, ...client } = options
+  const limit = connectTimeoutMs ?? SCOPED_CONNECT_TIMEOUT_MS
+  const connecting = ClaustrumClient.connect(client)
+  let expired = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      expired = true
+      reject(new ClaustrumUnreachableError())
+    }, limit)
+    timer.unref?.()
+  })
+  try {
+    const client = await Promise.race([connecting, deadline])
+    return Object.assign(client, { insula: insulaUsageTransport(options) })
+  } catch (error) {
+    // A connection that arrives after the deadline still owns a socket.
+    void connecting.then(
+      (client) => client.close(),
+      () => {},
+    )
+    throw error
+  } finally {
+    if (!expired && timer) clearTimeout(timer)
+  }
 }

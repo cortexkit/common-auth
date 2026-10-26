@@ -16,6 +16,7 @@ import {
 } from './custody.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
+import { ClaustrumUnreachableError } from './availability.js'
 import type { CustodyLease } from './hub.js'
 import {
   acquireInsulaQuotaSource,
@@ -55,6 +56,14 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   tokenPath: string
   family: ClaustrumFamily
   connect: () => Promise<ClaustrumScopedClient>
+  /**
+   * How long one `connect()` attempt may take before this consumer treats the
+   * vault as unreachable (default 10 s). A connect that never settles would
+   * otherwise leave every later `refresh()` waiting on the same promise. After
+   * the limit the waiters get an unreachable error, the next `refresh()`
+   * connects again, and a client that arrives late is closed.
+   */
+  connectTimeoutMs?: number
   /**
    * Whether the plugin currently takes its accounts from the vault (custody
    * mode) rather than from local logins. Checked before every discovery,
@@ -156,6 +165,18 @@ export interface HubMemberHooks {
   roster(): VaultRosterFile | undefined
   projection(): ProjectionOptions
   onError(error: unknown): void
+}
+
+/**
+ * How long one connect attempt may take by default. It bounds a connect that
+ * never settles; the client's own handshake limit is not guaranteed to cover
+ * every stall, and callers waiting on discovery need an answer either way.
+ */
+export const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
+
+/** An unreachable vault, raised when a connect passed its time limit. */
+function unreachableConnect(): ClaustrumUnreachableError {
+  return new ClaustrumUnreachableError()
 }
 
 let buildHubMember:
@@ -266,6 +287,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
 
   #track<T>(pending: Promise<T>): Promise<T> {
     this.#pending.add(pending)
+    // A tracked promise may lose its race and reject while its caller still
+    // waits on something else, so its rejection is observed here too.
     void pending.then(
       () => this.#pending.delete(pending),
       () => this.#pending.delete(pending),
@@ -313,38 +336,70 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     this.#assertOpen()
     if (this.#custody) return this.#custody
     if (!this.#connecting) {
-      this.#connecting = this.#options
-        .connect()
-        .then((client) => {
-          if (this.#shutdown.signal.aborted) {
-            client.close()
-            this.#assertOpen()
-          }
-          this.#custody = new ClaustrumScopedCustody({
-            client,
-            family: this.#options.family,
-            tokenPath: this.#options.tokenPath,
-            parseIdentity: this.#options.parseIdentity,
-            requireAssertion: this.#options.requireAssertion,
-            now: this.#options.now,
-            logger: this.#logger,
-            setTimeoutImpl: this.#options.setTimeoutImpl,
-            clearTimeoutImpl: this.#options.clearTimeoutImpl,
-          })
-          if (this.#options.insula && client.insula) {
-            this.#insula = acquireInsulaQuotaSource(
-              client.insula,
-              this.#options.tokenPath,
-            )
-          }
-          return this.#custody
-        })
-        .finally(() => {
-          this.#connecting = undefined
-        })
+      // A connect that never settles must not hold #connecting open: every
+      // later refresh would wait on the same promise. The race below bounds
+      // each attempt, and only a client that arrives in time is installed.
+      const attempt = { timedOut: false }
+      this.#connecting = this.#boundedConnect(attempt)
       this.#track(this.#connecting)
     }
     return this.#wait(this.#connecting)
+  }
+
+  /**
+   * One `connect()` attempt under `connectTimeoutMs`. The late promise is still
+   * observed after the deadline, so a client that arrives then is closed
+   * rather than leaked.
+   */
+  #boundedConnect(attempt: { timedOut: boolean }): Promise<ClaustrumScopedCustody> {
+    const setTimer = this.#options.setTimeoutImpl ?? setTimeout
+    const clearTimer = this.#options.clearTimeoutImpl ?? clearTimeout
+    const pending = this.#options.connect().then((client) => {
+      if (this.#shutdown.signal.aborted || attempt.timedOut) {
+        client.close()
+        if (!attempt.timedOut) this.#assertOpen()
+        throw unreachableConnect()
+      }
+      this.#custody = new ClaustrumScopedCustody({
+        client,
+        family: this.#options.family,
+        tokenPath: this.#options.tokenPath,
+        parseIdentity: this.#options.parseIdentity,
+        requireAssertion: this.#options.requireAssertion,
+        now: this.#options.now,
+        logger: this.#logger,
+        setTimeoutImpl: this.#options.setTimeoutImpl,
+        clearTimeoutImpl: this.#options.clearTimeoutImpl,
+      })
+      if (this.#options.insula && client.insula) {
+        this.#insula = acquireInsulaQuotaSource(
+          client.insula,
+          this.#options.tokenPath,
+        )
+      }
+      return this.#custody
+    })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimer(() => {
+        attempt.timedOut = true
+        if (this.#shutdown.signal.aborted) return
+        this.#logger.warn('vault connect timed out', {
+          reason: 'unreachable',
+          connectTimeoutMs: this.#connectTimeoutMs(),
+        })
+        reject(unreachableConnect())
+      }, this.#connectTimeoutMs())
+      timer.unref?.()
+    })
+    return Promise.race([pending, deadline]).finally(() => {
+      if (timer) clearTimer(timer)
+      this.#connecting = undefined
+    })
+  }
+
+  #connectTimeoutMs(): number {
+    return this.#options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
   }
 
   /** The last committed roster this instance saw, without any I/O. */

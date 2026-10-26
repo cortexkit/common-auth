@@ -16,10 +16,12 @@ import { join } from 'node:path'
 import { createLogger } from '../logger/index.js'
 import type { QuotaObservation } from '../quota/index.js'
 import { combineAbortSignals } from '../util/any-signal.js'
+import { ClaustrumUnreachableError } from './availability.js'
 import {
   type ClaustrumConsumer,
   type ClaustrumConsumerOptions,
   createHubMember,
+  DEFAULT_CONNECT_TIMEOUT_MS,
   type HubMemberHooks,
   type HubMemberPort,
   type HubRefreshOutcome,
@@ -93,6 +95,14 @@ export interface ClaustrumDiscoveryHubOptions {
    */
   family: ClassifyingClaustrumFamily<string>
   connect: () => Promise<ClaustrumScopedClient>
+  /**
+   * How long one `connect()` attempt may take before the hub treats the vault
+   * as unreachable (default 10 s, as `ClaustrumConsumerOptions`). The hub's
+   * connect is shared by every member waiting for a lease, so an attempt that
+   * never settles would hold every one of them; after the limit they get an
+   * unreachable error and the next acquire connects again.
+   */
+  connectTimeoutMs?: number
   /**
    * Whether the plugin takes its accounts from the vault. Read from local
    * state only, never from the vault: on every hub tick, and when a member
@@ -313,6 +323,11 @@ function notActive() {
   )
 }
 
+/** An unreachable vault, raised when a connect passed its time limit. */
+function unreachableConnect(): ClaustrumUnreachableError {
+  return new ClaustrumUnreachableError()
+}
+
 /**
  * Follow `pending`, but reject as soon as `signal` aborts. `pending` is
  * still observed afterwards, so its rejection is never unhandled.
@@ -367,7 +382,9 @@ export class ClaustrumDiscoveryHub {
   /** The pending connect, with the generation it was started for. */
   #connecting?: {
     readonly generation: Generation
-    readonly promise: Promise<ClaustrumScopedCustody>
+    promise?: Promise<ClaustrumScopedCustody>
+    /** Set once the attempt passed its time limit, so a late client closes. */
+    timedOut: boolean
   }
   /** The lease the hub's own discovery and watch hold. */
   #own?: CustodyLease
@@ -428,6 +445,8 @@ export class ClaustrumDiscoveryHub {
 
   #track<T>(pending: Promise<T>): Promise<T> {
     this.#pending.add(pending)
+    // A tracked promise may lose its race and reject while its caller still
+    // waits on something else, so its rejection is observed here too.
     void pending.then(
       () => this.#pending.delete(pending),
       () => this.#pending.delete(pending),
@@ -585,32 +604,58 @@ export class ClaustrumDiscoveryHub {
 
   #connect(generation: Generation): Promise<ClaustrumScopedCustody> {
     const pending = this.#connecting
-    if (pending?.generation === generation) return pending.promise
-    const entry = {
+    if (pending?.generation === generation && pending.promise)
+      return pending.promise
+    const entry: NonNullable<typeof this.#connecting> = {
       generation,
-      promise: this.#track(
-        this.#options.connect().then((client) => {
-          // A connect resolves into its generation only while that generation
-          // is current and still wanted; otherwise its client never serves.
-          if (!this.#live(generation) || generation.count <= 0) {
-            client.close()
-            throw closed('Claustrum connection is no longer wanted')
-          }
-          generation.custody = new ClaustrumScopedCustody({
-            client,
-            family: this.#options.family,
-            tokenPath: this.#options.tokenPath,
-            parseIdentity: this.#options.parseIdentity,
-            requireAssertion: this.#options.requireAssertion,
-            now: this.#options.now,
-            logger: this.#logger,
-            setTimeoutImpl: this.#options.setTimeoutImpl,
-            clearTimeoutImpl: this.#options.clearTimeoutImpl,
-          })
-          return generation.custody
-        }),
-      ),
+      timedOut: false,
     }
+    // Every acquirer waits on this one connect, so it is bounded: a connect
+    // that never settles would otherwise hold them all for the hub's life.
+    const connectTimeoutMs =
+      this.#options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const connect = this.#options.connect().then((client) => {
+      // A connect resolves into its generation only while that generation
+      // is current and still wanted; otherwise its client never serves.
+      if (entry.timedOut) {
+        client.close()
+        throw unreachableConnect()
+      }
+      if (!this.#live(generation) || generation.count <= 0) {
+        client.close()
+        throw closed('Claustrum connection is no longer wanted')
+      }
+      generation.custody = new ClaustrumScopedCustody({
+        client,
+        family: this.#options.family,
+        tokenPath: this.#options.tokenPath,
+        parseIdentity: this.#options.parseIdentity,
+        requireAssertion: this.#options.requireAssertion,
+        now: this.#options.now,
+        logger: this.#logger,
+        setTimeoutImpl: this.#options.setTimeoutImpl,
+        clearTimeoutImpl: this.#options.clearTimeoutImpl,
+      })
+      return generation.custody
+    })
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = (this.#options.setTimeoutImpl ?? setTimeout)(() => {
+        entry.timedOut = true
+        if (!this.#live(generation)) return
+        this.#logger.warn('vault connect timed out', {
+          reason: 'unreachable',
+          connectTimeoutMs,
+        })
+        reject(unreachableConnect())
+      }, connectTimeoutMs)
+      timer.unref?.()
+    })
+    entry.promise = this.#track(
+      Promise.race([connect, deadline]).finally(() => {
+        if (timer) (this.#options.clearTimeoutImpl ?? clearTimeout)(timer)
+      }),
+    )
     // Clear only this connect: an older generation's connect settling late
     // must leave a newer generation's pending connect in place.
     const settled = entry.promise.finally(() => {
