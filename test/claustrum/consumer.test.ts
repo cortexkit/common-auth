@@ -2,9 +2,12 @@ import { expect } from 'bun:test'
 import { join } from 'node:path'
 import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
 import {
+  classifyVaultFailure,
   ClaustrumConsumer,
   type ClaustrumConsumerOptions,
   type ClaustrumScopedClient,
+  ClaustrumUnreachableError,
+  DEFAULT_CONNECT_TIMEOUT_MS,
   declineVaultRoute,
   readVaultRoster,
   type VaultRosterFile,
@@ -15,10 +18,12 @@ import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   cleanupDirs,
   deferred,
+  fakeTimers,
   family,
   inventoryRow,
   tempDir,
   unknownGrants,
+  until,
   writeToken,
 } from './helpers.ts'
 
@@ -725,4 +730,106 @@ test('a credential an incomplete reply re-lists under another account is never a
       (row) => row.routeId === routeA,
     )?.quota,
   ).toBeUndefined()
+})
+
+// --- connects that never settle (issue #8) ---
+
+/** A connect that is called once per attempt and never settles on its own. */
+function stalledConnects(timers: ReturnType<typeof fakeTimers>) {
+  const attempts: Array<{ settle: (client: ClaustrumScopedClient) => void }> =
+    []
+  let connects = 0
+  return {
+    timers,
+    connect: () => {
+      connects++
+      return new Promise<ClaustrumScopedClient>((resolve) => {
+        attempts.push({ settle: resolve })
+      })
+    },
+    count: () => connects,
+    latest: () => attempts[attempts.length - 1],
+  }
+}
+
+test('a connect that never settles rejects refresh at the limit and the next refresh connects again', async () => {
+  const f = await fixture()
+  const timers = fakeTimers()
+  const stalled = stalledConnects(timers)
+  const consumer = managedConsumer({
+    ...f.options,
+    connect: stalled.connect,
+    connectTimeoutMs: 4_000,
+    setTimeoutImpl: timers.setTimeoutImpl,
+    clearTimeoutImpl: timers.clearTimeoutImpl,
+  })
+  consumers.push(consumer)
+  const first = consumer.refresh().catch((error: unknown) => error)
+  const second = consumer.refresh().catch((error: unknown) => error)
+  await until(() => stalled.count() === 1)
+  // The deadline is armed for the configured limit, not a default.
+  expect(timers.pending()).toContain(4_000)
+  timers.fire(4_000)
+  for (const outcome of [await first, await second]) {
+    expect(outcome).toBeInstanceOf(ClaustrumUnreachableError)
+    expect(classifyVaultFailure(outcome)).toBe('unreachable')
+  }
+  // The stall did not stay latched: a later refresh starts a fresh attempt.
+  const third = consumer.refresh().catch((error: unknown) => error)
+  await until(() => stalled.count() === 2)
+  timers.fire(4_000)
+  expect(await third).toBeInstanceOf(ClaustrumUnreachableError)
+  expect(stalled.count()).toBe(2)
+  expect(f.counts().lists).toBe(0)
+})
+
+test('a client that connects after the limit is closed and never installed', async () => {
+  const f = await fixture()
+  const timers = fakeTimers()
+  const stalled = stalledConnects(timers)
+  const consumer = managedConsumer({
+    ...f.options,
+    connect: stalled.connect,
+    setTimeoutImpl: timers.setTimeoutImpl,
+    clearTimeoutImpl: timers.clearTimeoutImpl,
+  })
+  consumers.push(consumer)
+  const outcome = consumer.refresh().catch((error: unknown) => error)
+  await until(() => stalled.count() === 1)
+  // The default limit bounds an attempt even when none is configured.
+  timers.fire(DEFAULT_CONNECT_TIMEOUT_MS)
+  expect(await outcome).toBeInstanceOf(ClaustrumUnreachableError)
+  stalled.latest()?.settle(f.client)
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(f.counts().closes).toBe(1)
+  expect(f.counts().lists).toBe(0)
+  expect(consumer.snapshot()).toBeUndefined()
+  // Nothing was installed by the late client: the next refresh connects anew.
+  const again = consumer.refresh().catch((error: unknown) => error)
+  await until(() => stalled.count() === 2)
+  timers.fire(DEFAULT_CONNECT_TIMEOUT_MS)
+  expect(await again).toBeInstanceOf(ClaustrumUnreachableError)
+})
+
+test('shutdown during a pending connect rejects at once and leaves no deadline behind', async () => {
+  const f = await fixture()
+  const timers = fakeTimers()
+  const stalled = stalledConnects(timers)
+  const consumer = managedConsumer({
+    ...f.options,
+    connect: stalled.connect,
+    setTimeoutImpl: timers.setTimeoutImpl,
+    clearTimeoutImpl: timers.clearTimeoutImpl,
+  })
+  consumers.push(consumer)
+  const outcome = consumer.refresh().catch((error: unknown) => error)
+  await until(() => stalled.count() === 1)
+  consumer.close()
+  expect(await outcome).toMatchObject({ kind: 'closed' })
+  expect(timers.pending()).toEqual([DEFAULT_CONNECT_TIMEOUT_MS])
+  stalled.latest()?.settle(f.client)
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(f.counts().closes).toBe(1)
 })

@@ -488,3 +488,40 @@ for (const failure of [
     }
   })
 }
+
+// --- the shared scoped connection is bounded too ---
+
+test('connectClaustrumScopedClient gives up at its limit and closes a client that arrives late', async () => {
+  const dir = await tempDir('claustrum-bounded-connect-')
+  const late: Array<{ closed: boolean }> = []
+  let resolve!: (client: { close(): void }) => void
+  const connector = () =>
+    new Promise<never>((...[, reject]) => {
+      // Never settles on its own; the deadline must answer for it.
+      void reject
+      return undefined
+    })
+  // A connector the test settles by hand, so the late client is a real object.
+  const connecting = new Promise<never>((_resolve, reject) => {
+    resolve = (client) => reject(client)
+  })
+  void connecting.catch(() => {})
+  const connectingClient = new Promise<never>((_resolve) => {
+    resolve = () => {}
+  })
+  void connector
+  void late
+  void connectingClient
+  void resolve
+  await expect(
+    connectClaustrumScopedClient({
+      connectionFile: join(dir, 'connection.json'),
+      connector: (options) => {
+        void options
+        return connecting
+      },
+      connectTimeoutMs: 25,
+      logger: () => {},
+    }),
+  ).rejects.toBeInstanceOf(ClaustrumUnreachableError)
+})

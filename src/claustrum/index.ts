@@ -26,6 +26,7 @@ export {
   ClaustrumConsumer,
   type ClaustrumConsumerOptions,
   type ClaustrumWatchState,
+  DEFAULT_CONNECT_TIMEOUT_MS,
   type SendOptions,
 } from './consumer.js'
 export {

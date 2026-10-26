@@ -1096,6 +1096,30 @@ test('hub leases: a rejected connect rejects every waiter, gives every ticket ba
   expect(f.vault.connections[0]?.closed).toBe(false)
 })
 
+test('hub leases: a connect that never settles times out for every waiter and the next acquire connects anew', async () => {
+  const f = await hubFixture()
+  f.vault.holdConnects = true
+  const waiters = [f.hub.acquire(), f.hub.acquire()]
+  await until(() => f.vault.held.length === 1, 'the held connect')
+  expect(f.vault.connects).toBe(1)
+  // One shared connect is bounded, so neither waiter is left holding a ticket.
+  f.timers.fire(DEFAULT_CONNECT_TIMEOUT_MS)
+  for (const waiter of waiters)
+    await expect(waiter).rejects.toBeInstanceOf(ClaustrumUnreachableError)
+  expect(f.hub.leaseState()).toEqual({ generation: undefined, count: 0 })
+  // The stalled attempt did not stay latched: a later acquire connects again.
+  f.vault.holdConnects = false
+  const recovered = await f.hub.refresh()
+  expect(recovered).toBeUndefined()
+  const lease = await f.hub.acquire()
+  expect(f.vault.connects).toBe(2)
+  expect(lease.generation).toBe(2)
+  // The client of the stalled attempt arrived late: it is closed, not served.
+  f.vault.held[0]?.resolve()
+  await until(() => f.vault.closes() === 1, 'the late client to close')
+  expect(f.vault.connections[0]?.closed).toBe(true)
+})
+
 test('hub leases: a connect of an ended generation is closed unpublished and leaves the next pending connect in place', async () => {
   const f = await hubFixture()
   f.vault.holdConnects = true
