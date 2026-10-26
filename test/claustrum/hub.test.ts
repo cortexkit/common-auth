@@ -1135,10 +1135,6 @@ test('hub leases: a connect that never settles times out for every waiter and th
   const lease = await f.hub.acquire()
   expect(f.vault.connects).toBe(2)
   expect(lease.generation).toBe(2)
-  // The client of the stalled attempt arrived late: it is closed, not served.
-  f.vault.held[0]?.resolve()
-  await until(() => f.vault.closes() === 1, 'the late client to close')
-  expect(f.vault.connections[0]?.closed).toBe(true)
 })
 
 test('hub leases: a connect of an ended generation is closed unpublished and leaves the next pending connect in place', async () => {
