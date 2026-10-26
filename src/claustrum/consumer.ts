@@ -351,7 +351,9 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
    * observed after the deadline, so a client that arrives then is closed
    * rather than leaked.
    */
-  #boundedConnect(attempt: { timedOut: boolean }): Promise<ClaustrumScopedCustody> {
+  #boundedConnect(attempt: {
+    timedOut: boolean
+  }): Promise<ClaustrumScopedCustody> {
     const setTimer = this.#options.setTimeoutImpl ?? setTimeout
     const clearTimer = this.#options.clearTimeoutImpl ?? clearTimeout
     const pending = this.#options.connect().then((client) => {
