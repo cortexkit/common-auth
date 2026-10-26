@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect } from 'bun:test'
+import { beforeEach, describe, expect, spyOn } from 'bun:test'
+import * as fs from 'node:fs/promises'
+import { rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import {
   type LockEvent,
   POOL_KEY,
@@ -37,6 +39,104 @@ async function populate() {
     logging: { level: 'info' },
   })
 }
+
+describe('readSettings', () => {
+  it.skipIf(process.platform === 'win32')(
+    'opens unchanged config only once and never opens state',
+    async () => {
+      await populate()
+      const store = s.open()
+      const reads = spyOn(fs, 'readFile')
+      try {
+        for (let i = 0; i < 3; i++)
+          expect(await store.readSettings()).toEqual({
+            status: 'ready',
+            settings: {
+              main: { type: 'opencode' },
+              logging: { level: 'info' },
+            },
+          })
+        expect(
+          reads.mock.calls.filter(([path]) => path === s.configPath),
+        ).toHaveLength(1)
+        expect(
+          reads.mock.calls.filter(([path]) => path === s.statePath),
+        ).toHaveLength(0)
+      } finally {
+        reads.mockRestore()
+      }
+    },
+  )
+
+  it('observes config rename replacement, in-place rewrite and deletion', async () => {
+    await s.writeConfig({ logging: { level: 'info' } })
+    const store = s.open()
+    expect(await store.readSettings()).toEqual({
+      status: 'ready',
+      settings: { logging: { level: 'info' } },
+    })
+    const replacement = `${s.configPath}.next`
+    await writeFile(replacement, JSON.stringify({ logging: { level: 'warn' } }))
+    await rename(replacement, s.configPath)
+    expect(await store.readSettings()).toEqual({
+      status: 'ready',
+      settings: { logging: { level: 'warn' } },
+    })
+    await utimes(s.configPath, 123, 123)
+    await store.readSettings()
+    const before = await stat(s.configPath)
+    await writeFile(
+      s.configPath,
+      JSON.stringify({ logging: { level: 'info' } }),
+    )
+    await utimes(s.configPath, 123, 123)
+    const after = await stat(s.configPath)
+    expect([after.dev, after.ino, after.size, after.mtimeMs]).toEqual([
+      before.dev,
+      before.ino,
+      before.size,
+      before.mtimeMs,
+    ])
+    expect(after.ctimeMs).not.toBe(before.ctimeMs)
+    expect(await store.readSettings()).toEqual({
+      status: 'ready',
+      settings: { logging: { level: 'info' } },
+    })
+    await unlink(s.configPath)
+    expect(await store.readSettings()).toEqual({
+      status: 'ready',
+      settings: {},
+    })
+  })
+
+  it('isolates settings from state errors and caller mutations', async () => {
+    await s.writeConfig({ logging: { level: 'info' } })
+    await writeFile(s.statePath, '{broken')
+    const store = s.open()
+    const result = await store.readSettings()
+    expect(result).toEqual({
+      status: 'ready',
+      settings: { logging: { level: 'info' } },
+    })
+    if (result.status !== 'error')
+      (result.settings.logging as { level: string }).level = 'mutated'
+    expect(await s.open().readSettings()).toEqual({
+      status: 'ready',
+      settings: { logging: { level: 'info' } },
+    })
+    await writeFile(s.configPath, '{broken')
+    expect(await store.readSettings()).toEqual({
+      status: 'error',
+      file: 'config',
+      reason: 'config file is not valid JSON',
+    })
+    await s.writeConfig({ accounts: [], logging: { level: 'debug' } })
+    expect(await store.readSettings()).toEqual({
+      status: 'pending-migration',
+      settings: { logging: { level: 'debug' } },
+    })
+  })
+})
 
 describe('updateSettings', () => {
   it('updateSettings writes settings beside the pool, keeping every pool-owned key and the state file unchanged', async () => {

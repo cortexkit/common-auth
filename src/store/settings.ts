@@ -1,8 +1,15 @@
 import { isDeepStrictEqual } from 'node:util'
 import { writeJsonAtomic } from '../fs/atomic-write.js'
+import { FileReadCache } from '../fs/file-read-cache.js'
+import { windowsPrivateFiles } from '../fs/private-files.js'
 import { PoolOperationError } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
-import { notReadyError, readPool, runOperation } from './mutate.js'
+import {
+  notReadyError,
+  readPool,
+  readPoolConfig,
+  runOperation,
+} from './mutate.js'
 import type { PoolLockSpec } from './refresh-lock.js'
 import type { StoreRuntime } from './runtime.js'
 import { isRecord, POOL_KEY } from './schema.js'
@@ -110,13 +117,25 @@ function settingsRefusal(message: string): PoolOperationError {
   })
 }
 
-/** Reads the settings without taking a lock or writing anything. */
+const settingsCache = new FileReadCache<SettingsRead>()
+
+/** Reads only the config's settings, without taking a lock or writing anything. */
 export async function readPoolSettings(
   rt: StoreRuntime,
 ): Promise<SettingsRead> {
-  const result = await readPool(rt.ctx)
-  if (result.status === 'error') return result
-  return { status: result.status, settings: settingsOf(result.config) }
+  const read = async ([
+    configPath = rt.ctx.configPath,
+  ]: string[] = []): Promise<SettingsRead> => {
+    const result = await readPoolConfig(configPath)
+    if (result.status === 'error')
+      return { status: 'error', file: 'config', reason: result.reason }
+    return { status: result.status, settings: settingsOf(result.config) }
+  }
+  // Native Windows security checks cannot be replaced by a stat fingerprint.
+  const result = windowsPrivateFiles
+    ? await read()
+    : await settingsCache.read([rt.ctx.configPath], read)
+  return structuredClone(result)
 }
 
 /**

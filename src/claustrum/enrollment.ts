@@ -26,6 +26,7 @@ import {
   type EnrollmentTokenFile,
   writeEnrollmentTokenFile,
 } from '@cortexkit/claustrum-client'
+import { FileReadCache } from '../fs/file-read-cache.js'
 import { acquireRefreshFileLock } from '../fs/index.js'
 import {
   ensurePrivateDirectory as ensureWindowsDirectory,
@@ -621,10 +622,40 @@ async function writeStateAtomic(
   }
 }
 
+const enrollmentStatusCache = new FileReadCache<{
+  status: ClaustrumEnrollmentStatus
+  usesProposedName: boolean
+}>()
+
 export async function readClaustrumEnrollmentStatus(
   paths: ClaustrumEnrollmentPaths,
   proposedName: string,
 ): Promise<ClaustrumEnrollmentStatus> {
+  // Windows ACL, owner and ancestry checks are not represented by stat identity.
+  // Keep the native private-file validation and full read on every call there.
+  const result = windowsPrivateFiles
+    ? await readEnrollmentStatus(paths, proposedName)
+    : await enrollmentStatusCache.read(
+        [paths.tokenPath, paths.statePath],
+        async ([tokenPath = paths.tokenPath, statePath = paths.statePath]) =>
+          readEnrollmentStatus({ tokenPath, statePath }, proposedName),
+        (identities) => {
+          // Recheck the current effective user as well as mode and regular-file kind.
+          // lstat probes also prevent a link to the old inode from becoming a hit.
+          for (const metadata of identities)
+            if (metadata !== 'absent') validateReadableSecretFile(metadata)
+        },
+      )
+  const status = { ...result.status }
+  if (result.usesProposedName && status.state === 'approved')
+    status.proposedName = proposedName
+  return status
+}
+
+async function readEnrollmentStatus(
+  paths: ClaustrumEnrollmentPaths,
+  proposedName: string,
+): Promise<{ status: ClaustrumEnrollmentStatus; usesProposedName: boolean }> {
   const tokenValue = await readBoundedJson(paths.tokenPath)
   const token =
     tokenValue === undefined ? undefined : decodeTokenFile(tokenValue)
@@ -633,24 +664,30 @@ export async function readClaustrumEnrollmentStatus(
     stateValue === undefined ? undefined : decodeEnrollmentState(stateValue)
   if (token) {
     return {
-      state: 'approved',
-      proposedName: state?.proposedName ?? proposedName,
-      ...(state?.phase === 'approved' &&
-        state.approvedName !== undefined && {
-          approvedName: state.approvedName,
-        }),
-      tokenGeneration: token.token_generation,
+      usesProposedName: state === undefined,
+      status: {
+        state: 'approved',
+        proposedName: state?.proposedName ?? proposedName,
+        ...(state?.phase === 'approved' &&
+          state.approvedName !== undefined && {
+            approvedName: state.approvedName,
+          }),
+        tokenGeneration: token.token_generation,
+      },
     }
   }
-  if (!state) return { state: 'idle' }
+  if (!state) return { status: { state: 'idle' }, usesProposedName: false }
   if (state.phase === 'approved') {
     return {
-      state: 'blocked',
-      proposedName: state.proposedName,
-      code: 'missing_token',
+      usesProposedName: false,
+      status: {
+        state: 'blocked',
+        proposedName: state.proposedName,
+        code: 'missing_token',
+      },
     }
   }
-  return statusFromState(state)
+  return { status: statusFromState(state), usesProposedName: false }
 }
 
 /**

@@ -7,9 +7,12 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
+  unlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -35,6 +38,7 @@ import {
   LockOwnershipError,
   lockPathFor,
 } from '../../src/fs/index.ts'
+import * as privateFiles from '../../src/fs/private-files.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 
@@ -111,6 +115,267 @@ afterEach(async () => {
 })
 
 describe('enrollmentAuthority', () => {
+  test.skipIf(process.platform !== 'win32')(
+    'keeps native private-file reads fresh on Windows',
+    async () => {
+      const paths = await fixture()
+      await seedApproved(paths)
+      const reads = spyOn(privateFiles, 'readPrivateText')
+      try {
+        for (let i = 0; i < 3; i++)
+          expect(
+            await enrollmentAuthority(
+              paths,
+              CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+            ),
+          ).toBe('vault')
+        for (const path of [paths.tokenPath, paths.statePath])
+          expect(
+            reads.mock.calls.filter(([opened]) => opened === path),
+          ).toHaveLength(3)
+      } finally {
+        reads.mockRestore()
+      }
+    },
+  )
+
+  test.skipIf(process.platform === 'win32')(
+    'opens unchanged enrollment files only once',
+    async () => {
+      const paths = await fixture()
+      await seedApproved(paths)
+      const opens = spyOn(fs, 'open')
+      try {
+        for (let i = 0; i < 3; i++) {
+          expect(
+            await enrollmentAuthority(
+              paths,
+              CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+            ),
+          ).toBe('vault')
+        }
+        for (const path of [paths.tokenPath, paths.statePath])
+          expect(
+            opens.mock.calls.filter(([opened]) => opened === path),
+          ).toHaveLength(1)
+      } finally {
+        opens.mockRestore()
+      }
+    },
+  )
+
+  test('observes rename replacements of both enrollment files', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    expect(
+      await readClaustrumEnrollmentStatus(
+        paths,
+        CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      ),
+    ).toMatchObject({ tokenGeneration: 1 })
+    const replacement = `${paths.tokenPath}.next`
+    await writeFile(
+      replacement,
+      JSON.stringify({ token: secret, token_generation: 2 }),
+      { mode: 0o600 },
+    )
+    await rename(replacement, paths.tokenPath)
+    expect(
+      await readClaustrumEnrollmentStatus(
+        paths,
+        CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      ),
+    ).toMatchObject({ tokenGeneration: 2 })
+    await writeFile(
+      replacement,
+      JSON.stringify({
+        version: 1,
+        phase: 'approved',
+        proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        approvedName: 'renamed',
+        tokenGeneration: 2,
+        updatedAt: 2,
+      }),
+      { mode: 0o600 },
+    )
+    await rename(replacement, paths.statePath)
+    expect(
+      await readClaustrumEnrollmentStatus(
+        paths,
+        CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      ),
+    ).toMatchObject({ approvedName: 'renamed' })
+  })
+
+  test.skipIf(process.platform === 'win32')(
+    'falls back to full reads after a metadata error',
+    async () => {
+      const paths = await fixture()
+      await seedApproved(paths)
+      expect(
+        await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+      ).toBe('vault')
+      const probes = spyOn(fs, 'lstat').mockRejectedValue(
+        Object.assign(new Error('denied'), { code: 'EACCES' }),
+      )
+      const opens = spyOn(fs, 'open')
+      try {
+        expect(
+          await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+        ).toBe('vault')
+        expect(probes).toHaveBeenCalledTimes(2)
+        expect(opens).toHaveBeenCalledTimes(2)
+        opens.mockRejectedValue(
+          Object.assign(new Error('denied'), { code: 'EACCES' }),
+        )
+        expect(
+          await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+        ).toBe('unreadable')
+      } finally {
+        probes.mockRestore()
+        opens.mockRestore()
+      }
+    },
+  )
+
+  test('keeps cached status private and uses the current token-only consumer name', async () => {
+    const paths = await fixture()
+    await writeFile(
+      paths.tokenPath,
+      JSON.stringify({ token: secret, token_generation: 1 }),
+      { mode: 0o600 },
+    )
+    const status = await readClaustrumEnrollmentStatus(
+      paths,
+      CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+    )
+    if (status.state === 'approved') status.tokenGeneration = 99
+    expect(
+      await readClaustrumEnrollmentStatus(paths, CLAUSTRUM_PI_ENROLLMENT_NAME),
+    ).toEqual({
+      state: 'approved',
+      proposedName: CLAUSTRUM_PI_ENROLLMENT_NAME,
+      tokenGeneration: 1,
+    })
+  })
+
+  test.skipIf(process.platform === 'win32' || process.geteuid === undefined)(
+    'rechecks effective ownership on a cache hit',
+    async () => {
+      const paths = await fixture()
+      await seedApproved(paths)
+      expect(
+        await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+      ).toBe('vault')
+      const owner = (await stat(paths.tokenPath)).uid
+      const effectiveUser = spyOn(process, 'geteuid').mockReturnValue(owner + 1)
+      try {
+        expect(
+          await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+        ).toBe('unreadable')
+      } finally {
+        effectiveUser.mockRestore()
+      }
+    },
+  )
+
+  test.skipIf(process.platform === 'win32')(
+    'observes a same-size in-place rewrite with unchanged mtime',
+    async () => {
+      const paths = await fixture()
+      await seedApproved(paths)
+      await utimes(paths.tokenPath, 123, 123)
+      const before = await stat(paths.tokenPath)
+      expect(
+        await readClaustrumEnrollmentStatus(
+          paths,
+          CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        ),
+      ).toMatchObject({ tokenGeneration: 1 })
+      await writeFile(
+        paths.tokenPath,
+        JSON.stringify({ token: secret, token_generation: 2 }),
+      )
+      await utimes(paths.tokenPath, 123, 123)
+      const after = await stat(paths.tokenPath)
+      expect([after.dev, after.ino, after.size, after.mtimeMs]).toEqual([
+        before.dev,
+        before.ino,
+        before.size,
+        before.mtimeMs,
+      ])
+      expect(after.ctimeMs).not.toBe(before.ctimeMs)
+      expect(
+        await readClaustrumEnrollmentStatus(
+          paths,
+          CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        ),
+      ).toMatchObject({ tokenGeneration: 2 })
+    },
+  )
+
+  test.skipIf(process.platform === 'win32')(
+    'refuses cached enrollment files after unsafe chmod or symlink replacement',
+    async () => {
+      for (const file of ['tokenPath', 'statePath'] as const) {
+        const paths = await fixture()
+        await seedApproved(paths)
+        expect(
+          await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+        ).toBe('vault')
+        await chmod(paths[file], 0o644)
+        expect(
+          await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+        ).toBe('unreadable')
+        await chmod(paths[file], 0o600)
+        expect(
+          await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+        ).toBe('vault')
+        const target = `${paths[file]}.original`
+        await rename(paths[file], target)
+        await symlink(target, paths[file])
+        expect(
+          await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+        ).toBe('unreadable')
+      }
+    },
+  )
+
+  test('observes token deletion without changing approved ceremony custody', async () => {
+    const paths = await fixture()
+    await seedApproved(paths)
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+    await unlink(paths.tokenPath)
+    expect(
+      await readClaustrumEnrollmentStatus(
+        paths,
+        CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      ),
+    ).toEqual({
+      state: 'blocked',
+      proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      code: 'missing_token',
+    })
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+    await unlink(paths.statePath)
+    await writeFile(
+      paths.tokenPath,
+      JSON.stringify({ token: secret, token_generation: 1 }),
+      { mode: 0o600 },
+    )
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('vault')
+    await unlink(paths.tokenPath)
+    expect(
+      await enrollmentAuthority(paths, CLAUSTRUM_OPENCODE_ENROLLMENT_NAME),
+    ).toBe('local')
+  })
+
   test('uses vault authority when a valid token file exists', async () => {
     const paths = await fixture()
     await writeFile(

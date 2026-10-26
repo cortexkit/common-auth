@@ -118,6 +118,11 @@ function parseFile(text: string | undefined): FileRead {
   }
 }
 
+/** Settings need only the config classification, not a joined roster snapshot. */
+export async function readPoolConfig(path: string) {
+  return classifyConfig(parseFile(await readText(path)))
+}
+
 /**
  * Validate config/state/config bytes without locks. Roster replacement writes
  * config before deleting old state credentials. Re-read a changed config so an
