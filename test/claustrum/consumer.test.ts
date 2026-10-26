@@ -732,7 +732,7 @@ test('a credential an incomplete reply re-lists under another account is never a
   ).toBeUndefined()
 })
 
-// --- connects that never settle (issue #8) ---
+// --- connects that never settle ---
 
 /** A connect that is called once per attempt and never settles on its own. */
 function stalledConnects(timers: ReturnType<typeof fakeTimers>) {
