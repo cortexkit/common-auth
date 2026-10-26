@@ -6721,6 +6721,19 @@ test_count_pattern = 'Ran {count} test'
 expect_red = ['^setup\sflow\sa\sdry\srun\swithout\sa\sterminal\splans\sthe\s--yes\spath\sinstead\sof\srefusing$']
 expect_message = 'Setup requires a TTY or --yes.'
 
+[[control]]
+id = 'setup-local-package-registration'
+guards = 'a local package registration in either OpenCode key is preserved instead of adding a second npm registration'
+file = 'src/setup/register.ts'
+old = 'if (existingLocalEntries.length > 0)'
+new = 'if (false /* NON-VACUITY BREAK: restore npm-name-only registration matching. */)'
+test_file = 'test/setup/local-registration.test.ts'
+runner = 'command'
+command = ['sh', '-c', 'git diff -- src/setup/register.ts; bun test test/setup/local-registration.test.ts -t "$1"', 'sh', '{test}']
+list_command = ['bun', 'scripts/list-bun-tests.mjs', 'test/setup/local-registration.test.ts', '{test}']
+test_count_pattern = 'Ran {count} test'
+expect_red = ['^setup\slocal\sregistration\spreserves\slocal\spath\sobject\sinstead\sof\sadding\san\snpm\sregistration$']
+
 # --- timestamped quota counters ---
 [[control]]
 id = 'quota-counters-newest-wins'

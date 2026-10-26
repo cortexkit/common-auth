@@ -289,6 +289,22 @@ export async function runSetup(
     !options.enrollOnly && hosts.includes('opencode')
       ? planOpenCodeRegistration(plugin, generation, io)
       : []
+  for (const write of writes) {
+    for (const entry of write.existingLocalEntries ?? [])
+      printLine(
+        terminal,
+        `OpenCode: already registered from ${entry} in ${write.path}.`,
+      )
+    const entries = [
+      ...(write.existingLocalEntries ?? []),
+      ...(write.existingNpmEntries ?? []),
+    ]
+    if (entries.length > 1)
+      printLine(
+        terminal,
+        `Warning: ${plugin.displayName} may load twice in ${write.path}: ${entries.join(', ')}. Entries were left unchanged.`,
+      )
+  }
   if (options.dryRun) {
     printLine(
       terminal,

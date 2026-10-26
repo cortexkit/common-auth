@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import {
   applyEdits,
   createScanner,
@@ -19,9 +20,11 @@ export interface PlannedWrite {
   path: string
   content: string
   changed: boolean
+  existingLocalEntries?: string[]
+  existingNpmEntries?: string[]
 }
 
-function packageOf(value: unknown): string | null {
+function specifierOf(value: unknown): string | null {
   const entry =
     typeof value === 'string'
       ? value
@@ -30,9 +33,62 @@ function packageOf(value: unknown): string | null {
         : value && typeof value === 'object' && 'package' in value
           ? value.package
           : null
-  if (typeof entry !== 'string') return null
+  return typeof entry === 'string' ? entry : null
+}
+
+function packageOf(value: unknown): string | null {
+  const entry = specifierOf(value)
+  if (entry === null) return null
   const at = entry.indexOf('@', entry.startsWith('@') ? 1 : 0)
   return at < 0 ? entry : entry.slice(0, at)
+}
+
+function localPackageOf(
+  entry: string,
+  configFile: string,
+  io: SetupIO,
+): string | null {
+  const { path, platform } = setupPaths(io)
+  try {
+    // Relative paths use the declaring config's directory, not setup's working directory:
+    // https://github.com/anomalyco/opencode/blob/b6478dce/packages/opencode/src/config/plugin.ts#L40-L60
+    // https://github.com/anomalyco/opencode/blob/v2.0.22/packages/core/src/config/plugin/source.ts#L139-L145
+    const directory = /^file:\/\//i.test(entry)
+      ? fileURLToPath(new URL(entry), { windows: platform === 'win32' })
+      : path.isAbsolute(entry) || entry.startsWith('.')
+        ? path.resolve(path.dirname(configFile), entry)
+        : null
+    if (directory === null) return null
+    const manifest: unknown = JSON.parse(
+      (io.fs ?? defaultSetupFileSystem).readText(
+        path.join(directory, 'package.json'),
+      ),
+    )
+    return manifest &&
+      typeof manifest === 'object' &&
+      'name' in manifest &&
+      typeof manifest.name === 'string'
+      ? manifest.name
+      : null
+  } catch {
+    // A missing, unreadable or invalid local package is not a registration of this plugin.
+    return null
+  }
+}
+
+function pluginConfig(text: string, key: 'plugin' | 'plugins') {
+  const errors: ParseError[] = []
+  const value = parse(text, errors, { allowTrailingComma: true })
+  if (
+    errors.length ||
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value)
+  )
+    throw new Error('Invalid OpenCode config; refusing to overwrite it.')
+  if (value[key] !== undefined && !Array.isArray(value[key]))
+    throw new Error(`OpenCode ${key} must be an array.`)
+  return value
 }
 
 function removeArrayEntry(text: string, key: string, index: number): string {
@@ -72,15 +128,7 @@ export function updatePluginConfig(
   pkg: string,
   version: string,
 ): string {
-  const errors: ParseError[] = []
-  const value = parse(text, errors, { allowTrailingComma: true })
-  if (
-    errors.length ||
-    !value ||
-    typeof value !== 'object' ||
-    Array.isArray(value)
-  )
-    throw new Error('Invalid OpenCode config; refusing to overwrite it.')
+  const value = pluginConfig(text, key)
   const options = {
     formattingOptions: {
       insertSpaces: !/^\t+/m.test(text),
@@ -90,8 +138,6 @@ export function updatePluginConfig(
   }
   let output = text
   const array: unknown = value[key]
-  if (array !== undefined && !Array.isArray(array))
-    throw new Error(`OpenCode ${key} must be an array.`)
   const entries: unknown[] = Array.isArray(array) ? [...array] : []
   const matches = entries.flatMap((entry, index) =>
     packageOf(entry) === pkg ? [index] : [],
@@ -152,6 +198,29 @@ export function planOpenCodeRegistration(
     const before = exists
       ? fs.readText(file)
       : `${JSON.stringify({ $schema: `https://opencode.ai/${name === 'tui' ? 'tui' : 'config'}.json` }, null, 2)}\n`
+    const config = pluginConfig(before, key)
+    const existingLocalEntries: string[] = []
+    const existingNpmEntries: string[] = []
+    for (const field of ['plugin', 'plugins']) {
+      if (!Array.isArray(config[field])) continue
+      for (const entry of config[field]) {
+        const spec = specifierOf(entry)
+        if (spec === null) continue
+        if (localPackageOf(spec, file, io) === plugin.packages.opencode)
+          existingLocalEntries.push(JSON.stringify(entry))
+        else if (packageOf(entry) === plugin.packages.opencode)
+          existingNpmEntries.push(JSON.stringify(entry))
+      }
+    }
+    // A local build is deliberate: do not replace it, deduplicate it or migrate its key.
+    if (existingLocalEntries.length > 0)
+      return {
+        path: file,
+        content: before,
+        changed: false,
+        existingLocalEntries,
+        existingNpmEntries,
+      }
     const content = updatePluginConfig(
       before,
       key,

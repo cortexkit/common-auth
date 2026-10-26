@@ -175,6 +175,11 @@ jobs:
           if ($LASTEXITCODE) { throw 'Build failed' }
           npm install --global opencode-ai
           if ($LASTEXITCODE) { throw 'OpenCode install failed' }
+      - name: Local plugin registration paths and file URLs
+        shell: pwsh
+        run: |
+          bun test test/setup/local-registration.test.ts
+          if ($LASTEXITCODE) { throw 'Local plugin registration tests failed' }
       - name: Time 10 real Windows process listings
         if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch'
         shell: pwsh
