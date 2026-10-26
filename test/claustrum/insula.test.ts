@@ -5,6 +5,7 @@ import {
   acquireInsulaQuotaSource,
   ClaustrumConsumer,
   connectClaustrumScopedClient,
+  DEFAULT_CONNECT_TIMEOUT_MS,
   drainVaultQuota,
   type InsulaQuotaMiss,
   type InsulaUsageEntry,
@@ -802,7 +803,10 @@ test('the existing consumer tick drives insula without a separate timer', async 
       }),
     now: () => NOW,
     insula: { provider: 'codex', normalize: () => undefined },
-    setTimeoutImpl: (() => {
+    setTimeoutImpl: ((_callback: () => void, delay?: number) => {
+      // The bounded connect arms its own deadline through this seam. It is
+      // not a tick, so it neither counts nor ends the wait for the first tick.
+      if (delay === DEFAULT_CONNECT_TIMEOUT_MS) return { unref() {} }
       scheduled++
       done()
       return { unref() {} }
