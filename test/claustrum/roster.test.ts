@@ -1,5 +1,5 @@
 import { expect } from 'bun:test'
-import { readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   acceptAccount,
@@ -18,7 +18,11 @@ import {
   type VaultRosterFile,
   vaultRoutingRows,
 } from '../../src/claustrum/index.ts'
-import { LockOwnershipError, lockPathFor } from '../../src/fs/index.js'
+import {
+  acquireRefreshFileLock,
+  LockOwnershipError,
+  lockPathFor,
+} from '../../src/fs/index.js'
 import { mergeQuotaObservation } from '../../src/quota/index.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { cleanupDirs, deferred, tempDir } from './helpers.ts'
@@ -1145,4 +1149,123 @@ test('a reading with a proven account on an accountless row with several credent
     false,
   )
   expect(await readVaultRoster(path)).toEqual(roster)
+})
+
+async function rosterIdentity(path: string) {
+  const { ino, mtimeMs, size } = await stat(path)
+  return { ino, mtimeMs, size }
+}
+
+async function directoryEntries(path: string) {
+  const { readdir } = await import('node:fs/promises')
+  const { dirname } = await import('node:path')
+  return (await readdir(dirname(path))).sort()
+}
+
+test('an unchanged list takes no write lock and leaves the roster file alone', async () => {
+  const { path } = await fixture()
+  await refreshVaultRoster({ path, custody: inventory([work]) })
+  const before = await rosterIdentity(path)
+  const entries = await directoryEntries(path)
+  // Something else holds the write lock for the whole list: a refresh that
+  // took it for an unchanged roster would wait and then refuse.
+  const holder = await acquireRefreshFileLock({
+    path,
+    name: 'claustrum-roster-write',
+    ttlMs: 10_000,
+    renew: true,
+  })
+  if (!holder) throw new Error('holder failed')
+  let roster: VaultRosterFile | undefined
+  try {
+    roster = await refreshVaultRoster({ path, custody: inventory([work]) })
+  } finally {
+    await holder.release()
+  }
+  expect(roster?.view).toBe('v')
+  expect(await rosterIdentity(path)).toEqual(before)
+  expect(await directoryEntries(path)).toEqual(entries)
+})
+
+test('a changed list still takes the write lock and writes', async () => {
+  const { path } = await fixture()
+  await refreshVaultRoster({ path, custody: inventory([work]) })
+  const before = await rosterIdentity(path)
+  const roster = await refreshVaultRoster({
+    path,
+    custody: inventory([work, fallback]),
+  })
+  expect(roster?.rows).toHaveLength(2)
+  const after = await rosterIdentity(path)
+  expect(after.ino).not.toBe(before.ino)
+  expect(after.mtimeMs).not.toBe(before.mtimeMs)
+  expect((await readVaultRoster(path))?.rows).toHaveLength(2)
+})
+
+// A quota observation that only this process holds in memory: it is drained
+// after the check, by whichever commit reaches the file first.
+const queuedObservation = {
+  checkedAt: 100,
+  readings: [{ label: '5h', usedPercent: 10 }],
+}
+
+test("an unchanged list still commits this process's unwritten quota readings", async () => {
+  const { path } = await fixture()
+  const first = await refreshVaultRoster({ path, custody: inventory([work]) })
+  const route = routeOf(first, work.credentialId).routeId
+  expect(
+    await recordVaultQuota(path, {
+      routeId: route,
+      observation: queuedObservation,
+      ...receiptFor(work),
+    }),
+  ).toBe(true)
+  let roster: VaultRosterFile | undefined
+  try {
+    roster = await refreshVaultRoster({ path, custody: inventory([work]) })
+  } finally {
+    await drainVaultQuota(path)
+  }
+  // The roster the list returns is the file, as an unchanged commit returns
+  // it: the reading beyond it is committed, not held back.
+  expect(routeOf(roster, work.credentialId).quota).toBeUndefined()
+  expect(
+    routeOf(await readVaultRoster(path), work.credentialId).quota,
+  ).toBeDefined()
+})
+
+test('a list whose unlocked read races a writer never overwrites the newer file', async () => {
+  const { path } = await fixture()
+  const other = {
+    ...work,
+    credentialId: 'oauth:test:other',
+    accountIdentity: 'provider-other',
+  }
+  const first = await refreshVaultRoster({
+    path,
+    custody: inventory([work, other]),
+  })
+  const route = routeOf(first, work.credentialId).routeId
+  // The second list leaves `work` out, so committing it would remove that
+  // account and write a file unlike the one it read: it has to take the lock.
+  let raced: VaultRosterFile | undefined
+  const roster = await refreshVaultRoster({
+    path,
+    custody: inventory([other], 'v'),
+    // Runs once the list is in hand and before the commit decides: the file
+    // gains a decline that this refresh must not throw away.
+    onInventory: async () => {
+      await declineVaultRoute(path, route)
+      raced = await readVaultRoster(path)
+    },
+  })
+  expect(raced?.rows).toHaveLength(2)
+  // The write the refresh compared was stale; the commit under the lock kept
+  // the decline instead of reverting to the file it had read.
+  expect(
+    roster?.rows.some((row) => row.credentialId === work.credentialId),
+  ).toBe(false)
+  const saved = await readVaultRoster(path)
+  expect(saved?.declined).toHaveLength(1)
+  expect(saved?.declined).toEqual(raced?.declined)
 })

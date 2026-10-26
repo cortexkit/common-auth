@@ -149,6 +149,15 @@ export function pendingVaultQuota(
   return roster
 }
 
+/**
+ * Whether this process holds quota readings for `path` that no commit of the
+ * durable roster has written yet, so a reader of the file alone is not seeing
+ * everything this process would publish.
+ */
+export function hasPendingVaultQuota(path: string): boolean {
+  return !!writers.get(resolve(path))?.pending.size
+}
+
 function schedule(writer: Writer, delay: number): void {
   if (
     writer.running ||

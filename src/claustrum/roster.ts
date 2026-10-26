@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import {
   acquireRefreshFileLock,
@@ -36,6 +37,7 @@ import {
 } from './interlock.js'
 import {
   enqueueVaultQuota,
+  hasPendingVaultQuota,
   pendingVaultQuota,
   type VaultQuotaPublication,
 } from './quota-writer.js'
@@ -949,6 +951,92 @@ export function isVaultRosterLockRefusal(
   return false
 }
 
+const UNLOCKED_READ_ATTEMPTS = 4
+
+interface FileStamp {
+  dev: number
+  ino: number
+  size: number
+  mtimeMs: number
+}
+
+/**
+ * What identifies one version of the file at `path`: the roster is always
+ * replaced by a rename, so any write gives it a different inode, and an
+ * in-place rewrite a different size or modification time. Undefined when it
+ * cannot be inspected, which callers must read as 'may have changed'.
+ */
+async function fileStamp(path: string): Promise<FileStamp | undefined> {
+  try {
+    const { dev, ino, size, mtimeMs } = await stat(path)
+    return { dev, ino, size, mtimeMs }
+  } catch {
+    return undefined
+  }
+}
+
+/** Whether two `fileStamp` readings are of the same file version. */
+function sameFileStamp(
+  left: FileStamp | undefined,
+  right: FileStamp | undefined,
+): boolean {
+  return (
+    left !== undefined &&
+    right !== undefined &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeMs === right.mtimeMs
+  )
+}
+
+/**
+ * Whether a roster list that lands unlocked would write exactly the file at
+ * `path`. `overlay` names what this process holds besides the file: `target` is
+ * the file's own roster, which the locked commit compares against, and `local`,
+ * when different, is that roster plus unwritten quota readings, which must
+ * equal the commit's result too. Both must equal `next(target)`'s bytes, which
+ * is the write the commit would make; any difference, a missing or unreadable
+ * file, or a read that a concurrent reader keeps changing all mean 'commit'.
+ */
+async function readUnlockedCommitTarget(
+  path: string,
+  overlay: (current: VaultRosterFile | undefined) => {
+    target: VaultRosterFile | undefined
+    local?: VaultRosterFile | undefined
+  },
+  next: (current: VaultRosterFile | undefined) => VaultRosterFile,
+): Promise<'unchanged' | 'commit'> {
+  for (let attempt = 0; attempt < UNLOCKED_READ_ATTEMPTS; attempt++) {
+    // Roster files are replaced by rename, so each attempt reads one whole
+    // file either way.
+    const before = await fileStamp(path)
+    const current = await readVaultRoster(path)
+    let target: VaultRosterFile | undefined
+    let local: VaultRosterFile | undefined
+    let changed: boolean
+    try {
+      ;({ target, local } = overlay(current))
+      const written = JSON.stringify(next(target))
+      changed =
+        JSON.stringify(target) !== written ||
+        (local !== undefined && JSON.stringify(local) !== written)
+    } catch {
+      return 'commit'
+    }
+    // No lock was taken, so another writer may have replaced the file while
+    // it was being projected. The answer must describe the file as it is now,
+    // otherwise a later list of the same roster would find it changed again.
+    if (!sameFileStamp(before, await fileStamp(path))) continue
+    if (changed) return 'commit'
+    // Quota readings this process enqueued while the file was being projected
+    // are not part of `current`; committing them now is the commit the writer
+    // would otherwise make after its interval.
+    return hasPendingVaultQuota(path) ? 'commit' : 'unchanged'
+  }
+  return 'commit'
+}
+
 /**
  * Discover and commit the roster. The lease covers the list call and the
  * commit, not just the write: an opaque view cannot tell a delayed old reply
@@ -956,7 +1044,8 @@ export function isVaultRosterLockRefusal(
  * failed list, or custody switching off mid-run, never writes anything; a
  * peer holding the lease means its last committed roster is served instead.
  * A write-lock timeout keeps the discovered inventory for the next poll,
- * unless a peer has superseded its base view in the meantime.
+ * unless a peer has superseded its base view in the meantime. A list that
+ * would write the file the roster already holds takes no write lock at all.
  */
 export async function refreshVaultRoster(options: {
   path: string
@@ -1019,8 +1108,48 @@ export async function refreshVaultRoster(options: {
           }
     pendingDiscoveries.delete(key)
     const { inventory } = discovered
-    options.onInventory?.(inventory)
+    // Called, not awaited: a caller noting the list here may wait for this
+    // roster's write lock, and this refresh decides below whether it needs it.
+    void options.onInventory?.(inventory)
     options.signal?.throwIfAborted()
+    const projection =
+      typeof options.projection === 'function'
+        ? options.projection()
+        : options.projection
+    const next = (current: VaultRosterFile | undefined) =>
+      projectVaultRoster(current, inventory, projection)
+    const isActive = async () => {
+      options.signal?.throwIfAborted()
+      await lease.assertOwned()
+      return active()
+    }
+    // The write lock costs a lock file, an eviction marker and staging files in
+    // the roster's directory on every poll, so it is skipped when the list
+    // would write the file that is already there. The read deciding that takes
+    // no lock: a writer that commits between the read and this decision only
+    // makes our comparison stale, and a stale comparison never writes (the
+    // commit below judges the file again under the lock). Only equality with
+    // every byte the commit would write skips; every other answer commits.
+    const decision = await readUnlockedCommitTarget(
+      options.path,
+      (current) => {
+        // A hub member listed over a base view of its file: the file's own view
+        // is what the commit compares, so the overlay is the plain file. The
+        // locked commit below still applies the base-view rule.
+        if (listedOver) return { target: current }
+        // This process's unwritten quota readings are part of the roster it
+        // serves, so a list that matches everything but them still commits.
+        const local = pendingVaultQuota(options.path, current)
+        return { target: current, ...(local !== current && { local }) }
+      },
+      next,
+    )
+    if (decision === 'unchanged') {
+      if (!(await isActive())) return undefined
+      // Returned as a later read of the file: that is what today's locked
+      // unchanged commit returns, and memory keeps only what was committed.
+      return await readVaultRoster(options.path)
+    }
     return await mutateVaultRoster(
       options.path,
       async (current) => {
@@ -1033,13 +1162,9 @@ export async function refreshVaultRoster(options: {
           current?.view !== inventory.view
         )
           return { result: current }
-        const projection =
-          typeof options.projection === 'function'
-            ? options.projection()
-            : options.projection
-        const next = projectVaultRoster(current, inventory, projection)
-        const changed = JSON.stringify(current) !== JSON.stringify(next)
-        return { ...(changed && { next }), result: next }
+        const projected = next(current)
+        const changed = JSON.stringify(current) !== JSON.stringify(projected)
+        return { ...(changed && { next: projected }), result: projected }
       },
       {
         signal: options.signal,
