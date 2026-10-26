@@ -1030,8 +1030,9 @@ async function readUnlockedCommitTarget(
     if (!sameFileStamp(before, await fileStamp(path))) continue
     if (changed) return 'commit'
     // Quota readings this process enqueued while the file was being projected
-    // are not part of `current`; committing them now is the commit the writer
-    // would otherwise make after its interval.
+    // are not part of `current`, and a list that returns unchanged while they
+    // wait would be the only chance to serve them as this list's roster. They
+    // keep their own commit either way, so this path takes the locked one.
     return hasPendingVaultQuota(path) ? 'commit' : 'unchanged'
   }
   return 'commit'
