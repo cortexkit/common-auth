@@ -2,11 +2,11 @@ import { expect } from 'bun:test'
 import { join } from 'node:path'
 import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
 import {
-  classifyVaultFailure,
   ClaustrumConsumer,
   type ClaustrumConsumerOptions,
   type ClaustrumScopedClient,
   ClaustrumUnreachableError,
+  classifyVaultFailure,
   DEFAULT_CONNECT_TIMEOUT_MS,
   declineVaultRoute,
   readVaultRoster,
