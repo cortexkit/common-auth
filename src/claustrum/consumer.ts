@@ -3,6 +3,7 @@ import { createLogger } from '../logger/index.js'
 import type { QuotaObservation } from '../quota/index.js'
 import type { RoutingRow } from '../routing/index.js'
 import { combineAbortSignals } from '../util/any-signal.js'
+import { ClaustrumUnreachableError } from './availability.js'
 import {
   type ClaustrumFamily,
   type ClaustrumRosterWatch,
@@ -16,7 +17,6 @@ import {
 } from './custody.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
-import { ClaustrumUnreachableError } from './availability.js'
 import type { CustodyLease } from './hub.js'
 import {
   acquireInsulaQuotaSource,
