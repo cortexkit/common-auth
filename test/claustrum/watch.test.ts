@@ -319,25 +319,35 @@ test.if(clientWatches)(
     const s = await scenario({ watch: 'unknown_method' })
     s.consumer.start()
     await until(() => s.consumer.watchState().vault === 'fallback', 'fallback')
-    await until(() => s.timers.pending().length === 1, 'tick')
+    await until(() => tickOnly(s.timers), 'tick')
     expect(s.timers.pending()).toEqual([POLL_MS])
     s.timers.fire(POLL_MS)
     await until(() => s.daemon.lists === 2, 'poll')
-    await until(() => s.timers.pending().length === 1, 'tick')
+    await until(() => tickOnly(s.timers), 'tick')
     expect(s.timers.pending()).toEqual([POLL_MS])
     expect(s.daemon.vaultWatchRequests).toBe(1)
   },
 )
 
+/**
+ * Whether the only pending timer is the consumer's poll tick. A bounded vault
+ * connect arms its own deadline through the same timer seam while it is
+ * connecting, so a count of one alone can still be that deadline.
+ */
+function tickOnly(timers: { pending(): number[] }): boolean {
+  const pending = timers.pending()
+  return pending.length === 1 && pending[0] === POLL_MS
+}
+
 test('a client without watchScoped keeps polling at the usual interval', async () => {
   const s = await scenario({ withoutWatch: true })
   s.consumer.start()
-  await until(() => s.timers.pending().length === 1, 'tick')
+  await until(() => tickOnly(s.timers), 'tick')
   expect(s.consumer.watchState()).toEqual({ vault: 'fallback' })
   expect(s.timers.pending()).toEqual([POLL_MS])
   s.timers.fire(POLL_MS)
   await until(() => s.daemon.lists === 2, 'poll')
-  await until(() => s.timers.pending().length === 1, 'tick')
+  await until(() => tickOnly(s.timers), 'tick')
   expect(s.timers.pending()).toEqual([POLL_MS])
   expect(s.daemon.vaultWatchRequests).toBe(0)
 })
@@ -349,7 +359,7 @@ test.if(!clientWatches)(
   async () => {
     const s = await scenario()
     s.consumer.start()
-    await until(() => s.timers.pending().length === 1, 'tick')
+    await until(() => tickOnly(s.timers), 'tick')
     expect(s.consumer.watchState()).toEqual({ vault: 'fallback' })
     expect(s.timers.pending()).toEqual([POLL_MS])
     expect(s.daemon.vaultWatchRequests).toBe(0)
@@ -412,9 +422,9 @@ test.if(clientWatches)(
 test('local mode opens no watch and sends no request', async () => {
   const s = await scenario({ active: false })
   s.consumer.start()
-  await until(() => s.timers.pending().length === 1, 'tick')
+  await until(() => tickOnly(s.timers), 'tick')
   s.timers.fire(POLL_MS)
-  await until(() => s.timers.pending().length === 1, 'tick')
+  await until(() => tickOnly(s.timers), 'tick')
   await Bun.sleep(20)
   expect(s.daemon.lists).toBe(0)
   expect(s.daemon.vaultWatchRequests).toBe(0)
