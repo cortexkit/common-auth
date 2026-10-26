@@ -1,5 +1,10 @@
 import { resolve } from 'node:path'
 import { createLogger } from '../logger/index.js'
+import {
+  QUOTA_COMMIT_INTERVAL_MS,
+  type QuotaCommitTimer,
+  quotaCommitTimer,
+} from '../quota/commit-interval.js'
 import { isQuotaObservation, type QuotaObservation } from '../quota/index.js'
 import { type QuotaField, quotaFields } from '../quota/pending.js'
 import {
@@ -26,7 +31,9 @@ interface Writer {
   wake: Set<() => void>
   abort: AbortController
   running?: Promise<void>
-  timer?: ReturnType<typeof setTimeout>
+  clock: QuotaCommitTimer
+  timer?: ReturnType<QuotaCommitTimer['schedule']>
+  committedAt?: number
   failures: number
   draining: boolean
   order: number
@@ -37,7 +44,7 @@ const writers = new Map<string, Writer>()
 const logger = createLogger('claustrum')
 const COALESCE_MS = 100
 
-function writerFor(path: string): Writer {
+function writerFor(path: string, clock = quotaCommitTimer): Writer {
   const key = resolve(path)
   let writer = writers.get(key)
   if (!writer) {
@@ -47,6 +54,7 @@ function writerFor(path: string): Writer {
       listeners: new Set(),
       wake: new Set(),
       abort: new AbortController(),
+      clock,
       failures: 0,
       draining: false,
       order: 0,
@@ -60,8 +68,9 @@ function writerFor(path: string): Writer {
 export function retainVaultQuotaWriter(
   path: string,
   listener: Listener,
+  clock?: QuotaCommitTimer,
 ): () => Promise<void> {
-  const writer = writerFor(path)
+  const writer = writerFor(path, clock)
   writer.listeners.add(listener)
   let released: Promise<void> | undefined
   return () =>
@@ -148,15 +157,26 @@ function schedule(writer: Writer, delay: number): void {
     writer.abort.signal.aborted
   )
     return
-  writer.timer = setTimeout(() => {
+  const remaining = writer.draining
+    ? 0
+    : (writer.committedAt ?? -Infinity) +
+      QUOTA_COMMIT_INTERVAL_MS -
+      writer.clock.now()
+  writer.timer = writer.clock.schedule(Math.max(delay, remaining), () => {
     writer.timer = undefined
-    flush(writer)
-  }, delay)
+    return flush(writer)
+  })
   if (!writer.draining) writer.timer.unref?.()
 }
 
-function flush(writer: Writer): void {
-  if (writer.running || writer.abort.signal.aborted) return
+function cancelTimer(writer: Writer): void {
+  writer.timer?.cancel()
+  writer.timer = undefined
+}
+
+function flush(writer: Writer): Promise<void> {
+  if (writer.running || writer.abort.signal.aborted)
+    return writer.running ?? Promise.resolve()
   const batch = new Map(
     [...writer.pending].map(([account, pending]) => [
       account,
@@ -165,7 +185,7 @@ function flush(writer: Writer): void {
   )
   writer.running = (async () => {
     try {
-      await mutateVaultRoster(
+      const committed = await mutateVaultRoster(
         writer.path,
         (current) => {
           let next = current
@@ -174,10 +194,12 @@ function flush(writer: Writer): void {
               next = applyVaultQuota(next, field.priorReading).roster
             next = applyVaultQuota(next, field.publication).roster
           }
-          return { ...(next !== current && { next }), result: undefined }
+          const changed = JSON.stringify(next) !== JSON.stringify(current)
+          return { ...(changed && { next }), result: changed }
         },
         { signal: writer.abort.signal },
       )
+      if (committed) writer.committedAt = writer.clock.now()
       for (const [account, fields] of batch) {
         const pending = writer.pending.get(account)
         for (const [key, field] of fields) {
@@ -204,6 +226,7 @@ function flush(writer: Writer): void {
       schedule(writer, backoff)
     }
   })()
+  return writer.running
 }
 
 /** Wait at most timeoutMs for detached publication; shutdown loss is acceptable. */
@@ -215,8 +238,7 @@ export async function drainVaultQuota(
   const writer = writers.get(key)
   if (!writer) return
   writer.draining = true
-  clearTimeout(writer.timer)
-  writer.timer = undefined
+  cancelTimer(writer)
   let deadline: ReturnType<typeof setTimeout> | undefined
   let wake: (() => void) | undefined
   const drained = new Promise<void>((done) => {
@@ -242,7 +264,7 @@ export async function drainVaultQuota(
     // must not discard its observations or stop its retries.
     if (!writer.listeners.size) {
       writer.abort.abort()
-      clearTimeout(writer.timer)
+      cancelTimer(writer)
       writer.pending.clear()
       if (writers.get(key) === writer) writers.delete(key)
     }

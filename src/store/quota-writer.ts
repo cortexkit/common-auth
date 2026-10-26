@@ -1,5 +1,10 @@
 import { createLogger } from '../logger/index.js'
 import {
+  QUOTA_COMMIT_INTERVAL_MS,
+  type QuotaCommitTimer,
+  quotaCommitTimer,
+} from '../quota/commit-interval.js'
+import {
   type Attribution,
   assertQuotaEpoch,
   assertQuotaRow,
@@ -44,7 +49,8 @@ export class PoolQuotaWriter {
   private readonly warned = new Set<string>()
   private readonly wake = new Set<() => void>()
   private readonly logger
-  private timer?: ReturnType<typeof setTimeout>
+  private timer?: ReturnType<QuotaCommitTimer['schedule']>
+  private committedAt?: number
   private running?: Promise<void>
   private closing?: Promise<void>
   private closed = false
@@ -54,6 +60,7 @@ export class PoolQuotaWriter {
   constructor(
     private readonly rt: StoreRuntime,
     private readonly timeoutMs = 1_000,
+    private readonly clock: QuotaCommitTimer = quotaCommitTimer,
   ) {
     this.logger = rt.ctx.logger ?? createLogger('store')
   }
@@ -170,24 +177,34 @@ export class PoolQuotaWriter {
 
   private schedule(delay: number): void {
     if (this.running || this.timer || !this.pending.size || this.stopped) return
-    this.timer = setTimeout(() => {
+    const remaining = this.closed
+      ? 0
+      : (this.committedAt ?? -Infinity) +
+        QUOTA_COMMIT_INTERVAL_MS -
+        this.clock.now()
+    this.timer = this.clock.schedule(Math.max(delay, remaining), () => {
       this.timer = undefined
-      this.flush()
-    }, delay)
+      return this.flush()
+    })
     if (!this.closed) this.timer.unref?.()
   }
 
-  // Starts a flush now rather than at the coalescing timer or retry backoff;
-  // a flush already running is left to finish.
+  private cancelTimer(): void {
+    this.timer?.cancel()
+    this.timer = undefined
+  }
+
+  // A full queue overrides the interval: response handling must not wait for
+  // a quota commit slot. A flush already running is left to finish.
   private flushNow(): void {
     if (this.running) return
-    clearTimeout(this.timer)
-    this.timer = undefined
+    this.cancelTimer()
     this.flush()
   }
 
-  private flush(): void {
-    if (this.running || this.stopped || !this.pending.size) return
+  private flush(): Promise<void> {
+    if (this.running || this.stopped || !this.pending.size)
+      return this.running ?? Promise.resolve()
     // Every queued reading, each row's in arrival order.
     const batch = [...this.pending.values()].flat()
     // Short lock attempts allow retries to pick up freshly queued readings and
@@ -261,7 +278,10 @@ export class PoolQuotaWriter {
               tx.setEntry(id, { ...entry, quota, needsFirstReading: false })
               changed = true
             }
-            if (changed && !this.stopped) await tx.commitConfig()
+            if (changed && !this.stopped) {
+              await tx.commitConfig()
+              this.committedAt = this.clock.now()
+            }
           },
           { completeTorn: false },
         )
@@ -289,6 +309,7 @@ export class PoolQuotaWriter {
         this.schedule(delay)
       }
     })()
+    return this.running
   }
 
   private warn(message: string, data?: unknown): void {
@@ -307,8 +328,7 @@ export class PoolQuotaWriter {
   }
 
   private async drain(): Promise<void> {
-    clearTimeout(this.timer)
-    this.timer = undefined
+    this.cancelTimer()
     let deadline: ReturnType<typeof setTimeout> | undefined
     let wake!: () => void
     const drained = new Promise<void>((done) => {
@@ -329,7 +349,7 @@ export class PoolQuotaWriter {
     } finally {
       this.stopped = true
       clearTimeout(deadline)
-      clearTimeout(this.timer)
+      this.cancelTimer()
       this.wake.delete(wake)
       if (this.pending.size)
         this.warn('pool quota drain timed out; pending readings left', {

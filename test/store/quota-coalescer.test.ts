@@ -9,6 +9,7 @@ import {
   POOL_LOCK_DEFAULTS,
 } from '../../src/store/refresh-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { manualQuotaTimer } from '../quota/commit-timer.js'
 import { deferred, oauth, scenario } from './helpers.js'
 
 const hooks = lifetimeHooks()
@@ -47,6 +48,87 @@ async function quota(store: PoolStore): Promise<QuotaMap | undefined> {
   if (load.status !== 'ready') throw new Error('pool not ready')
   return load.rows[0]?.quota as QuotaMap | undefined
 }
+
+test('50 pool publications within the commit interval make one commit with the newest fields', async () => {
+  const { s, plain } = await fixture()
+  const timer = manualQuotaTimer()
+  let commits = 0
+  const store = s.open({
+    quota: quotaCodec,
+    coalesceQuota: true,
+    quotaCommitTimer: timer.clock,
+    onStep: (step) => {
+      if (step === 'after-config-write') commits++
+    },
+  })
+  hooks.lifetime.finish(() => store.dispose())
+  await store.recordQuota('a', fence, reading(1))
+  await timer.advance(100)
+  commits = 0
+  for (let i = 1; i <= 50; i++) {
+    await store.recordQuota('a', fence, {
+      ...reading(i + 1, i),
+      ...(i === 1 && { counters: { tokens: { checkedAt: 500, value: 42 } } }),
+    })
+    await timer.advance(500)
+  }
+  expect(commits).toBe(0)
+  const memory = await quota(store)
+  expect(memory?.limits[0]).toMatchObject({ checkedAt: 51, usedPercent: 50 })
+  expect(memory?.counters?.tokens).toEqual({ checkedAt: 500, value: 42 })
+  expect((await quota(plain))?.limits[0]).toMatchObject({ checkedAt: 1 })
+  await timer.advance(5_000)
+  expect(commits).toBe(1)
+  expect(await quota(plain)).toEqual(memory)
+
+  await timer.advance(30_000)
+  await store.recordQuota('a', fence, reading(100, 80))
+  await timer.advance(100)
+  expect(commits).toBe(2)
+  expect((await quota(plain))?.limits[0]).toMatchObject({
+    checkedAt: 100,
+    usedPercent: 80,
+  })
+  await store.recordQuota('a', fence, reading(101, 90))
+  await store.dispose()
+  expect(commits).toBe(3)
+  expect((await quota(plain))?.limits[0]).toMatchObject({ checkedAt: 101 })
+  expect(timer.clock.now()).toBe(60_200)
+})
+
+test('200 rapid pool publications commit early at the cap without waiting for the interval', async () => {
+  const { s } = await fixture()
+  const plain = s.open()
+  const timer = manualQuotaTimer()
+  let commits = 0
+  const store = s.open({
+    coalesceQuota: true,
+    quotaCommitTimer: timer.clock,
+    onStep: (step) => {
+      if (step === 'after-config-write') commits++
+    },
+  })
+  hooks.lifetime.finish(() => store.dispose())
+  await store.recordQuota('a', fence, reading(0))
+  await timer.advance(100)
+  commits = 0
+  for (let i = 1; i <= 200; i++) await store.recordQuota('a', fence, reading(i))
+  expect(timer.clock.now()).toBe(100)
+  expect(commits).toBe(1)
+  const memory = await store.read()
+  const disk = await plain.read()
+  if (memory.status !== 'ready' || disk.status !== 'ready')
+    throw new Error('pool not ready')
+  expect(memory.rows[0]?.quota).toMatchObject({
+    readings: Array.from({ length: 201 }, (_, i) => reading(i)),
+  })
+  expect(disk.rows[0]?.quota).toMatchObject({
+    readings: Array.from({ length: 129 }, (_, i) => reading(i)),
+  })
+  await timer.advance(30_000)
+  expect(commits).toBe(2)
+  expect(await plain.read()).toEqual(memory)
+})
 
 test('pool mailbox merges poll fields across headers in memory and on disk', async () => {
   const { store, plain } = await fixture()
