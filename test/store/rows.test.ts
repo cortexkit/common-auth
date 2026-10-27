@@ -427,20 +427,38 @@ describe('store concurrency and the store-lock list', () => {
   })
 
   it('a legacy config writer waits for the library store locks and neither write is lost', async () => {
+    // Phase clocks. Bun's deadline ends a slow body without saying where it
+    // waited, so teardown prints them, but only if the body has not finished.
+    const started = performance.now()
+    const phases: string[] = []
+    const phase = (name: string) =>
+      phases.push(`${(performance.now() - started).toFixed(1)}ms ${name}`)
+    const file = (path: string) => path.slice(s.dir.length + 1)
+    let finished = false
+    hooks.lifetime.unpark(() => {
+      if (finished) return
+      finished = true
+      console.error(`config writer phases:\n  ${phases.join('\n  ')}`)
+    })
     await s.open().add({ id: 'a', credential: oauth('r-a') })
+    phase('seeded row a')
     const paused = deferred()
     hooks.lifetime.unpark(() => paused.resolve())
     const reached = deferred()
     const store = s.open({
       onStep: async (step) => {
+        phase(`library step ${step}`)
         if (step === 'before-config-write') {
           reached.resolve()
           await paused.promise
         }
       },
+      onLockEvent: (event) =>
+        phase(`library lock ${event.type} ${event.name} ${file(event.path)}`),
     })
     const add = store.add({ id: 'b', credential: oauth('r-b') })
     await reached.promise
+    phase('library paused before its config write')
     const refused = deferred()
     const legacy = mutateAccounts(
       (current) => {
@@ -454,18 +472,30 @@ describe('store concurrency and the store-lock list', () => {
       s.paths,
       {
         onContended: (path) => {
+          phase(`legacy contended ${file(path)}`)
           if (path === s.configPath) refused.resolve()
         },
       },
     )
+    void add.then(
+      () => phase('library add settled'),
+      () => phase('library add rejected'),
+    )
+    void legacy.then(
+      () => phase('legacy write settled'),
+      () => phase('legacy write rejected'),
+    )
     await blocked(hooks.lifetime, legacy, refused.promise)
+    phase('legacy refusal observed')
     expect((await s.config()).accounts.map((row: any) => row.id)).toEqual(['a'])
     paused.resolve()
     await Promise.all([add, legacy])
+    phase('both writes settled')
     const ids = (await s.config()).accounts.map((row: any) => row.id)
     expect(ids.sort()).toEqual(['a', 'b', 'legacy'])
     const state = await s.state()
     expect(Object.keys(state.accounts).sort()).toEqual(['a', 'b', 'legacy'])
+    finished = true
   })
 
   it('a legacy state writer waits for the library store locks and neither write is lost', async () => {
