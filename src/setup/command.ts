@@ -12,6 +12,7 @@ import { recordSetupEnrollment, setupEnrollmentLine } from './command-error.js'
 import { defaultCommandRunner } from './command-runner.js'
 import { detectHosts } from './detect.js'
 import { connectSetupHost, HostNotEnrolledError } from './enroll.js'
+import { parseSetupFlags, UNAVAILABLE_HOST_MESSAGE } from './flags.js'
 import { setupPaths } from './paths.js'
 import {
   assertHostsStopped,
@@ -38,47 +39,6 @@ import type {
 
 export const AMBIGUOUS_OPENCODE_MESSAGE =
   'Multiple OpenCode generations found. Choose --opencode=1|2|both before running noninteractive setup.'
-
-const UNAVAILABLE_HOST_MESSAGE =
-  'Requested setup host is unknown or unavailable. Use --host=opencode or --host=pi with a detected host.'
-
-function flags(argv: readonly string[]) {
-  const result = {
-    yes: false,
-    dryRun: false,
-    claustrum: false,
-    noClaustrum: false,
-    login: false,
-    enrollOnly: false,
-    hosts: [] as SetupHost[],
-    opencode: undefined as OpenCodeGeneration | undefined,
-  }
-  for (const arg of argv) {
-    if (arg === '--yes') result.yes = true
-    else if (arg === '--dry-run') result.dryRun = true
-    else if (arg === '--claustrum') result.claustrum = true
-    else if (arg === '--no-claustrum') result.noClaustrum = true
-    else if (arg === '--login') result.login = true
-    else if (arg === '--enroll-only') result.enrollOnly = true
-    else if (arg.startsWith('--host=')) {
-      const host = arg.slice('--host='.length)
-      if (host !== 'opencode' && host !== 'pi')
-        throw new Error(UNAVAILABLE_HOST_MESSAGE)
-      result.hosts.push(host)
-    } else if (/^--opencode=(1|2|both)$/.test(arg))
-      result.opencode = arg.slice('--opencode='.length) as OpenCodeGeneration
-    else throw new Error(`Unknown setup argument: ${arg}`)
-  }
-  if (result.claustrum && result.noClaustrum)
-    throw new Error('--claustrum and --no-claustrum cannot be used together.')
-  if (result.login && result.claustrum)
-    throw new Error('--login and --claustrum cannot be used together.')
-  if (result.enrollOnly && result.login)
-    throw new Error('--enroll-only and --login cannot be used together.')
-  if (result.enrollOnly && result.noClaustrum)
-    throw new Error('--enroll-only and --no-claustrum cannot be used together.')
-  return result
-}
 
 function validatePlugin(plugin: SetupPlugin) {
   for (const pkg of Object.values(plugin.packages)) {
@@ -133,7 +93,7 @@ export async function runSetup(
   argv: readonly string[] = [],
   io: SetupIO = {},
 ): Promise<SetupResult> {
-  const options = flags(argv)
+  const options = parseSetupFlags(argv)
   validatePlugin(plugin)
   const terminal = io.terminal ?? processTerminal()
   const detection = await detectHosts(plugin, io)
@@ -333,7 +293,7 @@ export async function runSetup(
         terminal,
         `Would run ${detection.pi.executable} install npm:${plugin.packages.pi}@${plugin.version}`,
       )
-    if (!options.enrollOnly)
+    if (!options.enrollOnly && plugin.migrate)
       for (const host of hosts)
         printLine(
           terminal,
@@ -372,7 +332,7 @@ export async function runSetup(
         if (host === 'opencode') await registerOpenCode(writes, stopped)
         else await registerPi(plugin, detection.pi.executable as string, io)
         await stopped()
-        await plugin.migrate(host, context)
+        await plugin.migrate?.(host, context)
       }
     } catch (error) {
       // Before any enrollment began nothing is connected: nothing to report.

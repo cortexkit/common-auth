@@ -12,6 +12,7 @@ export {
   type HostNotEnrolledReason,
   UNSUPPORTED_VAULT_MESSAGE,
 } from './enroll.js'
+export { setupUsage } from './flags.js'
 export {
   assertHostsStopped,
   createProcessFence,

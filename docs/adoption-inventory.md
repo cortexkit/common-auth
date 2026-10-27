@@ -87,9 +87,15 @@ const plugin: SetupPlugin = {
   },
   signInLocal: async (host, context) => { /* provider login and local-custody checks */ },
   beforeRegister: async (host, mode, context) => { /* optional provider activation and custody checks */ },
-  migrate: async (host, context) => { /* provider-specific migration */ },
+  migrate: async (host, context) => { /* optional provider-specific migration */ },
 }
 ```
+
+`migrate` is optional. A plugin with nothing to migrate, such as one that only
+reads credentials from the vault, leaves it out: setup then never calls it, and
+a dry run omits its `Would migrate <host> using the plugin callback
+(provider-specific writes).` lines. Nothing else in the output changes, and a
+plugin that supplies `migrate` sees exactly the output it did before.
 
 `vault.hosts[host].paths` is exactly the input to `/claustrum`'s
 `hostEnrollmentPaths`, with separate host identities and enrollment files.
@@ -144,7 +150,7 @@ The shared flow detects and reports hosts and offers a toggle multiselect with
 found hosts preselected. A real run refuses while OpenCode, LiteCode or Pi is
 running; a dry run only reports the running processes. In a real run, setup then
 chooses vault or local sign-in, runs `beforeRegister(host, mode)`, registers,
-migrates, and prints a next step. The process check runs again between side
+migrates (when the plugin supplies `migrate`), and prints a next step. The process check runs again between side
 effects and before atomic config publication. Failed/malformed process inspection refuses on
 a real run; a dry run only reports active hosts or inspection failure and proceeds
 with its no-mutation plan. Windows uses `tasklist /FO CSV /NH` and accepts its idle
@@ -156,6 +162,10 @@ process diagnostics retain only recognized executable names, not arguments.
 
 Flags: `--yes`, `--dry-run`, `--claustrum`, `--no-claustrum`, `--login`,
 `--opencode=1|2|both`, `--host=opencode|pi`, and `--enroll-only`.
+`--host` also takes its value as the next argument: `--host pi` and
+`--host opencode` are the same as `--host=pi` and `--host=opencode`. A
+`--host` with no value after it, or with any other value, refuses with the
+fixed message below. `--opencode` keeps only the `=` form.
 `--host` is repeatable (not a comma list): `--host=opencode --host=pi` selects
 both, with duplicates ignored. It bypasses the host picker and selects only
 requested hosts, in OpenCode/Pi order. Unknown or unavailable hosts refuse with
@@ -172,6 +182,18 @@ its CLI on PATH. Dry runs print exact shared config paths and contents,
 enrollment paths, the Pi install command, and which opaque plugin callbacks
 would run. Temporary, isolated version-probe profiles are removed; the user's
 profile and callback-owned files are not changed.
+
+`setupUsage(options?)` returns these flags as help text, one per line under
+`Flags:`, with a short description of each; `setupUsage({ command:
+'example-auth setup' })` puts `Usage: example-auth setup [flags]` and a blank
+line in front. The parser and `setupUsage` read the same flag table, so the
+help never lists a flag setup refuses or leaves out one it accepts. The shared
+parser has no `--help`: a plugin's bin checks for `--help` or `-h` before
+calling `runSetup`, prints `setupUsage()` and any lines of its own, and exits 0
+without detecting or changing anything. Any other unknown argument, including
+`--help` reaching `runSetup`, refuses before detection with `Unknown setup
+argument: <arg>. Run the plugin's own setup --help to list the flags setup
+accepts.`; before this the message ended after the argument.
 
 `--enroll-only` implies vault mode and requires an available Claustrum vault,
 with or without `--claustrum`. It conflicts with `--login` and
