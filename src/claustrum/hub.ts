@@ -12,7 +12,7 @@
 // never replaces a view another process committed after this hub listed.
 import { createHash } from 'node:crypto'
 import { readdir, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createLogger } from '../logger/index.js'
 import type { QuotaObservation } from '../quota/index.js'
 import { combineAbortSignals } from '../util/any-signal.js'
@@ -36,6 +36,7 @@ import {
   type VaultGrantReach,
   type VaultInventory,
 } from './custody.js'
+import { ensureClaustrumPrivateDirectory } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
 import {
   type AccountMapper,
@@ -890,6 +891,13 @@ export class ClaustrumDiscoveryHub {
     const generation = own.generation
     run.generation = generation
     if (!this.#live(generation)) return undefined
+    // Folders that could not be made owner-only fail every member's commit,
+    // as an unreadable base fails its member's: each is marked pending.
+    const folders = await this.#ensureRosterDirectories().then(
+      () => undefined,
+      (error: unknown) =>
+        error instanceof Error ? error : new Error(String(error)),
+    )
     // What each member's file held before the list. Another process may
     // commit while this list runs; the base-view rule then keeps its newer
     // roster rather than replacing it with this older listing.
@@ -932,6 +940,7 @@ export class ClaustrumDiscoveryHub {
       const base = bases.get(entry)
       let roster: VaultRosterFile | undefined
       try {
+        if (folders) throw folders
         if (!base) throw closed('Claustrum hub member has no base view')
         if (base instanceof Error) throw base
         // A member's first roster under this key carries the declines and
@@ -992,6 +1001,23 @@ export class ClaustrumDiscoveryHub {
       })
     this.#discoveredAt = (this.#options.now ?? Date.now)()
     return { errors }
+  }
+
+  /**
+   * Create the roster folders under the state folder (`rosters`, this host
+   * generation and this key) owner-only, as every other Claustrum private
+   * folder is: 0700 on POSIX, tightening a folder an earlier release left
+   * open, and private-files on Windows. Each is handled on its own so an
+   * existing open parent is tightened too. Without this, the first roster
+   * lock would create them with the process umask, usually 0755.
+   */
+  async #ensureRosterDirectories(): Promise<void> {
+    for (const directory of [
+      dirname(this.#generationDirectory),
+      this.#generationDirectory,
+      join(this.#generationDirectory, this.#key),
+    ])
+      await ensureClaustrumPrivateDirectory(directory, {}, 'roster directory')
   }
 
   /**

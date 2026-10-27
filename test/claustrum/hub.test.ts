@@ -3,6 +3,7 @@
 // test here runs in one process against a fake vault client.
 import { expect, spyOn } from 'bun:test'
 import {
+  chmod,
   mkdir,
   open,
   readdir,
@@ -80,7 +81,26 @@ let failed = false
 
 /** Keep phase timings quiet unless the body or teardown fails. */
 function test(name: string, body: () => Promise<void>, timeout?: number) {
-  hooks.test(
+  traced(hooks.test, name, body, timeout)
+}
+
+/** `test`, reported as skipped when `condition` holds. */
+test.skipIf =
+  (condition: boolean) =>
+  (name: string, body: () => Promise<void>, timeout?: number) =>
+    traced(hooks.test.skipIf(condition), name, body, timeout)
+
+function traced(
+  register: (
+    name: string,
+    body: () => Promise<void>,
+    timeout?: number,
+  ) => unknown,
+  name: string,
+  body: () => Promise<void>,
+  timeout?: number,
+) {
+  register(
     name,
     async () => {
       const cancelled = () => {
@@ -1918,6 +1938,75 @@ test('hub keys: every lock of a member roster stays inside its key directory', a
   for (const entry of entries)
     expect(entry === 'opencode2' || entry.startsWith(key)).toBe(true)
 })
+
+/** Every folder under `root`, its own path and permission bits. */
+async function foldersUnder(root: string) {
+  const folders: Array<{ path: string; mode: number }> = []
+  for (const entry of await readdir(root, { recursive: true })) {
+    const path = join(root, entry)
+    const metadata = await stat(path)
+    if (metadata.isDirectory())
+      folders.push({ path, mode: metadata.mode & 0o777 })
+  }
+  return folders.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+/** The roster folders a hub fixture's hub uses, outermost first. */
+function rosterFolders(f: { dir: string; hub: ClaustrumDiscoveryHub }) {
+  const rosters = join(f.dir, 'rosters')
+  const generation = join(rosters, 'opencode2')
+  return [rosters, generation, join(generation, rosterKey(f.hub))]
+}
+
+test.skipIf(process.platform === 'win32')(
+  'hub folders: every folder the hub creates under the state folder is 0700 on POSIX',
+  async () => {
+    const f = await hubFixture()
+    f.members()
+    await f.start()
+    expect(f.errors).toEqual([])
+    expect(await readVaultRoster(f.hub.rosterPath('alpha'))).toBeDefined()
+    const folders = await foldersUnder(f.dir)
+    expect(folders.map((folder) => folder.path)).toEqual(rosterFolders(f))
+    for (const folder of folders)
+      expect(folder).toEqual({ ...folder, mode: 0o700 })
+  },
+)
+
+test.skipIf(process.platform === 'win32')(
+  'hub folders: roster folders an earlier release left at 0755 are tightened to 0700 on POSIX',
+  async () => {
+    const f = await hubFixture()
+    const expected = rosterFolders(f)
+    for (const folder of expected) {
+      await mkdir(folder, { recursive: true })
+      // chmod, since mkdir's mode is masked by the process umask.
+      await chmod(folder, 0o755)
+    }
+    f.members()
+    await f.start()
+    expect(f.errors).toEqual([])
+    const folders = await foldersUnder(f.dir)
+    expect(folders.map((folder) => folder.path)).toEqual(expected)
+    for (const folder of folders)
+      expect(folder).toEqual({ ...folder, mode: 0o700 })
+  },
+)
+
+test.skipIf(process.platform !== 'win32')(
+  'hub folders: every folder the hub creates under the state folder is owner-only through private-files on Windows',
+  async () => {
+    const { verifyPrivatePath } = await import('@cortexkit/private-files')
+    const f = await hubFixture()
+    f.members()
+    await f.start()
+    expect(f.errors).toEqual([])
+    const folders = await foldersUnder(f.dir)
+    expect(folders.map((folder) => folder.path)).toEqual(rosterFolders(f))
+    for (const folder of folders)
+      await verifyPrivatePath(folder.path, 'directory')
+  },
+)
 
 test('hub seeding: a new key starts from the older key declines and order only, writes its first file with the view unchanged, and never writes under the old key', async () => {
   const old = await hubFixture()

@@ -559,10 +559,18 @@ export async function refuseWritableAncestor(
   }
 }
 
-/** POSIX tightens the enrollment directory to 0700; Windows verifies safe ancestry without modifying existing parents. */
-async function ensurePrivateDirectory(
+/**
+ * Create `directory` owner-only, or make an existing one owner-only. POSIX:
+ * every component it creates gets mode 0700, a directory another user owns is
+ * refused, and one that group or others can reach is tightened to 0700.
+ * Windows: private-files creates missing components owner-only and verifies
+ * existing ones without modifying them. `what` names the directory in the
+ * ownership refusal.
+ */
+export async function ensureClaustrumPrivateDirectory(
   directory: string,
   options: EnrollmentAncestorOptions = {},
+  what = 'enrollment directory',
 ): Promise<void> {
   if (windowsPrivateFiles) {
     await ensureWindowsDirectory(
@@ -578,7 +586,7 @@ async function ensurePrivateDirectory(
   if (uid !== undefined && metadata.uid !== uid) {
     throw new ClaustrumConsumerError(
       'unsafe-file',
-      'Claustrum enrollment directory must be owned by the current user',
+      `Claustrum ${what} must be owned by the current user`,
     )
   }
   if ((metadata.mode & 0o077) !== 0) await chmod(directory, 0o700)
@@ -590,7 +598,7 @@ async function writeStateAtomic(
   ancestorOptions: EnrollmentAncestorOptions = {},
 ): Promise<void> {
   const parent = dirname(path)
-  await ensurePrivateDirectory(parent, ancestorOptions)
+  await ensureClaustrumPrivateDirectory(parent, ancestorOptions)
   await refuseWritableAncestor(parent, ancestorOptions)
   const bytes = `${JSON.stringify(state)}\n`
   if (Buffer.byteLength(bytes) > ENROLLMENT_FILE_MAX_BYTES) {
@@ -852,7 +860,7 @@ export class ClaustrumEnrollmentManager {
   }
 
   async reconcile(): Promise<ClaustrumEnrollmentStatus> {
-    await ensurePrivateDirectory(
+    await ensureClaustrumPrivateDirectory(
       dirname(this.#paths.statePath),
       this.#ancestorOptions,
     )
@@ -1013,7 +1021,7 @@ export class ClaustrumEnrollmentManager {
         }
         // The vault returns the token exactly once: it reaches disk before the
         // pending metadata (and its secret) is replaced.
-        await ensurePrivateDirectory(
+        await ensureClaustrumPrivateDirectory(
           dirname(this.#paths.tokenPath),
           this.#ancestorOptions,
         )
@@ -1070,7 +1078,7 @@ export async function resetClaustrumEnrollmentState(
   paths: ClaustrumEnrollmentPaths,
   proposedName: string,
 ): Promise<ClaustrumEnrollmentResetResult> {
-  await ensurePrivateDirectory(dirname(paths.statePath))
+  await ensureClaustrumPrivateDirectory(dirname(paths.statePath))
   const lock = await acquireRefreshFileLock({
     name: 'ceremony',
     path: paths.statePath,
@@ -1136,7 +1144,7 @@ export async function disconnectClaustrumEnrollment(
   paths: ClaustrumEnrollmentPaths,
   proposedName: string,
 ): Promise<ClaustrumEnrollmentDisconnectResult> {
-  await ensurePrivateDirectory(dirname(paths.statePath))
+  await ensureClaustrumPrivateDirectory(dirname(paths.statePath))
   const lock = await acquireRefreshFileLock({
     // The same lock as the ceremony, so a token written by a concurrent
     // reconcile() can never land after this removes the files.
