@@ -1559,7 +1559,11 @@ test('hub generations: a fan-out whose list returned before vault mode went off 
   const [alpha, beta] = f.members()
   if (!alpha || !beta) throw new Error('missing member')
   await alpha.refresh()
-  const lock = await holdWriteLock(f.hub.rosterPath('alpha'))
+  // Member commits run together, so every member's write lock is held to
+  // keep the whole fan-out in flight until vault mode goes off.
+  const locks = await Promise.all(
+    MEMBERS.map((provider) => holdWriteLock(f.hub.rosterPath(provider))),
+  )
   f.vault.view = 'v2'
   const pending = alpha.refresh()
   await until(() => f.vault.lists === 2, 'the second list')
@@ -1569,7 +1573,7 @@ test('hub generations: a fan-out whose list returned before vault mode went off 
   })
   const retain = spyOn(ClaustrumScopedCustody.prototype, 'retain')
   try {
-    await lock.release()
+    await Promise.all(locks.map((lock) => lock.release()))
     expect(await pending).toBeUndefined()
     expect(retain).not.toHaveBeenCalled()
   } finally {
@@ -2244,6 +2248,178 @@ test('hub commits: a list older than another process commit never replaces it', 
   expect(alpha.snapshot()?.rows).toHaveLength(2)
   expect(f.hub.refusals()?.view).toBe('v1')
   expect(f.memberErrors.alpha).toEqual([])
+})
+
+/** The trace's member commit marks, in the order they happened. */
+function commitMarks(f: HubFixture): string[] {
+  return f.trace.events
+    .map((event) => / member (\w+) commit (begin|done|failed)/.exec(event))
+    .flatMap((match) => (match ? [`${match[1]} ${match[2]}`] : []))
+}
+
+/** Poll `predicate` until it holds, bounded by the test's own deadline. */
+async function eventually(predicate: () => boolean) {
+  while (!predicate()) {
+    hooks.lifetime.signal.throwIfAborted()
+    await Bun.sleep(5)
+  }
+}
+
+test('hub commits: every member of one list commits its own share, and the commits overlap rather than run one after another', async () => {
+  const f = await hubFixture()
+  const consumers = f.members()
+  await f.start()
+  const before = commitMarks(f).length
+  f.vault.rows.push(keyRow('gamma', 'second'))
+  f.vault.view = 'v2'
+  await f.tick()
+  const marks = commitMarks(f).slice(before)
+  // Every member's commit began before any of them finished.
+  const firstDone = marks.findIndex((mark) => !mark.endsWith(' begin'))
+  expect(marks.slice(0, firstDone).sort()).toEqual(
+    MEMBERS.map((provider) => `${provider} begin`),
+  )
+  expect(marks.slice(firstDone).sort()).toEqual(
+    MEMBERS.map((provider) => `${provider} done`),
+  )
+  for (const [index, provider] of MEMBERS.entries()) {
+    const file = await readVaultRoster(f.hub.rosterPath(provider))
+    const expected = [`apikey:${provider}:main`].concat(
+      provider === 'gamma' ? ['apikey:gamma:second'] : [],
+    )
+    expect(file?.view).toBe('v2')
+    expect(file?.rows.map((row) => row.credentialId).sort()).toEqual(expected)
+    expect(consumers[index]?.snapshot()?.view).toBe('v2')
+    expect(consumers[index]?.snapshot()?.rows).toEqual(file?.rows)
+    expect(f.memberErrors[provider]).toEqual([])
+  }
+  expect(f.hub.refusals()?.view).toBe('v2')
+  expect(f.errors).toEqual([])
+})
+
+test('hub commits: another process commit to one member between the list and the commits is kept, and the other members commit this list', async () => {
+  const f = await hubFixture()
+  const [alpha, beta, gamma] = f.members()
+  if (!alpha || !beta || !gamma) throw new Error('missing member')
+  await f.start()
+  // Another process on the same profile and key, listing its own vault.
+  const peer = await hubFixture({ dir: f.dir })
+  peer.vault.rows.push(keyRow('beta', 'second'))
+  peer.vault.view = 'v3'
+  const peerBeta = peer.member('beta')
+  // This process lists v2 and is held before it commits ...
+  const gate = deferred<void>()
+  hooks.lifetime.unpark(() => gate.resolve())
+  f.vault.listGate = gate.promise
+  f.vault.view = 'v2'
+  const pending = alpha.refresh()
+  await until(() => f.vault.lists === 2, 'the held list')
+  // ... while the other process lists v3 and commits beta's roster.
+  await peerBeta.refresh()
+  gate.resolve()
+  f.vault.listGate = undefined
+  await pending
+  const betaFile = await readVaultRoster(f.hub.rosterPath('beta'))
+  expect(betaFile?.view).toBe('v3')
+  expect(betaFile?.rows).toHaveLength(2)
+  expect(beta.snapshot()?.view).toBe('v3')
+  for (const [provider, consumer] of [
+    ['alpha', alpha],
+    ['gamma', gamma],
+  ] as const) {
+    const file = await readVaultRoster(f.hub.rosterPath(provider))
+    expect(file?.view).toBe('v2')
+    expect(file?.rows.map((row) => row.credentialId)).toEqual([
+      `apikey:${provider}:main`,
+    ])
+    expect(consumer.snapshot()?.view).toBe('v2')
+  }
+  // Beta did not commit this list, so the committed view stays where it was.
+  expect(f.hub.refusals()?.view).toBe('v1')
+  for (const provider of MEMBERS) expect(f.memberErrors[provider]).toEqual([])
+})
+
+test('hub commits: a member whose roster write lock another writer holds blocks no other member, and commits once it is free', async () => {
+  const f = await hubFixture()
+  const [alpha, beta, gamma] = f.members()
+  if (!alpha || !beta || !gamma) throw new Error('missing member')
+  await f.start()
+  const before = commitMarks(f).length
+  const lock = await holdWriteLock(f.hub.rosterPath('beta'))
+  f.vault.view = 'v2'
+  const pending = alpha.refresh()
+  const marks = () => commitMarks(f).slice(before)
+  // Alpha and gamma finish while beta still waits for its write lock; a
+  // member committed only after beta would wait out beta's lock timeout.
+  await eventually(
+    () =>
+      (marks().includes('alpha done') && marks().includes('gamma done')) ||
+      marks().includes('beta failed'),
+  )
+  expect(marks()).not.toContain('beta done')
+  expect(marks()).not.toContain('beta failed')
+  for (const provider of ['alpha', 'gamma'])
+    expect((await readVaultRoster(f.hub.rosterPath(provider)))?.view).toBe('v2')
+  const betaFile = await readVaultRoster(f.hub.rosterPath('beta'))
+  expect(betaFile?.view).toBe('v1')
+  expect(betaFile?.rows.map((row) => row.credentialId)).toEqual([
+    'apikey:beta:main',
+  ])
+  await lock.release()
+  await pending
+  for (const [provider, consumer] of [
+    ['alpha', alpha],
+    ['beta', beta],
+    ['gamma', gamma],
+  ] as const) {
+    const file = await readVaultRoster(f.hub.rosterPath(provider))
+    expect(file?.view).toBe('v2')
+    expect(file?.rows.map((row) => row.credentialId)).toEqual([
+      `apikey:${provider}:main`,
+    ])
+    expect(consumer.snapshot()?.view).toBe('v2')
+    expect(consumer.snapshot()?.rows).toEqual(file?.rows)
+    expect(f.memberErrors[provider]).toEqual([])
+  }
+  expect(f.hub.refusals()?.view).toBe('v2')
+}, 20_000)
+
+test('hub commits: a member whose commit fails leaves every other member committed with its own share, and is pending with its error', async () => {
+  const f = await hubFixture()
+  const [alpha, beta, gamma] = f.members()
+  if (!alpha || !beta || !gamma) throw new Error('missing member')
+  await f.start()
+  // A directory where beta's roster file belongs: beta's commit throws.
+  const path = f.hub.rosterPath('beta')
+  await rm(path)
+  await mkdir(path)
+  f.vault.view = 'v2'
+  await f.tick()
+  // The commit's error, and the tick's own read of beta's file before it.
+  expect(f.memberErrors.beta.length).toBeGreaterThan(0)
+  expect(beta.snapshot()?.view).toBe('v1')
+  for (const [provider, consumer] of [
+    ['alpha', alpha],
+    ['gamma', gamma],
+  ] as const) {
+    const file = await readVaultRoster(f.hub.rosterPath(provider))
+    expect(file?.view).toBe('v2')
+    expect(file?.rows.map((row) => row.credentialId)).toEqual([
+      `apikey:${provider}:main`,
+    ])
+    expect(consumer.snapshot()?.view).toBe('v2')
+    expect(consumer.snapshot()?.rows).toEqual(file?.rows)
+    expect(f.memberErrors[provider]).toEqual([])
+  }
+  expect(f.hub.refusals()?.view).toBe('v1')
+  // Pending: the next tick lists again and commits beta once it can.
+  await rm(path, { recursive: true })
+  const lists = f.vault.lists
+  await f.tick()
+  expect(f.vault.lists).toBe(lists + 1)
+  expect((await readVaultRoster(path))?.view).toBe('v2')
+  expect(beta.snapshot()?.view).toBe('v2')
+  expect(f.hub.refusals()?.view).toBe('v2')
 })
 
 test('hub install: another process same-view preference change is installed, and its different view is listed for', async () => {
