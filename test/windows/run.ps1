@@ -23,8 +23,8 @@ if ($exit -ne 0) { throw "Windows writers failed ($exit); assertions and native 
 $patterns = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'summary-patterns.json')) | ConvertFrom-Json
 $policy = $patterns.$Runtime
 foreach ($pattern in $policy.required) {
-  if ($text -notmatch ('(?m)' + $pattern)) { throw 'Windows verification count guard: expected exactly eleven executed Windows tests without skips' }
+  if ($text -notmatch ('(?m)' + $pattern)) { throw 'Windows verification count guard: expected exactly twelve executed Windows tests without skips' }
 }
 foreach ($pattern in $policy.forbidden) {
-  if ($text -match ('(?m)' + $pattern)) { throw 'Windows verification count guard: expected exactly eleven executed Windows tests without skips' }
+  if ($text -match ('(?m)' + $pattern)) { throw 'Windows verification count guard: expected exactly twelve executed Windows tests without skips' }
 }

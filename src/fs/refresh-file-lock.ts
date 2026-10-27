@@ -459,7 +459,17 @@ export async function acquireRefreshFileLockWithClock(
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
       throw error
     }
-    if (windowsPrivateFiles) await verifyPrivate(evictPath, 'directory', true)
+    if (windowsPrivateFiles) {
+      try {
+        await verifyPrivate(evictPath, 'directory', true)
+      } catch (error) {
+        // The marker's holder can remove it between the stat above and this
+        // check. Absence means the marker is free, as when the stat finds
+        // nothing; every other refusal still escapes.
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
+        throw error
+      }
+    }
     if (evictStat.mtimeMs + EVICT_TTL > now()) return 'fresh'
 
     if (options.onStep) await options.onStep('stale-marker-stat')
@@ -481,10 +491,12 @@ export async function acquireRefreshFileLockWithClock(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         if (windowsPrivateFiles) {
-          await verifyPrivate(evictPath, 'directory', true)
           try {
+            await verifyPrivate(evictPath, 'directory', true)
             await readPrivateText(evictOwnerPath, true)
           } catch (ownerError) {
+            // A marker removed by its holder after the failed create is free:
+            // report it as unavailable for now so the caller retries.
             if ((ownerError as NodeJS.ErrnoException).code !== 'ENOENT')
               throw ownerError
           }

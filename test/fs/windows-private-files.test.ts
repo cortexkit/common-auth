@@ -467,6 +467,36 @@ test('Windows lease retries when the contention owner read finds a vanished lock
   })
 })
 
+// Each mode removes the lock file or its eviction marker at a different read
+// a contender or releasing holder makes after its exclusive create failed.
+for (const [mode, description] of [
+  ['vanished-at-verify', 'lock file vanishes at the owner-only verification'],
+  ['vanished-at-state-read', 'lock file vanishes at the live-or-stale read'],
+  [
+    'vanished-marker-acquire',
+    'eviction marker vanishes between its stat and its check',
+  ],
+  [
+    'vanished-marker-release',
+    'eviction marker vanishes after release fails to create it',
+  ],
+] as const) {
+  test(`Windows lease treats a vanished object as free: ${description}`, async () => {
+    const child = Bun.spawn(
+      [process.execPath, 'test/fs/windows-lease-probe.mjs', mode],
+      { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const [stdout, stderr, exit] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+    if (exit !== 0) throw new Error(`${mode} must retry\n${stderr}`)
+    expect(stderr).toBe('')
+    expect(JSON.parse(stdout)).toEqual({ mode, errno: 'EBUSY', checked: true })
+  })
+}
+
 test('Windows contention owner reads still refuse access sharing and wrong ownership', async () => {
   for (const errno of ['EACCES', 'EBUSY', 'wrong-owner']) {
     const child = Bun.spawn(
