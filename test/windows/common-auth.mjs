@@ -825,3 +825,58 @@ test('native absence and exclusive collision retain precise adapter codes', {
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('lease contender acquires a lock its holder releases mid-contention', {
+  timeout,
+}, async () => {
+  const root = await privateRoot()
+  try {
+    const path = join(root, 'state.json')
+    const lockPath = `${path}.vanish.lock`
+    // Two rounds. In the first the holder releases at the contender's owner
+    // read right after its exclusive create fails; in the second, at the
+    // contender's first live-or-stale read. Either way the real native read
+    // finds no lock file, which means the lock is free.
+    for (const releaseAt of [
+      'lease-contention-read-ready',
+      'lock-read-ready',
+    ]) {
+      const holder = await acquireRefreshFileLock({
+        path,
+        name: 'vanish',
+        ttlMs: 30_000,
+        renew: false,
+      })
+      assert.ok(holder)
+      const steps = []
+      let released = false
+      const contender = await acquireRefreshFileLock({
+        path,
+        name: 'vanish',
+        ttlMs: 30_000,
+        renew: false,
+        onStep: async (step) => {
+          steps.push(step)
+          if (step === releaseAt && !released) {
+            released = true
+            await holder.release()
+          }
+        },
+      })
+      assert.ok(contender, `contender acquires after release at ${releaseAt}`)
+      assert.equal(released, true)
+      if (releaseAt === 'lock-read-ready')
+        assert.ok(steps.includes('lock-missing'))
+      else assert.ok(!steps.includes('lock-read-ready'))
+      assert.equal(
+        JSON.parse(await readPrivateText(lockPath)).ownerId,
+        contender.ownerId,
+      )
+      await contender.assertOwned()
+      await contender.release()
+      await assert.rejects(access(lockPath))
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
