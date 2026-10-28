@@ -529,18 +529,16 @@ export async function acquireRefreshFileLockWithClock(
       return
     }
     if (!sameMarkerDirectory(created, current)) return
-    let owned = false
+    // Remove only an ownerless directory. An owner file that appeared after
+    // our failed write belongs to someone: ours goes through
+    // releaseEvictionMarker in the caller, and a contender's must stay, since
+    // it may be holding the marker right now.
     try {
-      owned = await ownsEvictionMarker()
-    } catch {
-      // Ownership unreadable while the directory is still identifiably ours:
-      // treat as an orphan and still remove it below.
-      owned = false
+      await stat(evictOwnerPath)
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return
     }
-    // An owned marker goes through releaseEvictionMarker in the caller, which
-    // removes only what this process owns. Clean here only the orphan case
-    // the old code left behind: no owner, or an owner that is not ours.
-    if (owned) return
     try {
       await removeLeaseObject(evictPath)
     } catch {
