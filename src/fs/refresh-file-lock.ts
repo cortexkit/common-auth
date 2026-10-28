@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises'
+import {
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+} from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   createPrivateBytes,
@@ -24,8 +32,33 @@ import { LockOwnershipError, lockPathFor } from './with-lock.js'
  */
 async function createExclusiveText(path: string, text: string): Promise<void> {
   const handle = await open(path, 'wx', 0o600)
+  let createdStat: Awaited<ReturnType<typeof handle.stat>> | undefined
+  try {
+    createdStat = await handle.stat()
+  } catch {
+    createdStat = undefined
+  }
   try {
     await handle.writeFile(text, 'utf8')
+  } catch (error) {
+    // A failed write after an exclusive create leaves a partial file behind.
+    // Remove only the file just created: when a contender has meanwhile
+    // replaced the path, the identities differ and the successor is left
+    // alone. Removal failures must never mask the original write error.
+    try {
+      const current = await lstat(path).catch(() => undefined)
+      if (
+        createdStat &&
+        current &&
+        current.dev === createdStat.dev &&
+        current.ino === createdStat.ino
+      ) {
+        await rm(path, { force: true }).catch(() => {})
+      }
+    } catch {
+      // Best effort only; the original error below explains the failure.
+    }
+    throw error
   } finally {
     await handle.close()
   }
@@ -45,6 +78,57 @@ export function isLostMarkerRaceError(error: unknown): boolean {
     (!windowsPrivateFiles && (code === 'EINVAL' || code === 'ENOTDIR'))
   )
 }
+
+/** Test-only fault injection between marker mkdir and owner.json write. */
+export interface EvictionMarkerTestHooks {
+  /** Runs after the exclusive mkdir (and identity capture) before owner write. */
+  beforeOwnerWrite?: (
+    evictPath: string,
+    ownerPath: string,
+  ) => Promise<void> | void
+  /** Throw to fail the owner write; return an error to throw it. */
+  failOwnerWrite?: (
+    evictPath: string,
+    ownerPath: string,
+  ) => Promise<unknown> | unknown
+}
+let evictionMarkerTestHooks: EvictionMarkerTestHooks | undefined
+/**
+ * Tests only: inject a failure or a directory replacement between the
+ * eviction-marker mkdir and its owner.json write. Production never sets this.
+ * Not exported from the fs entry point, so it is not part of the public API.
+ */
+export function setEvictionMarkerTestHooksForTest(
+  hooks?: EvictionMarkerTestHooks,
+): void {
+  evictionMarkerTestHooks = hooks
+}
+
+type MarkerDirectoryIdentity = {
+  dev: number
+  ino: number
+  birthtimeMs: number
+}
+
+function sameMarkerDirectory(
+  created: MarkerDirectoryIdentity,
+  current: MarkerDirectoryIdentity,
+): boolean {
+  if (created.dev !== current.dev || created.ino !== current.ino) return false
+  // Windows reports the directory identity as a file id that can be 0; fall
+  // back to creation time so a reused id does not look like the same directory.
+  if (created.ino === 0 && created.birthtimeMs !== current.birthtimeMs)
+    return false
+  return true
+}
+
+/**
+ * An ownerless marker older than this is recoverable without waiting for the
+ * full eviction TTL. Honest holders write owner.json within tens of
+ * milliseconds of the mkdir, so one second leaves wide margin for slow Windows
+ * filesystems while still bounding the stall from a crashed holder.
+ */
+const OWNERLESS_MARKER_GRACE_MS = 1_000
 
 export interface LockLoss {
   readonly reason:
@@ -428,10 +512,63 @@ export async function acquireRefreshFileLockWithClock(
     }
   }
 
+  async function removeOwnMarkerAfterFailedOwnerWrite(
+    created: MarkerDirectoryIdentity | undefined,
+  ) {
+    // Best effort only: never throws, so the original owner-write error below
+    // keeps explaining the failure. Removes the directory this process just
+    // created when its owner write failed, and leaves a contender's
+    // replacement alone when the identities differ.
+    if (!created) return
+    let current: MarkerDirectoryIdentity
+    try {
+      const st = await lstat(evictPath)
+      current = { dev: st.dev, ino: st.ino, birthtimeMs: st.birthtimeMs }
+    } catch {
+      // Renamed away by a contender's steal: nothing of ours left to clean.
+      return
+    }
+    if (!sameMarkerDirectory(created, current)) return
+    let owned = false
+    try {
+      owned = await ownsEvictionMarker()
+    } catch {
+      // Ownership unreadable while the directory is still identifiably ours:
+      // treat as an orphan and still remove it below.
+      owned = false
+    }
+    // An owned marker goes through releaseEvictionMarker in the caller, which
+    // removes only what this process owns. Clean here only the orphan case
+    // the old code left behind: no owner, or an owner that is not ours.
+    if (owned) return
+    try {
+      await removeLeaseObject(evictPath)
+    } catch {
+      // A removal failure keeps the stale marker recoverable later; it must
+      // never mask the original owner-write error.
+    }
+  }
+
   async function tryAcquireEvictionMarker() {
     if (windowsPrivateFiles) await createPrivateDirectoryExclusive(evictPath)
     else await mkdir(evictPath)
+    let created: MarkerDirectoryIdentity | undefined
     try {
+      const st = await lstat(evictPath)
+      created = { dev: st.dev, ino: st.ino, birthtimeMs: st.birthtimeMs }
+    } catch {
+      created = undefined
+    }
+    try {
+      await evictionMarkerTestHooks?.beforeOwnerWrite?.(
+        evictPath,
+        evictOwnerPath,
+      )
+      const injected = await evictionMarkerTestHooks?.failOwnerWrite?.(
+        evictPath,
+        evictOwnerPath,
+      )
+      if (injected !== undefined) throw injected
       const bytes = `${JSON.stringify({ ownerId: evictOwnerId, createdAt: now() })}\n`
       if (windowsPrivateFiles) await createPrivateBytes(evictOwnerPath, bytes)
       else await createExclusiveText(evictOwnerPath, bytes)
@@ -441,8 +578,21 @@ export async function acquireRefreshFileLockWithClock(
       // path below does exactly that). That is a lost race, not a failure, so
       // report it as such and let the caller back off and retry rather than
       // failing the whole lock acquisition.
+      //
+      // The race codes alone cannot prove the directory is gone: the same
+      // codes can surface while our directory is still in place (for example
+      // a permission failure while writing the owner file, which used to
+      // leave an ownerless marker behind). The identity fence
+      // above removes only the directory this process created, and is a no-op
+      // when the contender renamed it away or replaced it, so run it on both
+      // branches before deciding between a retry and a failure.
+      await removeOwnMarkerAfterFailedOwnerWrite(created)
       if (isLostMarkerRaceError(error)) return false
-      await releaseEvictionMarker()
+      try {
+        await releaseEvictionMarker()
+      } catch {
+        // Removal must never mask the original owner-write error.
+      }
       throw error
     }
     if (options.onStep) await options.onStep('eviction-marker-acquired')
@@ -470,7 +620,24 @@ export async function acquireRefreshFileLockWithClock(
         throw error
       }
     }
-    if (evictStat.mtimeMs + EVICT_TTL > now()) return 'fresh'
+    if (evictStat.mtimeMs + EVICT_TTL > now()) {
+      // A fresh marker with no owner is either this process's orphan (its
+      // owner write just failed) or a holder that crashed between mkdir and
+      // owner write. Honest holders publish owner.json within tens of
+      // milliseconds, so recover ownerless markers after a short grace instead
+      // of stalling for the full TTL. Stealing one is safe: a live holder
+      // stalled past the grace sees its pending owner write fail with ENOENT
+      // (a lost race) and retries, rather than acting on a stolen marker.
+      let hasOwner = true
+      try {
+        await stat(evictOwnerPath)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') hasOwner = false
+        else return 'fresh'
+      }
+      if (hasOwner) return 'fresh'
+      if (evictStat.mtimeMs + OWNERLESS_MARKER_GRACE_MS > now()) return 'fresh'
+    }
 
     if (options.onStep) await options.onStep('stale-marker-stat')
     const claimedPath = `${evictPath}.${randomUUID()}`

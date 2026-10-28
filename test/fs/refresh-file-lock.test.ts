@@ -3,7 +3,10 @@ import { existsSync, rmSync } from 'node:fs'
 import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { LockOwnershipError } from '../../src/fs/index.js'
-import { acquireRefreshFileLockWithClock as acquireRawRefreshFileLock } from '../../src/fs/refresh-file-lock.js'
+import {
+  acquireRefreshFileLockWithClock as acquireRawRefreshFileLock,
+  setEvictionMarkerTestHooksForTest,
+} from '../../src/fs/refresh-file-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 import { phaseClock } from '../fixtures/phase-clock.js'
@@ -932,6 +935,134 @@ describe('acquireRefreshFileLock', () => {
     await lock?.release()
 
     expect(existsSync(lockPath)).toBe(false)
+  })
+
+  it('removes its own eviction marker when the owner write fails', async () => {
+    const path = join(dir, 'orphan-cleanup.json')
+    const name = 'orphan-cleanup'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ ownerId: 'stale', expiresAt: Date.now() - 1_000 })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+    const failure = Object.assign(new Error('injected owner write failure'), {
+      code: 'EACCES',
+    })
+    setEvictionMarkerTestHooksForTest({
+      failOwnerWrite: () => {
+        throw failure
+      },
+    })
+    let caught: unknown
+    try {
+      await acquireRefreshFileLock({ name, path, ttlMs: 10_000 })
+    } catch (error) {
+      caught = error
+    } finally {
+      setEvictionMarkerTestHooksForTest(undefined)
+    }
+    expect(caught).toBe(failure)
+    // The directory this process created must not stay behind as a fresh
+    // ownerless marker that blocks the next contender for the full TTL.
+    expect(existsSync(markerPath)).toBe(false)
+    const started = performance.now()
+    const lock = await acquireRefreshFileLock({ name, path, ttlMs: 10_000 })
+    expect(performance.now() - started).toBeLessThan(1_000)
+    expect(lock).not.toBeNull()
+    await lock?.release()
+    expect(existsSync(markerPath)).toBe(false)
+    expect(existsSync(lockPath)).toBe(false)
+  })
+
+  it('leaves a replaced eviction marker alone when cleaning up after a failed owner write', async () => {
+    const path = join(dir, 'orphan-fence.json')
+    const name = 'orphan-fence'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ ownerId: 'stale', expiresAt: Date.now() - 1_000 })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+    const failure = Object.assign(new Error('injected owner write failure'), {
+      code: 'EACCES',
+    })
+    setEvictionMarkerTestHooksForTest({
+      beforeOwnerWrite: async (evictPath) => {
+        // A contender steals our directory and publishes its own marker
+        // before our owner write fails.
+        await rm(evictPath, { recursive: true, force: true })
+        await mkdir(evictPath)
+        await writeFile(
+          join(evictPath, 'owner.json'),
+          `${JSON.stringify({ ownerId: 'contender', createdAt: Date.now() })}\n`,
+          { encoding: 'utf8', mode: 0o600 },
+        )
+      },
+      failOwnerWrite: () => {
+        throw failure
+      },
+    })
+    let caught: unknown
+    try {
+      await acquireRefreshFileLock({ name, path, ttlMs: 10_000 })
+    } catch (error) {
+      caught = error
+    } finally {
+      setEvictionMarkerTestHooksForTest(undefined)
+    }
+    expect(caught).toBe(failure)
+    // Our cleanup must not delete the contender's replacement.
+    expect(existsSync(markerPath)).toBe(true)
+    expect(
+      JSON.parse(await readFile(join(markerPath, 'owner.json'), 'utf8'))
+        .ownerId,
+    ).toBe('contender')
+    await rm(markerPath, { recursive: true, force: true })
+  })
+
+  it('recovers an ownerless eviction marker past the grace without waiting for the TTL', async () => {
+    const path = join(dir, 'ownerless-grace.json')
+    const name = 'ownerless-grace'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ ownerId: 'stale', expiresAt: Date.now() - 1_000 })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+    // Ownerless but older than the 1 s grace, still well within the 5 s TTL.
+    await mkdir(markerPath)
+    const old = new Date(Date.now() - 2_000)
+    await utimes(markerPath, old, old)
+    const started = performance.now()
+    const lock = await acquireRefreshFileLock({ name, path, ttlMs: 10_000 })
+    expect(performance.now() - started).toBeLessThan(4_000)
+    expect(lock).not.toBeNull()
+    await lock?.release()
+    expect(existsSync(lockPath)).toBe(false)
+  })
+
+  it('keeps a young ownerless eviction marker fresh', async () => {
+    const path = join(dir, 'ownerless-young.json')
+    const name = 'ownerless-young'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ ownerId: 'stale', expiresAt: Date.now() - 1_000 })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+    // A live holder can be between mkdir and its owner write for tens of
+    // milliseconds on slow filesystems; a brand-new ownerless marker must
+    // still count as fresh so the holder can finish its write.
+    await mkdir(markerPath)
+    const lock = await acquireRefreshFileLock({ name, path, ttlMs: 10_000 })
+    expect(lock).toBeNull()
+    expect(existsSync(markerPath)).toBe(true)
+    await rm(markerPath, { recursive: true, force: true })
   })
 
   it('elects one owner across 512 plain stale-lock contentions', async () => {
