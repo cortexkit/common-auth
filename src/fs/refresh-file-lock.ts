@@ -512,32 +512,35 @@ export async function acquireRefreshFileLockWithClock(
     }
   }
 
+  // Returns whether the directory at the marker path was still the one this
+  // process created when its owner write failed. Only then is the failure ours
+  // to report: a gone or replaced directory is a lost race.
   async function removeOwnMarkerAfterFailedOwnerWrite(
     created: MarkerDirectoryIdentity | undefined,
-  ) {
+  ): Promise<boolean> {
     // Best effort only: never throws, so the original owner-write error below
     // keeps explaining the failure. Removes the directory this process just
     // created when its owner write failed, and leaves a contender's
     // replacement alone when the identities differ.
-    if (!created) return
+    if (!created) return false
     let current: MarkerDirectoryIdentity
     try {
       const st = await lstat(evictPath)
       current = { dev: st.dev, ino: st.ino, birthtimeMs: st.birthtimeMs }
     } catch {
       // Renamed away by a contender's steal: nothing of ours left to clean.
-      return
+      return false
     }
-    if (!sameMarkerDirectory(created, current)) return
+    if (!sameMarkerDirectory(created, current)) return false
     // Remove only an ownerless directory. An owner file that appeared after
     // our failed write belongs to someone: ours goes through
     // releaseEvictionMarker in the caller, and a contender's must stay, since
     // it may be holding the marker right now.
     try {
       await stat(evictOwnerPath)
-      return
+      return true
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return true
     }
     try {
       await removeLeaseObject(evictPath)
@@ -545,6 +548,7 @@ export async function acquireRefreshFileLockWithClock(
       // A removal failure keeps the stale marker recoverable later; it must
       // never mask the original owner-write error.
     }
+    return true
   }
 
   async function tryAcquireEvictionMarker() {
@@ -584,8 +588,11 @@ export async function acquireRefreshFileLockWithClock(
       // above removes only the directory this process created, and is a no-op
       // when the contender renamed it away or replaced it, so run it on both
       // branches before deciding between a retry and a failure.
-      await removeOwnMarkerAfterFailedOwnerWrite(created)
-      if (isLostMarkerRaceError(error)) return false
+      // A race code while our own directory is still in place is not a lost
+      // race but a write that fails here every time: report it, rather than
+      // retrying the same failure until a deadline hides the cause.
+      const stillOurs = await removeOwnMarkerAfterFailedOwnerWrite(created)
+      if (isLostMarkerRaceError(error) && !stillOurs) return false
       try {
         await releaseEvictionMarker()
       } catch {

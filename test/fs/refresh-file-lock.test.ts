@@ -976,6 +976,39 @@ describe('acquireRefreshFileLock', () => {
     expect(existsSync(lockPath)).toBe(false)
   })
 
+  it('reports an owner write that fails with ENOENT while its own marker is still in place', async () => {
+    const path = join(dir, 'owner-enoent.json')
+    const name = 'owner-enoent'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ ownerId: 'stale', expiresAt: Date.now() - 1_000 })}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+    // ENOENT is a lost race only when a contender took the directory away.
+    // With our directory still in place it is a real failure, and retrying it
+    // would only end in a timeout that hides the cause.
+    const failure = Object.assign(new Error('injected owner write failure'), {
+      code: 'ENOENT',
+    })
+    setEvictionMarkerTestHooksForTest({
+      failOwnerWrite: () => {
+        throw failure
+      },
+    })
+    let caught: unknown
+    try {
+      await acquireRefreshFileLock({ name, path, ttlMs: 10_000 })
+    } catch (error) {
+      caught = error
+    } finally {
+      setEvictionMarkerTestHooksForTest(undefined)
+    }
+    expect(caught).toBe(failure)
+    expect(existsSync(markerPath)).toBe(false)
+  })
+
   it('leaves a replaced eviction marker alone when cleaning up after a failed owner write', async () => {
     const path = join(dir, 'orphan-fence.json')
     const name = 'orphan-fence'
