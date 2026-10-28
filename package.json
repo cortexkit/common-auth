@@ -111,7 +111,7 @@
     "check:opentui-0511": "bun scripts/check-opentui-0511.mjs"
   },
   "dependencies": {
-    "@cortexkit/private-files": "^0.2.1",
+    "@cortexkit/private-files": "^0.2.2",
     "jsonc-parser": "^3.3.1"
   },
   "peerDependencies": {

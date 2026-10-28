@@ -5,7 +5,7 @@
     "": {
       "name": "@cortexkit/common-auth",
       "dependencies": {
-        "@cortexkit/private-files": "^0.2.1",
+        "@cortexkit/private-files": "^0.2.2",
         "jsonc-parser": "^3.3.1",
       },
       "devDependencies": {
@@ -189,7 +189,7 @@
 
     "@cortexkit/claustrum-client": ["@cortexkit/claustrum-client@0.13.0", "", { "dependencies": { "@cortexkit/store": "^0.2.1", "@cortexkit/subc-client": "^0.22.0" } }, "sha512-237CTyBx/bnKT+D/1VO13Nn6coIQJgkp6aml31APeGKdV5hNhULzpiI0VQQWXe/NGQUFlLX5lkSP4pkWmuwTaw=="],
 
-    "@cortexkit/private-files": ["@cortexkit/private-files@0.2.1", "", {}, "sha512-U7ofFl45DDYScXo7vSV/4OPxn0xC1mflKpW8tbK8/3OaRd9q+TDEY25UWO8itXtSAlhBMqhZBZ3NxZNL5IyrSg=="],
+    "@cortexkit/private-files": ["@cortexkit/private-files@0.2.2", "", {}, "sha512-BdRxi4mzPkTUiZxKTlQV/RsESk5f34+sLk0qQLv1QlBQdkq2zw8yc0b3dm1qmZ5RfeChiBKEGgL6Qw31RCSaeA=="],
 
     "@cortexkit/store": ["@cortexkit/store@0.2.2", "", { "dependencies": { "@cortexkit/private-files": "^0.1.0" } }, "sha512-mUeclFaZkdxS5YVsGvBUJTy3uulK1IywZAPAg5Wh1+lrrk+8ByXLgDKYC64igu/84tpIFY5mmZwa3ol2ErxnHA=="],
 

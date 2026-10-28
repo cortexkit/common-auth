@@ -24,15 +24,15 @@ function accepted(runtime, text) {
   )
 }
 const node =
-  'ℹ tests 14\nℹ suites 0\nℹ pass 14\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 3140.2\n'
+  'ℹ tests 15\nℹ suites 0\nℹ pass 15\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 3140.2\n'
 const bun =
-  'bun test v1.4.2 (744846f84)\n\n 14 pass\n 0 fail\n 42 expect() calls\nRan 14 tests across 1 file. [3140.00ms]\n'
+  'bun test v1.4.2 (744846f84)\n\n 15 pass\n 0 fail\n 42 expect() calls\nRan 15 tests across 1 file. [3140.00ms]\n'
 
 test('Windows Node count guard accepts captured spec and TAP summaries including CRLF', () => {
   for (const summary of [
     node,
     node.replaceAll('\n', '\r\n'),
-    '# tests 14\n# pass 14\n# fail 0\n# skipped 0\n',
+    '# tests 15\n# pass 15\n# fail 0\n# skipped 0\n',
   ])
     expect(accepted('node', summary)).toBe(true)
 })
@@ -42,16 +42,16 @@ test('Windows Bun count guard accepts captured summary including CRLF', () => {
 })
 test('Windows runtime count guards reject skip-only and wrong-count summaries', () => {
   for (const summary of [
-    node.replace('pass 14', 'pass 0').replace('skipped 0', 'skipped 14'),
-    node.replace('tests 14', 'tests 114'),
+    node.replace('pass 15', 'pass 0').replace('skipped 0', 'skipped 15'),
+    node.replace('tests 15', 'tests 115'),
     node.replace('fail 0', 'fail 1'),
     node.replace('skipped 0', 'skipped 1'),
   ])
     expect(accepted('node', summary)).toBe(false)
   for (const summary of [
-    '0 pass\r\n14 skip\r\n0 fail\r\nRan 14 tests across 1 file. [1ms]\r\n',
-    bun.replace('14 pass', '114 pass'),
-    bun.replace('14 tests', '114 tests'),
+    '0 pass\r\n15 skip\r\n0 fail\r\nRan 15 tests across 1 file. [1ms]\r\n',
+    bun.replace('15 pass', '115 pass'),
+    bun.replace('15 tests', '115 tests'),
     `${bun} 1 skip\n`,
   ])
     expect(accepted('bun', summary)).toBe(false)

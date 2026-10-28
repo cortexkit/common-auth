@@ -977,3 +977,61 @@ test('lease release times out safely when an eviction marker stays fresh', {
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('paths past 260 characters keep leases and atomic writes working', {
+  timeout,
+}, async () => {
+  const root = await privateRoot()
+  try {
+    // Nested folders under the private root push the lock's eviction-marker
+    // owner file past Windows' 260-character MAX_PATH (aimed past 300),
+    // proving long store paths still acquire, verify and release leases.
+    const segment = 'long-path-segment'
+    let dir = root
+    for (let depth = 0; ; depth++) {
+      const markerOwner = join(
+        dir,
+        'store.json.long-path.lock.evicting',
+        'owner.json',
+      )
+      if (markerOwner.length > 300) break
+      assert.ok(
+        depth < 40,
+        `deep directory chain stays bounded: ${markerOwner}`,
+      )
+      dir = join(dir, segment)
+      await pending(`deep directory create ${dir}`, () =>
+        createPrivateDirectoryExclusive(dir),
+      )
+    }
+    const store = join(dir, 'store.json')
+    const lockPath = `${store}.long-path.lock`
+    const markerOwner = join(`${lockPath}.evicting`, 'owner.json')
+    assert.ok(
+      markerOwner.length > 300,
+      `eviction-marker owner path passes 300 characters (got ${markerOwner.length})`,
+    )
+    const deep = join(dir, `atomic-${randomUUID()}.json`)
+    assert.ok(
+      deep.length > 300,
+      `atomic file path passes 300 characters (got ${deep.length})`,
+    )
+    await writeJsonAtomic(deep, { deep: true })
+    assert.deepEqual(JSON.parse(await readPrivateText(deep)), {
+      deep: true,
+    })
+    const lease = await acquireRefreshFileLock({
+      path: store,
+      name: 'long-path',
+      ttlMs: 30_000,
+      renew: false,
+    })
+    assert.ok(lease)
+    await lease.assertOwned()
+    await lease.release()
+    await assert.rejects(access(lockPath))
+    await assert.rejects(access(`${lockPath}.evicting`))
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
