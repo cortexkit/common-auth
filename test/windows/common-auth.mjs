@@ -7,6 +7,7 @@ import {
   rm as fsRm,
   writeFile as fsWriteFile,
   mkdir,
+  utimes,
 } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +18,12 @@ import {
   writeJsonAtomic as atomicWrite,
   PrivateFileError,
 } from '../../dist/fs/index.js'
-import { readPrivateText, verifyPrivate } from '../../dist/fs/private-files.js'
+import {
+  createPrivateBytes,
+  createPrivateDirectoryExclusive,
+  readPrivateText,
+  verifyPrivate,
+} from '../../dist/fs/private-files.js'
 import { createLoggerInstance } from '../../dist/logger/index.js'
 import { openPiSlot as piSlot } from '../../dist/pi-slot/index.js'
 import {
@@ -235,6 +241,15 @@ async function privateRoot() {
     createOwnerOnly(root, { kind: 'dir' }),
   )
   return root
+}
+async function createEvictionMarker(markerPath) {
+  await pending(`eviction marker create ${markerPath}`, async () => {
+    await createPrivateDirectoryExclusive(markerPath)
+    await createPrivateBytes(
+      join(markerPath, 'owner.json'),
+      `${JSON.stringify({ ownerId: 'contender', createdAt: Date.now() })}\n`,
+    )
+  })
 }
 async function hold(path) {
   const releaseFile = `${path}.release-${randomUUID()}`
@@ -876,6 +891,89 @@ test('lease contender acquires a lock its holder releases mid-contention', {
       await contender.release()
       await assert.rejects(access(lockPath))
     }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('lease release waits for a fresh eviction marker held for 300 ms', {
+  timeout,
+}, async () => {
+  const root = await privateRoot()
+  try {
+    const path = join(root, 'state.json')
+    const lockPath = `${path}.fresh-marker.lock`
+    const markerPath = `${lockPath}.evicting`
+    const lease = await acquireRefreshFileLock({
+      path,
+      name: 'fresh-marker',
+      ttlMs: 30_000,
+    })
+    assert.ok(lease)
+    await createEvictionMarker(markerPath)
+    const markerReleased = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await rm(markerPath, { recursive: true, force: true })
+    })()
+    try {
+      await lease.release()
+      await assert.rejects(access(lockPath), { code: 'ENOENT' })
+      await assert.rejects(access(markerPath), { code: 'ENOENT' })
+    } finally {
+      await markerReleased
+      await lease.release()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('lease release times out safely when an eviction marker stays fresh', {
+  timeout,
+}, async () => {
+  const root = await privateRoot()
+  try {
+    const path = join(root, 'state.json')
+    const lockPath = `${path}.busy-marker.lock`
+    const markerPath = `${lockPath}.evicting`
+    const lease = await acquireRefreshFileLock({
+      path,
+      name: 'busy-marker',
+      ttlMs: 30_000,
+    })
+    assert.ok(lease)
+    await createEvictionMarker(markerPath)
+    // A future mtime keeps the marker fresh throughout the release deadline,
+    // without a refresh timer that could miss a tick on a slow Windows runner.
+    const future = new Date(Date.now() + 60_000)
+    await pending('keep eviction marker fresh', () =>
+      utimes(markerPath, future, future),
+    )
+    try {
+      const started = performance.now()
+      await assert.rejects(lease.release(), (error) => {
+        assert.ok(error instanceof PrivateFileError)
+        assert.equal(error.path, lockPath)
+        assert.equal(error.stage, 'release-not-confirmed')
+        assert.equal(error.code, 'ETIMEDOUT')
+        return true
+      })
+      const elapsed = performance.now() - started
+      assert.ok(
+        elapsed >= 6_000,
+        `release waited its full deadline: ${elapsed}`,
+      )
+      assert.ok(elapsed < 12_000, `release stayed bounded: ${elapsed}`)
+      assert.equal(
+        JSON.parse(await readPrivateText(lockPath)).ownerId,
+        lease.ownerId,
+      )
+      await access(markerPath)
+    } finally {
+      await rm(markerPath, { recursive: true, force: true })
+      await lease.release()
+    }
+    await assert.rejects(access(lockPath), { code: 'ENOENT' })
   } finally {
     await rm(root, { recursive: true, force: true })
   }

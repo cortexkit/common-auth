@@ -763,7 +763,12 @@ export async function acquireRefreshFileLockWithClock(
       released = true
       cancelRenewalTimer()
       await renewalInFlight
-      for (let attempt = 0; attempt < MAX_STEAL_ATTEMPTS; attempt++) {
+      // A fresh marker may outlive a few quick retries, especially on Windows.
+      // Allow its full TTL plus recovery time, using a monotonic deadline so
+      // wall-clock adjustments cannot extend the retry deadline.
+      const deadline = performance.now() + EVICT_TTL + 1_000
+      let delayMs = 5
+      for (;;) {
         try {
           let removalConfirmed = false
           const markerAcquired = await withEvictionMarker(async () => {
@@ -802,7 +807,12 @@ export async function acquireRefreshFileLockWithClock(
           if (windowsPrivateFiles) throw error
           return
         }
-        await backoff()
+        const remainingMs = deadline - performance.now()
+        if (remainingMs <= 0) break
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(delayMs, remainingMs)),
+        )
+        delayMs = Math.min(delayMs * 2, 50)
       }
       // Do not delete by pathname without the marker: bounded retries leave the
       // lease to expire rather than risking removal of a successor's lock.

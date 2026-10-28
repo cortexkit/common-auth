@@ -73,6 +73,15 @@ async function readLockOwner(lockPath: string) {
   }
 }
 
+async function createEvictionMarker(markerPath: string) {
+  await mkdir(markerPath)
+  await writeFile(
+    join(markerPath, 'owner.json'),
+    `${JSON.stringify({ ownerId: 'contender', createdAt: Date.now() })}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  )
+}
+
 describe('acquireRefreshFileLock', () => {
   it('lifetime cleanup skips completed releases but preserves explicit repeated release', async () => {
     const lifetime = new TestLifetime()
@@ -839,6 +848,70 @@ describe('acquireRefreshFileLock', () => {
     await lock?.release()
     expect(lossObserved).toBe(false)
   })
+
+  it('waits for a fresh eviction marker before releasing', async () => {
+    const path = join(dir, 'release-fresh-marker.json')
+    const name = 'release-fresh-marker'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    const lock = await acquireRefreshFileLock({ name, path, ttlMs: 30_000 })
+    expect(lock).not.toBeNull()
+    await createEvictionMarker(markerPath)
+
+    const markerReleased = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await rm(markerPath, { recursive: true, force: true })
+    })()
+    try {
+      await lock!.release()
+      expect(existsSync(lockPath)).toBe(false)
+    } finally {
+      await markerReleased
+    }
+  })
+
+  it('waits until a fresh abandoned marker becomes stale and recovers it', async () => {
+    const path = join(dir, 'release-abandoned-marker.json')
+    const name = 'release-abandoned-marker'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    const lock = await acquireRefreshFileLock({ name, path, ttlMs: 30_000 })
+    expect(lock).not.toBeNull()
+    await createEvictionMarker(markerPath)
+
+    const started = performance.now()
+    await lock!.release()
+    expect(performance.now() - started).toBeGreaterThanOrEqual(4_900)
+    expect(existsSync(lockPath)).toBe(false)
+    expect(existsSync(markerPath)).toBe(false)
+  }, 15_000)
+
+  it('bounds release when an eviction marker stays fresh past the deadline', async () => {
+    const path = join(dir, 'release-busy-marker.json')
+    const name = 'release-busy-marker'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    const lock = await acquireRefreshFileLock({ name, path, ttlMs: 30_000 })
+    expect(lock).not.toBeNull()
+    await createEvictionMarker(markerPath)
+    // Keep the marker fresh beyond release's deadline without a refresh timer
+    // whose scheduling could accidentally allow stale-marker recovery.
+    const future = new Date(Date.now() + 60_000)
+    await utimes(markerPath, future, future)
+
+    try {
+      const started = performance.now()
+      await lock!.release()
+      const elapsed = performance.now() - started
+      expect(elapsed).toBeGreaterThanOrEqual(6_000)
+      expect(elapsed).toBeLessThan(10_000)
+      expect((await readLockOwner(lockPath)).ownerId).toBe(lock!.ownerId)
+      expect(existsSync(markerPath)).toBe(true)
+    } finally {
+      await rm(markerPath, { recursive: true, force: true })
+      await lock!.release()
+    }
+  }, 15_000)
 
   it('retries release after recovering a stale marker', async () => {
     const path = join(dir, 'release-stale-marker.json')
