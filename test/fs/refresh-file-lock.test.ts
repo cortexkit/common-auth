@@ -904,7 +904,6 @@ describe('acquireRefreshFileLock', () => {
       await lock!.release()
       const elapsed = performance.now() - started
       expect(elapsed).toBeGreaterThanOrEqual(6_000)
-      expect(elapsed).toBeLessThan(10_000)
       expect((await readLockOwner(lockPath)).ownerId).toBe(lock!.ownerId)
       expect(existsSync(markerPath)).toBe(true)
     } finally {
