@@ -1,0 +1,64 @@
+                                     
+  ▼ OPENAI                    v1.8.4 
+                                     
+ Quota                               
+ production-team@example.com blocked 
+ auth needs attention                
+ 5h █████▒▒░░░ 55% left        1h30m 
+    reserve 25% · lasts              
+ 7d ██▓▓▓▓▓░░░ 30% left        5d18h 
+    deficit 52% · out in 12h51m      
+ prepaid                1235 credits 
+ resets                            2 
+                                     
+ Routing                             
+ Route                    main-first 
+                                     
+ Health                              
+ Killswitch production-team@example… 
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     

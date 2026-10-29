@@ -224,3 +224,95 @@ test('inlined fs and sidebar consumers share one LockContentionError identity', 
     await rm(root, { recursive: true, force: true })
   }
 })
+
+// The public UI subpath is transformed with the consumer, never a bundled renderer.
+test('quota-sidebar links once and renders through raw and runtime host entries', async () => {
+  const root = await makeRepoScratchDir()
+  try {
+    for (const variant of ['raw', 'runtime'] as const) {
+      const destination = join(root, variant)
+      const result = await buildTui(
+        resolve('test/fixtures/tui/quota-sidebar.tsx'),
+        variant,
+        destination,
+      )
+      expect(
+        result.sources.filter(
+          (source) => source === resolve('src/quota-sidebar/index.tsx'),
+        ),
+      ).toHaveLength(1)
+      expect(new Set(result.sources).size).toBe(result.sources.length)
+      expect(
+        result.sources.some((source) =>
+          /node_modules\/(?:solid-js|@opentui)/.test(source),
+        ),
+      ).toBe(false)
+      for (const name of result.emitted) {
+        if (name === result.selector) continue
+        const code = await readFile(join(destination, name), 'utf8')
+        expect(code).not.toContain('@cortexkit/common-auth')
+        expect(code).not.toMatch(/\bimport\s*\(/)
+        for (const { specifier } of parseImports(code, name)) {
+          if (specifier.startsWith('.'))
+            expect(
+              existsSync(resolve(dirname(join(destination, name)), specifier)),
+            ).toBe(true)
+          if (variant === 'runtime')
+            expect(specifier).not.toMatch(/^(?:solid-js|@opentui\/)/)
+        }
+      }
+      const frame = await readFile(
+        join(
+          destination,
+          sharedName('src/quota-sidebar/index.tsx').replace(
+            /\.js$/,
+            variant === 'raw' ? '.tsx' : '.js',
+          ),
+        ),
+        'utf8',
+      )
+      expect(frame).toContain(
+        variant === 'raw'
+          ? '<box'
+          : 'opentui:runtime-module:%40opentui%2Fsolid',
+      )
+      expect(frame).toContain(
+        variant === 'raw' ? 'solid-js' : 'opentui:runtime-module:solid-js',
+      )
+      if (variant === 'runtime') expect(frame).not.toContain('<box')
+    }
+    for (const variant of ['raw', 'runtime'] as const) {
+      const destination = join(root, variant)
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          ...(variant === 'runtime' ? ['--conditions=browser'] : []),
+          '--preload',
+          variant === 'runtime'
+            ? '@opentui/solid/runtime-plugin-support'
+            : '@opentui/solid/preload',
+          'test/quota-sidebar/linked-render.tsx',
+          join(destination, 'selector.js'),
+          join(root, 'raw/quota-sidebar.tsx'),
+          join(root, 'runtime/quota-sidebar.js'),
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+      )
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      expect({ variant, exitCode, stderr }).toEqual({
+        variant,
+        exitCode: 0,
+        stderr: '',
+      })
+      expect(stdout).toContain(
+        'linked quota sidebar uses host runtime and matches frozen frame',
+      )
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}, 30_000)

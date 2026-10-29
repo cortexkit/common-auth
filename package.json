@@ -56,6 +56,10 @@
       "types": "./dist/tui/index.d.ts",
       "import": "./dist/tui/index.js"
     },
+    "./quota-sidebar": {
+      "types": "./dist/quota-sidebar/index.d.ts",
+      "import": "./src/quota-sidebar/index.tsx"
+    },
     "./store": {
       "types": "./dist/store/index.d.ts",
       "import": "./dist/store/index.js"
@@ -94,7 +98,11 @@
     }
   },
   "files": [
-    "dist/"
+    "dist/",
+    "src/quota-sidebar/",
+    "src/quota/format.ts",
+    "src/quota/map.ts",
+    "src/quota/projection.ts"
   ],
   "scripts": {
     "build": "bun scripts/check-local-deps.mjs && bun scripts/check-installed-ranges.mjs && tsc -p tsconfig.build.json && bun scripts/check-private-files-external.ts",

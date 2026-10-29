@@ -1,0 +1,64 @@
+                
+  ▼      v1.8.4 
+  OPENAI        
+                
+ Quota          
+ active- active 
+ low            
+ 5h ██▓ 0% left 
+    deficit 40… 
+ 7d  100% left  
+                
+ stale-   block 
+ idle-longed    
+ account-       
+ name           
+                
+ off in /openai 
+ 5h  79% left   
+ checked 1h ago 
+                
+ empty     idle 
+ —              
+                
+ missing   idle 
+ checking…      
+                
+ Routing        
+ Route main-fi… 
+                
+ Health         
+ Killswitch st… 
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                

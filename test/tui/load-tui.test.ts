@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test'
 import { execFile } from 'node:child_process'
-import { mkdir, rm } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, rm } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { loadTui } from '@cortexkit/common-auth/tui'
+import { parseImports } from '../../src/tui-build/walker.js'
 import { makeRepoScratchDir } from '../fixtures/scratch.js'
 
 const probe = 'opentui:runtime-module:%40opentui%2Fsolid'
@@ -33,6 +35,35 @@ test('packed tui selector probes the exact id and imports only the selected abso
     const manifest = await Bun.file(
       join(unpacked, 'package/package.json'),
     ).json()
+    expect(manifest.exports['./quota-sidebar']).toEqual({
+      types: './dist/quota-sidebar/index.d.ts',
+      import: './src/quota-sidebar/index.tsx',
+    })
+    for (const target of Object.values(
+      manifest.exports['./quota-sidebar'],
+    ) as string[]) {
+      const pending = [join(unpacked, 'package', target)]
+      const visited = new Set<string>()
+      while (pending.length > 0) {
+        const path = pending.pop()!
+        if (visited.has(path)) continue
+        visited.add(path)
+        expect(existsSync(path)).toBe(true)
+        const code = await readFile(path, 'utf8')
+        for (const { specifier } of parseImports(code, path)) {
+          if (!specifier.startsWith('.')) continue
+          const dependency = resolve(dirname(path), specifier)
+          pending.push(
+            path.endsWith('.d.ts')
+              ? dependency.replace(/\.js$/, '.d.ts')
+              : existsSync(dependency)
+                ? dependency
+                : dependency.replace(/\.js$/, '.ts'),
+          )
+        }
+      }
+      expect(visited.size).toBeGreaterThan(1)
+    }
     const selector = await import(
       pathToFileURL(join(unpacked, 'package', manifest.exports['./tui'].import))
         .href

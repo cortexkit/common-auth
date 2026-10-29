@@ -1,0 +1,64 @@
+                                     
+  ▼ OPENAI                    v1.8.4 
+                                     
+ Quota                               
+ active-low                   active 
+ 5h ██████▓▓▓▓ 0% left            2h 
+    deficit 40% · out in 0m          
+ 7d ░░░░░░░░░░ 100% left       6d23h 
+                                     
+ stale-idle-long-account-nameblocked 
+ off in /openai                      
+ 5h ██░░░░░░░░ 79% left        reset 
+ checked 1h ago                      
+                                     
+ empty                          idle 
+ —                                   
+                                     
+ missing                        idle 
+ checking…                           
+                                     
+ Routing                             
+ Route                    main-first 
+                                     
+ Health                              
+ Killswitch stale-idle-long-account… 
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
