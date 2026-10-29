@@ -1,4 +1,5 @@
-.cortexkit/
+.cortexkit/*
+!.cortexkit/WORKER.md
 node_modules/
 dist/
 test/.scratch/
