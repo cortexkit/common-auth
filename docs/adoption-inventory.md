@@ -579,7 +579,11 @@ classifying family through `ClaustrumDiscoveryHub`, below.
 
 `ClassifyingClaustrumFamily<Code>` supplies `category`, `refusalCodes: readonly
 Code[]`, and `classify(row: VaultRowFacts)`. The library first requires `read`,
-the family category, and type `oauth` or `api_key`. Then the policy is called
+the family category, and a recognized `authMethod`: `apikey` derives internal
+type `api_key`; `chatgpt`, `antigravity` and `oauth` derive internal type `oauth`.
+The row's `credentialType` is only an id-derived hint and does not gate admission.
+`refreshAdapter` identifies an OAuth refresher, never whether a row is an API key.
+Then the policy is called
 once per eligible row, returning `{ kind: 'not-mine' }`, `{ kind: 'mine', member
 }` or `{ kind: 'refused', code }`. It may admit several OAuth refresh adapters
 and static keys together; provider tables, reserved ids and host policy belong
@@ -587,18 +591,22 @@ to the caller, not this library.
 
 `VaultRowFacts` is common-auth's own non-secret structure: `credentialId`,
 `credentialType`, `categories`, and optional `refreshAdapter`, `providerIds` and
-`authMethod`. It does not depend on newer client declarations. A decoded row
-with no `providerIds` (including claustrum-client 0.12 rows) is refused as the
+`authMethod`. Its `credentialType` is the derived internal `oauth | api_key` type,
+not the raw vault hint. It does not depend on newer client declarations. A read
+row in the family category with no or an unknown `authMethod` is refused as the
+fixed library code `unknown-auth-method` before calling policy or checking provider
+ids. Older vaults or clients before 0.6 may omit `authMethod`; the library never
+guesses from the id. A row with a recognized method but
+no `providerIds` (including claustrum-client 0.12 rows) is refused as the
 fixed library code `unmapped` before calling policy. An empty array still reaches
-policy: it can mean an old daemon or a row without provider mapping. Remedy text
-should name both an old client and an old daemon. A missing `authMethod` on a
-row with provider ids remains the policy's decision.
+policy: it can mean an old daemon or a row without provider mapping. Legacy non-classifying families
+keep their `credentialType`-based behavior and do not require `authMethod`.
 
 Only declared refusal codes matching `^[a-z][a-z0-9-]{0,31}$` are published.
 Thrown classifier errors, invalid results and undeclared or malformed codes
 become the fixed library code `unclassified`; error messages are never published.
-Callers should account for the library codes `unmapped` and `unclassified` in
-addition to their declared codes.
+Callers should account for the library codes `unknown-auth-method`, `unmapped`
+and `unclassified` in addition to their declared codes.
 
 For classifying families only, `VaultInventory.refused` lists `{ credentialId?,
 code }` (blank ids omitted), and `notMine` counts rows without listing them.

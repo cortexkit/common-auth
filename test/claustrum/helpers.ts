@@ -63,6 +63,47 @@ export function inventoryRow(
   }
 }
 
+/**
+ * Real vault list shapes, with the client's defaults for optional wire fields.
+ * API-key id prefixes use `apikey`, not the internal serving type `api_key`.
+ */
+export function realApiKeyRow(
+  overrides: Partial<ScopedInventoryRow> = {},
+): ScopedInventoryRow {
+  return {
+    id: 'apikey:cerebras',
+    categories: ['llm-provider'],
+    credentialType: 'apikey',
+    providerIds: ['cerebras'],
+    authMethod: 'apikey',
+    state: 'active',
+    recordVersion: 1,
+    operations: ['read'],
+    serves: [],
+    createdAtMs: null,
+    ...overrides,
+  }
+}
+
+export function realOAuthRow(
+  overrides: Partial<ScopedInventoryRow> = {},
+): ScopedInventoryRow {
+  return {
+    id: 'oauth:meta',
+    categories: ['llm-provider'],
+    credentialType: 'oauth',
+    providerIds: ['meta'],
+    authMethod: 'oauth',
+    refreshAdapter: 'meta',
+    state: 'active',
+    recordVersion: 1,
+    operations: ['read'],
+    serves: [],
+    createdAtMs: null,
+    ...overrides,
+  }
+}
+
 const dirs: string[] = []
 
 /** A fresh directory removed by `cleanupDirs` after each test. */

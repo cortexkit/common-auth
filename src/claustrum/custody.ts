@@ -48,7 +48,8 @@ export interface ClaustrumFamily {
 /** Non-secret classification facts, including rows decoded by older clients. */
 export interface VaultRowFacts {
   readonly credentialId: string
-  readonly credentialType: string
+  /** Internal serving type derived from `authMethod`, not the id's type hint. */
+  readonly credentialType: VaultCredentialType
   readonly authMethod?: string
   readonly refreshAdapter?: string
   readonly providerIds?: readonly string[]
@@ -152,7 +153,10 @@ export interface VaultInventory {
   readonly view: string
   readonly credentials: readonly VaultCredential[]
   readonly skipped: readonly SkippedVaultRecord[]
-  /** Classifying families only: fixed refusal codes, never classifier errors. */
+  /**
+   * Classifying families only: declared policy codes or the fixed library codes
+   * `unknown-auth-method`, `unmapped` and `unclassified`, never classifier errors.
+   */
   readonly refused?: readonly { credentialId?: string; code: string }[]
   /** Classifying families only: rows outside this family's responsibility. */
   readonly notMine?: number
@@ -393,16 +397,28 @@ function credentialTypeOf(
   const notMine = { kind: 'not-mine' } as const
   if (!row.operations.includes('read')) return notMine
   if (!row.categories.includes(family.category)) return notMine
-  if (row.credentialType !== 'oauth' && row.credentialType !== 'api_key')
-    return notMine
   if ('classify' in family) {
-    // Older clients omit these facts entirely; do not call a policy that needs them.
+    const metadata = rowFactsOf(row)
+    let type: VaultCredentialType
+    // The id's type is only a hint; the vault's auth method determines serving.
+    switch (metadata.authMethod) {
+      case 'apikey':
+        type = 'api_key'
+        break
+      case 'chatgpt':
+      case 'antigravity':
+      case 'oauth':
+        type = 'oauth'
+        break
+      default:
+        return { kind: 'refused', code: 'unknown-auth-method' }
+    }
     const facts: VaultRowFacts = {
       credentialId: row.id,
-      credentialType: row.credentialType,
+      credentialType: type,
       categories: row.categories,
       refreshAdapter: row.refreshAdapter,
-      ...rowFactsOf(row),
+      ...metadata,
     }
     if (facts.providerIds === undefined)
       return { kind: 'refused', code: 'unmapped' }
@@ -410,7 +426,7 @@ function credentialTypeOf(
       const result = family.classify(facts)
       if (result.kind === 'not-mine') return notMine
       if (result.kind === 'mine' && typeof result.member === 'string')
-        return { kind: 'mine', type: row.credentialType, member: result.member }
+        return { kind: 'mine', type, member: result.member }
       if (
         result.kind === 'refused' &&
         typeof result.code === 'string' &&
@@ -424,6 +440,8 @@ function credentialTypeOf(
     }
     return { kind: 'refused', code: 'unclassified' }
   }
+  if (row.credentialType !== 'oauth' && row.credentialType !== 'api_key')
+    return notMine
   if (row.credentialType === 'oauth')
     return row.refreshAdapter === family.refreshAdapter
       ? { kind: 'mine', type: 'oauth' }

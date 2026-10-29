@@ -4,6 +4,7 @@ import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
 import {
   ClaustrumConsumer,
   type ClaustrumConsumerOptions,
+  ClaustrumDiscoveryHub,
   type ClaustrumScopedClient,
   ClaustrumUnreachableError,
   classifyVaultFailure,
@@ -21,6 +22,8 @@ import {
   fakeTimers,
   family,
   inventoryRow,
+  realApiKeyRow,
+  realOAuthRow,
   tempDir,
   unknownGrants,
   until,
@@ -109,6 +112,52 @@ async function fixture() {
 function unauthorized() {
   return new Response(null, { status: 401 })
 }
+
+test('real vault rows retain derived types through the roster and consumer authorization', async () => {
+  const f = await fixture()
+  f.rows.splice(0, f.rows.length, realApiKeyRow(), realOAuthRow())
+  const hub = hooks.lifetime.manage(
+    new ClaustrumDiscoveryHub({
+      stateDir: f.dir,
+      hostGeneration: 'test',
+      classifierInput: { version: 1 },
+      members: ['cerebras', 'meta'],
+      tokenPath: f.options.tokenPath,
+      connect: f.options.connect,
+      pollIntervalMs: 0,
+      family: {
+        category: 'llm-provider',
+        refusalCodes: [],
+        classify: (facts) => ({
+          kind: 'mine',
+          member: facts.providerIds?.[0] ?? '',
+        }),
+      },
+    }),
+  )
+  const expected = [
+    {
+      provider: 'cerebras',
+      credentialId: 'apikey:cerebras',
+      credentialType: 'api_key',
+    },
+    { provider: 'meta', credentialId: 'oauth:meta', credentialType: 'oauth' },
+  ]
+  for (const { provider, ...row } of expected) {
+    const consumer = hub.member(provider, {})
+    consumers.push(consumer)
+    const roster = await consumer.refresh()
+    expect(roster?.rows).toMatchObject([row])
+    expect(
+      (await readVaultRoster(hub.rosterPath(provider)))?.rows,
+    ).toMatchObject([row])
+    const route = f.route(roster, row.credentialId)
+    expect(await consumer.authorize(route)).toMatchObject(row)
+  }
+  expect(f.gets.map((get) => get.credentialId)).toEqual(
+    expected.map((row) => row.credentialId),
+  )
+})
 
 test('shared consumers update memory before publication and the last dispose drains', async () => {
   const f = await fixture()

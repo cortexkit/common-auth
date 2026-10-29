@@ -1117,6 +1117,42 @@ test('a reading with no account on a row that has never had one is kept and bind
   expect(kept.unclaimed).toBeUndefined()
 })
 
+test('a 0.29.0 roster still reads internal oauth and api_key types without authMethod', async () => {
+  const { path } = await fixture()
+  const roster: VaultRosterFile = {
+    version: 1,
+    complete: true,
+    declined: [],
+    rows: [
+      {
+        routeId: 'vault:cerebras',
+        credentialId: 'apikey:cerebras',
+        credentialType: 'api_key',
+        state: 'active',
+        label: 'Cerebras',
+        enabled: true,
+        addedAt: 1,
+      },
+      {
+        routeId: 'vault:meta',
+        credentialId: 'oauth:meta',
+        credentialType: 'oauth',
+        state: 'active',
+        label: 'Meta',
+        enabled: true,
+        addedAt: 1,
+      },
+    ],
+  }
+  await writeFile(path, JSON.stringify(roster), { mode: 0o600 })
+  const decoded = await readVaultRoster(path)
+  expect(decoded).toEqual(roster)
+  expect(vaultRoutingRows(decoded).map((row) => row.kind)).toEqual([
+    'api-key',
+    'oauth',
+  ])
+})
+
 test('a reading with a proven account on an accountless row with several credentials is refused', async () => {
   const { path } = await fixture()
   const roster: VaultRosterFile = {

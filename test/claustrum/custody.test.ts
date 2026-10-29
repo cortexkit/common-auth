@@ -13,6 +13,7 @@ import {
   captureLogger,
   family,
   inventoryRow,
+  realApiKeyRow,
   unknownGrants,
 } from './helpers.ts'
 
@@ -72,6 +73,40 @@ function fixture(
 }
 
 describe('scoped custody dispatch authorization', () => {
+  test('a real apikey row is mine and serves with the derived api_key type', async () => {
+    const key = realApiKeyRow()
+    const { custody } = fixture(
+      {
+        listScoped: async () => ({ rows: [key], view: 'v', ...unknownGrants }),
+        getScoped: async () => ({
+          credentialId: key.id,
+          material: 'static-key',
+          recordVersion: 1,
+          expiresAtMs: null,
+        }),
+      },
+      {
+        family: {
+          category: 'llm-provider',
+          refusalCodes: [],
+          classify: (facts) =>
+            facts.credentialType === 'api_key'
+              ? { kind: 'mine', member: 'cerebras' }
+              : { kind: 'not-mine' },
+        },
+      },
+    )
+    const inventory = await custody.discover()
+    expect(inventory.credentials).toMatchObject([
+      { credentialId: key.id, credentialType: 'api_key', member: 'cerebras' },
+    ])
+    expect(inventory.refused).toEqual([])
+    expect(inventory.notMine).toBe(0)
+    const credential = inventory.credentials[0]
+    if (!credential) throw new Error('missing API-key credential')
+    expect((await custody.authorize(credential)).credentialType).toBe('api_key')
+  })
+
   test('authorizes every dispatch and rereads the consumer token', async () => {
     const f = fixture()
     await f.custody.authorize(identity)

@@ -56,6 +56,7 @@ import {
   fakeTimers,
   family,
   inventoryRow,
+  realApiKeyRow,
   tempDir,
   unknownGrants,
   until,
@@ -194,14 +195,10 @@ const hubFamily: ClassifyingClaustrumFamily<'reserved-provider'> = {
 }
 
 function keyRow(provider: string, account = 'main'): ScopedInventoryRow {
-  return inventoryRow({
+  return realApiKeyRow({
     id: `apikey:${provider}:${account}`,
     accountId: `${provider}-${account}`,
-    categories: [CATEGORY],
-    credentialType: 'api_key',
-    refreshAdapter: undefined,
     providerIds: [provider],
-    authMethod: 'apikey',
   })
 }
 
@@ -1784,6 +1781,7 @@ test('hub cost: retain takes the union, so one member kept receipt survives anot
 test('hub accessors: refusals and grant reach follow the committed view', async () => {
   const f = await hubFixture()
   f.vault.grants = 1
+  f.vault.rows.push(realApiKeyRow({ authMethod: undefined }))
   const [alpha, beta] = f.members()
   if (!alpha || !beta) throw new Error('missing member')
   expect(f.hub.refusals()).toBeUndefined()
@@ -1799,6 +1797,7 @@ test('hub accessors: refusals and grant reach follow the committed view', async 
     view: 'v1',
     refused: [
       { credentialId: 'apikey:openai:main', code: 'reserved-provider' },
+      { credentialId: 'apikey:cerebras', code: 'unknown-auth-method' },
     ],
     notMine: 1,
   })

@@ -9,14 +9,16 @@ import {
   projectVaultRoster,
   type VaultRowFacts,
 } from '../../src/claustrum/index.ts'
-import { captureLogger, inventoryRow, unknownGrants } from './helpers.ts'
+import {
+  captureLogger,
+  inventoryRow,
+  realApiKeyRow,
+  realOAuthRow,
+  unknownGrants,
+} from './helpers.ts'
 
 const category = 'llm-provider'
-const refusalCodes = [
-  'unmapped',
-  'reserved-provider',
-  'no-auth-method',
-] as const
+const refusalCodes = ['unmapped', 'reserved-provider'] as const
 
 function row(id: string, overrides: Partial<ScopedInventoryRow> = {}) {
   return inventoryRow({
@@ -69,10 +71,9 @@ test('classifying family admits distinct OAuth adapters and static keys in one p
     [
       row('xai'),
       row('meta'),
-      row('deepseek', {
-        credentialType: 'api_key',
-        refreshAdapter: undefined,
-        authMethod: 'apikey',
+      realApiKeyRow({
+        id: 'deepseek',
+        providerIds: ['deepseek'],
       }),
     ],
     classifying((facts) => {
@@ -122,6 +123,43 @@ test('classifying family admits distinct OAuth adapters and static keys in one p
   expect(inventory.notMine).toBe(0)
 })
 
+test.each([
+  {
+    row: realOAuthRow({
+      authMethod: 'antigravity',
+      refreshAdapter: 'google-antigravity',
+    }),
+    type: 'oauth',
+  },
+  {
+    row: realOAuthRow({ credentialType: 'chatgpt', authMethod: 'chatgpt' }),
+    type: 'oauth',
+  },
+  {
+    row: realApiKeyRow({ credentialType: 'oauth', refreshAdapter: 'meta' }),
+    type: 'api_key',
+  },
+])(
+  'classifying derives $type from authMethod even when the id type differs: $row.authMethod',
+  async ({ row, type }) => {
+    const seen: VaultRowFacts[] = []
+    const inventory = await fixture(
+      [row],
+      classifying((facts) => {
+        seen.push(facts)
+        return { kind: 'mine', member: 'provider' }
+      }),
+    ).discover()
+    expect(inventory.credentials).toMatchObject([
+      { credentialId: row.id, credentialType: type, member: 'provider' },
+    ])
+    expect(seen).toMatchObject([
+      { credentialType: type, authMethod: row.authMethod },
+    ])
+    expect(inventory.refused).toEqual([])
+  },
+)
+
 test('classifying not-mine rows are counted but never listed', async () => {
   const inventory = await fixture(
     [row('dedicated-a'), row('dedicated-b')],
@@ -152,23 +190,24 @@ test('classifying refusals retain only credential ids and declared codes', async
   })
 })
 
-test('classifying gate checks read category and credential type before invoking policy', async () => {
+test('classifying gate checks read and category but never the credential type hint', async () => {
   const calls: string[] = []
   const inventory = await fixture(
     [
       row('write-only', { operations: ['deposit'] }),
       row('wrong-category', { categories: ['other'] }),
-      row('wrong-type', { credentialType: 'signing_key' }),
+      row('type-hint', { credentialType: 'signing_key' }),
       row('eligible'),
     ],
     classifying((facts) => {
       calls.push(facts.credentialId)
-      return { kind: 'mine', member: 'eligible' }
+      return { kind: 'mine', member: facts.credentialId }
     }),
   ).discover()
-  expect(calls).toEqual(['eligible'])
-  expect(inventory.notMine).toBe(3)
+  expect(calls).toEqual(['type-hint', 'eligible'])
+  expect(inventory.notMine).toBe(2)
   expect(inventory.credentials.map((credential) => credential.member)).toEqual([
+    'type-hint',
     'eligible',
   ])
 })
@@ -254,7 +293,7 @@ test('classifying thrown errors are replaced with unclassified without leaking t
   expect(JSON.stringify(inventory)).not.toContain('private-vault-data')
 })
 
-test('classifying old-client rows are refused unmapped without invoking policy', async () => {
+test('classifying old-client rows are refused unknown-auth-method before checking providers', async () => {
   const old = row('old-client')
   Reflect.deleteProperty(old, 'providerIds')
   Reflect.deleteProperty(old, 'authMethod')
@@ -267,27 +306,62 @@ test('classifying old-client rows are refused unmapped without invoking policy',
     }),
   ).discover()
   expect(inventory.refused).toEqual([
-    { credentialId: 'old-client', code: 'unmapped' },
+    { credentialId: 'old-client', code: 'unknown-auth-method' },
   ])
   expect(inventory.credentials).toEqual([])
   expect(calls).toBe(0)
 })
 
-test('classifying empty provider ids and absent auth method remain policy decisions', async () => {
+test('classifying read rows without authMethod are refused without guessing from their ids', async () => {
+  let calls = 0
   const inventory = await fixture(
     [
-      row('empty', { providerIds: [] }),
-      row('no-method', { authMethod: undefined }),
+      realApiKeyRow({ authMethod: undefined }),
+      realOAuthRow({ authMethod: undefined }),
     ],
-    classifying((facts) => ({
-      kind: 'refused',
-      code: facts.authMethod === undefined ? 'no-auth-method' : 'unmapped',
-    })),
+    classifying(() => {
+      calls++
+      return { kind: 'mine', member: 'guessed' }
+    }, []),
   ).discover()
   expect(inventory.refused).toEqual([
-    { credentialId: 'empty', code: 'unmapped' },
-    { credentialId: 'no-method', code: 'no-auth-method' },
+    { credentialId: 'apikey:cerebras', code: 'unknown-auth-method' },
+    { credentialId: 'oauth:meta', code: 'unknown-auth-method' },
   ])
+  expect(inventory.credentials).toEqual([])
+  expect(calls).toBe(0)
+})
+
+test('classifying unknown auth methods are refused without invoking policy', async () => {
+  const unknown = realApiKeyRow()
+  Object.assign(unknown, { authMethod: 'future-method' })
+  const inventory = await fixture(
+    [unknown],
+    classifying(() => {
+      throw new Error('unknown method must not reach policy')
+    }),
+  ).discover()
+  expect(inventory.refused).toEqual([
+    { credentialId: unknown.id, code: 'unknown-auth-method' },
+  ])
+})
+
+test('classifying absent provider ids are unmapped but empty provider ids remain a policy decision', async () => {
+  const missing = row('missing')
+  Reflect.deleteProperty(missing, 'providerIds')
+  const calls: string[] = []
+  const inventory = await fixture(
+    [missing, row('empty', { providerIds: [] })],
+    classifying((facts) => {
+      calls.push(facts.credentialId)
+      return { kind: 'refused', code: 'unmapped' }
+    }),
+  ).discover()
+  expect(inventory.refused).toEqual([
+    { credentialId: 'missing', code: 'unmapped' },
+    { credentialId: 'empty', code: 'unmapped' },
+  ])
+  expect(calls).toEqual(['empty'])
 })
 
 test('classifying metadata never changes the persisted roster format', async () => {
