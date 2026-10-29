@@ -47,6 +47,7 @@ import {
   PrivateFileError,
   writeJsonAtomic,
 } from '../../src/fs/index.js'
+import * as refreshLockModule from '../../src/fs/refresh-file-lock.js'
 import * as lockModule from '../../src/fs/with-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
@@ -882,6 +883,85 @@ test('hub disposal cancellation: a roster write-lock wait observes shutdown befo
 }, 15_000)
 
 for (const owner of ['hub', 'plain consumer'] as const) {
+  for (const name of ['claustrum-roster', 'claustrum-roster-write']) {
+    test(`hub disposal cancellation: ${owner} abandons a contended ${name} release without unlinking`, async () => {
+      const log = captureLogger()
+      let path: string
+      let dispose: () => Promise<void>
+      let refresh: () => Promise<unknown>
+      if (owner === 'hub') {
+        const f = await hubFixture({ hub: { logger: log.logger } })
+        const alpha = f.member('alpha')
+        path = f.hub.rosterPath('alpha')
+        dispose = () => f.hub.dispose()
+        refresh = () => alpha.refresh()
+      } else {
+        const dir = await tempDir('claustrum-release-cancel-')
+        const vault = fakeVault()
+        path = join(dir, 'plain.json')
+        const consumer = new ClaustrumConsumer({
+          rosterPath: path,
+          tokenPath: await writeToken(dir),
+          family,
+          connect: () => vault.connect(),
+          logger: log.logger,
+        })
+        dispose = () => consumer.dispose()
+        cleanups.push(dispose)
+        refresh = () => consumer.refresh()
+      }
+      const lockPath = `${path}.${name}.lock`
+      const markerPath = `${lockPath}.evicting`
+      const entered = deferred<string>()
+      const acquire = refreshLockModule.acquireRefreshFileLock
+      const attempt = spyOn(
+        refreshLockModule,
+        'acquireRefreshFileLock',
+      ).mockImplementation(async (options) => {
+        const lock = await acquire(options)
+        if (lock && options.path === path && options.name === name) {
+          const release = lock.release.bind(lock)
+          lock.release = async (signal) => {
+            await mkdir(markerPath)
+            await writeFile(
+              join(markerPath, 'owner.json'),
+              JSON.stringify({
+                ownerId: 'contender',
+                createdAt: Date.now(),
+              }),
+            )
+            entered.resolve(await readFile(lockPath, 'utf8'))
+            await release(signal)
+          }
+        }
+        return lock
+      })
+      const refreshing = refresh().then(
+        () => {},
+        () => {},
+      )
+      try {
+        const before = await entered.promise
+        const started = performance.now()
+        await boundedDisposal(dispose())
+        expect(performance.now() - started).toBeLessThan(1_500)
+        expect(log.records.filter((record) => record.level === 'warn')).toEqual(
+          [],
+        )
+        await boundedDisposal(refreshing)
+        expect(await readFile(lockPath, 'utf8')).toBe(before)
+        expect(
+          JSON.parse(await readFile(join(markerPath, 'owner.json'), 'utf8'))
+            .ownerId,
+        ).toBe('contender')
+      } finally {
+        await rm(markerPath, { recursive: true, force: true })
+        await refreshing
+        attempt.mockRestore()
+      }
+    }, 15_000)
+  }
+
   test(`hub disposal deadline: ${owner} shares one warning with its stuck custody read`, async () => {
     const log = captureLogger()
     const entered = deferred<void>()
@@ -1369,6 +1449,42 @@ test('hub members: watchState follows the hub watch', async () => {
   await fallback.start()
   expect(fallback.hub.watchState()).toBe('fallback')
   expect(member.watchState()).toEqual({ vault: 'fallback' })
+})
+
+test('hub onDiscovery reports poll, watch and send discoveries to every member', async () => {
+  const f = await hubFixture({ watch: true })
+  const discoveries: Array<Promise<VaultRosterFile | undefined>> = []
+  const peerDiscoveries: Array<Promise<VaultRosterFile | undefined>> = []
+  const alpha = f.member('alpha', {
+    onDiscovery: (promise) => {
+      discoveries.push(promise)
+    },
+  })
+  f.member('beta', {
+    onDiscovery: (promise) => {
+      peerDiscoveries.push(promise)
+    },
+  })
+  await f.start()
+  await f.tick()
+  expect(discoveries).toHaveLength(2)
+  expect(peerDiscoveries).toHaveLength(2)
+  expect((await discoveries[1])?.view).toBe('v1')
+  await until(() => f.vault.watches === 1, 'registered hub watch')
+  f.vault.view = 'v2'
+  f.vault.notify()
+  await until(() => discoveries.length === 3, 'hub watch discovery hook')
+  expect((await discoveries[2])?.view).toBe('v2')
+  expect((await peerDiscoveries[2])?.view).toBe('v2')
+  const response = await alpha.send(
+    f.route(alpha, 'alpha'),
+    async () => new Response(null, { status: 401 }),
+    { site: 'model' },
+  )
+  expect(response.status).toBe(401)
+  await until(() => discoveries.length === 4, 'hub send discovery hook')
+  await discoveries[3]
+  expect(peerDiscoveries).toHaveLength(4)
 })
 
 test('hub members: a post-401 refresh costs one list for every member and pushes each roster', async () => {
@@ -2419,6 +2535,65 @@ test('hub commits: a member whose commit fails leaves every other member committ
   expect((await readVaultRoster(path))?.view).toBe('v2')
   expect(beta.snapshot()?.view).toBe('v2')
   expect(f.hub.refusals()?.view).toBe('v2')
+})
+
+test('hub roster sharing: reorder, decline and accept reach a second instance without refresh', async () => {
+  const f = await hubFixture()
+  f.vault.rows.push(keyRow('alpha', 'second'))
+  const alpha = f.member('alpha')
+  await alpha.refresh()
+  const peer = await hubFixture({ dir: f.dir })
+  peer.vault.rows = f.vault.rows
+  const peerAlpha = peer.member('alpha')
+  await peerAlpha.refresh()
+  const other = await hubFixture()
+  const otherAlpha = other.member('alpha')
+  await otherAlpha.refresh()
+  const main = f.route(alpha, 'alpha')
+  const second = f.route(alpha, 'alpha', 'second')
+  const lists = [f.vault.lists, peer.vault.lists]
+
+  await alpha.reorder([second, main])
+  expect(peerAlpha.snapshot()?.rows.map((row) => row.routeId)).toEqual([
+    second,
+    main,
+  ])
+  expect(peerAlpha.routingRows().map((row) => row.id)).toEqual([second, main])
+  await peerAlpha.decline(second)
+  expect(alpha.routingRows().map((row) => row.id)).toEqual([main])
+  await alpha.accept(second)
+  expect(peerAlpha.routingRows().map((row) => row.id)).toEqual([second, main])
+  expect([f.vault.lists, peer.vault.lists]).toEqual(lists)
+  expect(otherAlpha.routingRows()).toHaveLength(1)
+  expect(f.rosters.alpha).toHaveLength(1)
+  expect(peer.rosters.alpha).toHaveLength(1)
+
+  peer.setActive(false)
+  await peer.hub.refresh()
+  await alpha.decline(main)
+  expect(peerAlpha.snapshot()).toBeUndefined()
+  await peer.hub.dispose()
+  await alpha.accept(main)
+  expect(alpha.routingRows().map((row) => row.id)).toEqual([second, main])
+})
+
+test('hub roster sharing: closing a detached hub cannot unsubscribe replacement instances', async () => {
+  const retired = await hubFixture()
+  const retiredAlpha = retired.member('alpha')
+  await retiredAlpha.refresh()
+  await retiredAlpha.dispose()
+  const f = await hubFixture({ dir: retired.dir })
+  f.vault.rows.push(keyRow('alpha', 'second'))
+  const alpha = f.member('alpha')
+  await alpha.refresh()
+  const peer = await hubFixture({ dir: f.dir })
+  peer.vault.rows = f.vault.rows
+  const peerAlpha = peer.member('alpha')
+  await peerAlpha.refresh()
+  await retired.hub.dispose()
+  const ids = [f.route(alpha, 'alpha', 'second'), f.route(alpha, 'alpha')]
+  await alpha.reorder(ids)
+  expect(peerAlpha.snapshot()?.rows.map((row) => row.routeId)).toEqual(ids)
 })
 
 test('hub install: another process same-view preference change is installed, and its different view is listed for', async () => {

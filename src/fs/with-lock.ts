@@ -65,7 +65,7 @@ export async function withLock<T>(
         options.signal?.throwIfAborted()
         return await fn(lock)
       } finally {
-        await lock.release()
+        await lock.release(options.signal)
       }
     }
     const remaining = options.timeoutMs - (performance.now() - started)

@@ -1186,7 +1186,7 @@ export async function refreshVaultRoster(options: {
       pendingDiscoveries.set(key, discovered)
     throw error
   } finally {
-    await lease.release()
+    await lease.release(options.signal)
   }
 }
 

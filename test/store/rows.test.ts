@@ -199,7 +199,6 @@ describe('failure values carry the commit phase', () => {
     ]
     for (const [step, run] of cases) {
       const before = await s.bytes()
-      const hooked: PoolOperationError[] = []
       const store = expiringAt(step)
       const error = await rejectionOf((async () => run(store))())
       expect(error).toBeInstanceOf(PoolOperationError)
@@ -209,7 +208,6 @@ describe('failure values carry the commit phase', () => {
         retryable: true,
         committed: undefined,
       })
-      expect(hooked).toEqual([])
       expect(await s.bytes()).toEqual(before)
     }
   })
