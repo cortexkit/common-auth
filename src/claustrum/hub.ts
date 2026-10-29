@@ -12,7 +12,7 @@
 // never replaces a view another process committed after this hub listed.
 import { createHash } from 'node:crypto'
 import { readdir, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createLogger } from '../logger/index.js'
 import type { QuotaObservation } from '../quota/index.js'
 import { combineAbortSignals } from '../util/any-signal.js'
@@ -204,6 +204,8 @@ interface MemberEntry {
   readonly path: string
   hooks?: HubMemberHooks
   closed: boolean
+  releaseRoster?: () => void
+  receiveRoster?: (roster: VaultRosterFile) => void
   /** The file content the hub last committed or installed, as JSON text. */
   seen?: string
   /**
@@ -214,6 +216,9 @@ interface MemberEntry {
    */
   pending?: { failures: number; wait: number }
 }
+
+/** Published rosters are shared only in memory; file locks still order commits. */
+const sharedRosters = new Map<string, Set<(roster: VaultRosterFile) => void>>()
 
 /** The last discovery every member committed, and its view. */
 interface Committed {
@@ -533,9 +538,11 @@ export class ClaustrumDiscoveryHub {
       watchMode: () => this.watchState(),
       keptReceiptState: () => this.keptReceiptState(),
       retainUnion: () => this.#retainUnion(),
+      publishRoster: (roster) => this.#publishRoster(entry, roster),
       forget: (credentialId) => this.#current?.custody?.forget(credentialId),
       detach: () => {
         entry.closed = true
+        entry.releaseRoster?.()
       },
     }
     const consumerOptions = {
@@ -554,7 +561,48 @@ export class ClaustrumDiscoveryHub {
     } as ClaustrumConsumerOptions<Q>
     const { consumer, hooks } = createHubMember<Q>(port, consumerOptions)
     entry.hooks = hooks
+    const path = resolve(entry.path)
+    const subscribers = sharedRosters.get(path) ?? new Set()
+    const install = (roster: VaultRosterFile) => {
+      // A peer cannot reactivate an off or closed member, or install routes
+      // that collide with this plugin instance's local pool.
+      if (
+        entry.closed ||
+        this.#active !== true ||
+        !this.#current ||
+        !this.#live(this.#current) ||
+        !hooks.roster() ||
+        this.#collides(hooks, roster)
+      )
+        return
+      entry.seen = JSON.stringify(decodedVaultRoster(roster))
+      hooks.install(roster)
+      if (roster.view !== this.#committed?.view)
+        entry.pending ??= { failures: 0, wait: 0 }
+      this.#retainUnion()
+    }
+    subscribers.add(install)
+    entry.receiveRoster = install
+    sharedRosters.set(path, subscribers)
+    let subscribed = true
+    entry.releaseRoster = () => {
+      if (!subscribed) return
+      subscribed = false
+      subscribers.delete(install)
+      if (!subscribers.size) sharedRosters.delete(path)
+    }
     return consumer
+  }
+
+  #publishRoster(entry: MemberEntry, roster: VaultRosterFile): void {
+    const generation = this.#current
+    if (entry.closed || !generation || !this.#live(generation)) return
+    entry.seen = JSON.stringify(decodedVaultRoster(roster))
+    entry.hooks?.install(roster)
+    for (const install of sharedRosters.get(resolve(entry.path)) ?? []) {
+      if (!this.#live(generation)) return
+      if (install !== entry.receiveRoster) install(roster)
+    }
   }
 
   // --- leases ---
@@ -991,8 +1039,7 @@ export class ClaustrumDiscoveryHub {
         continue
       }
       // The push: memory holds the committed roster before refresh resolves.
-      entry.seen = JSON.stringify(decodedVaultRoster(roster))
-      if (!entry.closed) hooks.install(roster)
+      this.#publishRoster(entry, roster)
     }
     if (!this.#live(generation)) return undefined
     this.#retainUnion()
@@ -1170,7 +1217,7 @@ export class ClaustrumDiscoveryHub {
       }
       const before = enabledRows(memory)
       entry.seen = content
-      hooks.install(file)
+      this.#publishRoster(entry, file)
       if (enabledRows(hooks.roster()) !== before) this.#retainUnion()
     }
   }
@@ -1339,6 +1386,7 @@ export class ClaustrumDiscoveryHub {
   close(): void {
     if (this.#shutdown.signal.aborted) return
     this.#shutdown.abort(closed('Claustrum discovery hub is closed'))
+    for (const entry of this.#members.values()) entry.releaseRoster?.()
     if (this.#timer)
       (this.#options.clearTimeoutImpl ?? clearTimeout)(this.#timer)
     this.#timer = undefined

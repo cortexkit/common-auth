@@ -144,6 +144,8 @@ export interface HubMemberPort {
   keptReceiptState(): KeptReceiptState
   /** Apply the union of every member's roster in memory to kept receipts. */
   retainUnion(): void
+  /** Share a committed preference change with live members using this roster file. */
+  publishRoster(roster: VaultRosterFile): void
   forget(credentialId: string): void
   /** The member closed: the hub stops committing and pushing to it. */
   detach(): void
@@ -1084,6 +1086,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#options.rosterPath,
       await readVaultRoster(this.#options.rosterPath),
     )
+    if (this.#roster) this.#hub?.publishRoster(this.#roster)
     // A hub member shares kept receipts with every other member, so they are
     // retained against all members' rosters, never against this one alone.
     if (this.#hub) this.#hub.retainUnion()
@@ -1097,6 +1100,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#options.rosterPath,
       await readVaultRoster(this.#options.rosterPath),
     )
+    if (this.#roster) this.#hub?.publishRoster(this.#roster)
   }
 
   /**
@@ -1113,6 +1117,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#options.rosterPath,
       await readVaultRoster(this.#options.rosterPath),
     )
+    if (this.#roster) this.#hub?.publishRoster(this.#roster)
     return result
   }
 

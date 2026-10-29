@@ -936,7 +936,10 @@ for (const owner of ['hub', 'plain consumer'] as const) {
         }
         return lock
       })
-      const refreshing = refresh().then(() => {}, () => {})
+      const refreshing = refresh().then(
+        () => {},
+        () => {},
+      )
       try {
         const before = await entered.promise
         const started = performance.now()
@@ -2496,6 +2499,65 @@ test('hub commits: a member whose commit fails leaves every other member committ
   expect((await readVaultRoster(path))?.view).toBe('v2')
   expect(beta.snapshot()?.view).toBe('v2')
   expect(f.hub.refusals()?.view).toBe('v2')
+})
+
+test('hub roster sharing: reorder, decline and accept reach a second instance without refresh', async () => {
+  const f = await hubFixture()
+  f.vault.rows.push(keyRow('alpha', 'second'))
+  const alpha = f.member('alpha')
+  await alpha.refresh()
+  const peer = await hubFixture({ dir: f.dir })
+  peer.vault.rows = f.vault.rows
+  const peerAlpha = peer.member('alpha')
+  await peerAlpha.refresh()
+  const other = await hubFixture()
+  const otherAlpha = other.member('alpha')
+  await otherAlpha.refresh()
+  const main = f.route(alpha, 'alpha')
+  const second = f.route(alpha, 'alpha', 'second')
+  const lists = [f.vault.lists, peer.vault.lists]
+
+  await alpha.reorder([second, main])
+  expect(peerAlpha.snapshot()?.rows.map((row) => row.routeId)).toEqual([
+    second,
+    main,
+  ])
+  expect(peerAlpha.routingRows().map((row) => row.id)).toEqual([second, main])
+  await peerAlpha.decline(second)
+  expect(alpha.routingRows().map((row) => row.id)).toEqual([main])
+  await alpha.accept(second)
+  expect(peerAlpha.routingRows().map((row) => row.id)).toEqual([second, main])
+  expect([f.vault.lists, peer.vault.lists]).toEqual(lists)
+  expect(otherAlpha.routingRows()).toHaveLength(1)
+  expect(f.rosters.alpha).toHaveLength(1)
+  expect(peer.rosters.alpha).toHaveLength(1)
+
+  peer.setActive(false)
+  await peer.hub.refresh()
+  await alpha.decline(main)
+  expect(peerAlpha.snapshot()).toBeUndefined()
+  await peer.hub.dispose()
+  await alpha.accept(main)
+  expect(alpha.routingRows().map((row) => row.id)).toEqual([second, main])
+})
+
+test('hub roster sharing: closing a detached hub cannot unsubscribe replacement instances', async () => {
+  const retired = await hubFixture()
+  const retiredAlpha = retired.member('alpha')
+  await retiredAlpha.refresh()
+  await retiredAlpha.dispose()
+  const f = await hubFixture({ dir: retired.dir })
+  f.vault.rows.push(keyRow('alpha', 'second'))
+  const alpha = f.member('alpha')
+  await alpha.refresh()
+  const peer = await hubFixture({ dir: f.dir })
+  peer.vault.rows = f.vault.rows
+  const peerAlpha = peer.member('alpha')
+  await peerAlpha.refresh()
+  await retired.hub.dispose()
+  const ids = [f.route(alpha, 'alpha', 'second'), f.route(alpha, 'alpha')]
+  await alpha.reorder(ids)
+  expect(peerAlpha.snapshot()?.rows.map((row) => row.routeId)).toEqual(ids)
 })
 
 test('hub install: another process same-view preference change is installed, and its different view is listed for', async () => {
