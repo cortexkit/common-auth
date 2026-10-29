@@ -48,6 +48,7 @@ import {
   writeJsonAtomic,
 } from '../../src/fs/index.js'
 import * as lockModule from '../../src/fs/with-lock.js'
+import * as refreshLockModule from '../../src/fs/refresh-file-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   captureLogger,
@@ -882,6 +883,82 @@ test('hub disposal cancellation: a roster write-lock wait observes shutdown befo
 }, 15_000)
 
 for (const owner of ['hub', 'plain consumer'] as const) {
+  for (const name of ['claustrum-roster', 'claustrum-roster-write']) {
+    test(`hub disposal cancellation: ${owner} abandons a contended ${name} release without unlinking`, async () => {
+      const log = captureLogger()
+      let path: string
+      let dispose: () => Promise<void>
+      let refresh: () => Promise<unknown>
+      if (owner === 'hub') {
+        const f = await hubFixture({ hub: { logger: log.logger } })
+        const alpha = f.member('alpha')
+        path = f.hub.rosterPath('alpha')
+        dispose = () => f.hub.dispose()
+        refresh = () => alpha.refresh()
+      } else {
+        const dir = await tempDir('claustrum-release-cancel-')
+        const vault = fakeVault()
+        path = join(dir, 'plain.json')
+        const consumer = new ClaustrumConsumer({
+          rosterPath: path,
+          tokenPath: await writeToken(dir),
+          family,
+          connect: () => vault.connect(),
+          logger: log.logger,
+        })
+        dispose = () => consumer.dispose()
+        cleanups.push(dispose)
+        refresh = () => consumer.refresh()
+      }
+      const lockPath = `${path}.${name}.lock`
+      const markerPath = `${lockPath}.evicting`
+      const entered = deferred<string>()
+      const acquire = refreshLockModule.acquireRefreshFileLock
+      const attempt = spyOn(
+        refreshLockModule,
+        'acquireRefreshFileLock',
+      ).mockImplementation(async (options) => {
+        const lock = await acquire(options)
+        if (lock && options.path === path && options.name === name) {
+          const release = lock.release.bind(lock)
+          lock.release = async (signal) => {
+            await mkdir(markerPath)
+            await writeFile(
+              join(markerPath, 'owner.json'),
+              JSON.stringify({
+                ownerId: 'contender',
+                createdAt: Date.now(),
+              }),
+            )
+            entered.resolve(await readFile(lockPath, 'utf8'))
+            await release(signal)
+          }
+        }
+        return lock
+      })
+      const refreshing = refresh().then(() => {}, () => {})
+      try {
+        const before = await entered.promise
+        const started = performance.now()
+        await boundedDisposal(dispose())
+        expect(performance.now() - started).toBeLessThan(1_500)
+        expect(log.records.filter((record) => record.level === 'warn')).toEqual(
+          [],
+        )
+        await boundedDisposal(refreshing)
+        expect(await readFile(lockPath, 'utf8')).toBe(before)
+        expect(
+          JSON.parse(await readFile(join(markerPath, 'owner.json'), 'utf8'))
+            .ownerId,
+        ).toBe('contender')
+      } finally {
+        await rm(markerPath, { recursive: true, force: true })
+        await refreshing
+        attempt.mockRestore()
+      }
+    }, 15_000)
+  }
+
   test(`hub disposal deadline: ${owner} shares one warning with its stuck custody read`, async () => {
     const log = captureLogger()
     const entered = deferred<void>()

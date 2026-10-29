@@ -145,7 +145,8 @@ export interface LockLoss {
 export interface RefreshFileLock {
   readonly ownerId: string
   assertOwned(): Promise<void>
-  release(): Promise<void>
+  /** Abort stops release retries; the unrenewed lease is left to expire by TTL. */
+  release(signal?: AbortSignal): Promise<void>
   /** Resolves once on detected loss; remains pending after an owner's release. */
   whenLost(): Promise<LockLoss>
   hasLost(): boolean
@@ -930,7 +931,7 @@ export async function acquireRefreshFileLockWithClock(
           : {}),
       })
     },
-    release: async () => {
+    release: async (signal) => {
       if (windowsPrivateFiles && releaseConfirmed) return
       released = true
       cancelRenewalTimer()
@@ -974,6 +975,7 @@ export async function acquireRefreshFileLockWithClock(
             releaseConfirmed = removalConfirmed
             return
           }
+          if (signal?.aborted) return
           await recoverStaleEvictionMarker()
         } catch (error) {
           if (windowsPrivateFiles) throw error
