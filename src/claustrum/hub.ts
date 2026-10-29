@@ -150,6 +150,8 @@ export interface ClaustrumHubMemberOptions<_Q = QuotaObservation> {
   reservedRouteIds?: () => Iterable<string>
   /** As `ClaustrumConsumerOptions.onRoster`: once per change of view. */
   onRoster?: (roster: VaultRosterFile) => void
+  /** Observe every hub discovery's member result, including background work. */
+  onDiscovery?: ClaustrumConsumerOptions<_Q>['onDiscovery']
   /** This member's own failures, such as a roster commit that failed. */
   onError?: (error: unknown) => void
   logger?: ClaustrumLogger
@@ -555,6 +557,7 @@ export class ClaustrumDiscoveryHub {
       }),
       ...(this.#options.mapAccount && { mapAccount: this.#options.mapAccount }),
       ...(options.onRoster && { onRoster: options.onRoster }),
+      ...(options.onDiscovery && { onDiscovery: options.onDiscovery }),
       ...(options.onError && { onError: options.onError }),
       logger: options.logger ?? this.#logger,
       ...(this.#options.now && { now: this.#options.now }),
@@ -926,6 +929,7 @@ export class ClaustrumDiscoveryHub {
     )
     run.promise = promise
     this.#run = run as Run
+    for (const entry of this.#open()) entry.hooks?.discovery(promise)
     return promise
   }
 

@@ -529,6 +529,25 @@ test('shutdown rejects connection waiters immediately and closes a late client',
   }
 })
 
+test('onDiscovery observes one shared promise per discovery and preserves rejection', async () => {
+  const f = await fixture()
+  const discoveries: Array<Promise<VaultRosterFile | undefined>> = []
+  f.options.onDiscovery = (promise) => {
+    discoveries.push(promise)
+  }
+  const first = f.consumer.refresh()
+  expect(f.consumer.refresh()).toBe(first)
+  expect(discoveries).toEqual([first])
+  expect(await discoveries[0]).toBe(await first)
+  const error = new Error('list failed')
+  f.client.listScoped = async () => {
+    throw error
+  }
+  const failed = f.consumer.refresh()
+  expect(discoveries).toEqual([first, failed])
+  await expect(discoveries[1]).rejects.toMatchObject({ kind: 'unavailable' })
+})
+
 test('onRoster fires only when the discovery view changes', async () => {
   const f = await fixture()
   let view = 'v1'

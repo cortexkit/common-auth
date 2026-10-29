@@ -88,6 +88,12 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
    * routine token refresh, which never moves the view.
    */
   onRoster?: (roster: VaultRosterFile) => void
+  /**
+   * Called once when a coalesced discovery starts, with its completion promise.
+   * Covers explicit refresh, poll, watch and send-triggered discovery, even when
+   * the view does not change. Observe rejection when attaching async work.
+   */
+  onDiscovery?: (promise: Promise<VaultRosterFile | undefined>) => void
   onError?: (error: unknown) => void
   /**
    * How often `start()` ticks. A tick lists the vault when no vault watch is
@@ -157,6 +163,8 @@ export interface HubRefreshOutcome {
 
 /** What the hub may do to one member's memory. Package-internal. */
 export interface HubMemberHooks {
+  /** Observe a hub discovery without relying on member refresh overrides. */
+  discovery(promise: Promise<HubRefreshOutcome | undefined>): void
   /**
    * Set the roster in memory as a consumer's own refresh does (pending quota
    * readings included) and notify `onRoster` when its view changed.
@@ -522,7 +530,16 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
       this.#refreshing = undefined
     })
     this.#track(this.#refreshing)
+    this.#notifyDiscovery(this.#refreshing)
     return this.#refreshing
+  }
+
+  #notifyDiscovery(promise: Promise<VaultRosterFile | undefined>): void {
+    try {
+      this.#options.onDiscovery?.(promise)
+    } catch (error) {
+      this.#options.onError?.(error)
+    }
   }
 
   /**
@@ -825,6 +842,15 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   /** The hub's handle on this member's memory. */
   #hubHooks(): HubMemberHooks {
     return {
+      discovery: (promise) => {
+        const hub = this.#hub
+        if (!hub || !this.#options.onDiscovery || this.#shutdown.signal.aborted)
+          return
+        const discovery = this.#track(
+          promise.then((outcome) => this.#hubOutcome(hub, outcome)),
+        )
+        this.#notifyDiscovery(discovery)
+      },
       install: (roster) => {
         if (this.#shutdown.signal.aborted) return
         const changed = roster.view !== this.#roster?.view
@@ -859,6 +885,13 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
    */
   async #hubRefresh(hub: HubMemberPort): Promise<VaultRosterFile | undefined> {
     const outcome = await hub.refresh()
+    return this.#hubOutcome(hub, outcome)
+  }
+
+  #hubOutcome(
+    hub: HubMemberPort,
+    outcome: HubRefreshOutcome | undefined,
+  ): VaultRosterFile | undefined {
     this.#assertOpen()
     if (!outcome) return undefined
     if (outcome.errors.has(hub.provider)) throw outcome.errors.get(hub.provider)

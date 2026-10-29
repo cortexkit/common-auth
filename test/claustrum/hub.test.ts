@@ -47,8 +47,8 @@ import {
   PrivateFileError,
   writeJsonAtomic,
 } from '../../src/fs/index.js'
-import * as lockModule from '../../src/fs/with-lock.js'
 import * as refreshLockModule from '../../src/fs/refresh-file-lock.js'
+import * as lockModule from '../../src/fs/with-lock.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   captureLogger,
@@ -1449,6 +1449,42 @@ test('hub members: watchState follows the hub watch', async () => {
   await fallback.start()
   expect(fallback.hub.watchState()).toBe('fallback')
   expect(member.watchState()).toEqual({ vault: 'fallback' })
+})
+
+test('hub onDiscovery reports poll, watch and send discoveries to every member', async () => {
+  const f = await hubFixture({ watch: true })
+  const discoveries: Array<Promise<VaultRosterFile | undefined>> = []
+  const peerDiscoveries: Array<Promise<VaultRosterFile | undefined>> = []
+  const alpha = f.member('alpha', {
+    onDiscovery: (promise) => {
+      discoveries.push(promise)
+    },
+  })
+  f.member('beta', {
+    onDiscovery: (promise) => {
+      peerDiscoveries.push(promise)
+    },
+  })
+  await f.start()
+  await f.tick()
+  expect(discoveries).toHaveLength(2)
+  expect(peerDiscoveries).toHaveLength(2)
+  expect((await discoveries[1])?.view).toBe('v1')
+  await until(() => f.vault.watches === 1, 'registered hub watch')
+  f.vault.view = 'v2'
+  f.vault.notify()
+  await until(() => discoveries.length === 3, 'hub watch discovery hook')
+  expect((await discoveries[2])?.view).toBe('v2')
+  expect((await peerDiscoveries[2])?.view).toBe('v2')
+  const response = await alpha.send(
+    f.route(alpha, 'alpha'),
+    async () => new Response(null, { status: 401 }),
+    { site: 'model' },
+  )
+  expect(response.status).toBe(401)
+  await until(() => discoveries.length === 4, 'hub send discovery hook')
+  await discoveries[3]
+  expect(peerDiscoveries).toHaveLength(4)
 })
 
 test('hub members: a post-401 refresh costs one list for every member and pushes each roster', async () => {

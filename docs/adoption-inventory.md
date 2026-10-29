@@ -567,6 +567,20 @@ already completed before the extension's first opportunity to enter vault mode.
 
 ### ./claustrum
 
+**Discovery observation (0.30.0).** `ClaustrumConsumerOptions.onDiscovery(promise)`
+is called once for each newly started, coalesced discovery, whether it comes
+from `refresh()`, a poll, a watch notice, or a send (initial discovery or the
+background refresh after a final 401). The promise resolves to that consumer's
+`VaultRosterFile | undefined` after installation, or rejects with the discovery
+error; handle rejection in any async work attached to it. Joining an existing
+discovery does not notify again. Same-view discoveries still notify; ordinary
+`get_scoped` authorization is not discovery. Synchronous callback errors go to
+`onError`. `ClaustrumHubMemberOptions.onDiscovery` provides the same observation
+for hub-driven discoveries, including ticks and notices that never call the
+member's public `refresh()`. Use this hook instead of overriding `refresh()` in
+downstream observers such as openai-auth's `ObservedConsumer` in
+`packages/core/src/vault.ts`; that path belongs to openai-auth, not this package.
+
 `mutateVaultRoster` callbacks receive `{ assertOwned }` for ownership fencing immediately before a caller-managed rename; existing one-argument callbacks remain compatible. If the assertion rejects, the caller must not rename.
 
 **Classifying families (next minor).** `ClaustrumScopedCustody` accepts the new
@@ -631,7 +645,7 @@ passes today (`parseIdentity`, `requireAssertion`, `now`, `logger`,
 `setTimeoutImpl`, `clearTimeoutImpl`, `pollIntervalMs`) and `onError`.
 
 Members are built only by `hub.member(provider, options)` with the new
-`ClaustrumHubMemberOptions`: `reservedRouteIds`, `onRoster`, `onError` and
+`ClaustrumHubMemberOptions`: `reservedRouteIds`, `onRoster`, `onDiscovery`, `onError` and
 `logger`, nothing else. The factory returns an ordinary `ClaustrumConsumer`
 and throws `wrong-consumer` for a provider outside the member set, a second
 build of one provider, or a hub-owned field (`rosterPath`, `tokenPath`,

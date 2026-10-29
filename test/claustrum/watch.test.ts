@@ -8,6 +8,7 @@ import {
   connectClaustrumScopedClient,
   RESUBSCRIBE_BACKOFF_MS,
   SAFETY_POLL_MS,
+  type VaultRosterFile,
   WATCH_RETRY_MS,
 } from '../../src/claustrum/index.ts'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
@@ -69,6 +70,7 @@ async function scenario(
   const timers = fakeTimers()
   const errors: unknown[] = []
   const rosters: number[] = []
+  const discoveries: Array<Promise<VaultRosterFile | undefined>> = []
   const logs = captureLogger()
   let active = options.active ?? true
   let now = Date.now()
@@ -95,6 +97,9 @@ async function scenario(
     now: () => now,
     onError: (error) => errors.push(error),
     onRoster: (roster) => rosters.push(roster.rows.length),
+    onDiscovery: (promise) => {
+      discoveries.push(promise)
+    },
     logger: logs.logger,
     setTimeoutImpl: timers.setTimeoutImpl,
     clearTimeoutImpl: timers.clearTimeoutImpl,
@@ -116,6 +121,7 @@ async function scenario(
     timers,
     errors,
     rosters,
+    discoveries,
     record,
     sends,
     send,
@@ -154,6 +160,51 @@ async function scenario(
 
 const watching = (s: Awaited<ReturnType<typeof scenario>>) =>
   until(() => s.consumer.watchState().vault === 'watching', 'vault watch')
+
+test('onDiscovery reports poll discoveries even when the view stays the same', async () => {
+  const s = await scenario({ withoutWatch: true })
+  s.consumer.start()
+  await until(
+    () => s.timers.pending().includes(POLL_MS),
+    'first poll completed',
+  )
+  expect(s.discoveries).toHaveLength(1)
+  const first = await s.discoveries[0]
+  await s.tick()
+  expect(s.discoveries).toHaveLength(2)
+  expect((await s.discoveries[1])?.view).toBe(first?.view)
+  expect(s.discoveries[1]).not.toBe(s.discoveries[0])
+  expect(s.rosters).toEqual([1])
+})
+
+test.if(clientWatches)(
+  'onDiscovery reports watch-triggered discoveries',
+  async () => {
+    const s = await scenario()
+    s.consumer.start()
+    await watching(s)
+    expect(s.discoveries).toHaveLength(1)
+    s.daemon.credentials['oauth:test:home'] = credential('account-home')
+    s.watch().notify()
+    await until(() => s.discoveries.length === 2, 'watch discovery hook')
+    expect((await s.discoveries[1])?.rows).toHaveLength(2)
+  },
+)
+
+test('onDiscovery reports send-triggered discovery after a final 401', async () => {
+  const s = await scenario({ withoutWatch: true })
+  const roster = await s.consumer.refresh()
+  expect(s.discoveries).toHaveLength(1)
+  const route = roster!.rows[0]!.routeId
+  const response = await s.consumer.send(
+    route,
+    async () => new Response('', { status: 401 }),
+    { site: 'model' },
+  )
+  expect(response.status).toBe(401)
+  await until(() => s.discoveries.length === 2, 'send discovery hook')
+  expect((await s.discoveries[1])?.view).toBeDefined()
+})
 
 test.if(clientWatches)(
   'an accepted vault watch lists only when a notice carries a new view',
