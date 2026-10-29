@@ -51,6 +51,8 @@ export type {
   ResponseAccount,
   RetryHold,
   RetryReason,
+  SameAccountRetryInput,
+  SameAccountRetryResult,
   SelectingHook,
   Transport,
 } from './types.js'
