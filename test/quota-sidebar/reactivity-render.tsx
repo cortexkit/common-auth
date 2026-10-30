@@ -2,13 +2,16 @@ import assert from 'node:assert/strict'
 import { projectQuota, quotaWindowParts } from '@cortexkit/common-auth/quota'
 import {
   type AccountView,
+  type SidebarAppearance,
   SidebarFrame,
+  type SidebarTheme,
 } from '@cortexkit/common-auth/quota-sidebar'
 import { testRender } from '@opentui/solid'
 import { createSignal } from 'solid-js'
 import { NOW } from './cases.js'
 import { appearance, theme } from './render-support.js'
 
+const phase = process.argv[2]
 const quota = projectQuota({
   limits: [
     {
@@ -39,29 +42,82 @@ const account: AccountView = {
   quota,
   groups: [
     {
-      rows: quotaWindowParts(quota, { now: NOW }).windows.map((part) => ({
-        part,
-      })),
+      rows: quotaWindowParts(quota, { now: NOW }).windows.map(
+        (part, index) => ({
+          part,
+          pace:
+            phase === 'theme' && index === 0
+              ? {
+                  text: '',
+                  tone: 'error',
+                  overlay: { kind: 'deficit', percent: 60 },
+                }
+              : undefined,
+        }),
+      ),
     },
   ],
 }
 const [prefs, setPrefs] = createSignal(appearance)
-const view = await testRender(
-  () => (
-    <SidebarFrame
-      header={{ badge: 'TEST' }}
-      accounts={[account]}
-      theme={theme}
-      appearance={prefs()}
-      now={NOW}
-      showQuota={true}
-      collapsed={false}
-      onToggle={() => {}}
-    />
-  ),
-  { width: 60, height: 20 },
-)
-const phase = process.argv[2]
+const [palette, setPalette] = createSignal<SidebarTheme>(theme)
+function mountSidebar(
+  palette: () => SidebarTheme,
+  prefs: () => SidebarAppearance,
+  onMount = () => {},
+) {
+  return testRender(
+    () => {
+      onMount()
+      return (
+        <SidebarFrame
+          header={{ badge: 'TEST' }}
+          accounts={[account]}
+          theme={palette()}
+          appearance={prefs()}
+          now={NOW}
+          showQuota={true}
+          collapsed={false}
+          onToggle={() => {}}
+        />
+      )
+    },
+    { width: 60, height: 20 },
+  )
+}
+let mounts = 0
+const view = await mountSidebar(palette, prefs, () => mounts++)
+async function snapshot(view: Awaited<ReturnType<typeof mountSidebar>>) {
+  for (let pass = 0; pass < 3; pass++) await view.renderOnce()
+  return {
+    chars: view.captureCharFrame(),
+    glyphs: view
+      .captureSpans()
+      .lines.flatMap((line) =>
+        line.spans.flatMap((span) =>
+          [...span.text]
+            .filter((char) => /[█░▓▒]/u.test(char))
+            .map((char) => ({ char, fg: span.fg })),
+        ),
+      ),
+  }
+}
+async function matchesFresh(label: string) {
+  const actual = await snapshot(view)
+  const fresh = await mountSidebar(palette, prefs)
+  try {
+    const expected = await snapshot(fresh)
+    assert.equal(actual.chars, expected.chars, `${label}: text`)
+    assert.deepEqual(
+      actual.glyphs,
+      expected.glyphs,
+      `${label}: bar foregrounds`,
+    )
+    assert.equal(mounts, 1, `${label}: live frame must stay on one mount`)
+    return actual
+  } finally {
+    fresh.renderer.destroy()
+  }
+}
 try {
   // Do not settle layout: hosts can paint immediately after mounting the frame.
   await view.renderOnce()
@@ -92,6 +148,24 @@ try {
       assert.deepEqual(bar.fg, theme[tone], `live ${tone} threshold colour`)
     }
     assert.doesNotMatch(frame, /█|░/)
+  } else if (phase === 'theme') {
+    for (const [label, next] of [
+      ['full theme', theme],
+      ['cleared theme', {}],
+      ['restored theme', theme],
+    ] as const) {
+      setPalette(next)
+      const actual = await matchesFresh(label)
+      assert.equal(actual.glyphs.length, 20, `${label}: all bar glyphs present`)
+      assert.ok(actual.glyphs.some(({ char }) => char === '▓'))
+    }
+  } else if (phase === 'width') {
+    const before = await matchesFresh('width 10')
+    assert.equal(before.glyphs.length, 20)
+    setPrefs({ ...appearance, barWidth: 40 })
+    const after = await matchesFresh('width 40')
+    assert.equal(after.glyphs.length, 80)
+    assert.notEqual(after.chars, before.chars)
   } else {
     throw new Error(`Unknown phase: ${phase}`)
   }

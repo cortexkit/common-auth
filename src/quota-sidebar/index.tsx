@@ -199,7 +199,7 @@ function barSegments(
     Math.max(0, Math.min(Math.round((pct / 100) * width), width))
   const usedCells = cells(used)
   const tone = usageTone(used, appearance)
-  // Keep the overlay's slot even when empty so live pacing changes reuse spans.
+  // Keep the overlay's slot even when empty so live pacing changes reuse nodes.
   const plain = [
     { text: appearance.barFilledChar.repeat(usedCells), tone },
     { text: '', tone },
@@ -294,15 +294,18 @@ function QuotaRow(props: {
             }
           >
             <Show when={props.barCells > 0}>
-              <text wrapMode='none'>
-                <Index each={segments()}>
-                  {(segment) => (
-                    <span style={{ fg: context.theme[segment().tone] }}>
-                      {segment().text}
-                    </span>
-                  )}
-                </Index>
-              </text>
+              {/* Text nodes clear omitted theme colours; empty slots must not reserve a cell. */}
+              <Index each={segments()}>
+                {(segment) => (
+                  <text
+                    fg={context.theme[segment().tone]}
+                    wrapMode='none'
+                    width={segment().text ? undefined : 0}
+                  >
+                    {segment().text}
+                  </text>
+                )}
+              </Index>
             </Show>
             <text
               fg={context.theme[usageTone(used(), context.appearance)]}

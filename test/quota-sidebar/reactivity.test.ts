@@ -3,6 +3,8 @@ import { expect, test } from 'bun:test'
 for (const [phase, description] of [
   ['first-frame', 'the first frame without settling'],
   ['appearance', 'the next frame after live appearance changes'],
+  ['theme', 'live theme clearing and restoration, matching fresh colours'],
+  ['width', 'a live bar width change from 10 to 40, matching a fresh frame'],
 ] as const) {
   test(`shared sidebar draws quota bars on ${description}`, async () => {
     const child = Bun.spawn(
