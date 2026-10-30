@@ -1,9 +1,9 @@
+ ▶ OPENAI                     v1.8.4
+active-low    5h 0% · 7d 100% left ●
+stale-idle-long-accou… 5h 79% left ⊘
+empty                            — ●
+missing                          — ●
                                     
-  ▶ OPENAI                   v1.8.4 
- active-low  5h 0% · 7d 100% left ● 
- stale-idle-long-acc… 5h 79% left ⊘ 
- empty                          — ● 
- missing                        — ● 
                                     
                                     
                                     

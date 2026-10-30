@@ -104,7 +104,7 @@ try {
     assert.ok(at > previous, `${text} missing or out of order`)
     previous = at
   }
-  await view.mockMouse.click(3, 1)
+  await view.mockMouse.click(3, 0)
   const compact = await draw()
   assert.equal(clicks, 1)
   assert.equal(storedCollapsed, true)
@@ -121,7 +121,7 @@ try {
       !compact.includes(hidden),
       `${hidden} leaked into collapsed state`,
     )
-  await view.mockMouse.click(3, 1)
+  await view.mockMouse.click(3, 0)
   assert.equal(await draw(), expanded)
   assert.equal(storedCollapsed, false)
   setShowQuota(false)
@@ -135,7 +135,7 @@ try {
   assert.ok(empty.includes('TEST'))
   assert.ok(!empty.includes('▶') && !empty.includes('▼'))
   assert.ok(empty.includes('Custom'))
-  await view.mockMouse.click(3, 1)
+  await view.mockMouse.click(3, 0)
   assert.equal(clicks, 2)
 } finally {
   view.renderer.destroy()
