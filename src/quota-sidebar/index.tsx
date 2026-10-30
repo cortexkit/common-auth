@@ -73,6 +73,7 @@ export interface SidebarFrameProps {
   beforeQuota?: (account: AccountView) => JSX.Element
   afterQuota?: (account: AccountView) => JSX.Element
   sections?: () => JSX.Element
+  collapsedSections?: () => JSX.Element
 }
 
 type FrameContextProps = Omit<SidebarFrameProps, 'theme'> & {
@@ -165,9 +166,20 @@ export function SidebarStatRow(props: {
   )
 }
 
-export function SidebarTextRow(props: { text: string; tone?: Tone }) {
+export function SidebarTextRow(props: {
+  text: string
+  tone?: Tone
+  wrapMode?: JSX.IntrinsicElements['text']['wrapMode']
+}) {
   const context = frameContext()
-  return <text fg={context.theme[props.tone ?? 'textMuted']}>{props.text}</text>
+  return (
+    <text
+      fg={context.theme[props.tone ?? 'textMuted']}
+      wrapMode={props.wrapMode}
+    >
+      {props.text}
+    </text>
+  )
 }
 
 function usageTone(used: number, appearance: SidebarAppearance): Tone {
@@ -397,11 +409,8 @@ function AccountBlock(props: { account: AccountView; marginTop: number }) {
         part.resetSinceReading ? 0 : displayWidth(part.resetIn ?? ''),
       ),
     )
-  const fit = createMemo(() => {
-    const desired = context.appearance.barWidth
-    // Four cells still distinguish quarters of a window without sacrificing its reset.
-    const minimum = Math.min(4, desired)
-    const figureWidth = Math.max(
+  const figureWidth = createMemo(() =>
+    Math.max(
       10,
       ...rows()
         .filter(({ part }) => !part.resetSinceReading)
@@ -410,10 +419,15 @@ function AccountBlock(props: { account: AccountView; marginTop: number }) {
             ` ${part.kind === 'budget' && part.figure.startsWith(`${part.name} `) ? part.figure.slice(part.name.length + 1) : part.figure}`,
           ),
         ),
-    )
+    ),
+  )
+  const fit = (rowLabelWidth: number) => {
+    const desired = context.appearance.barWidth
+    // Four cells still distinguish quarters of a window without sacrificing its reset.
+    const minimum = Math.min(4, desired)
     if (columns() <= 0)
       return { barCells: desired, showReset: resetWidth() > 0 }
-    const room = columns() - labelWidth() - figureWidth
+    const room = columns() - rowLabelWidth - figureWidth()
     const withReset = room - resetWidth() - 1
     const showReset = resetWidth() > 0 && withReset >= minimum
     const available = showReset ? withReset : room
@@ -421,7 +435,7 @@ function AccountBlock(props: { account: AccountView; marginTop: number }) {
       barCells: available >= minimum ? Math.min(desired, available) : 0,
       showReset,
     }
-  })
+  }
   const label = () => {
     const full = `${props.account.label}${props.account.titleSuffix ? ` · ${props.account.titleSuffix}` : ''}`
     return columns() <= 0
@@ -465,6 +479,7 @@ function AccountBlock(props: { account: AccountView; marginTop: number }) {
         fallback={
           <SidebarTextRow
             text={props.account.emptyQuotaText?.expanded ?? '\u2014'}
+            wrapMode='none'
           />
         }
       >
@@ -472,26 +487,36 @@ function AccountBlock(props: { account: AccountView; marginTop: number }) {
           {(group) => (
             <>
               <Show when={group.title}>
-                <SidebarTextRow text={group.title ?? ''} tone='text' />
+                <SidebarTextRow
+                  text={group.title ?? ''}
+                  tone='text'
+                  wrapMode='none'
+                />
               </Show>
               <For each={group.rows}>
-                {(row) => (
-                  <QuotaRow
-                    part={row.part}
-                    pace={row.pace}
-                    labelWidth={labelWidth()}
-                    barCells={fit().barCells}
-                    resetWidth={resetWidth()}
-                    showReset={fit().showReset}
-                  />
-                )}
+                {(row) => {
+                  const rowLabelWidth = () => (row.part.name ? labelWidth() : 0)
+                  const rowFit = createMemo(() => fit(rowLabelWidth()))
+                  return (
+                    <QuotaRow
+                      part={row.part}
+                      pace={row.pace}
+                      labelWidth={rowLabelWidth()}
+                      barCells={rowFit().barCells}
+                      resetWidth={resetWidth()}
+                      showReset={rowFit().showReset}
+                    />
+                  )
+                }}
               </For>
             </>
           )}
         </For>
       </Show>
       <Show when={age()}>
-        {(text: () => string) => <SidebarTextRow text={text()} />}
+        {(text: () => string) => (
+          <SidebarTextRow text={text()} wrapMode='none' />
+        )}
       </Show>
       {context.afterQuota?.(props.account)}
     </box>
@@ -564,6 +589,7 @@ export function SidebarFrame(props: SidebarFrameProps) {
           <For each={props.accounts}>
             {(account) => <CollapsedAccountRow account={account} />}
           </For>
+          {props.collapsedSections?.()}
         </Show>
         <Show when={!props.collapsed || !hasData()}>
           <Show when={props.showQuota && hasData()}>
