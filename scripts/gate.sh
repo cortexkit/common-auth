@@ -66,15 +66,33 @@ run() {
   fi
 }
 toolchain() {
-  [[ $(bun --version) == 1.4.4 ]] || {
-    echo 'Use Bun 1.4.4, the newest CI matrix entry.' >&2; return 1;
-  }
+  local required_bun=1.4.4 current_bun tools
+  current_bun=$(bun --version 2>/dev/null) || current_bun=unavailable
+  if $fast && [[ "$current_bun" != "$required_bun" ]]; then
+    echo 'Use Bun 1.4.4, the newest CI matrix entry.' >&2; return 1
+  fi
   if ! $fast; then
     [[ $(uname -s) == Linux && $(node --version) == v24.* ]] || {
       echo 'Full gate requires Linux and Node 24; use AFT linux,16c,net.' >&2; return 1;
     }
+    if [[ "$current_bun" != "$required_bun" ]]; then
+      tools="$PWD/target/scratch/gate-tools"
+      printf 'Bun on PATH is %s; fetching Bun %s into %s.\n' "$current_bun" "$required_bun" "$tools"
+      if ! npm install --prefix "$tools" "bun@$required_bun" --no-audit --no-fund; then
+        printf 'Cannot obtain required Bun %s: npm install failed in %s (see diagnostics above).\n' "$required_bun" "$tools" >&2
+        return 1
+      fi
+      export PATH="$tools/node_modules/.bin:$PATH"
+      hash -r
+    fi
   fi
-  bun --version
+  current_bun=$(bun --version) || {
+    printf 'Cannot run required Bun %s.\n' "$required_bun" >&2; return 1;
+  }
+  [[ "$current_bun" == "$required_bun" ]] || {
+    printf 'Required Bun %s, but selected Bun reports %s.\n' "$required_bun" "$current_bun" >&2; return 1;
+  }
+  printf 'Using Bun %s (%s)\n' "$current_bun" "$(command -v bun)"
   node --version
 }
 private_tracking() {

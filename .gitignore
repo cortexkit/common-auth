@@ -3,5 +3,6 @@
 node_modules/
 dist/
 test/.scratch/
+/target/scratch/
 windows-private-files-evidence/
 windows-vault-evidence/
