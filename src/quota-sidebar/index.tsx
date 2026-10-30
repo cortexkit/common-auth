@@ -519,6 +519,9 @@ export function SidebarFrame(props: SidebarFrameProps) {
       }
     },
   })
+  // Inverting an incomplete badge palette can put light text on a light background.
+  const invertBadge = () =>
+    props.theme?.accent !== undefined && props.theme?.background !== undefined
   return (
     <FrameContext.Provider value={context}>
       <box
@@ -543,9 +546,13 @@ export function SidebarFrame(props: SidebarFrameProps) {
           <box
             paddingLeft={1}
             paddingRight={1}
-            backgroundColor={context.theme.accent}
+            backgroundColor={invertBadge() ? props.theme?.accent : undefined}
           >
-            <text fg={context.theme.background}>
+            <text
+              fg={
+                invertBadge() ? props.theme?.background : context.theme.accent
+              }
+            >
               <b>{headerLabel()}</b>
             </text>
           </box>

@@ -249,6 +249,15 @@ switch (rule) {
       [18, 52, 86, 255],
       'ruling 9: missing semantic colors fall back to normal text',
     )
+    const badge = fallback.spans.lines
+      .flatMap((line) => line.spans)
+      .find((span) => span.text.includes('TEST'))
+    assert.deepEqual(
+      Array.from(badge?.fg.buffer ?? []),
+      [18, 52, 86, 255],
+      'ruling 9: a sparse badge palette remains readable',
+    )
+    assert.deepEqual(Array.from(badge?.bg.buffer ?? []), [0, 0, 0, 0])
     const unset = await draw(37, { theme: undefined })
     assert.ok(
       unset.chars.includes('50% left'),

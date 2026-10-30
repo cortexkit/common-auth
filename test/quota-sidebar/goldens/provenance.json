@@ -2,7 +2,7 @@
   "package": "@cortexkit/common-auth",
   "renderer": "SidebarFrame (shared presentation rulings)",
   "files": {
-    "src/quota-sidebar/index.tsx": "e71e06e7698cf95375a093dd354ed542f8fcab611eef424346d5e206f57974ad",
+    "src/quota-sidebar/index.tsx": "8cfcc925fad686378f6e059e8ee6741049ca81743103bc5458dac5aefc93c515",
     "src/quota/format.ts": "81d02c47c3e30f58fc74455c740cb8a3a460fe8716ae31de60986c906aa2c5f2",
     "src/quota/map.ts": "db2e989bc84f02b710416873bf5c0417be7bfb9a4b4875c25e4caf121957fa34",
     "src/quota/projection.ts": "486a3606988d03dac0024176f3b3cf9ec5bf22984636b57c64e52b9f3c5f2059",
