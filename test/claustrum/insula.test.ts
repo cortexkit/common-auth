@@ -202,7 +202,7 @@ test('insula lookup classifies scripted misses and preserves current compatibili
       { result: [entry({ fetchedAt: new Date(NOW - 240_000).toISOString() })] },
       'stale',
     ],
-    [{ result: [entry({ stale: true })] }, 'stale'],
+    [{ result: [entry({ stale: true })] }, 'upstream-failed'],
     [{ result: [entry({ errorClass: 'future_error' })] }, 'unreachable'],
     [{ result: [entry({ fetchedAt: 'invalid' })] }, 'unreachable'],
     [{ result: {} }, 'unreachable'],
@@ -234,6 +234,77 @@ test('insula lookup returns dated stale readings and gives upstream failure prec
     'upstream-failed',
   )
 })
+
+test.each([
+  ['upstream failure', { class: 'upstream_failed' }, 'upstream-failed'],
+  ['unstated cause', {}, 'upstream-failed'],
+  ['future cause', { class: 'future_failure' }, 'upstream-failed'],
+  ['non-string cause', { class: null }, 'upstream-failed'],
+  ['local failure', { class: 'local_source_unavailable' }, 'stale'],
+  ['null stale', null, 'upstream-failed'],
+  ['false stale', false, 'upstream-failed'],
+  ['true stale', true, 'upstream-failed'],
+  ['number stale', 0, 'upstream-failed'],
+  ['string stale', 'local_source_unavailable', 'upstream-failed'],
+  ['array stale', [], 'upstream-failed'],
+] as const)(
+  'insula lookup retains kept readings at any age for %s',
+  async (_name, cause, miss) => {
+    const fetchedAt = NOW - 240_000
+    const kept = entry({
+      fetchedAt: new Date(fetchedAt).toISOString(),
+      stale:
+        cause !== null && typeof cause === 'object' && !Array.isArray(cause)
+          ? { since: new Date(fetchedAt + 500).toISOString(), ...cause }
+          : cause,
+    })
+    const s = await lookupScenario({ result: [kept] })
+    const expected = {
+      miss,
+      reading: { entry: kept, context: { fetchedAt, source: 'vault' } },
+    }
+    expect(s.source.lookup('codex', 'account-work', NOW)).toEqual(expected)
+    expect(s.source.lookup('codex', 'account-work', fetchedAt + 1_000)).toEqual(
+      expected,
+    )
+    expect(s.source.current('codex', 'account-work', NOW)).toBeUndefined()
+  },
+)
+
+test.each([
+  { since: new Date(NOW - 60_000).toISOString(), class: 'upstream_failed' },
+  { since: new Date(NOW - 60_000).toISOString() },
+  false,
+])(
+  'background insula wrapper defers a kept upstream reading for %j',
+  async (stale) => {
+    const fetchedAt = NOW - 240_000
+    const s = await lookupScenario({
+      result: [entry({ fetchedAt: new Date(fetchedAt).toISOString(), stale })],
+    })
+    expect(await s.consumer.lookupInsulaQuotaForRoute(s.routeId)).toEqual({
+      miss: 'upstream-failed',
+      reading: {
+        checkedAt: fetchedAt,
+        readings: [{ label: 'session', usedPercent: 80 }],
+      },
+    })
+    let polls = 0
+    expect(
+      await s.consumer.pollInsulaQuotaForRoute(s.routeId, async () => {
+        polls++
+        return { checkedAt: NOW, readings: [] }
+      }),
+    ).toBeUndefined()
+    expect(polls).toBe(0)
+    expect(s.logs).toEqual([
+      {
+        message: 'skipped insula provider poll',
+        data: { reason: 'upstream-failed' },
+      },
+    ])
+  },
+)
 
 test('insula cold expires after two sweeps and completeness resets the bound', async () => {
   const s = await lookupScenario({ result: [], completeProviders: [] })
@@ -318,6 +389,17 @@ test('background insula wrapper skips cold and upstream failure with transition-
 test('background insula wrapper polls only stale absent credential and unreachable misses', async () => {
   for (const response of [
     { result: [entry({ fetchedAt: new Date(NOW - 240_000).toISOString() })] },
+    {
+      result: [
+        entry({
+          fetchedAt: new Date(NOW - 240_000).toISOString(),
+          stale: {
+            since: new Date(NOW - 60_000).toISOString(),
+            class: 'local_source_unavailable',
+          },
+        }),
+      ],
+    },
     {
       result: [entry({ account: 'account-other' })],
       completeProviders: ['codex'],
