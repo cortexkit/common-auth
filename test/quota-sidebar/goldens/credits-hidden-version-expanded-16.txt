@@ -2,9 +2,7 @@
   ▼ OPENAI      
                 
  Quota          
- budget-  activ 
- and-     e     
- prepaid        
+ budget… active 
  5h       0% lef
  credits  20% le
  8,000 / 10,000 
@@ -12,6 +10,8 @@
                 
  Routing        
  Route main-fi… 
+                
+                
                 
                 
                 

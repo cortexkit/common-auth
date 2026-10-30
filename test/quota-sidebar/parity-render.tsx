@@ -31,4 +31,4 @@ for (const input of cases) {
     }
   }
 }
-console.log(`${checked} frozen OpenAI frames and style spans matched`)
+console.log(`${checked} frozen shared frames and style spans matched`)

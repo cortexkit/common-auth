@@ -9,7 +9,7 @@
                                           
  stale-idle-long-account-name     blocked 
  off in /openai                           
- 5h ██░░░░░░░░ 79% left             reset 
+ 5h reset since last check                
  checked 1h ago                           
                                           
  empty                               idle 

@@ -5,6 +5,7 @@ import {
   createMemo,
   createSignal,
   For,
+  mergeProps,
   Show,
   useContext,
 } from 'solid-js'
@@ -21,7 +22,9 @@ export type Tone =
   | 'error'
 
 export type SidebarTheme = Readonly<
-  Record<Tone | 'background' | 'borderActive', RGBA>
+  Partial<
+    Record<Tone | 'background' | 'borderActive', RGBA | string | undefined>
+  >
 >
 
 export interface SidebarAppearance {
@@ -61,7 +64,7 @@ export interface AccountView {
 export interface SidebarFrameProps {
   header: { badge: string; version?: string }
   accounts: readonly AccountView[]
-  theme: SidebarTheme
+  theme?: SidebarTheme
   appearance: SidebarAppearance
   showQuota: boolean
   now: number
@@ -72,9 +75,13 @@ export interface SidebarFrameProps {
   sections?: () => JSX.Element
 }
 
-const FrameContext = createContext<SidebarFrameProps>()
+type FrameContextProps = Omit<SidebarFrameProps, 'theme'> & {
+  theme: SidebarTheme
+}
 
-function frameContext(): SidebarFrameProps {
+const FrameContext = createContext<FrameContextProps>()
+
+function frameContext(): FrameContextProps {
   const context = useContext(FrameContext)
   if (!context)
     throw new Error('Sidebar primitives must be inside SidebarFrame')
@@ -204,32 +211,19 @@ function QuotaRow(props: {
   part: QuotaWindowPart
   pace?: PaceView
   labelWidth: number
+  barCells: number
+  resetWidth: number
+  showReset: boolean
 }) {
   const context = frameContext()
   const [columns, setColumns] = createSignal(0)
   let row: { width: number } | undefined
-  const label = () => props.part.name.padEnd(props.labelWidth)
+  const label = () =>
+    props.part.name +
+    ' '.repeat(Math.max(0, props.labelWidth - displayWidth(props.part.name)))
   const figure = () =>
     ` ${props.part.kind === 'budget' && props.part.figure.startsWith(`${props.part.name} `) ? props.part.figure.slice(props.part.name.length + 1) : props.part.figure}`
-  const reset = () =>
-    props.part.resetIn ?? (props.part.resetSinceReading ? 'reset' : undefined)
   const used = () => 100 - (props.part.remainingPercent ?? 100)
-  const fit = () => {
-    const barWidth = context.appearance.barWidth
-    const resetWidth = displayWidth(reset() ?? '')
-    if (columns() <= 0) return { barCells: barWidth, showReset: resetWidth > 0 }
-    const fixed = displayWidth(label()) + displayWidth(figure())
-    if (resetWidth > 0 && fixed + barWidth + 1 + resetWidth <= columns())
-      return { barCells: barWidth, showReset: true }
-    const room = columns() - fixed
-    return {
-      barCells: room >= barWidth ? barWidth : room >= 3 ? room : 0,
-      showReset: false,
-    }
-  }
-  // Stable fits keep existing bar nodes alive through the first measurement.
-  const barCells = createMemo(() => fit().barCells)
-  const showReset = createMemo(() => fit().showReset)
   const paceLine = () => {
     const text = props.pace?.text
     if (!text || columns() <= 0) return text
@@ -246,43 +240,68 @@ function QuotaRow(props: {
         flexDirection='row'
         justifyContent='space-between'
       >
-        <box flexDirection='row' flexShrink={0}>
-          <text fg={context.theme.textMuted} wrapMode='none'>
-            {label()}
-          </text>
-          <For
-            each={barSegments(
-              used(),
-              { ...context.appearance, barWidth: barCells() },
-              props.pace,
-            )}
-          >
-            {(segment) => (
-              <text fg={context.theme[segment.tone]} wrapMode='none'>
-                {segment.text}
+        <box
+          flexDirection='row'
+          flexShrink={props.part.resetSinceReading ? 1 : 0}
+        >
+          <Show when={props.labelWidth > 0}>
+            <text fg={context.theme.textMuted} wrapMode='none' flexShrink={0}>
+              {label()}
+            </text>
+          </Show>
+          <Show
+            when={!props.part.resetSinceReading}
+            fallback={
+              <text fg={context.theme.textMuted} wrapMode='none'>
+                reset since last check
               </text>
-            )}
-          </For>
-          <text
-            fg={context.theme[usageTone(used(), context.appearance)]}
-            wrapMode='none'
+            }
           >
-            {figure()}
-          </text>
+            <For
+              each={barSegments(
+                used(),
+                { ...context.appearance, barWidth: props.barCells },
+                props.pace,
+              )}
+            >
+              {(segment) => (
+                <text fg={context.theme[segment.tone]} wrapMode='none'>
+                  {segment.text}
+                </text>
+              )}
+            </For>
+            <text
+              fg={context.theme[usageTone(used(), context.appearance)]}
+              wrapMode='none'
+            >
+              {figure()}
+            </text>
+          </Show>
         </box>
-        <Show when={showReset()}>
-          <text fg={context.theme.textMuted} wrapMode='none' flexShrink={0}>
-            {reset()}
-          </text>
+        <Show when={props.showReset && !props.part.resetSinceReading}>
+          <box
+            width={props.resetWidth}
+            flexShrink={0}
+            flexDirection='row'
+            justifyContent='flex-end'
+          >
+            <Show when={props.part.resetIn}>
+              <text fg={context.theme.textMuted} wrapMode='none'>
+                {props.part.resetIn}
+              </text>
+            </Show>
+          </box>
         </Show>
       </box>
       {/* A changed fitted line needs a fresh text node to draw at its new width. */}
-      <Show when={paceLine()} keyed>
+      <Show when={!props.part.resetSinceReading && paceLine()} keyed>
         {(line: string) => (
           <box width='100%' flexDirection='row'>
-            <text fg={context.theme.textMuted}>
-              {''.padEnd(props.labelWidth)}
-            </text>
+            <Show when={props.labelWidth > 0}>
+              <text fg={context.theme.textMuted}>
+                {''.padEnd(props.labelWidth)}
+              </text>
+            </Show>
             <text
               fg={context.theme[props.pace?.tone ?? 'textMuted']}
               wrapMode='none'
@@ -306,14 +325,15 @@ function CollapsedAccountRow(props: { account: AccountView }) {
   const text = () =>
     hasQuota()
       ? formatQuota(props.account.quota, { now: context.now, form: 'narrow' })
-      : null
+      : (props.account.emptyQuotaText?.collapsed ?? '\u2014')
+  // Reserve an ellipsis, a separator and the trailing indicator before keeping quota.
+  const showQuota = () => width() <= 0 || displayWidth(text()) + 4 <= width()
   const label = () => {
     if (width() <= 0) return props.account.label
-    const value =
-      text() === null
-        ? displayWidth(props.account.emptyQuotaText?.collapsed ?? '\u2014')
-        : displayWidth(text() ?? '') + 2
-    return fitText(props.account.label, width() - value - 1)
+    return fitText(
+      props.account.label,
+      width() - (showQuota() ? displayWidth(text()) + 3 : 2),
+    )
   }
   const muted = () => props.account.collapsed?.muted ?? false
   const quotaTone = () =>
@@ -327,60 +347,115 @@ function CollapsedAccountRow(props: { account: AccountView }) {
       width='100%'
       flexDirection='row'
       justifyContent='space-between'
+      columnGap={label() ? 1 : 0}
     >
-      <text
-        fg={context.theme[muted() ? 'textMuted' : 'text']}
-        wrapMode='none'
-        flexShrink={1}
-      >
-        {label()}
-      </text>
-      <Show
-        when={text() !== null}
-        fallback={
-          <text fg={context.theme.textMuted}>
-            {props.account.emptyQuotaText?.collapsed ?? '\u2014'}
-          </text>
-        }
-      >
-        <box flexDirection='row' flexShrink={0}>
+      <Show when={label()}>
+        <text
+          fg={context.theme[muted() ? 'textMuted' : 'text']}
+          wrapMode='none'
+          flexShrink={1}
+        >
+          {label()}
+        </text>
+      </Show>
+      <box flexDirection='row' flexShrink={0}>
+        <Show when={showQuota()}>
           <Show
-            when={!muted()}
+            when={hasQuota() && !muted()}
             fallback={<text fg={context.theme.textMuted}>{text()}</text>}
           >
             <text fg={context.theme[quotaTone()]}>
               <b>{text()}</b>
             </text>
           </Show>
-          <text fg={context.theme[props.account.indicatorTone]}>
-            {props.account.blocked ? ' \u2298' : ' \u25cf'}
-          </text>
-        </box>
-      </Show>
+        </Show>
+        <text fg={context.theme[props.account.indicatorTone]}>
+          {showQuota() ? ' ' : ''}
+          {props.account.blocked ? '\u2298' : '\u25cf'}
+        </text>
+      </box>
     </box>
   )
 }
 
-function AccountBlock(props: {
-  account: AccountView
-  labelWidth: number
-  marginTop: number
-}) {
+function AccountBlock(props: { account: AccountView; marginTop: number }) {
   const context = frameContext()
+  const [columns, setColumns] = createSignal(0)
+  let block: { width: number } | undefined
+  const rows = () => props.account.groups.flatMap((group) => group.rows)
+  const labelWidth = () =>
+    Math.max(
+      0,
+      ...rows().map(({ part }) =>
+        part.name ? Math.max(3, displayWidth(part.name) + 1) : 0,
+      ),
+    )
+  const resetWidth = () =>
+    Math.max(
+      0,
+      ...rows().map(({ part }) =>
+        part.resetSinceReading ? 0 : displayWidth(part.resetIn ?? ''),
+      ),
+    )
+  const fit = createMemo(() => {
+    const desired = context.appearance.barWidth
+    // Four cells still distinguish quarters of a window without sacrificing its reset.
+    const minimum = Math.min(4, desired)
+    const figureWidth = Math.max(
+      10,
+      ...rows()
+        .filter(({ part }) => !part.resetSinceReading)
+        .map(({ part }) =>
+          displayWidth(
+            ` ${part.kind === 'budget' && part.figure.startsWith(`${part.name} `) ? part.figure.slice(part.name.length + 1) : part.figure}`,
+          ),
+        ),
+    )
+    if (columns() <= 0)
+      return { barCells: desired, showReset: resetWidth() > 0 }
+    const room = columns() - labelWidth() - figureWidth
+    const withReset = room - resetWidth() - 1
+    const showReset = resetWidth() > 0 && withReset >= minimum
+    const available = showReset ? withReset : room
+    return {
+      barCells: available >= minimum ? Math.min(desired, available) : 0,
+      showReset,
+    }
+  })
+  const label = () => {
+    const full = `${props.account.label}${props.account.titleSuffix ? ` · ${props.account.titleSuffix}` : ''}`
+    return columns() <= 0
+      ? full
+      : fitText(full, columns() - displayWidth(props.account.status.text) - 1)
+  }
   const age = () =>
     quotaWindowParts(props.account.quota, { now: context.now }).age
   const hasRows = () =>
     props.account.groups.some((group) => group.rows.length > 0)
   return (
-    <box width='100%' flexDirection='column' marginTop={props.marginTop}>
-      <box width='100%' flexDirection='row' justifyContent='space-between'>
-        <text fg={context.theme.text}>
-          <b>
-            {props.account.label}
-            {props.account.titleSuffix ? ` · ${props.account.titleSuffix}` : ''}
-          </b>
+    <box
+      ref={(element: { width: number }) => {
+        block = element
+      }}
+      onSizeChange={() => setColumns(block?.width ?? 0)}
+      width='100%'
+      flexDirection='column'
+      marginTop={props.marginTop}
+    >
+      <box
+        width='100%'
+        flexDirection='row'
+        justifyContent='space-between'
+        columnGap={1}
+      >
+        <text fg={context.theme.text} wrapMode='none' flexShrink={1}>
+          <b>{label()}</b>
         </text>
-        <text fg={context.theme[props.account.status.tone]}>
+        <text
+          fg={context.theme[props.account.status.tone]}
+          wrapMode='none'
+          flexShrink={0}
+        >
           <b>{props.account.status.text}</b>
         </text>
       </box>
@@ -404,7 +479,10 @@ function AccountBlock(props: {
                   <QuotaRow
                     part={row.part}
                     pace={row.pace}
-                    labelWidth={props.labelWidth}
+                    labelWidth={labelWidth()}
+                    barCells={fit().barCells}
+                    resetWidth={resetWidth()}
+                    showReset={fit().showReset}
                   />
                 )}
               </For>
@@ -427,17 +505,22 @@ export function SidebarFrame(props: SidebarFrameProps) {
     !hasData()
       ? props.header.badge
       : `${props.collapsed ? '\u25b6' : '\u25bc'} ${props.header.badge}`
-  const labelWidth = () =>
-    Math.max(
-      3,
-      ...props.accounts.flatMap((account) =>
-        account.groups.flatMap((group) =>
-          group.rows.map((row) => row.part.name.length + 1),
-        ),
-      ),
-    )
+  // Missing semantic colors inherit normal text; an unset palette uses terminal defaults.
+  const context = mergeProps(props, {
+    get theme(): SidebarTheme {
+      const theme = props.theme
+      return {
+        ...theme,
+        textMuted: theme?.textMuted ?? theme?.text,
+        accent: theme?.accent ?? theme?.text,
+        success: theme?.success ?? theme?.text,
+        warning: theme?.warning ?? theme?.text,
+        error: theme?.error ?? theme?.text,
+      }
+    },
+  })
   return (
-    <FrameContext.Provider value={props}>
+    <FrameContext.Provider value={context}>
       <box
         width='100%'
         flexDirection='column'
@@ -460,14 +543,14 @@ export function SidebarFrame(props: SidebarFrameProps) {
           <box
             paddingLeft={1}
             paddingRight={1}
-            backgroundColor={props.theme.accent}
+            backgroundColor={context.theme.accent}
           >
-            <text fg={props.theme.background}>
+            <text fg={context.theme.background}>
               <b>{headerLabel()}</b>
             </text>
           </box>
           <Show when={props.header.version}>
-            <text fg={props.theme.textMuted}>{props.header.version}</text>
+            <text fg={context.theme.textMuted}>{props.header.version}</text>
           </Show>
         </box>
         <Show when={props.collapsed && hasData()}>
@@ -482,7 +565,6 @@ export function SidebarFrame(props: SidebarFrameProps) {
                 {(account, index) => (
                   <AccountBlock
                     account={account}
-                    labelWidth={labelWidth()}
                     marginTop={index() === 0 ? 0 : 1}
                   />
                 )}

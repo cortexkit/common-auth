@@ -3,19 +3,14 @@
   OPENAI        
                 
  Quota          
- active- active 
- low            
- 5h ██▓ 0% left 
+ active… active 
+ 5h  0% left    
     deficit 40… 
  7d  100% left  
                 
- stale-   block 
- idle-longed    
- account-       
- name           
-                
+ stale… blocked 
  off in /openai 
- 5h  79% left   
+ 5h reset since 
  checked 1h ago 
                 
  empty     idle 
@@ -29,6 +24,11 @@
                 
  Health         
  Killswitch st… 
+                
+                
+                
+                
+                
                 
                 
                 

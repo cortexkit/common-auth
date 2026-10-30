@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-test('shared sidebar preserves frozen OpenAI 1.8.4 UTF-8 frames and spans', async () => {
+test('shared sidebar preserves frozen shared UTF-8 frames and spans', async () => {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -16,7 +16,7 @@ test('shared sidebar preserves frozen OpenAI 1.8.4 UTF-8 frames and spans', asyn
     child.exited,
   ])
   expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: '' })
-  expect(stdout).toContain('32 frozen OpenAI frames and style spans matched')
+  expect(stdout).toContain('32 frozen shared frames and style spans matched')
 }, 30_000)
 
 test('shared sidebar composes groups and expanded slots and keeps collapse controlled', async () => {

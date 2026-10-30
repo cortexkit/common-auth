@@ -2,7 +2,7 @@
   ▼ OPENAI                   v1.8.4 
                                     
  Quota                              
- production-team@example.comblocked 
+ production-team@example.c… blocked 
  auth needs attention               
  5h █████▒▒░░░ 55% left       1h30m 
     reserve 25% · lasts             

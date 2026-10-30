@@ -1,10 +1,50 @@
 {
-  "package": "@cortexkit/opencode-openai-auth",
-  "version": "1.8.4",
+  "package": "@cortexkit/common-auth",
+  "renderer": "SidebarFrame (shared presentation rulings)",
   "files": {
-    "packages/opencode/src/tui.tsx": "8a104a6b7708a617dc68a05508a4ea1d95c8e74ef14337f445edd3f48b89b831",
-    "packages/opencode/src/sidebar-state.ts": "3bf04f0b2b96f7e90d00589c8846565d8064a31baf451c4a60ba574b5ce87081",
-    "packages/core/src/pool-routing.ts": "f3068b775ac5828dab75a64c4f873b8cc4f6ca43a775aa9150c6cd94b171a47c"
+    "src/quota-sidebar/index.tsx": "e71e06e7698cf95375a093dd354ed542f8fcab611eef424346d5e206f57974ad",
+    "src/quota/format.ts": "81d02c47c3e30f58fc74455c740cb8a3a460fe8716ae31de60986c906aa2c5f2",
+    "src/quota/map.ts": "db2e989bc84f02b710416873bf5c0417be7bfb9a4b4875c25e4caf121957fa34",
+    "src/quota/projection.ts": "486a3606988d03dac0024176f3b3cf9ec5bf22984636b57c64e52b9f3c5f2059",
+    "test/quota-sidebar/cases.ts": "3d36e4d59c77afccf901cecb19f5830b11a0506355fa7ecbfa89b9ede916825c",
+    "test/quota-sidebar/parity-frame.tsx": "bcf5339625df2c8e5678b87a35fe7a31e67f4a743260c105b6ecde230afe05e9",
+    "test/quota-sidebar/render-support.ts": "f6b2d685a615c086f9d942e57b406471ca4c7267f60086013ee4f4273b0e99f6"
   },
-  "seam": "Verbatim presentation functions and returned QuotaSidebar JSX; fixed state/prefs replace acquisition and polling. No shared SidebarFrame import."
+  "runtime": {
+    "os": "Linux",
+    "bun": "1.4.4",
+    "solid-js": "1.9.12",
+    "@opentui/core": "0.5.12",
+    "@opentui/solid": "0.5.12",
+    "preload": "@opentui/solid/preload",
+    "layoutPasses": 3
+  },
+  "seam": "Public SidebarFrame through test/quota-sidebar/parity-frame.tsx with fixed cases, appearance, theme and clock. Expected character edits hand-specified from the independent baseline; all 32 buffers and per-cell styles reviewed before capture acceptance.",
+  "changedFramesByRuling": {
+    "blocked-pace-long-stat-collapsed-16": [7],
+    "blocked-pace-long-stat-expanded-16": [10],
+    "blocked-pace-long-stat-expanded-36": [10],
+    "credits-hidden-version-collapsed-16": [7],
+    "credits-hidden-version-expanded-16": [10],
+    "multiple-low-stale-empty-missing-collapsed-16": [6, 7],
+    "multiple-low-stale-empty-missing-collapsed-36": [6],
+    "multiple-low-stale-empty-missing-collapsed-37": [6],
+    "multiple-low-stale-empty-missing-collapsed-42": [6],
+    "multiple-low-stale-empty-missing-expanded-16": [2, 3, 10],
+    "multiple-low-stale-empty-missing-expanded-36": [3, 10],
+    "multiple-low-stale-empty-missing-expanded-37": [3, 10],
+    "multiple-low-stale-empty-missing-expanded-42": [3]
+  },
+  "unchangedFrames": 19,
+  "baseline": {
+    "commit": "d079e207f5172a1bf5cbf3e4bd1e7b63edb88807",
+    "package": "@cortexkit/opencode-openai-auth",
+    "version": "1.8.4",
+    "files": {
+      "packages/opencode/src/tui.tsx": "8a104a6b7708a617dc68a05508a4ea1d95c8e74ef14337f445edd3f48b89b831",
+      "packages/opencode/src/sidebar-state.ts": "3bf04f0b2b96f7e90d00589c8846565d8064a31baf451c4a60ba574b5ce87081",
+      "packages/core/src/pool-routing.ts": "f3068b775ac5828dab75a64c4f873b8cc4f6ca43a775aa9150c6cd94b171a47c"
+    },
+    "seam": "Verbatim presentation functions and returned QuotaSidebar JSX; fixed state/prefs replace acquisition and polling. No shared SidebarFrame import."
+  }
 }

@@ -1,11 +1,11 @@
                 
   ▶      v1.8.4 
   OPENAI        
-  5h 0% · 7d  ● 
-  100% left     
-  5h 79% left ⊘ 
- empty        — 
- missing      — 
+ active-low   ● 
+ stale-idle-… ⊘ 
+ empty      — ● 
+ missing    — ● 
+                
                 
                 
                 

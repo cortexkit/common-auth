@@ -148,6 +148,7 @@ start() {
 }
 start claustrum-floor bun run check:claustrum-floor
 start opentui-0511 bun run check:opentui-0511
+start quota-sidebar-floor bun run check:quota-sidebar-floor
 start opencode2-placement placement
 failed=
 collect() {

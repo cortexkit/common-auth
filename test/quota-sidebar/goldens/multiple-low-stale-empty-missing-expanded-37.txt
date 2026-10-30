@@ -7,9 +7,9 @@
     deficit 40% · out in 0m          
  7d ░░░░░░░░░░ 100% left       6d23h 
                                      
- stale-idle-long-account-nameblocked 
+ stale-idle-long-account-na… blocked 
  off in /openai                      
- 5h ██░░░░░░░░ 79% left        reset 
+ 5h reset since last check           
  checked 1h ago                      
                                      
  empty                          idle 
