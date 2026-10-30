@@ -141,15 +141,22 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ matrix.bun }}
-      - name: Discovery hub tests on Windows private files
+      - name: PROBE ONLY - repeat the seeding test with full phase timings
         timeout-minutes: 10
         shell: pwsh
+        env:
+          COMMON_AUTH_HUB_TIMING_PROBE: '1'
         run: |
           bun --version
           bun install --frozen-lockfile
           if ($LASTEXITCODE) { throw 'Install failed' }
-          bun test test/claustrum/hub.test.ts
-          if ($LASTEXITCODE) { throw 'Discovery hub tests failed' }
+          $failures = 0
+          for ($run = 1; $run -le 20; $run++) {
+            "=== Hub seeding timing run $run of 20 ==="
+            bun test test/claustrum/hub.test.ts --test-name-pattern '^hub seeding: a new key starts'
+            if ($LASTEXITCODE) { $failures++ }
+          }
+          if ($failures) { throw "$failures seeding timing runs failed" }
   setup-npm-host:
     strategy:
       fail-fast: false

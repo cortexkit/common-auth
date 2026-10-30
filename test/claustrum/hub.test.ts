@@ -162,7 +162,8 @@ afterEach(async () => {
       restoreCommitTrace = undefined
       commitTraces.clear()
       failed ||= errors.length > 0
-      if (failed) for (const trace of traces) trace.dump()
+      if (failed || process.env.COMMON_AUTH_HUB_TIMING_PROBE === '1')
+        for (const trace of traces) trace.dump()
       traces.length = 0
       failed = false
     }
