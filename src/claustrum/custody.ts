@@ -632,6 +632,8 @@ export class ClaustrumScopedCustody {
 
   async #token(signal?: AbortSignal): Promise<string> {
     this.#check(signal)
+    const started = performance.now()
+    this.#logger.debug('claustrum token read begin')
     const pending = this.#readToken()
     this.#tokenReads.add(pending)
     let value: EnrollmentTokenFile
@@ -639,6 +641,9 @@ export class ClaustrumScopedCustody {
       value = await pending
     } finally {
       this.#tokenReads.delete(pending)
+      this.#logger.debug('claustrum token read end', {
+        elapsedMs: performance.now() - started,
+      })
     }
     this.#check(signal)
     if (
@@ -719,11 +724,17 @@ export class ClaustrumScopedCustody {
       this.#kept.clear()
       throw error
     }
+    const started = performance.now()
+    this.#logger.debug('claustrum list scoped begin')
     try {
       inventory = await this.#call(() => this.#client.listScoped(token), signal)
     } catch (error) {
       this.listFailed(error)
       throw error
+    } finally {
+      this.#logger.debug('claustrum list scoped end', {
+        elapsedMs: performance.now() - started,
+      })
     }
     const skipped: SkippedVaultRecord[] = []
     const refused: { credentialId?: string; code: string }[] = []

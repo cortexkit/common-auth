@@ -362,11 +362,20 @@ async function hubFixture(
     watch?: boolean
     /** Share another fixture's state directory, as a second process would. */
     dir?: string
+    /** Share the test's clock so setup and successive fixtures have no gaps. */
+    trace?: PhaseTrace
+    label?: string
     hub?: Partial<ClaustrumDiscoveryHubOptions>
   } = {},
 ) {
+  const clock = options.trace ?? phaseTrace(`fixture ${traces.length + 1}`)
+  const trace: PhaseTrace = {
+    ...clock,
+    mark: (phase) => clock.mark(`${options.label ?? 'fixture'}: ${phase}`),
+  }
+  trace.mark('create directory begin')
   const dir = options.dir ?? (await tempDir('claustrum-hub-'))
-  const trace = phaseTrace(dir)
+  trace.mark('create directory done')
   trace.mark('fixture: write token begin')
   const tokenPath = await writeToken(dir)
   trace.mark('fixture: write token done')
@@ -384,6 +393,12 @@ async function hubFixture(
       tokenPath,
       family: hubFamily,
       connect: () => vault.connect(),
+      logger: {
+        ...captureLogger().logger,
+        debug: (message, data) => {
+          trace.mark(`${message}${data ? ` ${JSON.stringify(data)}` : ''}`)
+        },
+      },
       isCustodyActive: () => active,
       pollIntervalMs: TICK,
       setTimeoutImpl: ((run: () => void, delay: number) => {
@@ -2132,34 +2147,58 @@ test.skipIf(process.platform !== 'win32')(
 )
 
 test('hub seeding: a new key starts from the older key declines and order only, writes its first file with the view unchanged, and never writes under the old key', async () => {
-  const old = await hubFixture()
+  const trace = phaseTrace('hub seeding: old key to new key')
+  const step = async <T>(phase: string, run: () => T | Promise<T>) => {
+    trace.mark(`${phase} begin`)
+    try {
+      return await run()
+    } finally {
+      trace.mark(`${phase} end`)
+    }
+  }
+  const old = await step('old fixture', () =>
+    hubFixture({ trace, label: 'old' }),
+  )
+  trace.mark('old member setup begin')
   old.vault.rows.push(keyRow('alpha', 'second'), keyRow('alpha', 'third'))
   const before = old.member('alpha')
-  await before.refresh()
+  trace.mark('old member setup end')
+  await step('old refresh', () => before.refresh())
+  trace.mark('old routes begin')
   const main = old.route(before, 'alpha')
   const second = old.route(before, 'alpha', 'second')
   const third = old.route(before, 'alpha', 'third')
-  await before.reorder([second, main, third])
-  await before.decline(main)
+  trace.mark('old routes end')
+  await step('old reorder commit', () => before.reorder([second, main, third]))
+  await step('old decline commit', () => before.decline(main))
   const oldPath = old.hub.rosterPath('alpha')
   const oldDir = dirname(oldPath)
-  const oldEntries = (await readdir(oldDir)).sort()
-  const oldText = await readFile(oldPath, 'utf8')
-  const oldModified = (await stat(oldPath)).mtimeMs
+  const oldEntries = (
+    await step('old directory read', () => readdir(oldDir))
+  ).sort()
+  const oldText = await step('old file read', () => readFile(oldPath, 'utf8'))
+  const oldModified = (await step('old file stat', () => stat(oldPath))).mtimeMs
   // A newer plugin build: another classifier version, which refuses `third`.
-  const next = await hubFixture({
-    dir: old.dir,
-    hub: {
-      classifierInput: { ...CLASSIFIER_INPUT, version: 2 },
-      family: refusing('apikey:alpha:third'),
-    },
-  })
+  const next = await step('new fixture', () =>
+    hubFixture({
+      trace,
+      label: 'new',
+      dir: old.dir,
+      hub: {
+        classifierInput: { ...CLASSIFIER_INPUT, version: 2 },
+        family: refusing('apikey:alpha:third'),
+      },
+    }),
+  )
+  trace.mark('new member setup begin')
   next.vault.rows = old.vault.rows
   const alpha = next.member('alpha')
-  await alpha.refresh()
+  trace.mark('new member setup end')
+  await step('new refresh and seed commit', () => alpha.refresh())
   const path = next.hub.rosterPath('alpha')
   expect(dirname(path)).not.toBe(oldDir)
-  const file = await readVaultRoster(path)
+  const file = await step('new file read', () => readVaultRoster(path))
+  trace.mark('new roster assertions begin')
   // Same vault view as the old key's last commit, and still a first file.
   expect(file?.view).toBe('v1')
   expect(
@@ -2172,13 +2211,23 @@ test('hub seeding: a new key starts from the older key declines and order only, 
     { credentialId: 'apikey:alpha:main', accountIdentity: 'alpha-main' },
   ])
   expect(alpha.routingRows().map((row) => row.id)).toEqual([second])
+  trace.mark('new roster assertions end')
   // The old key's active `third` is neither in the new file nor routable.
-  await expect(alpha.authorize(third)).rejects.toMatchObject({
-    kind: 'route-unavailable',
-  })
-  expect((await readdir(oldDir)).sort()).toEqual(oldEntries)
-  expect(await readFile(oldPath, 'utf8')).toBe(oldText)
-  expect((await stat(oldPath)).mtimeMs).toBe(oldModified)
+  await step('refused route assertion', () =>
+    expect(alpha.authorize(third)).rejects.toMatchObject({
+      kind: 'route-unavailable',
+    }),
+  )
+  expect(
+    (await step('old directory reread', () => readdir(oldDir))).sort(),
+  ).toEqual(oldEntries)
+  expect(await step('old file reread', () => readFile(oldPath, 'utf8'))).toBe(
+    oldText,
+  )
+  expect((await step('old file restat', () => stat(oldPath))).mtimeMs).toBe(
+    oldModified,
+  )
+  trace.mark('body complete')
 })
 
 test('hub seeding: the layout before fingerprints seeds a new key too, and the newest older roster wins', async () => {

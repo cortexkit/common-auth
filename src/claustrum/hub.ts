@@ -1086,7 +1086,21 @@ export class ClaustrumDiscoveryHub {
       if (base instanceof Error) throw base
       // A member's first roster under this key carries the declines and
       // order of its newest roster under an older key.
-      const seed = base.file ? undefined : await this.#seed(entry)
+      let seed: VaultRosterSeed | undefined
+      if (!base.file) {
+        const started = performance.now()
+        this.#logger.debug('claustrum hub seed read begin', {
+          member: entry.provider,
+        })
+        try {
+          seed = await this.#seed(entry)
+        } finally {
+          this.#logger.debug('claustrum hub seed read end', {
+            member: entry.provider,
+            elapsedMs: performance.now() - started,
+          })
+        }
+      }
       const roster = await refreshVaultRoster({
         path: entry.path,
         custody: { discover: async () => share },
