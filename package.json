@@ -72,6 +72,10 @@
       "types": "./dist/routing/index.d.ts",
       "import": "./dist/routing/index.js"
     },
+    "./routing-accessor": {
+      "types": "./dist/routing-accessor/index.d.ts",
+      "import": "./dist/routing-accessor/index.js"
+    },
     "./commands": {
       "types": "./dist/commands/index.d.ts",
       "import": "./dist/commands/index.js"

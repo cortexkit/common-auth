@@ -916,6 +916,46 @@ Pure functions; every input is per call and nothing is persisted. Rate-limit mar
 - *Extra usage versus the budget.* The budget axis has openai-auth's semantics: a reached budget is refused unless every survivor is spent (the last path), and its remaining percent weighs placement. A provider's paid overflow allowance is not that unless its billing rules say so; by default it stays out of the quota map, and any billing eligibility it gates is applied by the adapter when it chooses rows.
 - *Status and refusal classification.* `classifyStatus` (above) is the seam for a 403 that is not an account failure. A model safety refusal inside a successful response is not a status at all: the adapter does not call `decideStickyBreak` for it. A provider that reports rounded utilisation stores the figure it was given (`usedPercent` is fractional); 99.5% is not 100% and admission does not treat it as spent.
 
+### ./routing-accessor
+
+Optional process-global THALAMUS routing for **vault mode only**. Routing's
+account ids are vault account ids, not plugin route ids or local pool row ids.
+Local pool rows are unknown to routing. No auth plugin adopts this client yet.
+
+Runtime exports: `askRouting`, `reportRouting`. Type exports:
+`RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`,
+`ReportRoutingInput`.
+
+| export | parameters | returns | errors |
+| --- | --- | --- | --- |
+| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs? }` | `Promise<{ candidate, hold?: { retry_after_ms } } \| undefined>`; `candidate` is the original eligible input object with its inferred type | never throws or rejects |
+| `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws |
+
+**Selection and fallback.** Each call looks up
+`globalThis[Symbol.for('cortexkit.routing')]` at call time, so a bridge installed
+after the auth plugin is found without reloading. A missing accessor, unserved
+session, malformed answer or accessor failure yields `undefined`: the plugin
+keeps its own choice. `candidates` must already exclude routes refused by the
+vault, blocked by the killswitch or ineligible under other plugin rules. The
+answer must name a candidate's `accountId`; if it names a credential too, that must match the
+same candidate's `credentialId`. Only provider, model id and deadline are sent
+with the selection request, never candidate metadata or credentials.
+
+**Deadlines and holds.** `deadlineMs` defaults to 500, clamps to 1–2000 ms, and
+uses 500 for `NaN`. The same bound is sent to the accessor and enforced locally
+with an unref'd timer. A hold is returned only when `retry_after_ms` is finite
+and non-negative. It is not capped here: the plugin must apply its own hold cap
+before waiting, and still performs its normal vault authorization before a send.
+
+**Reporting and privacy.** Reports send only `account_id`, optional
+`credential_id`, `outcome`, and either `headers` for `served` or `window` and
+optional `resets_at` for `exhausted`. `resetsAt` is epoch milliseconds; `window`
+may be `5h`, `7d` or a scoped window id. No token, email, label or other input
+metadata is forwarded. Callers **must pass only rate-limit headers**, not the
+whole response headers: header values are passed through unchanged, not
+filtered or redacted by this client. Credential health remains the vault's
+responsibility; this client exposes only served and exhausted reports.
+
 ### ./store
 
 Runtime exports: `openPoolStore(options)`, `PoolOperationError`, `PoolReentryError`, `POOL_LOCK_DEFAULTS`, `POOL_KEY` (`commonAuthPool`), `POOL_ROWS_KEY` (`rows`), `POOL_SCHEMA_VERSION` (1), `LEGACY_STORE_VERSION` (1), `REFRESH_STAMP_TOLERANCE_MS` (300 000), `DUPLICATE_IDENTITY_REASON`, `countUnknownIdentityRows(rows)`, `fingerprintOf(credential)`, `rowLockKey(row)`, `PROVIDER_STATE_KEY` (`commonAuthProviderState`, since 0.6.0), `DECLINE_TRANSITION` (since 0.7.0). Type exports (since 0.7.0 also `RowTransitionOptions`, `RowTransitionResult`, `RowTransitionMutator`; since 0.6.0 also `ProviderStateCodec`, `ProviderStateReplacement`, `ProviderStateDrop`, `ProviderStateMutator`, `UpdateProviderStateResult`, `CredentialWriteInput`): `OpenPoolStoreOptions`, `PoolStore`, `PoolLoad`, `PoolRow`, `PoolCredential`, `OAuthCredential`, `ApiKeyCredential`, `StoredCredential`, `CredentialStampStatus` (since 0.4.3), `QuotaCodec`, `Attribution`, `AddInput`, `AddResult`, `RowOperationOptions`, `RowWriteOptions`, `RowToggleOptions`, `RemoveOptions`, `RemoveView`, `RemoveResult`, `FailureHook`, `RefreshOptions`, `RefreshOutcome`, `ProviderRefresh`, `ProviderRefreshResult`, `PullHook`, `PullRequest`, `PullReason`, `PoolLockSpec`, `PoolLockOptions`, `LockEvent`, `WriteStep`, `HoldPoint`, `PoolOperation`, `PoolFailurePhase`, `PoolFailureKind`, `PoolLogger`. Nothing in `/store` reads or writes the host login slot, and no API takes a host-slot adapter or a custody mode.
