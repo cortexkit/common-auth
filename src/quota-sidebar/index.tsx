@@ -549,14 +549,7 @@ export function SidebarFrame(props: SidebarFrameProps) {
     props.theme?.accent !== undefined && props.theme?.background !== undefined
   return (
     <FrameContext.Provider value={context}>
-      <box
-        width='100%'
-        flexDirection='column'
-        paddingTop={1}
-        paddingBottom={1}
-        paddingLeft={1}
-        paddingRight={1}
-      >
+      <box width='100%' flexDirection='column'>
         {/* Blocked accounts retain their own indicators; the header always keeps its version. */}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: OpenTUI terminal widgets do not have DOM roles */}
         <box

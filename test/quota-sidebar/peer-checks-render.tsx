@@ -108,7 +108,7 @@ switch (check) {
       remainingPercent: 50,
       resetIn: '45m',
     }
-    const frame = await draw(columns, {
+    const options = {
       accounts: [
         {
           ...account,
@@ -121,34 +121,45 @@ switch (check) {
           ],
         },
       ],
-    })
+    }
+    const frame = await draw(columns, options)
     const rows = lines(frame.chars)
     const other = rows[rows.indexOf('Other models') + 1]
     assert.match(
       other ?? '',
-      columns === 26 ? /^█████░░░░░ 50% left +45m$/ : /^██░░ 50% left +45m$/,
+      columns === 26 ? /^█████░░░░░ 50% left +45m$/ : /^███░░░ 50% left +45m$/,
       `unnamed window must not reserve a name gutter at ${columns} columns`,
     )
     const rawOther = frame.chars
       .split('\n')
       .find((line) => line.trim() === other)
-    assert.ok(rawOther?.startsWith(' █'))
+    assert.ok(rawOther?.startsWith('█'))
     assert.ok(rows[rows.indexOf('Gemini 7d') + 1]?.startsWith('7d '))
+    if (columns === 20) {
+      // Preserve the four-cell boundary after removing the two padding columns.
+      const boundary = lines((await draw(18, options)).chars)
+      assert.match(
+        boundary[boundary.indexOf('Other models') + 1] ?? '',
+        /^██░░ 50% left +45m$/,
+      )
+    }
     break
   }
   case 'empty quota text stays on one line at 20 columns': {
-    const frame = await draw(20, {
-      sections: () => <SidebarSection title='Routing' />,
-    })
-    const rows = lines(frame.chars)
-    const accountIndex = rows.findIndex((line) => line.startsWith('vault'))
-    assert.ok(rows[accountIndex + 1]?.startsWith('no quota reading'))
-    assert.equal(rows[accountIndex + 2], '')
-    assert.equal(rows[accountIndex + 3], 'Routing')
+    for (const width of [18, 20]) {
+      const frame = await draw(width, {
+        sections: () => <SidebarSection title='Routing' />,
+      })
+      const rows = lines(frame.chars)
+      const accountIndex = rows.findIndex((line) => line.startsWith('vault'))
+      assert.ok(rows[accountIndex + 1]?.startsWith('no quota reading'))
+      assert.equal(rows[accountIndex + 2], '')
+      assert.equal(rows[accountIndex + 3], 'Routing')
+    }
     break
   }
   case 'frame text does not wrap but plugin text still can': {
-    const frame = await draw(12, {
+    const frame = await draw(10, {
       accounts: [
         {
           ...account,

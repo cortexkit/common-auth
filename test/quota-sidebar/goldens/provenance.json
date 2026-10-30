@@ -1,8 +1,8 @@
 {
   "package": "@cortexkit/common-auth",
-  "renderer": "SidebarFrame (shared presentation rulings)",
+  "renderer": "SidebarFrame (borderless, no outer padding)",
   "files": {
-    "src/quota-sidebar/index.tsx": "8cfcc925fad686378f6e059e8ee6741049ca81743103bc5458dac5aefc93c515",
+    "src/quota-sidebar/index.tsx": "081280080f732917933dc578595e8dcfb8beacda5a27bb930da63a2a5bb6f1cf",
     "src/quota/format.ts": "81d02c47c3e30f58fc74455c740cb8a3a460fe8716ae31de60986c906aa2c5f2",
     "src/quota/map.ts": "db2e989bc84f02b710416873bf5c0417be7bfb9a4b4875c25e4caf121957fa34",
     "src/quota/projection.ts": "486a3606988d03dac0024176f3b3cf9ec5bf22984636b57c64e52b9f3c5f2059",
@@ -12,15 +12,21 @@
   },
   "runtime": {
     "os": "Linux",
-    "bun": "1.4.4",
+    "bun": "1.4.2",
     "solid-js": "1.9.12",
     "@opentui/core": "0.5.12",
     "@opentui/solid": "0.5.12",
     "preload": "@opentui/solid/preload",
     "layoutPasses": 3
   },
-  "seam": "Public SidebarFrame through test/quota-sidebar/parity-frame.tsx with fixed cases, appearance, theme and clock. Expected character edits hand-specified from the independent baseline; all 32 buffers and per-cell styles reviewed before capture acceptance.",
-  "changedFramesByRuling": {
+  "seam": "Public SidebarFrame through test/quota-sidebar/parity-frame.tsx with fixed cases, appearance, theme and clock. All 32 character diffs reviewed; every character, color and attribute also checked against the committed padded implementation rendered two columns wider, then translated up and left by one cell.",
+  "paddingRemoval": {
+    "previousCaptureCommit": "e92dde64d987461039f3b8fd05ac7bb264431e29",
+    "changedFrames": 32,
+    "unchangedFrames": 0,
+    "expectedChanges": "Remove the blank top row and one outer column on each side; keep badge padding. The two freed columns can extend fitted labels and pace lines, prevent header wrapping or admit complete collapsed summaries. Renderer cursor metadata remains unchanged. No unexplained character or style differences."
+  },
+  "priorPresentationChangedFramesByRuling": {
     "blocked-pace-long-stat-collapsed-16": [7],
     "blocked-pace-long-stat-expanded-16": [10],
     "blocked-pace-long-stat-expanded-36": [10],
@@ -35,7 +41,7 @@
     "multiple-low-stale-empty-missing-expanded-37": [3, 10],
     "multiple-low-stale-empty-missing-expanded-42": [3]
   },
-  "unchangedFrames": 19,
+  "priorPresentationUnchangedFrames": 19,
   "baseline": {
     "commit": "d079e207f5172a1bf5cbf3e4bd1e7b63edb88807",
     "package": "@cortexkit/opencode-openai-auth",

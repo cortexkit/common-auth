@@ -1,10 +1,10 @@
+ ▶ OPENAI v1.8.4
+active-low     ●
+s… 5h 79% left ⊘
+empty        — ●
+missing      — ●
                 
-  ▶      v1.8.4 
-  OPENAI        
- active-low   ● 
- stale-idle-… ⊘ 
- empty      — ● 
- missing    — ● 
+                
                 
                 
                 

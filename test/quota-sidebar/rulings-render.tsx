@@ -48,7 +48,7 @@ const account: AccountView = {
   ],
 }
 async function draw(
-  width: number,
+  contentWidth: number,
   options: {
     collapsed?: boolean
     account?: AccountView
@@ -69,14 +69,14 @@ async function draw(
         onToggle={() => {}}
       />
     ),
-    width,
+    contentWidth,
   )
 }
 const lines = (chars: string) => chars.split('\n').map((line) => line.trim())
 const rule = process.argv[2]
 switch (rule) {
   case '2': {
-    const narrow = await draw(26)
+    const narrow = await draw(24)
     assert.ok(
       lines(narrow.chars).includes('5h ██░░ 50% left  23h59m'),
       `ruling 2: shrink bar to four before dropping reset\n${narrow.chars}`,
@@ -85,13 +85,13 @@ switch (rule) {
       lines(narrow.chars).includes('7d █░░░ 75% left   3d23h'),
       'ruling 2: reset column is shared across the account',
     )
-    const smaller = await draw(25)
+    const smaller = await draw(23)
     assert.ok(
       !smaller.chars.includes('23h59m'),
       'ruling 2: drop reset only below the four-cell boundary',
     )
     assert.ok(lines(smaller.chars).includes('5h █████░░░░░ 50% left'))
-    const wideBar = await draw(32, { barWidth: 40 })
+    const wideBar = await draw(30, { barWidth: 40 })
     assert.ok(lines(wideBar.chars).includes('5h █████░░░░░ 50% left  23h59m'))
     const mixed = {
       ...account,
@@ -110,7 +110,7 @@ switch (rule) {
         },
       ],
     }
-    const aligned = await draw(25, { account: mixed })
+    const aligned = await draw(23, { account: mixed })
     assert.ok(lines(aligned.chars).includes('5h ██░░ 50% left     2h'))
     assert.ok(lines(aligned.chars).includes('7d ░░░░ 100% left 3d23h'))
     break
@@ -130,7 +130,7 @@ switch (rule) {
         },
       ],
     })
-    const reset = await draw(37, {
+    const reset = await draw(35, {
       theme,
       account: {
         ...account,
@@ -168,7 +168,7 @@ switch (rule) {
   }
   case '6': {
     for (const blocked of [false, true]) {
-      const empty = await draw(37, {
+      const empty = await draw(35, {
         collapsed: true,
         account: {
           ...account,
@@ -191,20 +191,20 @@ switch (rule) {
     break
   }
   case '7': {
-    const full = await draw(26, { collapsed: true })
+    const full = await draw(24, { collapsed: true })
     assert.ok(
       lines(full.chars).includes('… 5h 50% · 7d 75% left ⊘'),
       'ruling 7: cut the label first and keep the complete narrow text',
     )
-    const narrow = await draw(25, { collapsed: true })
+    const narrow = await draw(23, { collapsed: true })
     assert.ok(
       lines(narrow.chars).includes('long-account-name     ⊘'),
       'ruling 7: replace an unfittable quota with label and dot only',
     )
     assert.ok(!narrow.chars.includes('%') && !narrow.chars.includes('left'))
-    const tiny = await draw(8, { collapsed: true })
+    const tiny = await draw(6, { collapsed: true })
     assert.ok(lines(tiny.chars).includes('lon… ⊘'))
-    const dotOnly = await draw(3, { collapsed: true })
+    const dotOnly = await draw(1, { collapsed: true })
     assert.ok(
       lines(dotOnly.chars).includes('⊘'),
       'ruling 7: keep the dot even when no label cell fits',
@@ -216,14 +216,14 @@ switch (rule) {
       ...account,
       groups: [{ rows: [{ part: { ...firstPart, name: '' } }] }],
     }
-    const frame = await draw(37, { account: unnamed })
+    const frame = await draw(35, { account: unnamed })
     assert.ok(
       frame.chars
         .split('\n')
-        .some((line) => line.startsWith(' █████░░░░░ 50% left')),
+        .some((line) => line.startsWith('█████░░░░░ 50% left')),
       `ruling 8: unnamed blocks have no name gutter\n${frame.chars}`,
     )
-    const wideName = await draw(37, {
+    const wideName = await draw(35, {
       account: {
         ...account,
         groups: [{ rows: [{ part: { ...firstPart, name: '日' } }] }],
@@ -232,13 +232,13 @@ switch (rule) {
     assert.ok(
       wideName.chars
         .split('\n')
-        .some((line) => line.startsWith(' 日 █████░░░░░ 50% left')),
+        .some((line) => line.startsWith('日 █████░░░░░ 50% left')),
       'ruling 8: size the gutter in terminal cells',
     )
     break
   }
   case '9': {
-    const fallback = await draw(37, {
+    const fallback = await draw(35, {
       theme: { text: '#123456', background: undefined },
     })
     const colored = fallback.spans.lines
@@ -258,7 +258,7 @@ switch (rule) {
       'ruling 9: a sparse badge palette remains readable',
     )
     assert.deepEqual(Array.from(badge?.bg.buffer ?? []), [0, 0, 0, 0])
-    const unset = await draw(37, { theme: undefined })
+    const unset = await draw(35, { theme: undefined })
     assert.ok(
       unset.chars.includes('50% left'),
       'ruling 9: unset theme uses terminal defaults',
@@ -267,7 +267,7 @@ switch (rule) {
     break
   }
   case '10': {
-    const frame = await draw(37, {
+    const frame = await draw(35, {
       account: { ...account, label: 'stale-idle-long-account-name' },
     })
     assert.ok(

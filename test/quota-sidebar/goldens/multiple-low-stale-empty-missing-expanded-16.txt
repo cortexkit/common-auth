@@ -1,29 +1,29 @@
+ ▼ OPENAI v1.8.4
                 
-  ▼      v1.8.4 
-  OPENAI        
+Quota           
+active-l… active
+5h  0% left     
+   deficit 40% …
+7d  100% left   
                 
- Quota          
- active… active 
- 5h  0% left    
-    deficit 40… 
- 7d  100% left  
+stale-i… blocked
+off in /openai  
+5h reset since l
+checked 1h ago  
                 
- stale… blocked 
- off in /openai 
- 5h reset since 
- checked 1h ago 
+empty       idle
+—               
                 
- empty     idle 
- —              
+missing     idle
+checking…       
                 
- missing   idle 
- checking…      
+Routing         
+Route main-first
                 
- Routing        
- Route main-fi… 
+Health          
+Killswitch stal…
                 
- Health         
- Killswitch st… 
+                
                 
                 
                 
