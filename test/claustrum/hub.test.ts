@@ -1877,7 +1877,11 @@ test('hub cost: one watch and one list per refresh for N members, against N plai
   console.log(
     `cost for ${n} members: plain consumers ${plainVault.lists / 2} lists and ${plainVault.watches} watches per change; hub 1 list per tick in fallback, 1 list per change and ${watching.vault.watches} watch while watching`,
   )
-})
+  // This test commits real rosters for N plain consumers and two hubs. On a
+  // GitHub Windows runner each owner-only roster commit costs tens of ms, so it
+  // ran 5.3 s once against Bun's 5 s default and finished late. The assertions
+  // are call counts, not time, so a longer limit loosens nothing.
+}, 20_000)
 
 test('hub cost: retain takes the union, so one member kept receipt survives another member refresh and decline', async () => {
   const f = await hubFixture()
