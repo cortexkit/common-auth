@@ -11,6 +11,7 @@
 // different processes already share, plus the base-view rule, so a commit
 // never replaces a view another process committed after this hub listed.
 import { createHash } from 'node:crypto'
+import { channel } from 'node:diagnostics_channel'
 import { readdir, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { createLogger } from '../logger/index.js'
@@ -1088,17 +1089,20 @@ export class ClaustrumDiscoveryHub {
       // order of its newest roster under an older key.
       let seed: VaultRosterSeed | undefined
       if (!base.file) {
-        const started = performance.now()
-        this.#logger.debug('claustrum hub seed read begin', {
-          member: entry.provider,
-        })
+        const phaseDiagnostics = channel('common-auth.claustrum.phases')
+        if (phaseDiagnostics.hasSubscribers)
+          phaseDiagnostics.publish({
+            logger: this.#logger,
+            phase: `seed read ${entry.provider} begin`,
+          })
         try {
           seed = await this.#seed(entry)
         } finally {
-          this.#logger.debug('claustrum hub seed read end', {
-            member: entry.provider,
-            elapsedMs: performance.now() - started,
-          })
+          if (phaseDiagnostics.hasSubscribers)
+            phaseDiagnostics.publish({
+              logger: this.#logger,
+              phase: `seed read ${entry.provider} end`,
+            })
         }
       }
       const roster = await refreshVaultRoster({

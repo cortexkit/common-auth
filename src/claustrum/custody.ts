@@ -1,3 +1,4 @@
+import { channel } from 'node:diagnostics_channel'
 import {
   type ClaustrumClient,
   ClaustrumCredentialError,
@@ -319,6 +320,8 @@ function scopedRetryReason(
 }
 
 const defaultLogger = createLogger('claustrum')
+// Opt-in diagnostics let tests retain wait phases without logging each vault read.
+const phaseDiagnostics = channel('common-auth.claustrum.phases')
 
 /**
  * Decide whether a request that got a 401 should retry with the freshly
@@ -632,8 +635,11 @@ export class ClaustrumScopedCustody {
 
   async #token(signal?: AbortSignal): Promise<string> {
     this.#check(signal)
-    const started = performance.now()
-    this.#logger.debug('claustrum token read begin')
+    if (phaseDiagnostics.hasSubscribers)
+      phaseDiagnostics.publish({
+        logger: this.#logger,
+        phase: 'token read begin',
+      })
     const pending = this.#readToken()
     this.#tokenReads.add(pending)
     let value: EnrollmentTokenFile
@@ -641,9 +647,11 @@ export class ClaustrumScopedCustody {
       value = await pending
     } finally {
       this.#tokenReads.delete(pending)
-      this.#logger.debug('claustrum token read end', {
-        elapsedMs: performance.now() - started,
-      })
+      if (phaseDiagnostics.hasSubscribers)
+        phaseDiagnostics.publish({
+          logger: this.#logger,
+          phase: 'token read end',
+        })
     }
     this.#check(signal)
     if (
@@ -724,17 +732,22 @@ export class ClaustrumScopedCustody {
       this.#kept.clear()
       throw error
     }
-    const started = performance.now()
-    this.#logger.debug('claustrum list scoped begin')
+    if (phaseDiagnostics.hasSubscribers)
+      phaseDiagnostics.publish({
+        logger: this.#logger,
+        phase: 'list scoped begin',
+      })
     try {
       inventory = await this.#call(() => this.#client.listScoped(token), signal)
     } catch (error) {
       this.listFailed(error)
       throw error
     } finally {
-      this.#logger.debug('claustrum list scoped end', {
-        elapsedMs: performance.now() - started,
-      })
+      if (phaseDiagnostics.hasSubscribers)
+        phaseDiagnostics.publish({
+          logger: this.#logger,
+          phase: 'list scoped end',
+        })
     }
     const skipped: SkippedVaultRecord[] = []
     const refused: { credentialId?: string; code: string }[] = []

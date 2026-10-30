@@ -2,6 +2,7 @@
 // refresh for several provider consumers, each with its own roster. Every
 // test here runs in one process against a fake vault client.
 import { expect, spyOn } from 'bun:test'
+import { channel } from 'node:diagnostics_channel'
 import {
   chmod,
   mkdir,
@@ -384,6 +385,15 @@ async function hubFixture(
   let tickArmed = deferred<void>()
   let active = true
   const errors: unknown[] = []
+  const logger = captureLogger().logger
+  const phaseDiagnostics = channel('common-auth.claustrum.phases')
+  // Scope shared-channel events to this fixture; both fixtures can be alive together.
+  const onPhase = (event: unknown) => {
+    const { logger: owner, phase } = event as { logger: unknown; phase: string }
+    if (owner === logger) trace.mark(`claustrum ${phase}`)
+  }
+  phaseDiagnostics.subscribe(onPhase)
+  cleanups.push(() => phaseDiagnostics.unsubscribe(onPhase))
   const hub = hooks.lifetime.manage(
     new ClaustrumDiscoveryHub({
       stateDir: dir,
@@ -393,12 +403,7 @@ async function hubFixture(
       tokenPath,
       family: hubFamily,
       connect: () => vault.connect(),
-      logger: {
-        ...captureLogger().logger,
-        debug: (message, data) => {
-          trace.mark(`${message}${data ? ` ${JSON.stringify(data)}` : ''}`)
-        },
-      },
+      logger,
       isCustodyActive: () => active,
       pollIntervalMs: TICK,
       setTimeoutImpl: ((run: () => void, delay: number) => {
@@ -2227,6 +2232,18 @@ test('hub seeding: a new key starts from the older key declines and order only, 
   expect((await step('old file restat', () => stat(oldPath))).mtimeMs).toBe(
     oldModified,
   )
+  // A quiet passing run must still capture the waits needed to diagnose an overrun.
+  for (const label of ['old', 'new']) {
+    for (const phase of ['token read', 'list scoped', 'seed read alpha']) {
+      for (const edge of ['begin', 'end']) {
+        expect(
+          trace.events.some((event) =>
+            event.endsWith(`${label}: claustrum ${phase} ${edge}`),
+          ),
+        ).toBe(true)
+      }
+    }
+  }
   trace.mark('body complete')
 })
 
