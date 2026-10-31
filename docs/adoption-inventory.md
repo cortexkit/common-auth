@@ -934,7 +934,7 @@ Runtime exports: `askRouting`, `reportRouting`. Type exports:
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
 | `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs? }` | `Promise<{ candidate, hold?: { retry_after_ms } } \| undefined>`; `candidate` is the original eligible input object with its inferred type | never throws or rejects |
-| `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws |
+| `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools send nothing |
 
 **Selection and fallback.** Each call looks up
 `globalThis[Symbol.for('cortexkit.routing')]` at call time, so a bridge installed
@@ -954,12 +954,18 @@ before waiting, and still performs its normal vault authorization before a send.
 
 **Reporting and privacy.** Reports send only `account_id`, optional
 `credential_id`, `outcome`, and either `headers` for `served` or `window` and
-optional `resets_at` for `exhausted`. `resetsAt` is epoch milliseconds; `window`
-may be `5h`, `7d` or a scoped window id. No token, email, label or other input
-metadata is forwarded. Callers **must pass only rate-limit headers**, not the
-whole response headers: header values are passed through unchanged, not
-filtered or redacted by this client. Credential health remains the vault's
-responsibility; this client exposes only served and exhausted reports.
+optional `pool` and `resets_at` for `exhausted`. `resetsAt` is epoch milliseconds;
+`window` must be `5h` or `7d`. The THALAMUS bridge maps these to routing's
+`five_hour` and `seven_day`. `pool` names a scoped quota group, such as
+`non-gemini`: omitting it blocks the whole account, while including it
+blocks only that pool. A pool must be a non-empty string without `:`; never
+combine a pool and window in one string. Invalid windows or present but invalid
+pools are silently ignored, including for plain JavaScript callers. No token,
+email, label or other input metadata is forwarded. Callers **must pass only
+rate-limit headers**, not the whole response headers: header values are passed
+through unchanged, not filtered or redacted by this client. Credential health
+remains the vault's responsibility; this client exposes only served and
+exhausted reports.
 
 ### ./store
 

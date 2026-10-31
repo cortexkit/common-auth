@@ -51,8 +51,14 @@ export type ReportRoutingInput = RoutingReportIdentity &
       }
     | {
         outcome: 'exhausted'
-        /** A quota window such as `5h`, `7d` or a scoped window id. */
-        window: string
+        /** The exhausted quota window; keep scoped quota groups in `pool`. */
+        window: '5h' | '7d'
+        /**
+         * Scoped quota group, such as `non-gemini`.
+         * Must be a non-empty string without `:`. Omit to block the whole
+         * account; include to block only this pool.
+         */
+        pool?: string
         /** Optional reset time in epoch milliseconds. */
         resetsAt?: number
       }
@@ -163,16 +169,25 @@ export function reportRouting(input: ReportRoutingInput): void {
       case 'served':
         payload = { ...identity, outcome: 'served', headers: input.headers }
         break
-      case 'exhausted':
+      case 'exhausted': {
+        const { window, pool } = input
+        if (window !== '5h' && window !== '7d') return
+        if (
+          'pool' in input &&
+          (typeof pool !== 'string' || pool.length === 0 || pool.includes(':'))
+        )
+          return
         payload = {
           ...identity,
           outcome: 'exhausted',
-          window: input.window,
+          window,
+          ...(pool ? { pool } : {}),
           ...(input.resetsAt !== undefined
             ? { resets_at: input.resetsAt }
             : {}),
         }
         break
+      }
       default:
         return
     }

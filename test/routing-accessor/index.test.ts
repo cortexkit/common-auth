@@ -267,7 +267,60 @@ describe('reportRouting', () => {
     expect(reportRouting(served)).toBeUndefined()
   })
 
-  test('sends only contract fields for served and exhausted outcomes', () => {
+  test('sends nothing for an invalid exhausted window', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    expect(
+      reportRouting({
+        ...served,
+        outcome: 'exhausted',
+        window: 'non-gemini:5h',
+      } as unknown as ReportRoutingInput),
+    ).toBeUndefined()
+    expect(report).not.toHaveBeenCalled()
+  })
+
+  test.each(['five_hour', 'seven_day', '1d', '', null, undefined, 5])(
+    'rejects unsupported exhausted window %j',
+    (window) => {
+      const report = mock((_payload: unknown) => {})
+      install(() => ({ report }))
+      expect(
+        reportRouting({
+          ...served,
+          outcome: 'exhausted',
+          window,
+        } as unknown as ReportRoutingInput),
+      ).toBeUndefined()
+      expect(report).not.toHaveBeenCalled()
+    },
+  )
+
+  test.each([
+    '',
+    ':non-gemini',
+    'non-gemini:5h',
+    'non-gemini:',
+    undefined,
+    null,
+    0,
+    false,
+    {},
+  ])('sends nothing for invalid exhausted pool %j', (pool) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    expect(
+      reportRouting({
+        ...served,
+        outcome: 'exhausted',
+        window: '5h',
+        pool,
+      } as unknown as ReportRoutingInput),
+    ).toBeUndefined()
+    expect(report).not.toHaveBeenCalled()
+  })
+
+  test('sends only contract fields for served and pool exhausted outcomes', () => {
     const report = mock((_payload: unknown) => {})
     const handle = { report }
     const routing = mock((_sessionId: string) => handle)
@@ -278,12 +331,14 @@ describe('reportRouting', () => {
       email: 'must not be sent',
       label: 'must not be sent',
       window: 'must not be sent',
+      pool: 'must not be sent',
       resetsAt: 123,
     } as ReportRoutingInput)
     reportRouting({
       ...served,
       outcome: 'exhausted',
-      window: '7d:sonnet',
+      window: '7d',
+      pool: 'non-gemini',
       resetsAt: 1_800_000_000_000,
     })
     expect(report.mock.calls).toEqual([
@@ -300,7 +355,8 @@ describe('reportRouting', () => {
           account_id: 'vault-account',
           credential_id: 'vault-credential',
           outcome: 'exhausted',
-          window: '7d:sonnet',
+          window: '7d',
+          pool: 'non-gemini',
           resets_at: 1_800_000_000_000,
         },
       ],
@@ -309,7 +365,7 @@ describe('reportRouting', () => {
     expect(routing.mock.calls).toEqual([['session'], ['session']])
   })
 
-  test('omits optional credential and reset fields and preserves header values', () => {
+  test('omits pool for whole-account exhaustion and preserves header values', () => {
     const sent: unknown[] = []
     install(() => ({
       report: (payload: unknown) => {
