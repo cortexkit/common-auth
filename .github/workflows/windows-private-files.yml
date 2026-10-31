@@ -150,6 +150,13 @@ jobs:
           if ($LASTEXITCODE) { throw 'Install failed' }
           bun test test/claustrum/hub.test.ts
           if ($LASTEXITCODE) { throw 'Discovery hub tests failed' }
+      - name: Lock contention and Windows private IO tests
+        if: always()
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          bun test test/fs/windows-private-files.test.ts test/fs/changing-lock-read.test.ts
+          if ($LASTEXITCODE) { throw 'Windows lock tests failed' }
   setup-npm-host:
     strategy:
       fail-fast: false
