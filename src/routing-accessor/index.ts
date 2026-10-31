@@ -172,8 +172,9 @@ export function reportRouting(input: ReportRoutingInput): void {
       case 'exhausted': {
         const { window, pool } = input
         if (window !== '5h' && window !== '7d') return
+        // An undefined pool means the whole account, as an omitted one does.
         if (
-          'pool' in input &&
+          pool !== undefined &&
           (typeof pool !== 'string' || pool.length === 0 || pool.includes(':'))
         )
           return

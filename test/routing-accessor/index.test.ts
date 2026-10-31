@@ -301,7 +301,6 @@ describe('reportRouting', () => {
     ':non-gemini',
     'non-gemini:5h',
     'non-gemini:',
-    undefined,
     null,
     0,
     false,
@@ -363,6 +362,21 @@ describe('reportRouting', () => {
     ])
     expect(report.mock.contexts).toEqual([handle, handle])
     expect(routing.mock.calls).toEqual([['session'], ['session']])
+  })
+
+  test('treats an explicitly undefined pool as whole-account exhaustion', () => {
+    // Callers often spread an optional field (`pool: maybePool`); that must not
+    // drop a valid whole-account report.
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({
+      ...served,
+      outcome: 'exhausted',
+      window: '7d',
+      pool: undefined,
+    } as ReportRoutingInput)
+    expect(report).toHaveBeenCalledTimes(1)
+    expect(report.mock.calls[0]?.[0]).not.toHaveProperty('pool')
   })
 
   test('omits pool for whole-account exhaustion and preserves header values', () => {
