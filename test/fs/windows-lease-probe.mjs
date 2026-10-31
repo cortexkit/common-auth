@@ -1,8 +1,9 @@
 import { mock } from 'bun:test'
 import assert from 'node:assert/strict'
+import { writeFileSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 // Isolate the overridden process.platform and mocked filesystem from POSIX tests.
 const originalRm = fs.rm
@@ -10,9 +11,41 @@ const originalRead = fs.readFile
 const originalWrite = fs.writeFile
 const originalMkdir = fs.mkdir
 const originalStat = fs.stat
-const root = await fs.mkdtemp(join(tmpdir(), 'lease-classification-'))
 const mode = process.argv[2]
 const errno = process.argv[3] ?? 'EBUSY'
+const renewalMode = mode === 'renew' || mode.endsWith('-renew')
+const noHost = process.argv[4] === 'no-host'
+const tracePath = process.argv[5]
+const root = await fs.mkdtemp(
+  join(tracePath ? dirname(tracePath) : tmpdir(), 'lease-classification-'),
+)
+const phases = []
+const started = performance.now()
+function phase(event) {
+  if (!renewalMode) return
+  phases.push({ event, ms: Math.round(performance.now() - started) })
+  if (tracePath) writeFileSync(tracePath, JSON.stringify(phases))
+}
+const originalSetTimeout = globalThis.setTimeout.bind(globalThis)
+if (renewalMode) {
+  // Observe callback entry before the lock module captures its timer function.
+  globalThis.setTimeout = (callback, delay, ...args) =>
+    originalSetTimeout(() => {
+      if (delay === 5) phase('timer-fired')
+      callback(...args)
+    }, delay)
+}
+// The host-liveness keepalive stands in for OpenCode or Pi, whose active host
+// keeps the event loop alive while the lock's renewal timer is unreferenced.
+// The no-host control intentionally omits it to measure a quiescent runtime.
+const hostLiveness =
+  renewalMode && !noHost ? setInterval(() => {}, 1_000) : null
+async function whenLost(lease) {
+  phase('awaiting-loss')
+  const loss = await lease.whenLost()
+  phase(`loss:${loss.reason}`)
+  return loss
+}
 let denyWrites = mode === 'acquire'
 let contentionReadReady = false
 let vanishedReads = 0
@@ -60,8 +93,10 @@ setPrivateFilesBackendForTest({
     await originalMkdir(path)
   },
   createPrivateFile: async (path, bytes) => {
-    if (denyWrites)
+    if (denyWrites) {
+      phase('renew-attempt-refused')
       throw Object.assign(new Error('IO refused'), { code: errno })
+    }
     await originalWrite(path, bytes, { flag: 'wx', mode: 0o600 })
   },
   verifyOwnerOnly: async (path) => {
@@ -164,7 +199,9 @@ try {
       ttlMs: 30_000,
       renew: mode === 'renew' || mode.endsWith('-renew'),
       renewIntervalMs: 5,
+      onRenewalTimer: (event) => phase(`timer-${event}`),
       onStep: async (step) => {
+        phase(step)
         if (
           mode.endsWith('-renew') &&
           step === 'renewal-write-ready' &&
@@ -179,7 +216,7 @@ try {
     if (mode.startsWith('missing-') || mode.startsWith('replaced-')) {
       if (mode.endsWith('-assert')) await displaceOwner()
       else {
-        const loss = await lease.whenLost()
+        const loss = await whenLost(lease)
         assert.equal(loss.reason, 'renewal-failed')
         assert.equal(renewalDisplaced, true)
       }
@@ -217,7 +254,7 @@ try {
       )
     } else {
       denyWrites = true
-      assert.equal((await lease.whenLost()).reason, 'renewal-failed')
+      assert.equal((await whenLost(lease)).reason, 'renewal-failed')
       await assert.rejects(
         lease.assertOwned(),
         (error) => error instanceof PrivateFileError && error.code === errno,
@@ -226,7 +263,11 @@ try {
     }
   }
   console.log(JSON.stringify({ mode, errno, checked: true }))
+} catch (error) {
+  if (renewalMode) console.error(JSON.stringify({ mode, phases }))
+  throw error
 } finally {
+  if (hostLiveness) clearInterval(hostLiveness)
   await originalRm(root, { recursive: true, force: true })
 }
 

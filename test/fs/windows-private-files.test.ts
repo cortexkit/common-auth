@@ -447,6 +447,73 @@ for (const mode of ['acquire', 'release', 'renew'] as const) {
   })
 }
 
+test.skipIf(process.platform !== 'win32')(
+  'Windows renewal control records progress without a live host',
+  async () => {
+    for (const mode of ['renew', 'missing-renew', 'replaced-renew']) {
+      const trace = join(root, `${mode}.json`)
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          'test/fs/windows-lease-probe.mjs',
+          mode,
+          'EBUSY',
+          'no-host',
+          trace,
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+      )
+      const output = Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ])
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const result = await Promise.race([
+        output,
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), 1_000)
+        }),
+      ])
+      clearTimeout(timer)
+      if (result === null) {
+        child.kill()
+        await output
+      } else {
+        const [stdout, stderr, exit] = result
+        expect(stderr).toBe('')
+        expect(exit).toBe(0)
+        expect(JSON.parse(stdout)).toEqual({
+          mode,
+          errno: 'EBUSY',
+          checked: true,
+        })
+      }
+      const phases = JSON.parse(await readFile(trace, 'utf8')) as {
+        event: string
+        ms: number
+      }[]
+      expect(phases.some(({ event }) => event === 'timer-scheduled')).toBe(true)
+      expect(phases.some(({ event }) => event === 'awaiting-loss')).toBe(true)
+      expect(phases.some(({ event }) => event === 'timer-fired')).toBe(
+        result !== null,
+      )
+      if (result === null) {
+        // Only slow controls print phases; normal successful probes stay quiet.
+        console.warn(
+          JSON.stringify({
+            runtime: Bun.version,
+            mode,
+            hostLiveness: false,
+            outcome: 'no-timer-progress',
+            phases,
+          }),
+        )
+      }
+    }
+  },
+)
+
 test('Windows lease retries when the contention owner read finds a vanished lock', async () => {
   const child = Bun.spawn(
     [process.execPath, 'test/fs/windows-lease-probe.mjs', 'vanishing-acquire'],

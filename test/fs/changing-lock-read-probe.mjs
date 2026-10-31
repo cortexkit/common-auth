@@ -200,6 +200,9 @@ async function native() {
     ownerId: 'successor',
     expiresAt: Date.now() + 30_000,
   })
+  // Start PowerShell before the acquire deadline; only the handle/open race
+  // belongs inside that budget, not cold process startup on a Windows runner.
+  const holder = await holdForChange(mode, replacement)
   setPrivateFilesBackendForTest({
     ...api,
     readOwnerOnly: async (path) => {
@@ -207,7 +210,7 @@ async function native() {
         return api.readOwnerOnly(path)
       // Verification already finished. Pin the holder exclusively during its
       // delete/rewrite so the real native reader (not an injected error) fails.
-      const holder = await holdForChange(mode, replacement)
+      await holder.open()
       try {
         return await api.readOwnerOnly(path)
       } catch (error) {
@@ -250,7 +253,7 @@ async function native() {
       await lock.assertOwned()
       committed = true
     },
-  )
+  ).finally(() => holder.finish())
   assert.equal(failures, 1)
   assert.equal(committed, true)
   assert.ok(!steps.includes('stale-lock-removed'))
@@ -270,6 +273,9 @@ async function native() {
 async function holdForChange(action, replacement) {
   const script = `
     $ErrorActionPreference = 'Stop'
+    [Console]::Out.WriteLine('started')
+    [Console]::Out.Flush()
+    if ([Console]::ReadLine() -ne 'open') { exit 0 }
     $options = if ($env:LOCK_READ_ACTION -eq 'delete') { [IO.FileOptions]::DeleteOnClose } else { [IO.FileOptions]::None }
     $file = [IO.FileStream]::new($env:LOCK_READ_PATH, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None, 4096, $options)
     try {
@@ -308,23 +314,35 @@ async function holdForChange(action, replacement) {
   )
   const stderr = new Response(child.stderr).text()
   const reader = child.stdout.getReader()
-  let ready = ''
-  while (!ready.includes('\n')) {
-    const result = await reader.read()
-    if (result.done) {
-      await child.exited
-      assert.fail(`holder exited before opening its file: ${await stderr}`)
+  async function line() {
+    let text = ''
+    while (!text.includes('\n')) {
+      const result = await reader.read()
+      if (result.done) {
+        await child.exited
+        assert.fail(`holder exited before its handshake: ${await stderr}`)
+      }
+      text += new TextDecoder().decode(result.value)
     }
-    ready += new TextDecoder().decode(result.value)
+    return text.trim()
   }
-  assert.equal(ready.trim(), 'ready')
+  assert.equal(await line(), 'started')
+  let finishing
   return {
-    async finish() {
-      child.stdin.write('release\n')
-      await child.stdin.end()
-      assert.equal(await child.exited, 0, await stderr)
-      assert.equal(await stderr, '')
-      reader.releaseLock()
+    async open() {
+      child.stdin.write('open\n')
+      await child.stdin.flush()
+      assert.equal(await line(), 'ready')
+    },
+    finish() {
+      finishing ??= (async () => {
+        child.stdin.write('release\n')
+        await child.stdin.end()
+        assert.equal(await child.exited, 0, await stderr)
+        assert.equal(await stderr, '')
+        reader.releaseLock()
+      })()
+      return finishing
     },
   }
 }
