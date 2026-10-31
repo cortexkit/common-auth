@@ -489,6 +489,10 @@ test.skipIf(process.platform !== 'win32')(
           checked: true,
         })
       }
+      // Bun 1.3.14 on Windows does not service this unref'ed timer in an idle
+      // process. Expect only that runtime's no-host control to stall; the paired
+      // host-liveness probes must still renew and report loss on every runtime.
+      expect(result === null).toBe(Bun.version === '1.3.14')
       const phases = JSON.parse(await readFile(trace, 'utf8')) as {
         event: string
         ms: number
