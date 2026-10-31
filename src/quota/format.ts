@@ -5,10 +5,10 @@
 //
 // The rules: a window is named by its length (`5h`, `7d`), or, for a window
 // that binds only one model family, by the label the plugin stored it under.
-// Every figure is "% left". A window the provider did not report (an absence
-// record or a retirement tombstone) is left out rather than written as "not
-// reported". A reset is a short time from now (`resets 2h`). A reading older
-// than fifteen minutes says how old it is (`checked 3h ago`).
+// Every reported window figure is "% left". A window the provider did not
+// report (an absence record or a retirement tombstone) is left out rather than
+// written as "not reported". A reset is a short time from now (`resets 2h`).
+// A reading older than fifteen minutes says how old it is (`checked 3h ago`).
 //
 // Like the rest of this module it reads no clock: `now` is a parameter.
 
@@ -54,6 +54,8 @@ export interface QuotaTextOptions {
 
 export interface QuotaWindowPart {
   kind: 'window' | 'budget'
+  /** Unknown windows have no dated percentage; budgets retain their own wording. */
+  reading: 'known' | 'unknown'
   /** The display name of a quota window, or `credits` for the budget. */
   name: string
   /**
@@ -69,7 +71,8 @@ export interface QuotaWindowPart {
   remainingPercent?: number
   /** A bare relative reset span such as `4d`, only when the reset is future. */
   resetIn?: string
-  checkedAt: number
+  /** The reading time, omitted for a window with no reading. */
+  checkedAt?: number
   /** Whether the reset followed this reading and has arrived by `now`. */
   resetSinceReading: boolean
 }
@@ -164,15 +167,17 @@ function displayOrder(left: ProjectedLimit, right: ProjectedLimit): number {
 }
 
 /**
- * Structured quota wording for layouts that need one row per window. The
- * windows use the same filtering and order as `quotaTextParts`; future resets
- * and the optional age keep the shared formatter's wording.
+ * Structured quota wording for layouts that need one row per window.
+ * Windows without a dated percentage remain as explicit unknown parts. Limits
+ * marked absent (not reported) or retired (no longer tracked) remain omitted.
+ * Reported windows, future resets and the optional age keep the shared
+ * formatter's wording and order.
  */
 export function quotaWindowParts(
   quota: ProjectedQuota | undefined,
   options: QuotaTextOptions,
 ): QuotaParts {
-  const { windows, age } = scopedWindowParts(quota, options)
+  const { windows, age } = scopedWindowParts(quota, options, true)
   const parts = windows.map(({ part }) => part)
   return age === undefined ? { windows: parts } : { windows: parts, age }
 }
@@ -211,39 +216,58 @@ interface ScopedWindowPart {
   spent?: boolean
 }
 
+function hasWindowReading(
+  limit: ProjectedLimit,
+): limit is ProjectedLimit & { remainingPercent: number } {
+  return (
+    Number.isFinite(limit.remainingPercent) && Number.isFinite(limit.checkedAt)
+  )
+}
+
 /**
  * `quotaWindowParts` with each window's scope kept beside it. The narrow form
  * needs the scope to name and pick model-scoped windows; the public parts do
- * not carry it, so their shape stays as it was.
+ * not carry the scope.
  */
 function scopedWindowParts(
   quota: ProjectedQuota | undefined,
   options: QuotaTextOptions,
+  includeUnknown = false,
 ): { windows: ScopedWindowPart[]; age?: string } {
   if (!quota) return { windows: [] }
   const { now } = options
   const readings = quota.limits
     .filter(
       (limit) =>
-        limit.kind === 'reading' && limit.remainingPercent !== undefined,
+        limit.kind === 'reading' && (includeUnknown || hasWindowReading(limit)),
     )
     .sort(displayOrder)
   const windows: ScopedWindowPart[] = readings.map((limit) => {
-    const remainingPercent = clampPercent(limit.remainingPercent ?? 0)
+    const part: QuotaWindowPart = hasWindowReading(limit)
+      ? {
+          kind: 'window',
+          reading: 'known',
+          name: quotaWindowName(limit),
+          short: '',
+          figure: percentLeft(limit.remainingPercent),
+          remainingPercent: clampPercent(limit.remainingPercent),
+          checkedAt: limit.checkedAt,
+          ...resetDetails(limit.resetsAt, limit.checkedAt, now),
+        }
+      : {
+          kind: 'window',
+          reading: 'unknown',
+          name: quotaWindowName(limit),
+          short: '',
+          figure: 'no reading',
+          resetSinceReading: false,
+        }
     return {
       scope: limit.scope,
       ...(limit.windowMinutes === undefined
         ? {}
         : { windowMinutes: limit.windowMinutes }),
-      part: {
-        kind: 'window',
-        name: quotaWindowName(limit),
-        short: '',
-        figure: percentLeft(limit.remainingPercent ?? 0),
-        remainingPercent,
-        checkedAt: limit.checkedAt,
-        ...resetDetails(limit.resetsAt, limit.checkedAt, now),
-      },
+      part,
     }
   })
   const budget = quota.budget
@@ -259,6 +283,7 @@ function scopedWindowParts(
       spent: budget.reached,
       part: {
         kind: 'budget',
+        reading: 'known',
         name: 'credits',
         short: '',
         figure,
@@ -272,8 +297,13 @@ function scopedWindowParts(
   }
 
   withShortNames(windows)
-  if (windows.length > 0) {
-    const age = now - Math.min(...windows.map(({ part }) => part.checkedAt))
+  const readingTimes = windows.flatMap(({ part }) =>
+    part.reading === 'known' && part.checkedAt !== undefined
+      ? [part.checkedAt]
+      : [],
+  )
+  if (readingTimes.length > 0) {
+    const age = now - Math.min(...readingTimes)
     if (age > (options.staleAfterMs ?? QUOTA_STALE_AFTER_MS)) {
       return { windows, age: `checked ${shortSpan(age)} ago` }
     }
@@ -478,13 +508,13 @@ export function quotaTextParts(
   options: QuotaTextOptions,
 ): string[] {
   if (options.form === 'narrow') return narrowTextParts(quota, options)
-  const parts = quotaWindowParts(quota, options)
+  const { windows, age } = scopedWindowParts(quota, options)
   const full = (options.form ?? 'full') === 'full'
-  const text = parts.windows.map((part) => {
+  const text = windows.map(({ part }) => {
     const reset = full && part.resetIn ? `, resets ${part.resetIn}` : ''
     return `${part.kind === 'budget' ? '' : `${part.name} `}${part.figure}${reset}`
   })
-  return parts.age === undefined ? text : [...text, parts.age]
+  return age === undefined ? text : [...text, age]
 }
 
 /**

@@ -255,10 +255,69 @@ describe('shared quota wording', () => {
     }
   })
 
+  test('structured windows keep no reading explicit and out of text summaries', () => {
+    const known: ProjectedLimit = {
+      kind: 'reading',
+      scope: 'all',
+      label: 'short',
+      windowMinutes: 300,
+      remainingPercent: 75,
+      checkedAt: now,
+      resetsAt: at(2 * HOUR),
+    }
+    for (const missing of [
+      { remainingPercent: undefined },
+      { remainingPercent: null },
+      { remainingPercent: Number.NaN },
+      { remainingPercent: Number.POSITIVE_INFINITY },
+      { remainingPercent: undefined, checkedAt: now - 3 * HOUR },
+      { checkedAt: undefined },
+      { checkedAt: null },
+      { checkedAt: Number.NaN },
+      { checkedAt: Number.POSITIVE_INFINITY },
+    ]) {
+      // Runtime adapters may pass incomplete readings before the first poll.
+      const unknown = {
+        ...known,
+        label: 'long',
+        windowMinutes: 10080,
+        ...missing,
+      } as unknown as ProjectedLimit
+      const quota: ProjectedQuota = { scope: 'all', limits: [unknown, known] }
+      const parts = quotaWindowParts(quota, { now })
+      expect(parts.windows).toHaveLength(2)
+      expect(parts.windows[0]).toMatchObject({
+        reading: 'known',
+        remainingPercent: 75,
+      })
+      expect(parts.windows[1]).toMatchObject({
+        reading: 'unknown',
+        name: '7d',
+        figure: 'no reading',
+        resetSinceReading: false,
+      })
+      expect(parts.windows[1]?.remainingPercent).toBeUndefined()
+      expect(parts.windows[1]?.resetIn).toBeUndefined()
+      expect(parts.age).toBeUndefined()
+      for (const form of ['full', 'compact', 'narrow'] as const) {
+        expect(quotaTextParts(quota, { now, form })).toEqual([
+          form === 'full' ? '5h 75% left, resets 2h' : '5h 75% left',
+        ])
+      }
+      expect(
+        quotaTextParts(
+          { ...quota, limits: [unknown] },
+          { now, form: 'narrow' },
+        ),
+      ).toEqual([])
+    }
+  })
+
   test('structured parts expose the figures, percentages, and future reset spans', () => {
     expect(quotaWindowParts(projectQuota(openai), { now }).windows).toEqual([
       {
         kind: 'window',
+        reading: 'known',
         name: '5h',
         short: '5h',
         figure: '58% left',
@@ -269,6 +328,7 @@ describe('shared quota wording', () => {
       },
       {
         kind: 'window',
+        reading: 'known',
         name: '7d',
         short: '7d',
         figure: '90% left',
@@ -279,6 +339,7 @@ describe('shared quota wording', () => {
       },
       {
         kind: 'budget',
+        reading: 'known',
         name: 'credits',
         short: 'cr',
         figure: 'credits 75% left',
