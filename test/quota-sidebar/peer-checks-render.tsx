@@ -100,6 +100,7 @@ switch (check) {
     const columns = check.includes('26') ? 26 : 20
     const part = {
       kind: 'window' as const,
+      reading: 'known' as const,
       name: '7d',
       short: '7d',
       checkedAt: NOW,
@@ -175,9 +176,11 @@ switch (check) {
                 {
                   part: {
                     kind: 'window',
+                    reading: 'known',
                     name: '',
                     short: '',
                     figure: '50% left',
+                    remainingPercent: 50,
                     checkedAt: NOW,
                     resetSinceReading: false,
                   },

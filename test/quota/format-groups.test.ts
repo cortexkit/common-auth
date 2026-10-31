@@ -362,9 +362,10 @@ function rendered(formatter: Formatter, quota: ProjectedQuota) {
   }
 }
 
-// 0.23.0 added `short` to each part. The comparison with 0.20.0 leaves it
-// out, so every field 0.20.0 had must still read the same; `short` itself is
-// tested beside the narrow line in format.test.ts.
+// The comparison with the published common-auth 0.20.0 formatter omits only
+// the later `short` and `reading` metadata, preserving all original fields.
+// Generated windows all have dated readings; `short` and unknown states are
+// tested in format.test.ts.
 const live: Formatter = {
   formatQuota,
   quotaTextParts,
@@ -372,8 +373,15 @@ const live: Formatter = {
     const parts = quotaWindowParts(quota, options)
     return {
       ...parts,
-      windows: parts.windows.map(({ short: _short, ...part }) => part),
-    } as ReturnType<typeof quotaWindowParts>
+      windows: parts.windows.map(
+        ({ short: _short, reading, checkedAt, ...part }) => {
+          if (reading !== 'known' || checkedAt === undefined) {
+            throw new Error('Historical comparison requires a dated reading')
+          }
+          return { ...part, checkedAt }
+        },
+      ),
+    }
   },
   isQuotaStale,
 }
