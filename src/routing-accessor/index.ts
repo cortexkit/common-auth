@@ -54,9 +54,11 @@ export type ReportRoutingInput = RoutingReportIdentity &
         /** The exhausted quota window; keep scoped quota groups in `pool`. */
         window: '5h' | '7d'
         /**
-         * Scoped quota group, such as `non-gemini`.
-         * Must be a non-empty string without `:`. Omit to block the whole
-         * account; include to block only this pool.
+         * Scoped quota group, such as Antigravity's `3p` or `gemini`.
+         * Must match `^[a-z0-9._-]{1,64}$`. Routing compares names exactly, so
+         * callers must lowercase names from elsewhere (e.g. `Fable` to `fable`).
+         * Names are never rewritten here. Omit or pass `undefined` to block the
+         * whole account; include to block only this pool.
          */
         pool?: string
         /** Optional reset time in epoch milliseconds. */
@@ -175,7 +177,7 @@ export function reportRouting(input: ReportRoutingInput): void {
         // An undefined pool means the whole account, as an omitted one does.
         if (
           pool !== undefined &&
-          (typeof pool !== 'string' || pool.length === 0 || pool.includes(':'))
+          (typeof pool !== 'string' || !/^[a-z0-9._-]{1,64}$/.test(pool))
         )
           return
         payload = {

@@ -301,6 +301,9 @@ describe('reportRouting', () => {
     ':non-gemini',
     'non-gemini:5h',
     'non-gemini:',
+    'Fable',
+    'a'.repeat(65),
+    'pool name',
     null,
     0,
     false,
@@ -317,6 +320,29 @@ describe('reportRouting', () => {
       } as unknown as ReportRoutingInput),
     ).toBeUndefined()
     expect(report).not.toHaveBeenCalled()
+  })
+
+  test('sends an exhausted pool name of 64 characters unchanged', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    const pool = 'a'.repeat(64)
+    reportRouting({
+      ...served,
+      outcome: 'exhausted',
+      window: '5h',
+      pool,
+    })
+    expect(report.mock.calls).toEqual([
+      [
+        {
+          account_id: 'vault-account',
+          credential_id: 'vault-credential',
+          outcome: 'exhausted',
+          window: '5h',
+          pool,
+        },
+      ],
+    ])
   })
 
   test('sends only contract fields for served and pool exhausted outcomes', () => {

@@ -959,12 +959,14 @@ before waiting, and still performs its normal vault authorization before a send.
 optional `pool` and `resets_at` for `exhausted`. `resetsAt` is epoch milliseconds;
 `window` must be `5h` or `7d`. The THALAMUS bridge maps these to routing's
 `five_hour` and `seven_day`. `pool` names a scoped quota group, such as
-`non-gemini`: omitting it blocks the whole account, while including it
-blocks only that pool. A pool must be a non-empty string without `:`; never
-combine a pool and window in one string. Invalid windows or present but invalid
-pools are silently ignored, including for plain JavaScript callers. No token,
-email, label or other input metadata is forwarded. Callers **must pass only
-rate-limit headers**, not the whole response headers: header values are passed
+Antigravity's `3p` or `gemini`: omitting it or passing `undefined` blocks the whole
+account, while including it blocks only that pool. A pool must match
+`^[a-z0-9._-]{1,64}$`; never combine a pool and window in one string. Routing
+compares names exactly, so callers must lowercase names from elsewhere (for
+example, `Fable` to `fable`). The accessor never rewrites names. Invalid windows
+or present but invalid pools are silently ignored, including for plain JavaScript
+callers. No token, email, label or other input metadata is forwarded. Callers
+**must pass only rate-limit headers**, not the whole response headers: values are passed
 through unchanged, not filtered or redacted by this client. Credential health
 remains the vault's responsibility; this client exposes only served and
 exhausted reports.
