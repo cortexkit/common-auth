@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { Dirent } from 'node:fs'
+import type { Dirent, Stats } from 'node:fs'
 import {
   chmod,
   mkdir,
@@ -10,6 +10,7 @@ import {
   stat,
   unlink,
 } from 'node:fs/promises'
+import { uptime } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
   ensurePrivateDirectory,
@@ -26,6 +27,52 @@ export interface PortFileEntry {
   token: string
   pid: number
   startedAt: number
+}
+
+interface PortFileClock {
+  /** Internal clock seams for deterministic boot-time checks. */
+  now?: () => number
+  uptime?: () => number
+}
+
+function staleBefore(clock: PortFileClock): number {
+  // A five-minute margin favors keeping a live record when clocks are uncertain.
+  return (clock.now ?? Date.now)() - (clock.uptime ?? uptime)() * 1000 - 300_000
+}
+
+function isStalePortFile(
+  entry: PortFileEntry,
+  info: Stats | undefined,
+  cutoff: number,
+): boolean {
+  const time = entry.startedAt === undefined ? info?.mtimeMs : entry.startedAt
+  return typeof time === 'number' && Number.isFinite(time) && time < cutoff
+}
+
+async function removeStalePortFile(
+  path: string,
+  raw: string,
+  info: Stats | undefined,
+  beforeRemove?: (path: string) => void | Promise<void>,
+): Promise<void> {
+  if (!info) return
+  await beforeRemove?.(path)
+  try {
+    // A live PID may have replaced its old record while the sweep was reading it.
+    const current = await readPrivateText(path)
+    const identity = await stat(path)
+    if (
+      current === raw &&
+      identity.dev === info.dev &&
+      identity.ino === info.ino &&
+      identity.mtimeMs === info.mtimeMs &&
+      identity.size === info.size
+    )
+      await unlink(path).catch(() => {})
+  } catch (error) {
+    if (error instanceof PrivateFileError && error.code !== 'ENOENT')
+      throw error
+  }
 }
 
 /**
@@ -189,7 +236,12 @@ export async function sweepRpcState(
   activeDir: string,
   isManagedDir: (name: string) => boolean,
   log?: RpcLogChannel,
+  options: PortFileClock & {
+    /** Internal seam for replacing a stale record before its identity recheck. */
+    beforeRemove?: (path: string) => void | Promise<void>
+  } = {},
 ): Promise<void> {
+  const cutoff = staleBefore(options)
   let projectDirs: Dirent<string>[]
   try {
     projectDirs = await readdir(root, { withFileTypes: true })
@@ -214,6 +266,7 @@ export async function sweepRpcState(
     for (const name of names) {
       if (!name.startsWith('port-') || !name.endsWith('.json')) continue
       const portFile = join(dir, name)
+      const info = await stat(portFile).catch(() => undefined)
       let raw: string | undefined
       try {
         raw = await readPrivateText(portFile)
@@ -236,12 +289,14 @@ export async function sweepRpcState(
       }
       const entry = parsed
       if (!pidAlive(entry.pid)) await unlink(portFile).catch(() => {})
+      else if (isStalePortFile(entry, info, cutoff))
+        await removeStalePortFile(portFile, raw, info, options.beforeRemove)
     }
     if (resolve(dir) !== active) await rmdir(dir).catch(() => {})
   }
 }
 
-export interface DiscoverPortFileOptions {
+export interface DiscoverPortFileOptions extends PortFileClock {
   /**
    * Return only the expected PID's entry, or null; never fall back to
    * another live server. Without an expected PID nothing matches, so the
@@ -255,12 +310,15 @@ export interface DiscoverPortFileOptions {
 export async function portFileIdentity(
   dir: string,
   entry: PortFileEntry,
+  options: PortFileClock = {},
 ): Promise<string | null> {
+  const cutoff = staleBefore(options)
   if (!pidAlive(entry.pid)) return null
   const path = join(resolve(dir), `port-${entry.pid}.json`)
   try {
     if (windowsPrivateFiles) await verifyPrivate(path, 'file')
     const info = await stat(path)
+    if (isStalePortFile(entry, info, cutoff)) return null
     return `${path}:${info.dev}:${info.ino}:${info.mtimeMs}:${info.size}`
   } catch (error) {
     if (error instanceof PrivateFileError && error.code !== 'ENOENT')
@@ -274,6 +332,7 @@ export async function discoverPortFile(
   expectedPid?: number,
   options: DiscoverPortFileOptions = {},
 ): Promise<PortFileEntry | null> {
+  const cutoff = staleBefore(options)
   let names: string[]
   try {
     if (windowsPrivateFiles) await verifyPrivate(dir, 'directory')
@@ -291,8 +350,13 @@ export async function discoverPortFile(
         await readPrivateText(join(dir, name)),
       ) as PortFileEntry
       if (isUsablePortFileEntry(parsed, name)) {
-        if (pidAlive(parsed.pid)) live.push(parsed)
-        else await unlink(join(dir, name)).catch(() => {})
+        if (pidAlive(parsed.pid)) {
+          const info =
+            parsed.startedAt === undefined
+              ? await stat(join(dir, name)).catch(() => undefined)
+              : undefined
+          if (!isStalePortFile(parsed, info, cutoff)) live.push(parsed)
+        } else await unlink(join(dir, name)).catch(() => {})
       }
     } catch (error) {
       if (error instanceof PrivateFileError && error.code !== 'ENOENT')

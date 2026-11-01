@@ -81,7 +81,7 @@ describe('port-file', () => {
         port: 1,
         token: 'expected',
         pid: expectedPid,
-        startedAt: 1,
+        startedAt: Date.now() - 2000,
       }),
       'utf8',
     )
@@ -91,7 +91,7 @@ describe('port-file', () => {
         port: 2,
         token: 'newer-other',
         pid: process.pid,
-        startedAt: 3,
+        startedAt: Date.now(),
       }),
       'utf8',
     )
@@ -110,7 +110,7 @@ describe('port-file', () => {
         port: 1,
         token: 'older',
         pid: olderPid,
-        startedAt: 1,
+        startedAt: Date.now() - 1000,
       }),
       'utf8',
     )
@@ -120,7 +120,7 @@ describe('port-file', () => {
         port: 2,
         token: 'newer',
         pid: process.pid,
-        startedAt: 2,
+        startedAt: Date.now(),
       }),
       'utf8',
     )
@@ -138,7 +138,7 @@ describe('port-file', () => {
         port: 1,
         token: 'older',
         pid: olderPid,
-        startedAt: 1,
+        startedAt: Date.now() - 1000,
       }),
       'utf8',
     )
@@ -148,7 +148,7 @@ describe('port-file', () => {
         port: 2,
         token: 'newer',
         pid: process.pid,
-        startedAt: 2,
+        startedAt: Date.now(),
       }),
       'utf8',
     )
@@ -165,7 +165,7 @@ describe('port-file', () => {
         port: 1,
         token: 'live',
         pid: process.pid,
-        startedAt: 1,
+        startedAt: Date.now() - 1000,
       }),
       'utf8',
     )
@@ -426,7 +426,12 @@ test('discovery unlinks usable dead entries, ignores missing finite ports and pr
   const unusable = join(dir, `port-${process.ppid}.json`)
   await writeFile(
     live,
-    JSON.stringify({ pid: process.pid, port: 1, token: 'live', startedAt: 1 }),
+    JSON.stringify({
+      pid: process.pid,
+      port: 1,
+      token: 'live',
+      startedAt: Date.now(),
+    }),
   )
   await writeFile(
     dead,

@@ -147,13 +147,13 @@ test('exactPid discovery returns the expected pid entry over a newer one', async
     pid: process.pid,
     port: 41_011,
     token: TOKEN,
-    startedAt: 1,
+    startedAt: Date.now() - 1000,
   })
   await writeEntry(dir, process.ppid, {
     pid: process.ppid,
     port: 41_012,
     token: TOKEN,
-    startedAt: 2,
+    startedAt: Date.now(),
   })
   expect(
     (await discoverPortFile(dir, process.pid, { exactPid: true }))?.port,
