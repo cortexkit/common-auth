@@ -11,7 +11,12 @@ async function probe(mode: string) {
     child.exited,
   ])
   if (exit !== 0) throw new Error(`${mode} failed\n${stdout}\n${stderr}`)
-  expect(stderr).toBe('')
+  // The probe notes a slow PowerShell start on stderr; anything else fails.
+  expect(
+    stderr
+      .split('\n')
+      .filter((line) => line && !line.startsWith('holder still starting')),
+  ).toEqual([])
   return JSON.parse(stdout)
 }
 
@@ -27,7 +32,8 @@ for (const action of ['delete', 'rewrite']) {
   test.skipIf(process.platform !== 'win32')(
     `Windows native contention read retries while the holder ${action}s its lock`,
     async () => {
-      expect(await probe(action)).toEqual({
+      const { holderStartMs, ...result } = await probe(action)
+      expect(result).toEqual({
         action,
         win32Code: 32,
         reason: 'io-error',
@@ -35,6 +41,12 @@ for (const action of ['delete', 'rewrite']) {
         failures: 1,
         committed: true,
       })
+      expect(holderStartMs).toBeGreaterThanOrEqual(0)
     },
+    // The probe starts a PowerShell holder before the lock's own 3 s acquire
+    // deadline begins. A cold PowerShell start on windows-2022 runners has
+    // measured up to about 14 s, past Bun's 5 s default; the lock deadline
+    // itself is unchanged.
+    30_000,
   )
 }

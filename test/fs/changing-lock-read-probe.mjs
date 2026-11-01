@@ -202,7 +202,10 @@ async function native() {
   })
   // Start PowerShell before the acquire deadline; only the handle/open race
   // belongs inside that budget, not cold process startup on a Windows runner.
+  // Its startup time is reported so a slow run shows where the time went.
+  const holderStarted = performance.now()
   const holder = await holdForChange(mode, replacement)
+  const holderStartMs = Math.round(performance.now() - holderStarted)
   setPrivateFilesBackendForTest({
     ...api,
     readOwnerOnly: async (path) => {
@@ -266,6 +269,7 @@ async function native() {
       stage: observed.stage,
       failures,
       committed,
+      holderStartMs,
     }),
   )
 }
@@ -314,6 +318,14 @@ async function holdForChange(action, replacement) {
   )
   const stderr = new Response(child.stderr).text()
   const reader = child.stdout.getReader()
+  const spawned = performance.now()
+  // A timed-out test kills this probe and keeps only what reached stderr, so
+  // say when PowerShell is slow to start; a fast start prints nothing.
+  const slowStart = setTimeout(() => {
+    process.stderr.write(
+      `holder still starting after ${Math.round(performance.now() - spawned)} ms\n`,
+    )
+  }, 2_000)
   async function line() {
     let text = ''
     while (!text.includes('\n')) {
@@ -327,6 +339,7 @@ async function holdForChange(action, replacement) {
     return text.trim()
   }
   assert.equal(await line(), 'started')
+  clearTimeout(slowStart)
   let finishing
   return {
     async open() {
