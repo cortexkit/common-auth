@@ -1,7 +1,6 @@
 import { AsyncResource } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { createLogger } from '../logger/index.js'
 import { mergeAccessState } from './merge-laws.js'
 import {
   createLimitsNamespace,
@@ -11,12 +10,22 @@ import {
 } from './namespace.js'
 
 const detached = new AsyncResource('common-auth-limits-recovery')
-const logger = createLogger('limits')
+
+/**
+ * Where a failed detached repair is reported. The limits export takes this from
+ * the caller rather than importing the shared logger, whose file sink would pull
+ * the Windows private-files module into every limits import.
+ */
+export interface LimitsRecoveryLogger {
+  warn(message: string, fields?: Record<string, unknown>): void
+}
 
 /** Readers never join the write lock; notify them after a detached repair lands. */
 export class EnvelopeRepair {
   private running?: Promise<void>
   private readonly listeners = new Set<() => void>()
+
+  constructor(private readonly logger?: LimitsRecoveryLogger) {}
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -35,7 +44,7 @@ export class EnvelopeRepair {
         succeeded = true
       } catch (error) {
         try {
-          logger.warn(
+          this.logger?.warn(
             'limits envelope recovery failed; agreement remains degraded',
             {
               error: error instanceof Error ? error.message : String(error),

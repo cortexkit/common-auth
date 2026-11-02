@@ -154,6 +154,15 @@ describe('limit signal contract', () => {
                 throw new Error('Optional peer must not be imported by limits')
               },
             )
+            // The Windows native module belongs to the file layers. Limits
+            // reaching it (through the shared logger's file sink, for one)
+            // would load a native addon for every limits import.
+            builder.onResolve(
+              { filter: /^@cortexkit\/private-files(?:\/|$)/ },
+              () => {
+                throw new Error('private-files must not be imported by limits')
+              },
+            )
           },
         },
       ],

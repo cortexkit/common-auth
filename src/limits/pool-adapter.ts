@@ -3,7 +3,11 @@ import { isDeepStrictEqual } from 'node:util'
 import { PoolOperationError } from '../store/errors.js'
 import type { PoolLimitsRow } from '../store/limits-namespace.js'
 import type { PoolStore } from '../store/pool.js'
-import { EnvelopeHistory, EnvelopeRepair } from './envelope-loss.js'
+import {
+  EnvelopeHistory,
+  EnvelopeRepair,
+  type LimitsRecoveryLogger,
+} from './envelope-loss.js'
 import type { IdentityBinding } from './identity.js'
 import {
   applyLimitsCommands,
@@ -22,6 +26,8 @@ export interface PoolLimitsAdapterOptions {
   readonly namespace: string
   readonly store: PoolStore
   readonly now?: () => number
+  /** Receives a warning when a detached envelope repair fails. */
+  readonly logger?: LimitsRecoveryLogger
 }
 
 function bindingsOf(
@@ -93,7 +99,7 @@ export async function createPoolLimitsAdapter(
   const update = store.updateLimitsNamespace.bind(store)
   const generation = randomUUID()
   const history = new EnvelopeHistory()
-  const repair = new EnvelopeRepair()
+  const repair = new EnvelopeRepair(options.logger)
   const now = options.now ?? Date.now
   const readBindings = async () => {
     const pool = await store.read()

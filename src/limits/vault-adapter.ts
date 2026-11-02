@@ -4,7 +4,11 @@ import {
   readVaultRoster,
   type VaultRosterFile,
 } from '../claustrum/roster.js'
-import { EnvelopeHistory, EnvelopeRepair } from './envelope-loss.js'
+import {
+  EnvelopeHistory,
+  EnvelopeRepair,
+  type LimitsRecoveryLogger,
+} from './envelope-loss.js'
 import type { IdentityBinding } from './identity.js'
 import {
   applyLimitsCommands,
@@ -21,6 +25,8 @@ export interface VaultLimitsAdapterOptions {
   readonly namespace: string
   readonly path: string
   readonly now?: () => number
+  /** Receives a warning when a detached envelope repair fails. */
+  readonly logger?: LimitsRecoveryLogger
 }
 
 function bindingsOf(
@@ -87,7 +93,7 @@ export async function createVaultLimitsAdapter(
   const { namespace, path } = options
   const generation = randomUUID()
   const history = new EnvelopeHistory()
-  const repair = new EnvelopeRepair()
+  const repair = new EnvelopeRepair(options.logger)
   const now = options.now ?? Date.now
   const read = async (
     previous?: LimitsNamespace,

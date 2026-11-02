@@ -22,11 +22,6 @@ import {
   type PersistenceAdapter,
 } from '../../src/limits/index.js'
 import { createVaultLimitsAdapter } from '../../src/limits/vault.js'
-import {
-  createCaptureSink,
-  initLogger,
-  resetLoggerForTest,
-} from '../../src/logger/index.js'
 import type { PoolStore } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
@@ -287,10 +282,18 @@ it('failed detached pool repair is logged without rejecting dispatch and later s
       await store.updateLimitsNamespace!(mutator)
     },
   }
+  const warnings: Array<{ message: string; fields?: unknown }> = []
+  const logged = deferred()
   const adapter = await createPoolLimitsAdapter({
     namespace: f.namespace,
     store: guarded,
     now: () => 100,
+    logger: {
+      warn(message, fields) {
+        warnings.push({ message, fields })
+        logged.resolve()
+      },
+    },
   })
   const marked = await adapter.commit([mark(await adapter.read())])
   let time = 100
@@ -303,14 +306,6 @@ it('failed detached pool repair is logged without rejecting dispatch and later s
       clearTimeout() {},
     },
   })
-  const capture = createCaptureSink()
-  const logged = deferred()
-  initLogger({
-    captureSink: (record) => {
-      capture.sink(record)
-      logged.resolve()
-    },
-  })
   const completed = nextRepair(adapter)
   try {
     await f.replace(undefined)
@@ -321,12 +316,10 @@ it('failed detached pool repair is logged without rejecting dispatch and later s
     await observed(hooks.lifetime, logged.promise)
     expect(owner.degradedAgreement).toBe(true)
     expect(await f.durable()).toBeUndefined()
-    expect(capture.records).toEqual([
+    expect(warnings).toEqual([
       {
-        channel: 'limits',
-        level: 'warn',
         message: 'limits envelope recovery failed; agreement remains degraded',
-        data: { error: 'repair write unavailable' },
+        fields: { error: 'repair write unavailable' },
       },
     ])
     fail = false
@@ -337,7 +330,6 @@ it('failed detached pool repair is logged without rejecting dispatch and later s
     expect((await f.durable())?.marks).toEqual(marked.snapshot.marks)
   } finally {
     await owner.dispose()
-    resetLoggerForTest()
   }
 })
 
