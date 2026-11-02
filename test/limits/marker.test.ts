@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
   type AccountKey,
+  ANTIGRAVITY_FAILURE_LADDER,
   type FailureHistory,
+  type FailureLadderAxes,
   type LimitSignal,
   type MarkerAxes,
   markFromSignal,
@@ -27,7 +29,7 @@ function signal(changes: Partial<LimitSignal> = {}): LimitSignal {
     ...changes,
   }
 }
-const ladder: MarkerAxes = { kind: 'failure-ladder', mergeLaw: 'max-until' }
+const ladder: MarkerAxes = ANTIGRAVITY_FAILURE_LADDER
 const hints: MarkerAxes = {
   kind: 'hint',
   mergeLaw: 'overwrite',
@@ -50,6 +52,74 @@ function failure(
 }
 
 describe('hint and failure-ladder marker', () => {
+  test('failure-ladder axes supply all duration choices', () => {
+    const custom: FailureLadderAxes = {
+      kind: 'failure-ladder',
+      mergeLaw: 'overwrite',
+      hintFloorMs: 17,
+      quotaSteps: [11, 22],
+      byKind: { 'rate-limit': 33, auth: 0 },
+      byReason: { custom: 44, 'zero-reason': 0 },
+      capacity: { baseMs: 66, spreadMs: 4 },
+      defaultMs: 77,
+    }
+    expect(
+      markFromSignal(signal({ retryAfterMs: 5, reason: 'custom' }), custom, {
+        now: 1000,
+      }),
+    ).toEqual({ scope: { kind: 'pool' }, until: 1017, mergeLaw: 'overwrite' })
+    expect(
+      markFromSignal(signal({ retryAfterMs: 50 }), custom, { now: 1000 })
+        ?.until,
+    ).toBe(1050)
+    expect(
+      markFromSignal(signal({ retryAfterMs: 0, reason: 'custom' }), custom, {
+        now: 1000,
+      })?.until,
+    ).toBe(1044)
+    let failures: FailureHistory = new Map()
+    for (const until of [1011, 1022, 1022, 1022]) {
+      failures = failure(failures, 1000)
+      expect(
+        markFromSignal(signal(), custom, { now: 1000, failures })?.until,
+      ).toBe(until)
+    }
+    expect(
+      markFromSignal(signal({ kind: 'rate-limit' }), custom, { now: 1000 })
+        ?.until,
+    ).toBe(1033)
+    expect(
+      markFromSignal(signal({ kind: 'auth' }), custom, { now: 1000 })?.until,
+    ).toBe(1000)
+    expect(
+      markFromSignal(signal({ reason: 'zero-reason' }), custom, { now: 1000 })
+        ?.until,
+    ).toBe(1000)
+    for (const [random, until] of [
+      [0, 1062],
+      [0.5, 1066],
+      [1, 1070],
+    ] as const) {
+      expect(
+        markFromSignal(signal({ kind: 'capacity' }), custom, {
+          now: 1000,
+          random,
+        })?.until,
+      ).toBe(until)
+    }
+    for (const reason of ['server-error', 'unknown', 'toString']) {
+      expect(
+        markFromSignal(signal({ kind: 'model-unavailable', reason }), custom, {
+          now: 1000,
+        })?.until,
+      ).toBe(1077)
+    }
+    expect(
+      markFromSignal(signal(), { ...custom, quotaSteps: [] }, { now: 1000 })
+        ?.until,
+    ).toBe(1077)
+  })
+
   test('AG-MARK-1 positive server hints win the reason ladder', () => {
     for (const [kind, retryAfterMs] of [
       ['quota-exhausted', 120000],
@@ -308,6 +378,7 @@ describe('hint, reset and disabled production axes', () => {
         now: 1000,
         explicitResetAt,
         window,
+        lendable: ['primary', 'secondary'],
         cached,
         defaultMs: 60000,
       })!

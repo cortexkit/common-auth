@@ -8,13 +8,19 @@ export {
 export type {
   FailureEvent,
   FailureHistory,
+  FailureLadderAxes,
   FailureStreak,
   LimitMark,
   MarkerAxes,
   MarkerHistory,
   MergeLaw,
 } from './marker.js'
-export { markFromSignal, markIsActive, reduceFailureHistory } from './marker.js'
+export {
+  ANTIGRAVITY_FAILURE_LADDER,
+  markFromSignal,
+  markIsActive,
+  reduceFailureHistory,
+} from './marker.js'
 export type { ResetSource, ResolvedReset } from './reset.js'
 export { resolveNamedWindowReset, resolveReset } from './reset.js'
 export type { FamilyOf, Scope } from './scope.js'

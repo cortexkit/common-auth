@@ -231,6 +231,7 @@ describe('ordered reset sources', () => {
         now,
         explicitResetAt: now + 900000,
         window: 'primary',
+        lendable: ['primary', 'secondary'],
         cached: { primary: now + 300000 },
         defaultMs: 60000,
       }),
@@ -242,10 +243,32 @@ describe('ordered reset sources', () => {
       resolveNamedWindowReset({
         now,
         window: 'secondary',
+        lendable: ['primary', 'secondary'],
         cached: { primary: now + 1000, secondary: now + 300000 },
         defaultMs: 60000,
       }),
     ).toEqual({ resetAt: now + 300000, source: 'cached' })
+  })
+
+  test('named reset lending follows caller-provided windows', () => {
+    expect(
+      resolveNamedWindowReset({
+        now,
+        window: 'rolling',
+        lendable: ['rolling'],
+        cached: { rolling: now + 120000 },
+        defaultMs: 60000,
+      }),
+    ).toEqual({ resetAt: now + 120000, source: 'cached' })
+    expect(
+      resolveNamedWindowReset({
+        now,
+        window: 'primary',
+        lendable: ['rolling'],
+        cached: { primary: now + 300000 },
+        defaultMs: 60000,
+      }),
+    ).toEqual({ resetAt: now + 60000, source: 'default' })
   })
 
   test('OA-12 invalid or passed own resets default, never borrowing another window', () => {
@@ -255,6 +278,7 @@ describe('ordered reset sources', () => {
           now,
           explicitResetAt: reset,
           window: 'primary',
+          lendable: ['primary', 'secondary'],
           cached: { primary: reset, secondary: now + 300000 },
           defaultMs: 60000,
         }),
@@ -264,6 +288,7 @@ describe('ordered reset sources', () => {
       resolveNamedWindowReset({
         now,
         window: 'capacity',
+        lendable: ['primary', 'secondary'],
         cached: { primary: now + 300000, capacity: now + 500000 },
         defaultMs: 60000,
       }),

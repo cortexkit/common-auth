@@ -31,11 +31,12 @@ export function resolveReset(
   return undefined
 }
 
-/** Only the named window may lend a reset, irrespective of headroom or age. */
+/** Only a window listed in lendable may supply its own cached reset. */
 export function resolveNamedWindowReset(input: {
   readonly now: number
   readonly explicitResetAt?: number
   readonly window: string
+  readonly lendable: readonly string[]
   readonly cached: Readonly<Record<string, number | undefined>>
   readonly defaultMs: number
 }): ResolvedReset | undefined {
@@ -53,10 +54,9 @@ export function resolveNamedWindowReset(input: {
       },
       {
         source: 'cached',
-        value:
-          input.window === 'primary' || input.window === 'secondary'
-            ? future(input.cached[input.window])
-            : undefined,
+        value: input.lendable.includes(input.window)
+          ? future(input.cached[input.window])
+          : undefined,
         unit: 'epoch-ms',
         zero: 'skip',
       },
