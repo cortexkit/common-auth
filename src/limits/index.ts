@@ -108,6 +108,13 @@ export {
   pruneLimitsNamespace,
   timedMarkKeyId,
 } from './namespace.js'
+export type {
+  LimitsPersistenceCommit,
+  LimitsPersistenceOutcome,
+  LimitsPersistenceSnapshot,
+  PersistenceAdapter,
+} from './persistence.js'
+export { LimitsPersistenceRefusal } from './persistence.js'
 export type { PiWaitOptions, PiWaitResult } from './pi-wait.js'
 export { waitForPi } from './pi-wait.js'
 export {
@@ -117,6 +124,14 @@ export {
   statusVaultOrder,
   windowRouter,
 } from './presets.js'
+export type {
+  LimitsClock,
+  LimitsDispatchView,
+  LimitsRegistry,
+  LimitsRegistryEvent,
+  LimitsRegistryOptions,
+} from './registry.js'
+export { acquireLimitsRegistry, LIMITS_REGISTRY_KEY } from './registry.js'
 export type {
   RequestExclusion,
   RequestHistory,
