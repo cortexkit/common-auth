@@ -84,6 +84,11 @@ export interface QuotaSectionOptions {
 
 export interface RoutingSectionOptions {
   /**
+   * Show how long the plugin may wait for the current account's limit to
+   * reset before switching. Opt in only when the plugin supports that policy.
+   */
+  sameAccountWait?: boolean
+  /**
    * Further `routing.mode` values the plugin routes as `ordered` with the
    * former main row moved (`main-first`, `fallback-first`), offered between
    * `ordered` and `sticky-balanced`.
@@ -678,6 +683,45 @@ function routingSection(
           : `Order set to ${result.ids.map(nameOf).join(', ')}.`
       },
     })
+  if (options.routing?.sameAccountWait) {
+    const waitLabel = 'Longest wait on the same account'
+    const waitChoices: MenuChoice[] = [
+      { value: '0', label: "Don't wait" },
+      { value: '15', label: '15 minutes' },
+      { value: 'max', label: 'Until the cache expires' },
+    ]
+    const rawWait = record(snap.settings.routing).maxSameAccountWait
+    const wait = String(rawWait === 0 || rawWait === 'max' ? rawWait : 15)
+    const waitName = (value: string) =>
+      waitChoices.find((choice) => choice.value === value)?.label ?? value
+    lines.push(`${waitLabel}: ${waitName(wait)}`)
+    actions.push({
+      id: 'maxSameAccountWait',
+      label: waitLabel,
+      group: ACTIONS_GROUP,
+      knobs: [
+        {
+          kind: 'choice',
+          id: 'maxSameAccountWait',
+          label: waitLabel,
+          choices: waitChoices,
+          value: wait,
+        },
+      ],
+      run: async ({ values }) => {
+        const value = String(values.maxSameAccountWait)
+        const maxSameAccountWait = value === 'max' ? 'max' : Number(value)
+        await store.updateSettings((settings) => {
+          settings.routing = {
+            ...record(settings.routing),
+            maxSameAccountWait,
+          }
+          return undefined
+        }, locks)
+        return `${waitLabel} set to ${waitName(value)}.`
+      },
+    })
+  }
   return {
     id: 'routing',
     slot: 'routing',
