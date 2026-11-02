@@ -18,6 +18,14 @@ export interface AskRoutingInput<
   candidates: readonly Candidate[]
   /** Defaults to 500 ms, clamped to 1–2000 ms. */
   deadlineMs?: number
+  /**
+   * Longest same-account hold, in seconds, that routing may advise. The
+   * plugin computes it as `min(maxSameAccountWait, cache expiry - now)` and
+   * sends 0 when it has no accepted response on the pinned account, because
+   * then there is no prompt cache worth waiting for. Fractions are floored and
+   * negatives become 0. Omit it to leave routing's default cap in force.
+   */
+  holdWaitMaxS?: number
 }
 
 export interface RoutingHold {
@@ -132,11 +140,15 @@ export async function askRouting<Candidate extends RoutingCandidate>(
       timer = setTimeout(() => resolve(undefined), deadlineMs)
       timer.unref()
     })
-    const pending: unknown = accountFor.call(
-      handle,
-      { provider: input.provider, modelId: input.modelId },
-      { deadlineMs },
-    )
+    const request: Record<string, unknown> = {
+      provider: input.provider,
+      modelId: input.modelId,
+    }
+    const cap = input.holdWaitMaxS
+    if (typeof cap === 'number' && Number.isFinite(cap)) {
+      request.hold_wait_max_s = Math.max(0, Math.floor(cap))
+    }
+    const pending: unknown = accountFor.call(handle, request, { deadlineMs })
     if (!isObject(pending) || typeof pending.then !== 'function')
       return undefined
     const answer: unknown = await Promise.race([pending, expired])

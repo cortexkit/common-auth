@@ -208,6 +208,42 @@ describe('askRouting', () => {
     expect(accountFor.mock.contexts[0]).toBe(handle)
   })
 
+  test.each([
+    [600, 600],
+    [12.9, 12],
+    [0, 0],
+    [-5, 0],
+  ])('sends the hold cap %p as hold_wait_max_s %p', async (cap, expected) => {
+    const accountFor = mock(() =>
+      Promise.resolve({ account_id: candidate.accountId }),
+    )
+    install(() => ({ accountFor }))
+    await askRouting({ ...input, holdWaitMaxS: cap })
+    expect(accountFor).toHaveBeenCalledWith(
+      {
+        provider: 'anthropic',
+        modelId: 'claude-sonnet',
+        hold_wait_max_s: expected,
+      },
+      { deadlineMs: 500 },
+    )
+  })
+
+  test.each([undefined, NaN, Infinity])(
+    'omits hold_wait_max_s for cap %p',
+    async (cap) => {
+      const accountFor = mock(() =>
+        Promise.resolve({ account_id: candidate.accountId }),
+      )
+      install(() => ({ accountFor }))
+      await askRouting({ ...input, holdWaitMaxS: cap })
+      expect(accountFor).toHaveBeenCalledWith(
+        { provider: 'anthropic', modelId: 'claude-sonnet' },
+        { deadlineMs: 500 },
+      )
+    },
+  )
+
   test('times out a never-settling accountFor using an unref timer', async () => {
     let expire: (() => void) | undefined
     const unref = mock(() => {})
