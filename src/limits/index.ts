@@ -58,6 +58,15 @@ export {
   readMaxSameAccountWait,
   sameAccountHoldFacts,
 } from './hold.js'
+export type {
+  AuthorizeCredentialEpoch,
+  IdentityBinding,
+} from './identity.js'
+export {
+  isIdentityCompatible,
+  retainVerifiedIdentity,
+  validateIdentityFence,
+} from './identity.js'
 export { holdDelayMs } from './jitter.js'
 export { sanitizeRefusalLabel } from './labels.js'
 export type {
@@ -76,6 +85,29 @@ export {
   markIsActive,
   reduceFailureHistory,
 } from './marker.js'
+export type { AccessOrder, TimedMarkEntry } from './merge-laws.js'
+export { mergeAccessState, mergeTimedMarkEntries } from './merge-laws.js'
+export type {
+  ClearTombstone,
+  CommittedOperation,
+  LimitsCommand,
+  LimitsCommandOutcome,
+  LimitsMergeContext,
+  LimitsMergeResult,
+  LimitsNamespace,
+  LimitsRejection,
+  MarkTarget,
+  NamespaceAccess,
+  NamespaceMark,
+  TimedMarkKey,
+} from './namespace.js'
+export {
+  applyLimitsCommands,
+  createLimitsNamespace,
+  LIMITS_HISTORY_BOUND,
+  pruneLimitsNamespace,
+  timedMarkKeyId,
+} from './namespace.js'
 export type { PiWaitOptions, PiWaitResult } from './pi-wait.js'
 export { waitForPi } from './pi-wait.js'
 export {
