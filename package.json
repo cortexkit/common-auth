@@ -68,6 +68,10 @@
       "types": "./dist/quota/index.d.ts",
       "import": "./dist/quota/index.js"
     },
+    "./limits": {
+      "types": "./dist/limits/index.d.ts",
+      "import": "./dist/limits/index.js"
+    },
     "./routing": {
       "types": "./dist/routing/index.d.ts",
       "import": "./dist/routing/index.js"
