@@ -1,10 +1,28 @@
 export { toOpenCode2LimitSignal } from './bridge.js'
+export type { ResetFormatInput, ResetFormatter } from './duration.js'
+export { formatDuration, formatReset } from './duration.js'
+export type {
+  BuiltRefusal,
+  HostRetry,
+  HttpRefusal,
+  OpenCode1Family,
+  RefusalFamily,
+  RefusalInput,
+  TextRefusal,
+  ThrownRefusal,
+} from './families.js'
+export {
+  buildRefusal,
+  ClaudeIncompleteError,
+  retryAfterSeconds,
+} from './families.js'
 export {
   classifyHeaders,
   classifyRetryAfter,
   resolveHeaderReset,
   resolveRetryAfter,
 } from './header-classifier.js'
+export { sanitizeRefusalLabel } from './labels.js'
 export type {
   FailureEvent,
   FailureHistory,
@@ -33,3 +51,14 @@ export type {
   LimitSignal,
   LimitWindow,
 } from './signal.js'
+export type {
+  LimitMessageOptions,
+  LimitMessages,
+  MessageParameters,
+  MessageTemplate,
+} from './wording.js'
+export {
+  hasUnsafeWording,
+  registerLimitMessages,
+  UnsafeWordingError,
+} from './wording.js'
