@@ -290,5 +290,8 @@ it('rechecks the envelope generation when a writer replaces it between binding r
   expect(reads).toBe(3)
   expect(view.authoritative).toBe(true)
   expect(view.snapshot.generation).toBe('replacement-generation')
-  expect(view.snapshot.revision).toBe(2)
+  // A replaced generation counts as loss and is repaired, never passively accepted.
+  expect(view.snapshot.revision).toBe(3)
+  expect(view.snapshot.lowWatermark).toBe(3)
+  expect(view.degradedAgreement).toBe(true)
 })

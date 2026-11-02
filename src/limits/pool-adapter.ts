@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { PoolOperationError } from '../store/errors.js'
 import type { PoolLimitsRow } from '../store/limits-namespace.js'
 import type { PoolStore } from '../store/pool.js'
+import { EnvelopeHistory } from './envelope-loss.js'
 import type { IdentityBinding } from './identity.js'
 import {
   applyLimitsCommands,
@@ -80,8 +81,8 @@ function decodeEnvelope(
 }
 
 /**
- * Activate after initialize/load reports ready. Reads never acquire a save or
- * row lock; only commit validates current row bindings and merges under the store locks.
+ * Activate after initialize/load reports ready. Ordinary reads are lock-free;
+ * recovery and commits merge against current state under the store locks.
  */
 export async function createPoolLimitsAdapter(
   options: PoolLimitsAdapterOptions,
@@ -91,6 +92,7 @@ export async function createPoolLimitsAdapter(
     throw new LimitsPersistenceRefusal('limits-unsupported')
   const update = store.updateLimitsNamespace.bind(store)
   const generation = randomUUID()
+  const history = new EnvelopeHistory()
   const now = options.now ?? Date.now
   const readBindings = async () => {
     const pool = await store.read()
@@ -105,13 +107,14 @@ export async function createPoolLimitsAdapter(
     const settings = await store.readSettings()
     if (settings.status !== 'ready')
       throw new LimitsPersistenceRefusal('pool-not-ready')
-    return decodeEnvelope(
-      settings.settings.commonAuthLimits,
-      namespace,
-      generation,
-    )
+    const envelope = settings.settings.commonAuthLimits
+    return envelope === undefined
+      ? undefined
+      : decodeEnvelope(envelope, namespace, generation)
   }
-  const read = async (): Promise<LimitsPersistenceSnapshot> => {
+  const read = async (
+    previous?: LimitsNamespace,
+  ): Promise<LimitsPersistenceSnapshot> => {
     let bindings = await readBindings()
     let snapshot = await readEnvelope()
     let last: LimitsPersistenceSnapshot | undefined
@@ -125,8 +128,17 @@ export async function createPoolLimitsAdapter(
       const stable =
         isDeepStrictEqual(bindings, checked) &&
         isDeepStrictEqual(snapshot, checkedSnapshot)
-      last = { snapshot, bindings, authoritative: stable }
-      if (stable) return last
+      last = {
+        snapshot: snapshot ?? createLimitsNamespace(namespace, generation),
+        bindings,
+        authoritative: stable,
+      }
+      if (stable) {
+        if (history.lost(snapshot, previous))
+          return adapter.commit([], previous)
+        if (snapshot) history.remember(snapshot)
+        return last
+      }
       bindings = checked
       snapshot = checkedSnapshot
     }
@@ -135,13 +147,20 @@ export async function createPoolLimitsAdapter(
   const adapter: PersistenceAdapter = {
     namespace,
     read,
-    async commit(commands) {
+    async commit(commands, previous) {
       let committed: LimitsPersistenceCommit | undefined
       try {
         await update((envelope, rows) => {
           const bindings = bindingsOf(namespace, rows)
+          const present =
+            envelope === undefined
+              ? undefined
+              : decodeEnvelope(envelope, namespace, generation)
+          const degradedAgreement = history.lost(present, previous)
           const result = applyLimitsCommands(
-            decodeEnvelope(envelope, namespace, generation),
+            degradedAgreement
+              ? history.recover(present, previous, namespace, now())
+              : (present ?? createLimitsNamespace(namespace, generation)),
             commands,
             {
               now: now(),
@@ -150,7 +169,12 @@ export async function createPoolLimitsAdapter(
                 observed.credentialEpoch === current.credentialEpoch,
             },
           )
-          committed = { ...result, bindings, authoritative: true }
+          committed = {
+            ...result,
+            bindings,
+            authoritative: true,
+            degradedAgreement,
+          }
           return result.snapshot
         })
       } catch (error) {
@@ -162,6 +186,7 @@ export async function createPoolLimitsAdapter(
         throw error
       }
       if (!committed) throw new Error('Pool limits mutator was not called')
+      history.remember(committed.snapshot)
       return committed
     },
   }

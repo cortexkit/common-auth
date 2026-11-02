@@ -82,6 +82,7 @@ export interface LimitsRegistry {
 interface Pending {
   readonly command: LimitsCommand
   readonly event?: 'success'
+  readonly recoveryRetries?: number
 }
 interface Listener {
   onEvent?: LimitsRegistryOptions['onEvent']
@@ -409,12 +410,17 @@ class Runtime {
         this.restrictions.set(id, { command, revision: this.snapshot.revision })
         // Recovery rejects pre-barrier observations. Restrictive access alone
         // can be resubmitted at that barrier without granting availability.
+        // Repeated competing recoveries must not keep a dispatch waiting forever;
+        // after three retries, keep the account blocked and agreement degraded
+        // instead of retrying again.
         if (
           outcome.reason === 'below-watermark' &&
-          command.baseRevision < this.snapshot.lowWatermark
+          command.baseRevision < this.snapshot.lowWatermark &&
+          (pending.recoveryRetries ?? 0) < 3
         ) {
           this.journal.set(id, {
             ...pending,
+            recoveryRetries: (pending.recoveryRetries ?? 0) + 1,
             command: { ...command, baseRevision: this.snapshot.revision },
           })
         }

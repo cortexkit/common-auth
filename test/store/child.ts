@@ -16,6 +16,76 @@ import {
 } from '../../src/store/index.js'
 import { CRASH_EXIT_CODE, listCodec, objectStateCodec } from './helpers.js'
 
+const lossTask = JSON.parse(process.argv[2] ?? '{}') as {
+  op: string
+  kind: 'pool' | 'vault'
+  namespace: string
+  path: string
+  configPath: string
+  statePath: string
+  inspect?: boolean
+}
+if (lossTask.op === 'limits-envelope-loss') {
+  const { createPoolLimitsAdapter } = await import(
+    '../../src/limits/pool-adapter.js'
+  )
+  const { createVaultLimitsAdapter } = await import(
+    '../../src/limits/vault-adapter.js'
+  )
+  const adapter =
+    lossTask.kind === 'pool'
+      ? await createPoolLimitsAdapter({
+          namespace: lossTask.namespace,
+          store: openPoolStore({
+            provider: 'openai',
+            configPath: lossTask.configPath,
+            statePath: lossTask.statePath,
+            quota: listCodec,
+          }),
+          now: () => 100,
+        })
+      : await createVaultLimitsAdapter({
+          namespace: lossTask.namespace,
+          path: lossTask.path,
+          now: () => 100,
+        })
+  const observed = await adapter.read()
+  const binding = observed.bindings[0]
+  if (!binding) throw new Error('Expected a limits account binding')
+  if (lossTask.inspect) {
+    const { acquireLimitsRegistry } = await import(
+      '../../src/limits/registry.js'
+    )
+    const owner = await acquireLimitsRegistry({
+      adapter,
+      isAccessRestrictive: (state) => state === 'blocked',
+    })
+    const dispatch = await owner.beforeDispatch(binding)
+    console.log(
+      `inspected:${JSON.stringify({ ...observed, blocked: dispatch.blocked })}`,
+    )
+    await owner.dispose()
+    process.exit(0)
+  }
+  const cleared = await adapter.commit([
+    {
+      type: 'clear',
+      producerId: 'p2',
+      operationId: 'clear',
+      binding,
+      baseRevision: observed.snapshot.revision,
+      keys: [{ scope: { kind: 'pool' }, window: 'requests' }],
+    },
+  ])
+  const resume = new Promise<void>((resolve) =>
+    process.stdin.once('data', () => resolve()),
+  )
+  console.log(`cleared:${JSON.stringify(cleared)}`)
+  await resume
+  console.log(`restored:${JSON.stringify(await adapter.read())}`)
+  process.exit(0)
+}
+
 type VaultTask = {
   op: 'vault-roster'
   path: string

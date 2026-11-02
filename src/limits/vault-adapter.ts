@@ -4,6 +4,7 @@ import {
   readVaultRoster,
   type VaultRosterFile,
 } from '../claustrum/roster.js'
+import { EnvelopeHistory } from './envelope-loss.js'
 import type { IdentityBinding } from './identity.js'
 import {
   applyLimitsCommands,
@@ -85,11 +86,20 @@ export async function createVaultLimitsAdapter(
 ): Promise<PersistenceAdapter> {
   const { namespace, path } = options
   const generation = randomUUID()
+  const history = new EnvelopeHistory()
   const now = options.now ?? Date.now
-  const read = async (): Promise<LimitsPersistenceSnapshot> => {
+  const read = async (
+    previous?: LimitsNamespace,
+  ): Promise<LimitsPersistenceSnapshot> => {
     const roster = await readVaultRoster(path)
+    const present =
+      roster?.limits === undefined
+        ? undefined
+        : decodeEnvelope(roster.limits, namespace, generation)
+    if (history.lost(present, previous)) return adapter.commit([], previous)
+    if (present) history.remember(present)
     return {
-      snapshot: decodeEnvelope(roster?.limits, namespace, generation),
+      snapshot: present ?? createLimitsNamespace(namespace, generation),
       bindings: bindingsOf(namespace, roster),
       authoritative: true,
     }
@@ -97,11 +107,18 @@ export async function createVaultLimitsAdapter(
   const adapter: PersistenceAdapter = {
     namespace,
     read,
-    commit: (commands) =>
-      mutateVaultRoster(path, (current) => {
+    commit: async (commands, previous) => {
+      const committed = await mutateVaultRoster(path, (current) => {
         const bindings = bindingsOf(namespace, current)
+        const present =
+          current?.limits === undefined
+            ? undefined
+            : decodeEnvelope(current.limits, namespace, generation)
+        const degradedAgreement = history.lost(present, previous)
         const result = applyLimitsCommands(
-          decodeEnvelope(current?.limits, namespace, generation),
+          degradedAgreement
+            ? history.recover(present, previous, namespace, now())
+            : (present ?? createLimitsNamespace(namespace, generation)),
           commands,
           {
             now: now(),
@@ -120,9 +137,17 @@ export async function createVaultLimitsAdapter(
             }),
             limits: result.snapshot,
           },
-          result: { ...result, bindings, authoritative: true },
+          result: {
+            ...result,
+            bindings,
+            authoritative: true,
+            degradedAgreement,
+          },
         }
-      }),
+      })
+      history.remember(committed.snapshot)
+      return committed
+    },
   }
   await read()
   return adapter
