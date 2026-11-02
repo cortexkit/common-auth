@@ -47,7 +47,9 @@ export function waitForPi(
     const tick = () => {
       const remaining = target - Date.now()
       if (remaining <= 0) return finish('elapsed')
-      workingMessage(`Waiting: ${formatDuration(remaining)}`)
+      workingMessage(
+        `Waiting for the account limit to reset · ${formatDuration(remaining)} · Esc to cancel`,
+      )
       // The callback may itself cancel the stream. Do not arm a timer afterward.
       if (!settled) timer = setTimeout(tick, Math.min(1000, remaining))
     }

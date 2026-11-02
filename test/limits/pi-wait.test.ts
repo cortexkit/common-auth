@@ -144,13 +144,21 @@ describe('Pi wait helper', () => {
     const waiting = waitForPi(2500, {
       setWorkingMessage: (text) => messages.push([Date.now() - now, text]),
     })
-    expect(messages).toEqual([[0, 'Waiting: 3s']])
+    expect(messages).toEqual([
+      [0, 'Waiting for the account limit to reset · 3s · Esc to cancel'],
+    ])
     clock.advance(999)
     expect(messages).toHaveLength(1)
     clock.advance(1)
-    expect(messages.at(-1)).toEqual([1000, 'Waiting: 2s'])
+    expect(messages.at(-1)).toEqual([
+      1000,
+      'Waiting for the account limit to reset · 2s · Esc to cancel',
+    ])
     clock.advance(1000)
-    expect(messages.at(-1)).toEqual([2000, 'Waiting: 1s'])
+    expect(messages.at(-1)).toEqual([
+      2000,
+      'Waiting for the account limit to reset · 1s · Esc to cancel',
+    ])
     clock.advance(499)
     expect(clock.pending()).toBe(1)
     clock.advance(1)
@@ -179,7 +187,10 @@ describe('Pi wait helper', () => {
     await Promise.resolve()
     expect(result).toBe('aborted')
     expect(Date.now()).toBe(now + 450)
-    expect(messages.mock.calls).toEqual([['Waiting: 15m'], [undefined]])
+    expect(messages.mock.calls).toEqual([
+      ['Waiting for the account limit to reset · 15m · Esc to cancel'],
+      [undefined],
+    ])
     expect(clock.pending()).toBe(0)
     expect(remove).toHaveBeenCalledTimes(1)
     clock.advance(900000)
@@ -228,7 +239,10 @@ describe('Pi wait helper', () => {
         setWorkingMessage: messages,
       }),
     ).toBe('aborted')
-    expect(messages.mock.calls).toEqual([['Waiting: 1s'], [undefined]])
+    expect(messages.mock.calls).toEqual([
+      ['Waiting for the account limit to reset · 1s · Esc to cancel'],
+      [undefined],
+    ])
     expect(clock.pending()).toBe(0)
   })
 
@@ -287,12 +301,17 @@ describe('Pi terminal wait delivery through the caller', () => {
       },
       publish,
     )
-    expect(messages).toEqual([[0, 'Waiting: 15m']])
+    expect(messages).toEqual([
+      [0, 'Waiting for the account limit to reset · 15m · Esc to cancel'],
+    ])
     clock.advance(899999)
     await Promise.resolve()
     expect(publish).not.toHaveBeenCalled()
     expect(messages).toHaveLength(900)
-    expect(messages.at(-1)).toEqual([899000, 'Waiting: 1s'])
+    expect(messages.at(-1)).toEqual([
+      899000,
+      'Waiting for the account limit to reset · 1s · Esc to cancel',
+    ])
     clock.advance(1)
     await done
     expect(messages.map(([time]) => time)).toEqual(
