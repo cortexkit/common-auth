@@ -81,6 +81,8 @@ async function setup(options: { maxRecords?: number } = {}) {
 }
 
 const retryInput: ChooseAccountInput = {
+  // Retry choices carry the hostAttempt from the host's retry draft.
+  hostAttempt: 1,
   providerID: PROVIDER,
   modelID: 'mock-model',
   sessionID: 'ses_1',

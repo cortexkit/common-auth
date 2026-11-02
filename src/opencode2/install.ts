@@ -29,8 +29,8 @@ import type {
 
 export const DEFAULT_MAX_RECORDS = 512
 
-/** Bound adapter waits while allowing a 15-minute reset plus session jitter. */
-export const MAX_RETRY_HOLD_MS = 20 * 60 * 1000
+/** Allow a one-hour cache lifetime plus the maximum session jitter. */
+export const MAX_RETRY_HOLD_MS = 3_621_000
 
 /**
  * The request header `model.request` sets to the attempt it started. The
@@ -93,6 +93,8 @@ interface PendingRetry {
   readonly sessionID: string
   readonly order: number
   readonly accountId: string
+  /** A targeted hold must be re-checked rather than dispatched from next. */
+  readonly wake?: ChooseAccountInput['wake']
   /** A retry that reuses its route without committing an adapter choice. */
   readonly sameAccount?: {
     readonly accountId: string
@@ -252,6 +254,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     ownership.credential(headers) === placeholderSecret(providerID)
   const logger = options.logger
   const maxRecords = Math.max(1, options.maxRecords ?? DEFAULT_MAX_RECORDS)
+  const hostRetryLimit = options.hostRetryLimit ?? 10
   const forbidden = [
     ...(options.hostCredentials ?? [placeholderSecret(providerID)]),
     // An owned request must replace its placeholder even if a caller customizes
@@ -581,13 +584,17 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           next !== undefined &&
           next.input.modelID === scope.modelID &&
           next.input.agent === scope.agent
+        const wake = retried?.wake
         const input: ChooseAccountInput = {
           ...scope,
           phase: 'request',
           ...(previousAccountId === undefined ? {} : { previousAccountId }),
           ...(retried?.rerouteFrom ? { rerouteFrom: retried.rerouteFrom } : {}),
+          ...(wake === undefined
+            ? {}
+            : { wake, hostAttempt: next?.input.hostAttempt }),
         }
-        if (next && !matches) {
+        if (next && (!matches || wake !== undefined)) {
           await inChoiceOrder(scope.sessionID, () => releaseChoice(next))
           assertActive()
         }
@@ -599,7 +606,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         }
         const choice = sameRoute
           ? sameAccount.accountId
-          : matches
+          : matches && wake === undefined
             ? next.accountId
             : await adapter.chooseAccount(input)
         const accountId = typeof choice === 'string' ? choice : undefined
@@ -1269,6 +1276,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
               let reason: RetryReason
               let rerouteFrom: PendingRetry['rerouteFrom']
               let next: PendingRetry['next']
+              let wake: PendingRetry['wake']
               if (rec.accountId === undefined || !attempt) {
                 decision = { retry: false }
                 reason = 'no-account'
@@ -1293,6 +1301,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   const input: ChooseAccountInput = {
                     ...rec.scope,
                     phase: 'retry',
+                    hostAttempt: draft.attempt,
                     previousAccountId: rec.accountId,
                     rerouteFrom: refused,
                   }
@@ -1334,16 +1343,30 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                       reason: 'host-decides' as const,
                     }
                   }
-                  if (
+                  if (!(hostRetryLimit - draft.attempt >= 1)) {
+                    if (next) await releaseChoice(next)
+                    next = undefined
+                    reason = 'host-decides-last-account'
+                  } else if (
                     hold &&
                     Number.isFinite(hold.delayMs) &&
-                    hold.delayMs >= 0
+                    hold.delayMs >= 0 &&
+                    hold.delayMs <= MAX_RETRY_HOLD_MS
                   ) {
                     // A recognised account limit can be recoverable even when
                     // the host treats its provider error as final.
                     decision = {
                       retry: true,
-                      delay: Math.min(hold.delayMs, MAX_RETRY_HOLD_MS),
+                      delay: Math.ceil(hold.delayMs),
+                    }
+                    if (hold.target !== undefined) {
+                      wake = {
+                        target: hold.target,
+                        ...(hold.checkpoint === undefined
+                          ? {}
+                          : { checkpoint: hold.checkpoint }),
+                        ...(hold.kind === undefined ? {} : { kind: hold.kind }),
+                      }
                     }
                     reason = 'hold'
                   } else if (
@@ -1391,6 +1414,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   accountId: rec.accountId,
                   ...(rerouteFrom === undefined ? {} : { rerouteFrom }),
                   ...(next === undefined ? {} : { next }),
+                  ...(wake === undefined ? {} : { wake }),
                 })
               } else if (next) {
                 // Only the computed decision is final here: an incoming veto may

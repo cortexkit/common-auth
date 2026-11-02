@@ -51,6 +51,7 @@ export type {
   ResponseAccount,
   RetryHold,
   RetryReason,
+  RetryWake,
   SameAccountRetryInput,
   SameAccountRetryResult,
   SelectingHook,

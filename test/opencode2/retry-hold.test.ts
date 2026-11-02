@@ -106,6 +106,8 @@ async function setup(gated = false) {
 }
 
 const expectedDrop: ChooseAccountInput & { accountId: string } = {
+  // Retry choices carry the hostAttempt from the host's retry draft.
+  hostAttempt: 1,
   sessionID: 'ses_1',
   agent: 'build',
   kind: 'primary',
@@ -321,7 +323,8 @@ describe('same-account retry hold', () => {
       for (const [delayMs, delay] of [
         [1_199_999, 1_199_999],
         [1_200_000, 1_200_000],
-        [1_200_001, 1_200_000],
+        // The raised clamp accepts waits above the former 20-minute boundary.
+        [1_200_001, 1_200_001],
       ] as const) {
         s.result({ hold: { delayMs } })
         expect((await s.retry()).decision).toEqual({ retry: true, delay })
