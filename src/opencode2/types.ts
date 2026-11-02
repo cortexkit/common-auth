@@ -74,6 +74,12 @@ export interface ChooseAccountInput extends RequestScope {
   /** Revalidate the held account before dispatch, even if the target is not due. */
   readonly wake?: RetryWake
   /**
+   * Accounts refused by earlier reroutes of this logical request. Absent means
+   * empty. Holds and wakes do not exclude the held account. A snapshot, not a
+   * live set; supplied whether or not enforcement is enabled.
+   */
+  readonly excluded?: readonly string[]
+  /**
    * The account of the attempt this one retries, when the retry hook just
    * asked the host to retry an attempt of this session and kind; otherwise
    * the account of the newest attempt of this session and kind.
@@ -565,6 +571,19 @@ export interface InstallOpenCode2AuthOptions {
    * limit holds and reroutes keep the host's decision and release their choice.
    */
   readonly hostRetryLimit?: number
+  /**
+   * Reject chooser results naming a request-excluded account (default false).
+   * A rejected choice warns and acts like undefined: the host decides in retry,
+   * and request selection stops with no-account. Without this option, chooser
+   * results retain their existing meaning.
+   *
+   * The host supplies no logical request id. The first later attempt of the
+   * same session and kind consumes a queued retry's exclusions. If another
+   * attempt is in flight, that binding warns but keeps the exclusions. A new
+   * concurrent request can therefore inherit them; if it consumes the retry
+   * first, the actual retry instead starts a fresh token without them.
+   */
+  readonly enforceRequestExclusion?: boolean
   readonly logger?: OpenCode2AuthLogger
 }
 

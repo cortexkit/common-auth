@@ -45,6 +45,10 @@ export const ATTEMPT_HEADER = 'x-common-auth-attempt'
 type OpenAttempt<A> = { -readonly [K in keyof Attempt<A>]: Attempt<A>[K] }
 type AttemptError = NonNullable<AttemptOutcome['error']>
 
+interface RequestToken {
+  readonly excluded: Set<string>
+}
+
 /**
  * One attempt: an account chosen for one send of one session and request
  * kind. Several attempts of one session and kind can be open at once.
@@ -57,6 +61,7 @@ interface AttemptRecord<A> {
   readonly id: string
   readonly key: string
   readonly scope: RequestScope
+  readonly request: RequestToken
   /**
    * `undefined` when the adapter had no account for this attempt. Changes
    * only when `answeredBy` rebinds the attempt.
@@ -92,6 +97,7 @@ interface AttemptRecord<A> {
  * waiting for the next attempt of the same session and kind.
  */
 interface PendingRetry {
+  readonly request: RequestToken
   readonly attemptId: string
   readonly sessionID: string
   readonly order: number
@@ -335,6 +341,32 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   const describe = (error: unknown) =>
     error instanceof Error ? error.message : String(error)
 
+  const retireRequest = (request: RequestToken) => request.excluded.clear()
+  const exclusions = (request: RequestToken) =>
+    request.excluded.size === 0 ? {} : { excluded: [...request.excluded] }
+  const rejectsExcluded = (
+    accountId: string | undefined,
+    input: ChooseAccountInput,
+    request: RequestToken,
+  ) => {
+    if (
+      !options.enforceRequestExclusion ||
+      accountId === undefined ||
+      !request.excluded.has(accountId)
+    )
+      return false
+    warn(
+      'opencode2 auth ignored a chooser result for a request-excluded account',
+      {
+        sessionID: input.sessionID,
+        kind: input.kind,
+        phase: input.phase,
+        accountId,
+      },
+    )
+    return true
+  }
+
   // Adapter choices may enqueue work by session. Serialize their consumption
   // and release so a new choice cannot overtake cleanup, even after forgetting.
   const choiceWork = new Map<string, Promise<void>>()
@@ -442,6 +474,13 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       ...(error ? { error } : {}),
     }
     if (error) rec.endError = error
+    // An error status can end before retry runs, and a limit may have arrived
+    // on an earlier event. Neither is a successful logical request.
+    if (
+      error?.reason === 'cancelled' ||
+      (!error && !rec.limit && (rec.status === undefined || rec.status < 400))
+    )
+      retireRequest(rec.request)
     rec.ended = deliverEnd(rec.attempt, outcome)
   }
 
@@ -569,12 +608,37 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     transport?: Transport,
   ): Promise<AttemptRecord<A>> => {
     const key = keyOf(scope.sessionID, scope.kind)
-    const { input, accountId, sameAccountRetry } = await afterChoiceWork(
-      scope.sessionID,
-      async () => {
+    const { input, accountId, sameAccountRetry, request } =
+      await afterChoiceWork(scope.sessionID, async () => {
         assertActive()
         const retried = pendingRetries.get(key)
         pendingRetries.delete(key)
+        const others = attemptsOf(key)
+        if (
+          retried &&
+          others.some(
+            (rec) => rec.id !== retried.attemptId && rec.attempt && !rec.ended,
+          )
+        )
+          warn(
+            'opencode2 auth bound a pending retry to an ambiguous concurrent request; keeping its exclusions',
+            {
+              sessionID: scope.sessionID,
+              kind: scope.kind,
+            },
+          )
+        if (!retried) {
+          // A failed attempt that the host never retried must not seed the next
+          // logical request. Live attempts keep their own independent tokens.
+          const live = new Set(
+            others
+              .filter((rec) => rec.attempt && !rec.ended)
+              .map((rec) => rec.request),
+          )
+          for (const rec of others)
+            if (!live.has(rec.request)) retireRequest(rec.request)
+        }
+        const request = retried?.request ?? { excluded: new Set<string>() }
         const previousAccountId = retried?.accountId ?? newestOf(key)?.accountId
         supersede(key)
         const next = retried?.next
@@ -591,6 +655,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
         const input: ChooseAccountInput = {
           ...scope,
           phase: 'request',
+          ...exclusions(request),
           ...(previousAccountId === undefined ? {} : { previousAccountId }),
           ...(retried?.rerouteFrom ? { rerouteFrom: retried.rerouteFrom } : {}),
           ...(wake === undefined
@@ -612,10 +677,24 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           : matches && wake === undefined
             ? next.accountId
             : await adapter.chooseAccount(input)
-        const accountId = typeof choice === 'string' ? choice : undefined
-        return { input, accountId, sameAccountRetry: sameRoute }
-      },
-    )
+        let accountId = typeof choice === 'string' ? choice : undefined
+        if (rejectsExcluded(accountId, input, request)) {
+          const denied = accountId
+          if (sameRoute && sameAccount)
+            await inChoiceOrder(scope.sessionID, () =>
+              releaseSameAccount(sameAccount),
+            )
+          else if (denied !== undefined)
+            await inChoiceOrder(scope.sessionID, () =>
+              releaseChoice(
+                matches && next ? next : { accountId: denied, input },
+              ),
+            )
+          accountId = undefined
+          assertActive()
+        }
+        return { input, accountId, sameAccountRetry: sameRoute, request }
+      })
     assertActive()
     let headers: HeaderEdits = {}
     let data: A | undefined
@@ -634,6 +713,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
       id,
       key,
       scope,
+      request,
       accountId,
       headers,
       attempt:
@@ -1223,6 +1303,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                 // Pin only this retry's route: choosing afresh could turn a token
                 // refresh or path recovery into an account switch in a mixed session.
                 pendingRetries.set(rec.key, {
+                  request: rec.request,
                   attemptId: rec.id,
                   sessionID: rec.scope.sessionID,
                   order: ++retryOrder,
@@ -1318,6 +1399,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   const input: ChooseAccountInput = {
                     ...rec.scope,
                     phase: 'retry',
+                    ...exclusions(rec.request),
                     hostAttempt: draft.attempt,
                     previousAccountId: rec.accountId,
                     rerouteFrom: refused,
@@ -1334,6 +1416,17 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                         error: describe(error),
                       },
                     )
+                  }
+                  const chosenAccount =
+                    typeof choice === 'string'
+                      ? choice
+                      : typeof choice === 'object' && 'hold' in choice
+                        ? rec.accountId
+                        : undefined
+                  if (rejectsExcluded(chosenAccount, input, rec.request)) {
+                    if (chosenAccount !== undefined)
+                      await releaseChoice({ accountId: chosenAccount, input })
+                    choice = undefined
                   }
                   const hold =
                     typeof choice === 'object' && 'hold' in choice
@@ -1424,6 +1517,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                     accountId !== rec.accountId
                   ) {
                     rec.rerouted = true
+                    rec.request.excluded.add(rec.accountId)
                     rerouteFrom = refused
                     // The next attempt takes this choice rather than asking
                     // again, so an account limited between here and the host's
@@ -1457,6 +1551,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                 attempts.has(rec.id)
               ) {
                 pendingRetries.set(rec.key, {
+                  request: rec.request,
                   attemptId: rec.id,
                   sessionID: rec.scope.sessionID,
                   order: ++retryOrder,
@@ -1470,6 +1565,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                 // have been overridden by a reroute to another account.
                 await releaseChoice(next)
               }
+              if (!decision.retry) retireRequest(rec.request)
               return { decision, reason }
             },
           )
@@ -1505,6 +1601,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     for (const rec of [...attempts.values()]) {
       if (rec.scope.sessionID !== sessionID) continue
       abandon(rec, 'its session was forgotten')
+      retireRequest(rec.request)
       attempts.delete(rec.id)
     }
     for (const [key, pending] of pendingRetries) {
@@ -1535,6 +1632,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   pending.order < idleOrder
                 ) {
                   pendingRetries.delete(key)
+                  retireRequest(pending.request)
                   await releaseRetry(pending)
                 }
               }

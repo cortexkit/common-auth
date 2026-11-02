@@ -205,6 +205,8 @@ describe('committed retry choice', () => {
         previousAccountId: 'A',
         rerouteFrom: retryInput.rerouteFrom,
         phase: 'request',
+        // After a reroute, excluded is always supplied, even without enforcement.
+        excluded: ['A'],
       })
       expect(s.installation.accountFor('ses_1', 'primary')).toBe('C')
       await s.installation.dispose()
