@@ -447,6 +447,33 @@ for (const mode of ['acquire', 'release', 'renew'] as const) {
   })
 }
 
+test('Windows lease release succeeds only after a sharing-refused delete actually succeeds', async () => {
+  for (const errno of ['EBUSY', 'EPERM']) {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        'test/fs/windows-lease-probe.mjs',
+        'release',
+        errno,
+        'once',
+      ],
+      { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const [stdout, stderr, exit] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+    expect(stderr).toBe('')
+    expect(exit).toBe(0)
+    expect(JSON.parse(stdout)).toEqual({
+      mode: 'release',
+      errno,
+      checked: true,
+    })
+  }
+})
+
 test.skipIf(process.platform !== 'win32')(
   'Windows renewal control records progress without a live host',
   async () => {

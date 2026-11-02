@@ -1,5 +1,8 @@
 import { join, resolve } from 'node:path'
-import { PrivateFileError, windowsPrivateFiles } from './private-files.js'
+import {
+  isWindowsSharingViolation,
+  type PrivateFileError,
+} from './private-files.js'
 import { acquireRefreshFileLock } from './refresh-file-lock.js'
 
 export function lockPathFor(target: string, name: string): string {
@@ -50,10 +53,7 @@ function isChangingLockRead(
   name: string,
 ): error is PrivateFileError {
   if (
-    !windowsPrivateFiles ||
-    !(error instanceof PrivateFileError) ||
-    error.reason !== 'io-error' ||
-    (error.win32Code !== 32 && error.win32Code !== 303) ||
+    !isWindowsSharingViolation(error) ||
     (error.stage !== 'read' && error.stage !== 'verify')
   )
     return false

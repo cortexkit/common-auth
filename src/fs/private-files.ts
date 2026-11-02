@@ -124,6 +124,18 @@ export class PrivateFileError extends Error {
   }
 }
 
+/** Native sharing and delete-pending errors reveal neither ownership nor expiry. */
+export function isWindowsSharingViolation(
+  error: unknown,
+): error is PrivateFileError & { reason: 'io-error'; win32Code: 32 | 303 } {
+  return (
+    windowsPrivateFiles &&
+    error instanceof PrivateFileError &&
+    error.reason === 'io-error' &&
+    (error.win32Code === 32 || error.win32Code === 303)
+  )
+}
+
 export async function privateOperation<T>(
   path: string,
   stage: string,

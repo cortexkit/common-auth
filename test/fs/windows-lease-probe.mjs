@@ -13,6 +13,9 @@ const originalMkdir = fs.mkdir
 const originalStat = fs.stat
 const mode = process.argv[2]
 const errno = process.argv[3] ?? 'EBUSY'
+const releaseOnce = mode === 'release' && process.argv[4] === 'once'
+let releaseAttempts = 0
+let originalReleaseError
 const renewalMode = mode === 'renew' || mode.endsWith('-renew')
 const noHost = process.argv[4] === 'no-host'
 const tracePath = process.argv[5]
@@ -74,8 +77,14 @@ if (mode === 'release')
   mock.module('node:fs/promises', () => ({
     ...fs,
     rm: async (path, options) => {
-      if (String(path).endsWith('.lock'))
-        throw Object.assign(new Error('IO refused'), { code: errno })
+      if (String(path).endsWith('.lock')) {
+        releaseAttempts++
+        if (!releaseOnce || releaseAttempts === 1) {
+          const error = Object.assign(new Error('IO refused'), { code: errno })
+          originalReleaseError ??= error
+          throw error
+        }
+      }
       return originalRm(path, options)
     },
   }))
@@ -241,17 +250,39 @@ try {
         )
       }
     } else if (mode === 'release') {
-      await assert.rejects(
-        lease.release(),
-        (error) =>
-          error instanceof PrivateFileError &&
-          error.stage === 'remove' &&
-          error.code === errno,
-      )
-      assert.equal(
-        JSON.parse(await originalRead(lockPath, 'utf8')).ownerId,
-        lease.ownerId,
-      )
+      // Spend the unchanged release deadline on an isolated monotonic clock,
+      // without sleeping six seconds for each persistent Windows errno case.
+      let elapsed = 0
+      performance.now = () => elapsed
+      globalThis.setTimeout = (callback, ms, ...args) => {
+        elapsed += ms
+        return originalSetTimeout(callback, 0, ...args)
+      }
+      if (releaseOnce) {
+        await lease.release()
+        assert.equal(releaseAttempts, 2)
+        await assert.rejects(originalStat(lockPath), { code: 'ENOENT' })
+      } else {
+        await assert.rejects(
+          lease.release(),
+          (error) =>
+            error instanceof PrivateFileError &&
+            error.stage === 'remove' &&
+            error.code === errno &&
+            error.cause === originalReleaseError,
+        )
+        if (errno === 'EBUSY' || errno === 'EPERM') {
+          assert.ok(releaseAttempts > 1)
+          assert.equal(elapsed, 6_000)
+        } else {
+          assert.equal(releaseAttempts, 1)
+          assert.equal(elapsed, 0)
+        }
+        assert.equal(
+          JSON.parse(await originalRead(lockPath, 'utf8')).ownerId,
+          lease.ownerId,
+        )
+      }
     } else {
       denyWrites = true
       assert.equal((await whenLost(lease)).reason, 'renewal-failed')
