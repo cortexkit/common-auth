@@ -76,6 +76,8 @@ export {
   markIsActive,
   reduceFailureHistory,
 } from './marker.js'
+export type { PiWaitOptions, PiWaitResult } from './pi-wait.js'
+export { waitForPi } from './pi-wait.js'
 export {
   confirmedAffinity,
   earliestPoolEngine,
