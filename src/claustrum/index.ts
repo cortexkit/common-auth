@@ -152,6 +152,10 @@ export {
   vaultRosterSeed,
   vaultRoutingRows,
 } from './roster.js'
+export type {
+  ClaustrumUsageReading,
+  ClaustrumUsageReportState,
+} from './usage.js'
 export {
   type ChangeNotice,
   ChangeNoticeReader,

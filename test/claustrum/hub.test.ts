@@ -1550,6 +1550,62 @@ test('hub members: keptReceiptState of a member holding no lease shows the share
   expect(f.hub.keptReceiptState()).toEqual(state)
 })
 
+test('hub members: usage reporting shares one queue and one in-flight call per connection', async () => {
+  const f = await hubFixture()
+  const [alpha, beta] = f.members()
+  if (!alpha || !beta) throw new Error('missing member')
+  await alpha.refresh()
+  const client = f.vault.connections[0]?.client
+  if (!client) throw new Error('missing connection')
+  const held = deferred<void>()
+  hooks.lifetime.unpark(() => held.resolve())
+  const sent: string[] = []
+  client.reportUsageScoped = async ({ credentialId }) => {
+    sent.push(credentialId)
+    await held.promise
+  }
+  const alphaRoute = f.route(alpha, 'alpha')
+  const betaRoute = f.route(beta, 'beta')
+  await alpha.authorize(alphaRoute)
+  await beta.authorize(betaRoute)
+  const reading = {
+    provider: 'codex',
+    observedAtMs: 1,
+    frame: { type: 'codex.rate_limits' },
+  }
+  expect(
+    alpha.reportUsage({
+      routeId: alphaRoute,
+      credentialId: 'apikey:alpha:main',
+      reading,
+    }),
+  ).toBeUndefined()
+  expect(
+    beta.reportUsage({
+      routeId: betaRoute,
+      credentialId: 'apikey:beta:main',
+      reading,
+    }),
+  ).toBeUndefined()
+  expect(f.timers.pending()).toEqual([1_000])
+  f.timers.fire(1_000)
+  await until(() => sent.length === 1)
+  expect(alpha.usageReportState().inFlight).toBe(true)
+  expect(beta.usageReportState().pending).toBe(1)
+  held.resolve()
+  await until(() => sent.length === 2 && !alpha.usageReportState().inFlight)
+  expect(sent).toEqual(['apikey:alpha:main', 'apikey:beta:main'])
+  await f.hub.dispose()
+  expect(
+    alpha.reportUsage({
+      routeId: alphaRoute,
+      credentialId: 'apikey:alpha:main',
+      reading,
+    }),
+  ).toBeUndefined()
+  expect(sent).toHaveLength(2)
+})
+
 test('hub members: reportFailure goes only through the lease that issued the receipt', async () => {
   const f = await hubFixture()
   const [alpha, beta] = f.members()

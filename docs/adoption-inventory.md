@@ -567,6 +567,48 @@ already completed before the extension's first opportunity to enter vault mode.
 
 ### ./claustrum
 
+**Reply quota reporting.** `consumer.reportUsage({ routeId, credentialId,
+reading })` and `custody.reportUsage({ credentialId, reading })` return `void`
+synchronously, never a promise. Use the credential id from the actual served
+attempt. `ClaustrumUsageReading` names `provider: string`, `observedAtMs: number`,
+optional `headers: Record<string, string>`, optional `frame: unknown` (for example
+a Codex `codex.rate_limits` frame), and optional `account: string`. Supply headers
+and/or a frame from the provider reply. **Headers only means rate-limit headers
+only: never Authorization, cookies, tokens, or a complete reply-header dump.**
+The library does not filter header names or scrub frame contents; callers must
+extract quota metadata before reporting it.
+
+Reporting opens no connection and never waits on the vault from a provider
+request. One in-memory queue per custody connection (shared by hub members)
+coalesces each credential to its newest `observedAtMs`, even when older replies
+arrive later. After a 1 s debounce, one background call at a time sends the
+newest queued readings through the vault to insula. Only credentials actually
+served by this host and still retained in its active roster are eligible; a
+consumer additionally checks the route. A host using custody with its own
+roster must call `custody.retain(rows)` after roster changes, as it does for kept
+receipts. No reading is persisted to disk.
+
+Non-plain objects, top-level `credentialId` or `vouched`, non-serializable JSON,
+non-finite timestamps, and compact UTF-8 JSON over 15,360 bytes are dropped
+locally. Queued readings are snapshots, so later caller mutation cannot bypass
+validation. `usageReportState()` on consumer or custody exposes only
+`{ pending, inFlight, dropped }`; custody counts discarded readings, including
+invalid inputs, superseded readings, lost ownership, failures and shutdown
+drops. No reading contents are logged. Refusals and transport failures drop the
+reading and emit at most one debug line per distinct error code on that custody
+connection, with no credential, token or header values. common-auth invokes
+`reportUsageScoped` once per reading and never retries it. The installed
+Claustrum client may reconnect and replay a transport-failed call internally;
+the vault coalesces the identical timestamp, so this replay is harmless.
+
+This capability requires claustrum-client 0.14.0 at runtime, detected without
+raising the `>=0.6.2` peer floor: an older client is a silent no-op. Disposing a
+connection flushes the pending debounce within the existing 2 s shutdown drain,
+then drops remaining work and closes the client; reports after close/dispose
+are ignored. A hub member does not close the shared custody: the hub owns its
+connection drain. An accepted vault report means queued, not that insula has
+applied it; neither layer promises delivery.
+
 **Discovery observation (0.30.0).** `ClaustrumConsumerOptions.onDiscovery(promise)`
 is called once for each newly started, coalesced discovery, whether it comes
 from `refresh()`, a poll, a watch notice, or a send (initial discovery or the

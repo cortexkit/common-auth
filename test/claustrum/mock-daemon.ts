@@ -122,11 +122,22 @@ export interface MockReport {
   reporter_source?: string
 }
 
+export interface MockUsageReport {
+  credential_id?: string
+  enrollment_token?: string
+  reading?: Record<string, unknown>
+}
+
 export interface MockDaemon {
   connectionFile: string
   credentials: Record<string, MockCredential>
   gets: Array<{ credential_id?: string; enrollment_token?: string }>
   reports: MockReport[]
+  usageReports: MockUsageReport[]
+  usageReportRefusal?: string
+  /** Destroy the socket after recording a usage report, without answering it. */
+  dropUsageReports?: boolean
+  holdUsageReports?: Promise<unknown>
   proposals: Array<{ name?: string; hash?: string }>
   polls: number
   lists: number
@@ -235,6 +246,7 @@ export async function startMockDaemon(input: {
     credentials: input.credentials ?? {},
     gets: [],
     reports: [],
+    usageReports: [],
     proposals: [],
     polls: 0,
     lists: 0,
@@ -321,6 +333,15 @@ export async function startMockDaemon(input: {
   }
 
   function handle(method: string | undefined, params: Wire): Wire {
+    if (method === 'usage.report_scoped') {
+      state.usageReports.push({
+        credential_id: params.credential_id as string | undefined,
+        enrollment_token: params.enrollment_token as string | undefined,
+        reading: params.reading as Record<string, unknown> | undefined,
+      })
+      if (state.usageReportRefusal) return error(state.usageReportRefusal)
+      return { result: { accepted: true } }
+    }
     if (method === 'credential.list_scoped') {
       state.lists++
       if (state.revoked) return error('not_found')
@@ -679,12 +700,21 @@ export async function startMockDaemon(input: {
           continue
         }
         const reply = handle(request.method, request.params ?? {})
+        if (
+          request.method === 'usage.report_scoped' &&
+          state.dropUsageReports
+        ) {
+          socket.destroy()
+          return
+        }
         const hold =
           request.method === 'credential.list_scoped'
             ? state.holdLists
             : request.method === 'credential.get_scoped'
               ? state.holdGets
-              : undefined
+              : request.method === 'usage.report_scoped'
+                ? state.holdUsageReports
+                : undefined
         if (hold) void hold.then(() => writeResponse(socket, header, reply))
         else writeResponse(socket, header, reply)
       }

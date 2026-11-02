@@ -17,19 +17,26 @@ import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
 import type { InsulaUsageTransport } from './insula.js'
 import { drainShutdown, shutdownWarning } from './shutdown.js'
 import {
+  type ClaustrumUsageReading,
+  type ClaustrumUsageReportState,
+  ScopedUsageReporter,
+  type ScopedUsageSource,
+} from './usage.js'
+import {
   ScopedRosterWatch,
   type ScopedWatchSource,
   type WatchMode,
 } from './watch.js'
 
 /**
- * `watchScoped` is present from claustrum-client 0.12.0. Hosts detect it at
- * run time and keep polling without it.
+ * claustrum-client adds watchScoped in 0.12.0 and reportUsageScoped in 0.14.0.
+ * Older clients keep polling and simply do not send reply quota readings.
  */
 export type ClaustrumScopedClient = Pick<
   ClaustrumClient,
   'listScoped' | 'getScoped' | 'reportAuthFailureScoped' | 'close'
-> & { insula?: InsulaUsageTransport } & ScopedWatchSource
+> & { insula?: InsulaUsageTransport } & ScopedWatchSource &
+  ScopedUsageSource
 
 /** The two credential types a plugin's family can hold; routing differs by type. */
 export type VaultCredentialType = 'oauth' | 'api_key'
@@ -320,6 +327,20 @@ function scopedRetryReason(
 }
 
 const defaultLogger = createLogger('claustrum')
+
+function checkedEnrollmentToken(value: EnrollmentTokenFile): string {
+  if (
+    !/^[0-9a-f]{64}$/.test(value.token) ||
+    !Number.isSafeInteger(value.token_generation) ||
+    value.token_generation < 1
+  ) {
+    throw new ClaustrumConsumerError(
+      'invalid-token',
+      'Invalid Claustrum enrollment token',
+    )
+  }
+  return value.token
+}
 // Opt-in diagnostics let tests retain wait phases without logging each vault read.
 const phaseDiagnostics = channel('common-auth.claustrum.phases')
 
@@ -508,6 +529,8 @@ export class ClaustrumScopedCustody {
   readonly #reports = new WeakMap<ClaustrumScopedAttempt, Promise<void>>()
   readonly #kept = new Map<string, KeptReceipt>()
   readonly #keptAttempts = new WeakMap<ClaustrumScopedAttempt, string>()
+  readonly #usage: ScopedUsageReporter
+  readonly #usageServed = new Map<string, ClaustrumScopedIdentity>()
   readonly #setTimeout: typeof setTimeout
   readonly #clearTimeout: typeof clearTimeout
   #outage = false
@@ -520,8 +543,9 @@ export class ClaustrumScopedCustody {
   /** The view of the last successful `discover()`, for `watchRoster`. */
   #discoveredView?: string
   readonly #watches = new Set<ScopedRosterWatch>()
-  readonly #tokenReads = new Set<Promise<EnrollmentTokenFile>>()
+  readonly #tokenReads = new Set<Promise<unknown>>()
   readonly #warnShutdown: (pendingOperations: number) => void
+  #onDrainTimeout?: (pendingOperations: number) => void
   #disposing?: Promise<void>
 
   constructor(options: {
@@ -563,6 +587,14 @@ export class ClaustrumScopedCustody {
     this.#warnShutdown = shutdownWarning(this.#logger)
     this.#setTimeout = options.setTimeoutImpl ?? setTimeout
     this.#clearTimeout = options.clearTimeoutImpl ?? clearTimeout
+    this.#usage = new ScopedUsageReporter({
+      client: this.#client,
+      owns: (id) => this.#usageServed.has(id),
+      token: async () => checkedEnrollmentToken(await this.#readToken()),
+      logger: this.#logger,
+      setTimeout: this.#setTimeout,
+      clearTimeout: this.#clearTimeout,
+    })
   }
 
   /** A watch losing its transport is the same outage as an unreachable read. */
@@ -654,17 +686,7 @@ export class ClaustrumScopedCustody {
         })
     }
     this.#check(signal)
-    if (
-      !/^[0-9a-f]{64}$/.test(value.token) ||
-      !Number.isSafeInteger(value.token_generation) ||
-      value.token_generation < 1
-    ) {
-      throw new ClaustrumConsumerError(
-        'invalid-token',
-        'Invalid Claustrum enrollment token',
-      )
-    }
-    return value.token
+    return checkedEnrollmentToken(value)
   }
 
   async #call<T>(
@@ -730,6 +752,7 @@ export class ClaustrumScopedCustody {
       token = await this.#token(signal)
     } catch (error) {
       this.#kept.clear()
+      this.#clearUsageOwnership()
       throw error
     }
     if (phaseDiagnostics.hasSubscribers)
@@ -834,12 +857,20 @@ export class ClaustrumScopedCustody {
     else {
       this.reachable()
       this.#kept.clear()
+      this.#clearUsageOwnership()
     }
   }
 
   /** Discard bearer material when a route is removed, declined or rebound. */
   forget(credentialId: string): void {
     this.#kept.delete(credentialId)
+    this.#usageServed.delete(credentialId)
+    this.#usage.forget(credentialId)
+  }
+
+  #clearUsageOwnership(): void {
+    for (const id of this.#usageServed.keys()) this.#usage.forget(id)
+    this.#usageServed.clear()
   }
 
   /** Apply an already-held roster; this never fetches credentials or writes it. */
@@ -859,6 +890,16 @@ export class ClaustrumScopedCustody {
         identity.state !== 'active' ||
         identity.credentialType !== kept.attempt.credentialType ||
         identity.accountIdentity !== kept.attempt.expectedAccountIdentity
+      )
+        this.forget(id)
+    }
+    for (const [id, served] of this.#usageServed) {
+      const identity = current.get(id)
+      if (
+        !identity?.enabled ||
+        identity.state !== 'active' ||
+        identity.credentialType !== served.credentialType ||
+        identity.accountIdentity !== served.accountIdentity
       )
         this.forget(id)
     }
@@ -906,6 +947,7 @@ export class ClaustrumScopedCustody {
       token = await this.#token(signal)
     } catch (error) {
       this.#kept.clear()
+      this.#clearUsageOwnership()
       throw error
     }
     if (this.#outage && kept) {
@@ -919,6 +961,7 @@ export class ClaustrumScopedCustody {
         signal,
       )
       this.#kept.set(credentialId, { attempt, routeId, since: null })
+      this.#usageServed.set(credentialId, { ...identity })
       return attempt
     } catch (error) {
       this.#check(signal)
@@ -1198,6 +1241,28 @@ export class ClaustrumScopedCustody {
     }
   }
 
+  /**
+   * Queue reply quota metadata and return synchronously. Pass rate-limit
+   * headers only, never tokens: the library does not filter header names.
+   * Only credentials served by this custody and retained in its roster report.
+   * Hosts managing their own roster must call retain() when that roster changes.
+   */
+  reportUsage(input: {
+    credentialId: string
+    reading: ClaustrumUsageReading
+  }): void {
+    if (this.#closed) return
+    try {
+      this.#usage.report(input.credentialId, input.reading)
+    } catch {
+      // Quota bookkeeping must never reject a provider request.
+    }
+  }
+
+  usageReportState(): ClaustrumUsageReportState {
+    return this.#usage.state()
+  }
+
   close(): void {
     if (this.#closed) return
     this.#closed = true
@@ -1206,13 +1271,24 @@ export class ClaustrumScopedCustody {
     for (const watch of this.#watches) watch.stop()
     this.#watches.clear()
     this.#kept.clear()
-    this.#client.close()
+    const usage = this.#usage.close()
+    if (usage) {
+      this.#tokenReads.add(usage)
+      void usage.then(() => this.#tokenReads.delete(usage))
+    } else this.#client.close()
+    this.#disposing = drainShutdown(this.#tokenReads, (count) =>
+      (this.#onDrainTimeout ?? this.#warnShutdown)(count),
+    ).finally(() => {
+      this.#usage.drop()
+      this.#usageServed.clear()
+      if (usage) this.#client.close()
+    })
   }
 
-  /** Stop immediately; allow token reads 2 s and share an owner's timeout warning. */
+  /** Stop accepting work; give token reads and reply reports one shared 2 s drain. */
   async dispose(onTimeout = this.#warnShutdown): Promise<void> {
+    this.#onDrainTimeout = onTimeout
     this.close()
-    this.#disposing ??= drainShutdown(this.#tokenReads, onTimeout)
     await this.#disposing
   }
 }

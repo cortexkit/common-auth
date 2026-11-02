@@ -161,13 +161,19 @@ export interface ClaustrumHubMemberOptions<_Q = QuotaObservation> {
 /** What a lease may do with the shared custody. */
 export type ClaustrumLeasedCustody = Pick<
   ClaustrumScopedCustody,
-  'authorize' | 'reportFailure' | 'forget' | 'keptReceiptState'
+  | 'authorize'
+  | 'reportFailure'
+  | 'reportUsage'
+  | 'usageReportState'
+  | 'forget'
+  | 'keptReceiptState'
 >
 
 /**
  * One acquisition of the hub's shared custody. `custody` throws `closed`
  * after `release()`, and once the connection it belongs to ended for any
- * reason, vault mode going off included. `release()` is idempotent.
+ * reason, vault mode going off included. Best-effort `reportUsage` instead
+ * ignores reports through an ended lease. `release()` is idempotent.
  */
 export interface CustodyLease {
   readonly custody: ClaustrumLeasedCustody
@@ -818,6 +824,13 @@ export class ClaustrumDiscoveryHub {
       reportFailure: async (attempt, status, source) => {
         check()
         return custody.reportFailure(attempt, status, source)
+      },
+      reportUsage: (input) => {
+        if (!state.released && !generation.ended) custody.reportUsage(input)
+      },
+      usageReportState: () => {
+        check()
+        return custody.usageReportState()
       },
       forget: (credentialId) => {
         check()
