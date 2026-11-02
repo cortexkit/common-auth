@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { PoolOperationError } from '../store/errors.js'
 import type { PoolLimitsRow } from '../store/limits-namespace.js'
 import type { PoolStore } from '../store/pool.js'
-import { EnvelopeHistory } from './envelope-loss.js'
+import { EnvelopeHistory, EnvelopeRepair } from './envelope-loss.js'
 import type { IdentityBinding } from './identity.js'
 import {
   applyLimitsCommands,
@@ -81,8 +81,8 @@ function decodeEnvelope(
 }
 
 /**
- * Activate after initialize/load reports ready. Ordinary reads are lock-free;
- * recovery and commits merge against current state under the store locks.
+ * Activate after initialize/load reports ready. Reads never acquire a write
+ * lock; recovery is detached and commits merge under the store locks.
  */
 export async function createPoolLimitsAdapter(
   options: PoolLimitsAdapterOptions,
@@ -93,6 +93,7 @@ export async function createPoolLimitsAdapter(
   const update = store.updateLimitsNamespace.bind(store)
   const generation = randomUUID()
   const history = new EnvelopeHistory()
+  const repair = new EnvelopeRepair()
   const now = options.now ?? Date.now
   const readBindings = async () => {
     const pool = await store.read()
@@ -134,8 +135,15 @@ export async function createPoolLimitsAdapter(
         authoritative: stable,
       }
       if (stable) {
-        if (history.lost(snapshot, previous))
-          return adapter.commit([], previous)
+        if (history.lost(snapshot, previous)) {
+          repair.schedule(() => adapter.commit([], previous))
+          return {
+            snapshot: history.recover(snapshot, previous, namespace, now()),
+            bindings,
+            authoritative: false,
+            degradedAgreement: true,
+          }
+        }
         if (snapshot) history.remember(snapshot)
         return last
       }
@@ -147,6 +155,7 @@ export async function createPoolLimitsAdapter(
   const adapter: PersistenceAdapter = {
     namespace,
     read,
+    subscribe: repair.subscribe,
     async commit(commands, previous) {
       let committed: LimitsPersistenceCommit | undefined
       try {
@@ -186,7 +195,7 @@ export async function createPoolLimitsAdapter(
         throw error
       }
       if (!committed) throw new Error('Pool limits mutator was not called')
-      history.remember(committed.snapshot)
+      history.remember(committed.snapshot, previous)
       return committed
     },
   }

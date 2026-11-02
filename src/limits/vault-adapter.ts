@@ -4,7 +4,7 @@ import {
   readVaultRoster,
   type VaultRosterFile,
 } from '../claustrum/roster.js'
-import { EnvelopeHistory } from './envelope-loss.js'
+import { EnvelopeHistory, EnvelopeRepair } from './envelope-loss.js'
 import type { IdentityBinding } from './identity.js'
 import {
   applyLimitsCommands,
@@ -87,6 +87,7 @@ export async function createVaultLimitsAdapter(
   const { namespace, path } = options
   const generation = randomUUID()
   const history = new EnvelopeHistory()
+  const repair = new EnvelopeRepair()
   const now = options.now ?? Date.now
   const read = async (
     previous?: LimitsNamespace,
@@ -96,7 +97,15 @@ export async function createVaultLimitsAdapter(
       roster?.limits === undefined
         ? undefined
         : decodeEnvelope(roster.limits, namespace, generation)
-    if (history.lost(present, previous)) return adapter.commit([], previous)
+    if (history.lost(present, previous)) {
+      repair.schedule(() => adapter.commit([], previous))
+      return {
+        snapshot: history.recover(present, previous, namespace, now()),
+        bindings: bindingsOf(namespace, roster),
+        authoritative: false,
+        degradedAgreement: true,
+      }
+    }
     if (present) history.remember(present)
     return {
       snapshot: present ?? createLimitsNamespace(namespace, generation),
@@ -107,6 +116,7 @@ export async function createVaultLimitsAdapter(
   const adapter: PersistenceAdapter = {
     namespace,
     read,
+    subscribe: repair.subscribe,
     commit: async (commands, previous) => {
       const committed = await mutateVaultRoster(path, (current) => {
         const bindings = bindingsOf(namespace, current)
@@ -145,7 +155,7 @@ export async function createVaultLimitsAdapter(
           },
         }
       })
-      history.remember(committed.snapshot)
+      history.remember(committed.snapshot, previous)
       return committed
     },
   }

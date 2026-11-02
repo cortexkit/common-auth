@@ -131,6 +131,7 @@ class Runtime {
     { command: LimitsCommand; revision: number }
   >()
   snapshot!: LimitsNamespace
+  recoveryView?: LimitsPersistenceSnapshot
   bindings: readonly IdentityBinding[] = []
   lastReloadAt = Number.NEGATIVE_INFINITY
   lastActivity = Number.NEGATIVE_INFINITY
@@ -165,6 +166,14 @@ class Runtime {
     )
       throw new Error('limits-schema-mismatch')
     if (!view.authoritative) {
+      // Use repaired restrictions for dispatch, but never expose an unwritten
+      // recovery revision as a durable basis for new commands.
+      if (
+        view.degradedAgreement &&
+        this.snapshot &&
+        view.snapshot.revision > this.snapshot.revision
+      )
+        this.recoveryView = view
       this.fail(new Error('limits-unverifiable-snapshot'))
       return false
     }
@@ -176,6 +185,7 @@ class Runtime {
     )
       return false
     this.snapshot = view.snapshot
+    this.recoveryView = undefined
     this.bindings = view.bindings.map((binding) => {
       const previous = this.bindings.find((b) =>
         sameAccount(b.account, binding.account),
@@ -306,11 +316,12 @@ class Runtime {
   }
 
   provisional(): LimitsNamespace {
+    const snapshot = this.recoveryView?.snapshot ?? this.snapshot
     const pending = [...this.journal.values()]
       .map((p) => p.command)
       .filter((c) => c.type === 'mark')
     const provisional = applyLimitsCommands(
-      pruneLimitsNamespace(this.snapshot, this.clock.now()),
+      pruneLimitsNamespace(snapshot, this.clock.now()),
       pending,
       {
         now: this.clock.now(),
@@ -320,7 +331,12 @@ class Runtime {
     ).snapshot
     // Pending evidence may restrict routing, but cannot invent durable revisions
     // or acknowledged operation ids for subsequent observations.
-    return { ...this.snapshot, marks: provisional.marks }
+    return {
+      ...this.snapshot,
+      marks: provisional.marks,
+      tombstones: snapshot.tombstones,
+      access: snapshot.access,
+    }
   }
 
   enqueue(command: LimitsCommand, event?: 'success'): void {
@@ -461,11 +477,12 @@ class Runtime {
     if (controls()) await this.flush()
     if (this.dirty || this.clock.now() - this.lastReloadAt >= RELOAD_MS)
       await this.reload()
-    const current = this.bindings.find((b) =>
+    const current = (this.recoveryView?.bindings ?? this.bindings).find((b) =>
       sameAccount(b.account, binding.account),
     )
+    const snapshot = this.provisional()
     return {
-      snapshot: this.provisional(),
+      snapshot,
       blocked:
         controls() ||
         !current ||
@@ -473,7 +490,7 @@ class Runtime {
         [...this.restrictions.values()].some((r) =>
           sameAccount(r.command.binding.account, binding.account),
         ) ||
-        this.snapshot.access.some(
+        [...this.snapshot.access, ...snapshot.access].some(
           (a) =>
             sameAccount(a.account, binding.account) &&
             this.restrictive(a.state),

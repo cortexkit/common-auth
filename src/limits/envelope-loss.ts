@@ -1,4 +1,7 @@
+import { AsyncResource } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
+import { createLogger } from '../logger/index.js'
 import { mergeAccessState } from './merge-laws.js'
 import {
   createLimitsNamespace,
@@ -7,17 +10,76 @@ import {
   timedMarkKeyId,
 } from './namespace.js'
 
+const detached = new AsyncResource('common-auth-limits-recovery')
+const logger = createLogger('limits')
+
+/** Readers never join the write lock; notify them after a detached repair lands. */
+export class EnvelopeRepair {
+  private running?: Promise<void>
+  private readonly listeners = new Set<() => void>()
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  schedule(commit: () => Promise<unknown>): void {
+    if (this.running) return
+    this.running = detached.runInAsyncScope(async () => {
+      // Defer invocation until the single-flight promise is installed, and keep
+      // the write outside any caller context that holds the store lock.
+      await Promise.resolve()
+      let succeeded = false
+      try {
+        await commit()
+        succeeded = true
+      } catch (error) {
+        try {
+          logger.warn(
+            'limits envelope recovery failed; agreement remains degraded',
+            {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          )
+        } catch {
+          // A failed diagnostic must not turn detached bookkeeping into a rejection.
+        }
+      } finally {
+        this.running = undefined
+        if (succeeded) {
+          for (const listener of this.listeners) {
+            try {
+              listener()
+            } catch {
+              // Observers cannot change the result of a durable repair.
+            }
+          }
+        }
+      }
+    })
+  }
+}
+
 /** Retain only durable observations; a new, empty namespace is not lost state. */
 export class EnvelopeHistory {
   private seen?: LimitsNamespace
+  private missingGeneration?: string
+  private incorporated?: LimitsNamespace
 
-  remember(snapshot: LimitsNamespace): void {
+  remember(snapshot: LimitsNamespace, previous?: LimitsNamespace): void {
     if (this.seen && this.seen.revision > snapshot.revision) return
     this.seen = structuredClone(snapshot)
+    this.missingGeneration = undefined
+    if (previous) this.incorporated = structuredClone(previous)
   }
 
   private retained(previous?: LimitsNamespace): LimitsNamespace[] {
-    return [this.seen, previous].filter(
+    // A notification reload still carries the pre-repair registry snapshot.
+    // Do not mistake that already-merged generation for another loss.
+    const retainedPrevious = isDeepStrictEqual(previous, this.incorporated)
+      ? undefined
+      : previous
+    return [this.seen, retainedPrevious].filter(
       (snapshot): snapshot is LimitsNamespace =>
         snapshot !== undefined &&
         (snapshot === this.seen || snapshot.revision > 0),
@@ -45,14 +107,17 @@ export class EnvelopeHistory {
     )
   }
 
-  /** Called under the adapter's write lock, against the envelope present there. */
+  /** Preview a restrictive merge, or apply it against the envelope under the write lock. */
   recover(
     present: LimitsNamespace | undefined,
     previous: LimitsNamespace | undefined,
     namespace: string,
     now: number,
   ): LimitsNamespace {
-    const current = present ?? createLimitsNamespace(namespace, randomUUID())
+    if (!present) this.missingGeneration ??= randomUUID()
+    const current =
+      present ??
+      createLimitsNamespace(namespace, this.missingGeneration ?? randomUUID())
     const sources = [...this.retained(previous), current]
     const marks = new Map<string, LimitsNamespace['marks'][number]>()
     const tombstones = new Map<string, LimitsNamespace['tombstones'][number]>()

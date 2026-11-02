@@ -6,7 +6,10 @@ import {
   projectVaultRoster,
   readVaultRoster,
 } from '../../src/claustrum/roster.js'
-import { EnvelopeHistory } from '../../src/limits/envelope-loss.js'
+import {
+  EnvelopeHistory,
+  EnvelopeRepair,
+} from '../../src/limits/envelope-loss.js'
 import {
   acquireLimitsRegistry,
   applyLimitsCommands,
@@ -19,9 +22,21 @@ import {
   type PersistenceAdapter,
 } from '../../src/limits/index.js'
 import { createVaultLimitsAdapter } from '../../src/limits/vault.js'
+import {
+  createCaptureSink,
+  initLogger,
+  resetLoggerForTest,
+} from '../../src/logger/index.js'
+import type { PoolStore } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
-import { oauth, runChild, type Scenario, scenario } from '../store/helpers.js'
+import {
+  deferred,
+  oauth,
+  runChild,
+  type Scenario,
+  scenario,
+} from '../store/helpers.js'
 
 const hooks = lifetimeHooks()
 const { it, afterEach } = hooks
@@ -115,6 +130,217 @@ function childView(output: string, prefix: string): LimitsPersistenceCommit {
   return JSON.parse(line.slice(prefix.length))
 }
 
+function nextRepair(adapter: PersistenceAdapter): Promise<void> {
+  const completed = deferred()
+  const unsubscribe = adapter.subscribe?.(() => completed.resolve())
+  if (!unsubscribe) throw new Error('Expected repair notifications')
+  hooks.lifetime.unpark(unsubscribe)
+  return completed.promise.finally(unsubscribe)
+}
+
+it('pool recovery read and stale dispatch return while another process holds the save lock', async () => {
+  const f = await fixture('pool')
+  const store = f.s.open()
+  let writes = 0
+  const racing: PoolStore = {
+    ...store,
+    async updateLimitsNamespace(mutator) {
+      writes++
+      await store.updateLimitsNamespace!(mutator)
+    },
+  }
+  const adapter = await createPoolLimitsAdapter({
+    namespace: f.namespace,
+    store: racing,
+    now: () => 100,
+  })
+  const marked = await adapter.commit([mark(await adapter.read())])
+  const cleared = await adapter.commit([clear(marked)])
+  const retained = await adapter.commit([
+    { ...mark(cleared, 'tokens'), window: 'tokens' },
+  ])
+  let time = 100
+  const owner = await acquireLimitsRegistry({
+    adapter,
+    isAccessRestrictive: (state) => state === 'blocked',
+    clock: {
+      now: () => time,
+      setTimeout: () => Symbol('timer'),
+      clearTimeout() {},
+    },
+  })
+  const binding = retained.bindings[0]!
+  const requestKey = cleared.snapshot.tombstones[0]!.key
+  await f.replace({
+    ...retained.snapshot,
+    generation: 'rewritten',
+    revision: 4,
+    tombstones: [],
+    marks: [
+      ...retained.snapshot.marks,
+      {
+        key: requestKey,
+        mergeLaw: 'max-until',
+        entries: [
+          {
+            until: 100_000,
+            evidenceAt: 100,
+            baseRevision: 1,
+            committedRevision: 4,
+          },
+        ],
+      },
+      {
+        key: { ...requestKey, window: 'new-restriction' },
+        mergeLaw: 'max-until',
+        entries: [
+          {
+            until: 100_000,
+            evidenceAt: 100,
+            baseRevision: 3,
+            committedRevision: 4,
+          },
+        ],
+      },
+    ],
+  })
+  const child = runChild({
+    ...f.s.paths,
+    op: 'rotate',
+    id: 'a',
+    credential: oauth('new-a'),
+    identity: 'account-a',
+    waitForParentRead: true,
+    waitForRenewal: true,
+  })
+  hooks.lifetime.unpark(() => child.continue())
+  const exited = hooks.lifetime.operation(child.exited)
+  const completed = nextRepair(adapter)
+  try {
+    await observed(
+      hooks.lifetime,
+      child.printed(`"path":${JSON.stringify(`${f.s.configPath}.save.lock`)}`),
+    )
+    time += 1001
+    let returned = false
+    const dispatch = hooks.lifetime.operation(
+      owner.beforeDispatch(binding).then((view) => {
+        returned = true
+        return view
+      }),
+    )
+    await f.s.contended(hooks.lifetime, 'save', f.s.configPath)
+    expect(returned).toBe(true)
+    const view = await dispatch
+    expect(view.snapshot.marks.map((m) => m.key.window).sort()).toEqual([
+      'new-restriction',
+      'tokens',
+    ])
+    expect(view.snapshot.tombstones).toEqual(cleared.snapshot.tombstones)
+    expect(owner.observe(binding).baseRevision).toBe(retained.snapshot.revision)
+    expect(owner.degradedAgreement).toBe(true)
+    expect((await adapter.read()).authoritative).toBe(false)
+    await owner.reload()
+    expect(writes).toBe(4)
+    expect((await f.durable())?.revision).toBe(4)
+    expect(child.output()).not.toContain('done')
+  } finally {
+    child.continue()
+    expect(await exited, child.output()).toBe(0)
+    await observed(hooks.lifetime, completed)
+    await owner.reload()
+    expect(owner.degradedAgreement).toBe(false)
+    expect((await f.durable())?.revision).toBe(5)
+    await owner.dispose()
+  }
+})
+
+it('detached envelope repairs are single-flight and notify only after success', async () => {
+  const repair = new EnvelopeRepair()
+  const held = deferred()
+  const started = deferred()
+  const completed = deferred()
+  let writes = 0
+  repair.subscribe(() => completed.resolve())
+  const commit = async () => {
+    writes++
+    started.resolve()
+    await held.promise
+  }
+  repair.schedule(commit)
+  await started.promise
+  for (let i = 0; i < 10; i++) repair.schedule(commit)
+  expect(writes).toBe(1)
+  held.resolve()
+  await completed.promise
+  expect(writes).toBe(1)
+})
+
+it('failed detached pool repair is logged without rejecting dispatch and later success restores agreement', async () => {
+  const f = await fixture('pool')
+  const store = f.s.open()
+  let fail = false
+  const guarded: PoolStore = {
+    ...store,
+    async updateLimitsNamespace(mutator) {
+      if (fail) throw new Error('repair write unavailable')
+      await store.updateLimitsNamespace!(mutator)
+    },
+  }
+  const adapter = await createPoolLimitsAdapter({
+    namespace: f.namespace,
+    store: guarded,
+    now: () => 100,
+  })
+  const marked = await adapter.commit([mark(await adapter.read())])
+  let time = 100
+  const owner = await acquireLimitsRegistry({
+    adapter,
+    isAccessRestrictive: () => false,
+    clock: {
+      now: () => time,
+      setTimeout: () => Symbol('timer'),
+      clearTimeout() {},
+    },
+  })
+  const capture = createCaptureSink()
+  const logged = deferred()
+  initLogger({
+    captureSink: (record) => {
+      capture.sink(record)
+      logged.resolve()
+    },
+  })
+  const completed = nextRepair(adapter)
+  try {
+    await f.replace(undefined)
+    fail = true
+    time += 1001
+    const dispatch = await owner.beforeDispatch(marked.bindings[0]!)
+    expect(dispatch.snapshot.marks).toEqual(marked.snapshot.marks)
+    await observed(hooks.lifetime, logged.promise)
+    expect(owner.degradedAgreement).toBe(true)
+    expect(await f.durable()).toBeUndefined()
+    expect(capture.records).toEqual([
+      {
+        channel: 'limits',
+        level: 'warn',
+        message: 'limits envelope recovery failed; agreement remains degraded',
+        data: { error: 'repair write unavailable' },
+      },
+    ])
+    fail = false
+    await owner.reload()
+    await observed(hooks.lifetime, completed)
+    await owner.reload()
+    expect(owner.degradedAgreement).toBe(false)
+    expect((await f.durable())?.marks).toEqual(marked.snapshot.marks)
+  } finally {
+    await owner.dispose()
+    resetLoggerForTest()
+  }
+})
+
 for (const kind of ['pool', 'vault'] as const) {
   for (const cause of [
     'missing',
@@ -139,9 +365,10 @@ for (const kind of ['pool', 'vault'] as const) {
               ...(cause === 'tombstone' && { tombstones: [], revision: 3 }),
             }
       await f.replace(rewritten)
+      const completed = nextRepair(adapter)
       const repaired = await adapter.read()
       expect(repaired.degradedAgreement).toBe(true)
-      expect(repaired.authoritative).toBe(true)
+      expect(repaired.authoritative).toBe(false)
       expect(repaired.snapshot.revision).toBeGreaterThan(
         Math.max(2, rewritten?.revision ?? 0),
       )
@@ -155,8 +382,11 @@ for (const kind of ['pool', 'vault'] as const) {
       )
       if (rewritten)
         expect(repaired.snapshot.generation).toBe(rewritten.generation)
+      await observed(hooks.lifetime, completed)
       expect(await f.durable()).toEqual(repaired.snapshot)
-      expect((await adapter.read()).degradedAgreement).not.toBe(true)
+      const authoritative = await adapter.read()
+      expect(authoritative.degradedAgreement).not.toBe(true)
+      expect(authoritative.authoritative).toBe(true)
     })
   }
 
@@ -184,10 +414,12 @@ for (const kind of ['pool', 'vault'] as const) {
     expect(at50.snapshot.revision).toBe(50)
     expect(at50.snapshot.tombstones[0]?.revision).toBe(50)
     await f.replace(undefined)
+    const completed = nextRepair(p1)
     const recovered = await p1.read()
     expect(recovered.degradedAgreement).toBe(true)
     expect(recovered.snapshot.revision).toBe(50)
     expect(recovered.snapshot.lowWatermark).toBeGreaterThanOrEqual(50)
+    await observed(hooks.lifetime, completed)
     const rejected = await p1.commit([queued])
     expect(rejected.outcomes).toMatchObject([
       { status: 'rejected', reason: 'below-watermark' },
@@ -244,6 +476,7 @@ for (const kind of ['pool', 'vault'] as const) {
     const cleared = await original.commit([clear(marked)])
     await f.replace(undefined)
     const replacement = await f.adapter()
+    const completed = nextRepair(replacement)
     const recovered = await replacement.read(cleared.snapshot)
     expect(recovered.degradedAgreement).toBe(true)
     expect(recovered.snapshot.revision).toBeGreaterThan(
@@ -251,6 +484,8 @@ for (const kind of ['pool', 'vault'] as const) {
     )
     expect(recovered.snapshot.tombstones).toEqual(cleared.snapshot.tombstones)
     expect(recovered.snapshot.marks).toEqual([])
+    await observed(hooks.lifetime, completed)
+    expect((await replacement.read()).authoritative).toBe(true)
   })
 
   for (const state of ['blocked', 'eligible'] as const) {

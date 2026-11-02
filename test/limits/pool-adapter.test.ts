@@ -285,13 +285,18 @@ it('rechecks the envelope generation when a writer replaces it between binding r
     },
   }
   const adapter = await createPoolLimitsAdapter({ namespace, store: racing })
+  const completed = deferred()
+  const unsubscribe = adapter.subscribe?.(() => completed.resolve())
+  hooks.lifetime.unpark(() => unsubscribe?.())
   changing = true
   const view = await adapter.read()
   expect(reads).toBe(3)
-  expect(view.authoritative).toBe(true)
+  expect(view.authoritative).toBe(false)
   expect(view.snapshot.generation).toBe('replacement-generation')
   // A replaced generation counts as loss and is repaired, never passively accepted.
   expect(view.snapshot.revision).toBe(3)
   expect(view.snapshot.lowWatermark).toBe(3)
   expect(view.degradedAgreement).toBe(true)
+  await observed(hooks.lifetime, completed.promise)
+  expect((await adapter.read()).authoritative).toBe(true)
 })

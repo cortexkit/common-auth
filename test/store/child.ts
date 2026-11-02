@@ -82,7 +82,15 @@ if (lossTask.op === 'limits-envelope-loss') {
   )
   console.log(`cleared:${JSON.stringify(cleared)}`)
   await resume
-  console.log(`restored:${JSON.stringify(await adapter.read())}`)
+  const repaired = new Promise<void>((resolve) => adapter.subscribe?.(resolve))
+  const restored = await adapter.read()
+  if (!restored.authoritative) await repaired
+  console.log(
+    `restored:${JSON.stringify({
+      ...(await adapter.read()),
+      degradedAgreement: restored.degradedAgreement,
+    })}`,
+  )
   process.exit(0)
 }
 
