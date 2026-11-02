@@ -16,6 +16,8 @@ import {
 } from './request-history.js'
 import type { Scope } from './scope.js'
 import type { AccountKey, LimitSignal, LimitWindow } from './signal.js'
+import type { TerminalScanFacts } from './terminal.js'
+import { terminalRefusalDecision, terminalWaitDisabled } from './terminal.js'
 import type { WakeFacts } from './wake.js'
 import { liftedWindowsForWake, waitCheckpoint } from './wake.js'
 
@@ -69,6 +71,8 @@ export interface TerminalFacts {
   readonly hostRetry?: HostRetry
   readonly retryAfterMs?: number
   readonly resetAt?: number
+  /** Pool quota refusals require per-field scan evidence to retain a reset. */
+  readonly scan?: TerminalScanFacts
 }
 
 export interface PolicyFacts {
@@ -123,6 +127,9 @@ export type LimitDecision = DecisionBase &
         readonly retryAfterMs: number
         readonly target: number
         readonly checkpoint: WaitCheckpoint
+        readonly resetAt?: number
+        /** Carry into wake.kind so terminal waits omit the ordinary cache bound. */
+        readonly waitKind?: 'terminal'
       }
     | {
         readonly action: 'retain'
@@ -137,6 +144,9 @@ export type LimitDecision = DecisionBase &
         readonly resetAt?: number
         readonly target: number
         readonly checkpoint: WaitCheckpoint
+        readonly retryAfterMs?: number
+        /** Carry into wake.kind; Pi reselects once and then refuses without another wait. */
+        readonly waitKind?: 'terminal'
       }
     | {
         readonly action: 'exclude-for-request'
@@ -172,6 +182,9 @@ function refusal(
   reason: RefusalReason,
   metadata?: TerminalFacts,
 ): LimitDecision {
+  const terminal =
+    metadata && terminalRefusalDecision(facts, axes, history, metadata)
+  if (terminal) return terminal
   const policy = axes.refusals[reason][facts.host]
   return {
     action: 'refuse',
@@ -397,7 +410,9 @@ export function decideAfterLimit(
     facts.remainingRetries !== undefined &&
     facts.remainingRetries < 1
   ) {
-    return facts.terminal?.retryable === false
+    return facts.terminal &&
+      (facts.terminal.retryable === false ||
+        terminalWaitDisabled(facts.terminal, axes))
       ? refusal(facts, axes, history, facts.terminal.reason, facts.terminal)
       : pass('host-retries-exhausted')
   }
@@ -564,7 +579,13 @@ export function decideAfterLimit(
   const waited = poolWait(facts, axes, history, candidates)
   if (waited) return waited
   if (facts.phase === 'pre-send' && !candidates.length)
-    return refusal(facts, axes, history, 'auth', facts.terminal)
+    return refusal(
+      facts,
+      axes,
+      history,
+      facts.terminal?.reason ?? 'auth',
+      facts.terminal,
+    )
   if (
     facts.host === 'opencode2' &&
     facts.hostPhase === 'retry' &&
@@ -584,6 +605,7 @@ export function decideAfterLimit(
   }
   if (
     axes.terminalPolicy === 'status-history' &&
+    axes.terminalStatusHistory &&
     facts.host !== 'opencode2' &&
     !facts.terminal
   ) {
@@ -601,8 +623,11 @@ export function decideAfterLimit(
         source: 'pool',
         reason: 'quota',
         retryAfterMs: deadlines.length
-          ? Math.max(1000, Math.min(...deadlines) - facts.now)
-          : 60000,
+          ? Math.max(
+              axes.terminalStatusHistory.minRetryMs,
+              Math.min(...deadlines) - facts.now,
+            )
+          : axes.terminalStatusHistory.defaultRetryMs,
       })
     }
     return pass('original-response')

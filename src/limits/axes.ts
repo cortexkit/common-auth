@@ -69,6 +69,11 @@ export interface LimitAxes {
   }
   readonly terminalMetadata: 'setting-capped-fresh' | 'baseline'
   readonly terminalPolicy: 'provided' | 'pool' | 'status-history'
+  /** Required when selecting status-history; other terminal policies ignore it. */
+  readonly terminalStatusHistory?: {
+    readonly minRetryMs: number
+    readonly defaultRetryMs: number
+  }
   readonly refusals: Readonly<Record<RefusalReason, HostValues<RefusalPolicy>>>
 }
 

@@ -110,6 +110,13 @@ export type {
   LimitWindow,
 } from './signal.js'
 export type {
+  TerminalCandidate,
+  TerminalReset,
+  TerminalScanFacts,
+  TerminalWindow,
+} from './terminal.js'
+export { scanTerminalReset } from './terminal.js'
+export type {
   LimitMessageOptions,
   LimitMessages,
   MessageParameters,

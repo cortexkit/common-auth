@@ -230,6 +230,7 @@ export const statusVaultOrder: LimitAxes = immutable<LimitAxes>({
   },
   terminalMetadata: 'baseline',
   terminalPolicy: 'status-history',
+  terminalStatusHistory: { minRetryMs: 1000, defaultRetryMs: 60000 },
   refusals: refusals(
     {
       family: 'claustrum-429',
