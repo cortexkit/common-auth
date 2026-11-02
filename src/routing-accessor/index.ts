@@ -1,6 +1,10 @@
 // Optional THALAMUS routing for vault mode only. Account ids here are vault
 // account ids; local pool rows are not known to the routing engine.
 
+import { routingHandle } from './hold-cap.js'
+
+export { holdWaitMaxS } from './hold-cap.js'
+
 /** An eligible vault route, not a local pool row. */
 export interface RoutingCandidate {
   /** Vault account id, not the plugin's route id. */
@@ -20,10 +24,10 @@ export interface AskRoutingInput<
   deadlineMs?: number
   /**
    * Longest same-account hold, in seconds, that routing may advise. The
-   * plugin computes it as `min(maxSameAccountWait, cache expiry - now)` and
-   * sends 0 when it has no accepted response on the pinned account, because
-   * then there is no prompt cache worth waiting for. Fractions are floored and
-   * negatives become 0. Omit it to leave routing's default cap in force.
+   * holdWaitMaxS helper caps it by the setting and the current account's cache
+   * expiry, returning 0 when there is no accepted prompt cache worth waiting
+   * for. Fractions are floored and negatives become 0. Omit it to leave
+   * routing's default cap in force.
    */
   holdWaitMaxS?: number
 }
@@ -76,17 +80,6 @@ export type ReportRoutingInput = RoutingReportIdentity &
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
-}
-
-function routingHandle(sessionId: string): Record<string, unknown> | undefined {
-  // The bridge can load after the auth plugin, so never cache the accessor.
-  const routing: unknown = Reflect.get(
-    globalThis,
-    Symbol.for('cortexkit.routing'),
-  )
-  if (typeof routing !== 'function') return undefined
-  const handle: unknown = routing(sessionId)
-  return isObject(handle) ? handle : undefined
 }
 
 function selectionFor<Candidate extends RoutingCandidate>(
