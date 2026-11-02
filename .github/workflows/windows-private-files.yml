@@ -148,7 +148,7 @@ jobs:
           bun --version
           bun install --frozen-lockfile
           if ($LASTEXITCODE) { throw 'Install failed' }
-          bun test test/claustrum/hub.test.ts
+          bun test test/claustrum/hub.test.ts test/limits/registry-races.test.ts
           if ($LASTEXITCODE) { throw 'Discovery hub tests failed' }
       - name: Lock contention and Windows private IO tests
         if: always()

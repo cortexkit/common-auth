@@ -62,7 +62,7 @@ jobs:
       - name: Discovery hub and consumer tests
         run: |
           bun --version
-          bun test test/claustrum/hub.test.ts test/claustrum/consumer.test.ts
+          bun test test/claustrum/hub.test.ts test/claustrum/consumer.test.ts test/limits/registry-races.test.ts
   # Runs the real OpenCode 2 CLI (installed from npm at test time, pinned in
   # the test) against a loopback mock provider. It fails when a host release
   # stops firing, or moves, one of the hooks the /opencode2 subpath relies on.
