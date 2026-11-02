@@ -4,12 +4,51 @@
 // so the observing test process survives the crash.
 import { readFileSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
+import type { VaultInventory } from '../../src/claustrum/custody.js'
+import {
+  mutateVaultRoster,
+  projectVaultRoster,
+} from '../../src/claustrum/roster.js'
 import {
   openPoolStore,
   type PoolCredential,
   type WriteStep,
 } from '../../src/store/index.js'
 import { CRASH_EXIT_CODE, listCodec, objectStateCodec } from './helpers.js'
+
+type VaultTask = {
+  op: 'vault-roster'
+  path: string
+  discoveries?: { inventory: VaultInventory; now: number }[]
+  knownIdentity?: string
+}
+
+const vaultTask = JSON.parse(process.argv[2] ?? '{}') as VaultTask
+if (vaultTask.op === 'vault-roster') {
+  for (const { inventory, now } of vaultTask.discoveries ?? []) {
+    await mutateVaultRoster(vaultTask.path, (current) => ({
+      next: projectVaultRoster(current, inventory, { now }),
+      result: undefined,
+    }))
+  }
+  if (vaultTask.knownIdentity !== undefined) {
+    await mutateVaultRoster(vaultTask.path, (current) => {
+      if (!current?.rows[0]) throw new Error('Expected a vault route')
+      return {
+        next: {
+          ...current,
+          rows: current.rows.map((row, index) =>
+            index === 0
+              ? { ...row, accountIdentity: vaultTask.knownIdentity }
+              : row,
+          ),
+        },
+        result: undefined,
+      }
+    })
+  }
+  process.exit(0)
+}
 
 type Task = {
   configPath: string

@@ -89,6 +89,8 @@ export interface VaultRosterFile {
   complete: boolean
   /** The unusable records of an incomplete reply: a safe id and a fixed reason. */
   rejected?: SkippedVaultRecord[]
+  /** Opaque limits data; roster-only writers preserve even newer schemas. */
+  limits?: unknown
   rows: VaultRosterRow[]
   declined: DeclinedAccount[]
 }
@@ -379,6 +381,7 @@ export function projectVaultRoster(
   return {
     version: 1,
     view: inventory.view,
+    ...(previous?.limits !== undefined && { limits: previous.limits }),
     complete,
     ...(!complete && {
       rejected: inventory.skipped.map((record) => ({
@@ -514,6 +517,7 @@ function decodeRoster(value: unknown): VaultRosterFile {
     // that was used whole, so it reads as complete.
     complete: value.complete !== false,
     ...(rejected && { rejected }),
+    ...(value.limits !== undefined && { limits: value.limits }),
     rows,
     declined,
   }

@@ -72,6 +72,10 @@
       "types": "./dist/limits/index.d.ts",
       "import": "./dist/limits/index.js"
     },
+    "./limits/vault": {
+      "types": "./dist/limits/vault.d.ts",
+      "import": "./dist/limits/vault.js"
+    },
     "./routing": {
       "types": "./dist/routing/index.d.ts",
       "import": "./dist/routing/index.js"
