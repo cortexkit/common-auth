@@ -11,6 +11,7 @@ export type PoolOperation =
   | 'remove'
   | 'reorder'
   | 'updateSettings'
+  | 'updateLimitsNamespace'
   | 'recordIdentity'
   | 'updateProviderState'
   | 'refresh'

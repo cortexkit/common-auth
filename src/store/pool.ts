@@ -3,6 +3,10 @@ import { type Attribution, recordQuota } from './attribution.js'
 import type { PoolOperationError } from './errors.js'
 import type { PoolLogger } from './hooks.js'
 import {
+  type PoolLimitsMutator,
+  updatePoolLimitsNamespace,
+} from './limits-namespace.js'
+import {
   type HoldPoint,
   type InitializeOutcome,
   initializePool,
@@ -282,12 +286,20 @@ export interface PoolStore {
   /**
    * One locked write of the plugin's settings (since 0.2.6) beside the pool,
    * in the config file. Refuses a result that sets a pool-owned key
-   * (`invalid-input`). Takes `extraLocks`, then the store locks.
+   * (`invalid-input`). Carries commonAuthLimits through unchanged and refuses
+   * an explicit alteration to it. Takes `extraLocks`, then the store locks.
    */
   updateSettings(
     mutator: SettingsMutator,
     options?: UpdateSettingsOptions,
   ): Promise<UpdateSettingsResult>
+  /**
+   * Merges commonAuthLimits with current row bindings in one config write.
+   * Requires a ready pool and takes only the store locks. May run in an
+   * onPersisted/onFailure hook or a pull, but not in a lock-held mutator.
+   * Optional so existing structural implementations remain compatible.
+   */
+  updateLimitsNamespace?(mutator: PoolLimitsMutator): Promise<void>
   /**
    * Records the identity a lookup found for the row's credential. Since
    * 0.3.1 it takes the credential epoch the lookup was issued for, and
@@ -467,6 +479,7 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     readSettings: () => readPoolSettings(rt),
     updateSettings: (mutator, callOptions) =>
       updatePoolSettings(rt, mutator, callOptions),
+    updateLimitsNamespace: (mutator) => updatePoolLimitsNamespace(rt, mutator),
     recordIdentity: (id, identity, attribution, callOptions) =>
       recordRowIdentity(rt, id, identity, attribution, callOptions),
     refresh: (id, provider, callOptions) =>

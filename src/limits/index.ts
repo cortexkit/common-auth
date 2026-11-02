@@ -118,6 +118,10 @@ export { LimitsPersistenceRefusal } from './persistence.js'
 export type { PiWaitOptions, PiWaitResult } from './pi-wait.js'
 export { waitForPi } from './pi-wait.js'
 export {
+  createPoolLimitsAdapter,
+  type PoolLimitsAdapterOptions,
+} from './pool-adapter.js'
+export {
   confirmedAffinity,
   earliestPoolEngine,
   limitPresets,

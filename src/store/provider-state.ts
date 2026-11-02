@@ -1,6 +1,6 @@
 import type { Attribution } from './attribution.js'
 import type { PoolOperation } from './errors.js'
-import { assertNotInsideHook, runInsideHook } from './hooks.js'
+import { assertNotInsideHook, runInsideCodec, runInsideHook } from './hooks.js'
 import { runOperation, type Transaction, withTransaction } from './mutate.js'
 import type { RowToggleOptions } from './rows.js'
 import {
@@ -70,7 +70,7 @@ export function acceptProviderState(
       'invalid-provider-state',
       `${what} cannot be stored as JSON`,
     )
-  if (!codec.validate(normalized))
+  if (!runInsideCodec(() => codec.validate(normalized)))
     throw refusal(
       operation,
       id,
@@ -100,7 +100,9 @@ export function mergedProviderState(
       codec,
       operation,
       id,
-      codec.merge(structuredClone(onDisk), structuredClone(incoming)),
+      runInsideCodec(() =>
+        codec.merge?.(structuredClone(onDisk), structuredClone(incoming)),
+      ),
       'the merged provider state',
     ),
   }
@@ -122,21 +124,23 @@ export function replacementProviderState(
 ): ProviderStateWrite {
   const hook = codec?.onReplace
   const next = hook
-    ? hook(
-        row.providerState === undefined
-          ? undefined
-          : structuredClone(row.providerState),
-        {
-          id: row.id,
-          credentialEpoch,
-          ...(row.identity !== undefined
-            ? { previousIdentity: row.identity }
-            : {}),
-          ...(identity !== undefined ? { identity } : {}),
-          ...(incoming !== undefined
-            ? { incoming: structuredClone(incoming) }
-            : {}),
-        },
+    ? runInsideCodec(() =>
+        hook(
+          row.providerState === undefined
+            ? undefined
+            : structuredClone(row.providerState),
+          {
+            id: row.id,
+            credentialEpoch,
+            ...(row.identity !== undefined
+              ? { previousIdentity: row.identity }
+              : {}),
+            ...(identity !== undefined ? { identity } : {}),
+            ...(incoming !== undefined
+              ? { incoming: structuredClone(incoming) }
+              : {}),
+          },
+        ),
       )
     : incoming
   if (next === undefined) return { kind: 'clear' }

@@ -1,4 +1,5 @@
 import { PoolOperationError } from './errors.js'
+import { runInsideCodec } from './hooks.js'
 import {
   type Progress,
   type StoreContext,
@@ -81,8 +82,8 @@ export function mergedQuota(
   stored: unknown,
   observation: unknown,
 ): unknown {
-  const merged = ctx.codec.merge(stored, observation)
-  if (!ctx.codec.validate(merged))
+  const merged = runInsideCodec(() => ctx.codec.merge(stored, observation))
+  if (!runInsideCodec(() => ctx.codec.validate(merged)))
     throw refusal(
       'pull',
       id,
