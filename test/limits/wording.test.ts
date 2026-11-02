@@ -137,7 +137,9 @@ describe('new duration rendering', () => {
     expect(seen.size).toBe(59 + 30 * 24 * 60)
     expect(unsafeByHost(body('json-412'))).toBe(false)
     expect(unsafeByHost(body('pi-final'))).toBe(false)
-  })
+    // Exhaustive by design: about 0.3 s on Bun 1.4, but Bun 1.3.14's regex
+    // engine takes 4-9 s for the 43,259 distinct renderings, past the 5 s default.
+  }, 30_000)
 })
 
 describe('template registration', () => {
