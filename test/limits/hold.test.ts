@@ -267,7 +267,9 @@ describe('same-account hold eligibility', () => {
     ).toMatchObject({
       action: 'refuse',
       reason: 'quota',
-      retryAfterMs: 600000,
+      // Pool refusals take their wait only from a fresh reading scan, never
+      // from a caller-supplied value; with no scan, the 300 s fallback applies.
+      retryAfterMs: 300000,
     })
   })
 
