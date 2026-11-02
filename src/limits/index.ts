@@ -1,4 +1,25 @@
+export type {
+  DecisionFamily,
+  HostValues,
+  LimitAxes,
+  LimitHost,
+  RefusalPolicy,
+  RefusalReason,
+  UnknownLimitPolicy,
+} from './axes.js'
+export { marksAfterSuccess } from './axes.js'
 export { toOpenCode2LimitSignal } from './bridge.js'
+export type {
+  HoldFacts,
+  LimitCandidate,
+  LimitDecision,
+  ModeSelection,
+  PolicyFacts,
+  TerminalFacts,
+  TimedBlocker,
+  WaitCheckpoint,
+} from './decide.js'
+export { decideAfterLimit } from './decide.js'
 export type { ResetFormatInput, ResetFormatter } from './duration.js'
 export { formatDuration, formatReset } from './duration.js'
 export type {
@@ -22,6 +43,7 @@ export {
   resolveHeaderReset,
   resolveRetryAfter,
 } from './header-classifier.js'
+export { holdDelayMs } from './jitter.js'
 export { sanitizeRefusalLabel } from './labels.js'
 export type {
   FailureEvent,
@@ -39,6 +61,27 @@ export {
   markIsActive,
   reduceFailureHistory,
 } from './marker.js'
+export {
+  confirmedAffinity,
+  earliestPoolEngine,
+  limitPresets,
+  statusVaultOrder,
+  windowRouter,
+} from './presets.js'
+export type {
+  RequestExclusion,
+  RequestHistory,
+  RequestHistoryEvent,
+  RetainHistory,
+} from './request-history.js'
+export {
+  commitRequestExclusion,
+  createRequestHistory,
+  isRequestExcluded,
+  REQUEST_EXCLUSION_EFFECTS,
+  reduceRequestHistory,
+  sameAccount,
+} from './request-history.js'
 export type { ResetSource, ResolvedReset } from './reset.js'
 export { resolveNamedWindowReset, resolveReset } from './reset.js'
 export type { FamilyOf, Scope } from './scope.js'
