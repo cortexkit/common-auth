@@ -16,13 +16,19 @@ import {
 } from './request-history.js'
 import type { Scope } from './scope.js'
 import type { AccountKey, LimitSignal, LimitWindow } from './signal.js'
+import type { WakeFacts } from './wake.js'
+import { liftedWindowsForWake, waitCheckpoint } from './wake.js'
 
 export interface TimedBlocker {
   readonly kind: 'hard' | 'cooldown' | 'soft'
   readonly until?: number
 }
 
-/** Admission is before timed marks; placement and readiness are separate facts. */
+/**
+ * Admission includes the caller's minimum quota thresholds, access checks,
+ * current identity/credential ownership checks and pending-write fences.
+ * Placement and readiness are separate facts.
+ */
 export interface LimitCandidate {
   readonly account: AccountKey
   readonly admitted: boolean
@@ -90,6 +96,7 @@ export interface PolicyFacts {
   readonly credentialRecovery?: { readonly retryMs?: number }
   readonly retryHintsMs?: readonly number[]
   readonly hold?: HoldFacts
+  readonly wake?: WakeFacts
   readonly remainingRetries?: number
   readonly terminal?: TerminalFacts
   readonly poolWaitBudgetMs?: number
@@ -121,11 +128,15 @@ export type LimitDecision = DecisionBase &
         readonly action: 'retain'
         readonly account: AccountKey
         readonly retryMs?: number
+        /** Exhaustion windows waived for this dispatch only, never persisted. */
+        readonly liftedWindows?: readonly string[]
       }
     | {
         readonly action: 'wait-then-reselect'
         readonly delayMs: number
         readonly resetAt?: number
+        readonly target: number
+        readonly checkpoint: WaitCheckpoint
       }
     | {
         readonly action: 'exclude-for-request'
@@ -221,14 +232,7 @@ function hold(
     delayMs,
     retryAfterMs: delayMs,
     target,
-    checkpoint: {
-      accountKey: { ...current.account },
-      decidedAt: facts.now,
-      blockers: windows.map((window) => ({
-        window: window.window,
-        resetAt: window.resetAt as number,
-      })),
-    },
+    checkpoint: waitCheckpoint(current.account, facts.now, windows),
     reason: 'confirmed-limit',
     retryable: true,
     hostRetry:
@@ -262,12 +266,21 @@ function poolWait(
       if (blockers.some((blocker) => !finiteFuture(blocker.until, facts.now)))
         return undefined
       return blockers.length
-        ? Math.max(...blockers.map((blocker) => blocker.until as number))
+        ? {
+            candidate,
+            time: Math.max(
+              ...blockers.map((blocker) => blocker.until as number),
+            ),
+          }
         : undefined
     })
-    .filter((time): time is number => time !== undefined)
-  const proposed = times.length
-    ? Math.min(...times) - facts.now
+    .filter((entry) => entry !== undefined)
+  const earliest = times.reduce<(typeof times)[number] | undefined>(
+    (best, entry) => (!best || entry.time < best.time ? entry : best),
+    undefined,
+  )
+  const proposed = earliest
+    ? earliest.time - facts.now
     : candidates.some((candidate) =>
           candidate.blockers.some((blocker) => blocker.kind !== 'soft'),
         )
@@ -285,12 +298,21 @@ function poolWait(
   if (remaining <= 0) return refusal(facts, axes, history, 'incomplete')
   if (proposed === undefined)
     return refusal(facts, axes, history, 'quota', facts.terminal)
+  const delayMs = Math.min(
+    proposed,
+    remaining,
+    budget > 0 ? budget - elapsed : Number.POSITIVE_INFINITY,
+  )
+  const waitedAccount = earliest?.candidate ?? candidates[0]
+  if (!waitedAccount) return undefined
   return {
     action: 'wait-then-reselect',
-    delayMs: Math.min(
-      proposed,
-      remaining,
-      budget > 0 ? budget - elapsed : Number.POSITIVE_INFINITY,
+    delayMs,
+    target: facts.now + delayMs,
+    checkpoint: waitCheckpoint(
+      waitedAccount.account,
+      facts.now,
+      waitedAccount.confirmedBlockers ?? [],
     ),
     reason: 'pool-blocked',
     retryable: true,
@@ -378,6 +400,56 @@ export function decideAfterLimit(
     return facts.terminal?.retryable === false
       ? refusal(facts, axes, history, facts.terminal.reason, facts.terminal)
       : pass('host-retries-exhausted')
+  }
+  if (facts.wake && facts.phase === 'pre-send') {
+    const wake = facts.wake
+    const held = candidates.find((candidate) =>
+      sameAccount(candidate.account, wake.checkpoint.accountKey),
+    )
+    const windows =
+      held?.confirmedBlockers ??
+      (held && signal && sameAccount(signal.account, held.account)
+        ? signal.windows
+        : [])
+    const liftedWindows = held
+      ? liftedWindowsForWake(wake, held.account, windows, facts.now)
+      : []
+    const bound = facts.hold
+    const cacheValid =
+      wake.kind === 'terminal' ||
+      (bound !== undefined &&
+        Number.isFinite(bound.cacheExpiresAt) &&
+        facts.now <= bound.cacheExpiresAt &&
+        wake.target <= bound.cacheExpiresAt &&
+        bound.maxWaitMs > 0 &&
+        wake.target - wake.checkpoint.decidedAt <= bound.maxWaitMs)
+    if (
+      held &&
+      Number.isFinite(wake.target) &&
+      wake.target >= wake.checkpoint.decidedAt &&
+      facts.now >= wake.target &&
+      cacheValid &&
+      held.blockers.every(
+        (blocker) =>
+          blocker.until !== undefined &&
+          Number.isFinite(blocker.until) &&
+          blocker.until <= facts.now,
+      ) &&
+      (held.ready || windows.some((window) => window.confirmed)) &&
+      windows
+        .filter((window) => window.confirmed)
+        .every((window) => liftedWindows.includes(window.window))
+    ) {
+      return {
+        action: 'retain',
+        account: held.account,
+        liftedWindows,
+        reason: 'wait-elapsed',
+        retryable: true,
+        hostRetry: 'leave',
+        history: reduceRequestHistory(history, { type: 'selected' }),
+      }
+    }
   }
   if (facts.credentialRecovery && current) {
     return {
