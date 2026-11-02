@@ -5,6 +5,7 @@ import type {
   RefusalReason,
 } from './axes.js'
 import type { HostRetry } from './families.js'
+import { MAX_SAME_ACCOUNT_HOLD_MS } from './hold.js'
 import { holdDelayMs } from './jitter.js'
 import type { RequestHistory } from './request-history.js'
 import {
@@ -45,7 +46,7 @@ export interface WaitCheckpoint {
   }[]
 }
 
-/** Cache expiry uses the caller's epoch clock; wait bounds are milliseconds. */
+/** Resolved via sameAccountHoldFacts; expiry uses the caller's epoch clock. */
 export interface HoldFacts {
   readonly cacheExpiresAt: number
   readonly maxWaitMs: number
@@ -186,7 +187,10 @@ function hold(
   const bound = facts.hold
   if (
     axes.shortLimit.holdBound === 'disabled' ||
-    (facts.host === 'opencode2' && facts.hostPhase !== 'retry') ||
+    (facts.host === 'opencode2' &&
+      (facts.hostPhase !== 'retry' ||
+        facts.remainingRetries === undefined ||
+        !(facts.remainingRetries >= 1))) ||
     !current?.admitted ||
     !bound ||
     bound.maxWaitMs <= 0 ||
@@ -207,6 +211,7 @@ function hold(
   if (
     !Number.isFinite(target) ||
     target > Math.min(bound.cacheExpiresAt, facts.now + bound.maxWaitMs) ||
+    (facts.host === 'opencode2' && delayMs > MAX_SAME_ACCOUNT_HOLD_MS) ||
     (bound.maxDelayMs !== undefined && delayMs > bound.maxDelayMs)
   )
     return undefined

@@ -1,4 +1,13 @@
 export type {
+  AcceptedActivity,
+  SessionActivity,
+  SessionActivityStore,
+} from './activity.js'
+export {
+  createSessionActivityStore,
+  effectiveCacheTtlMs,
+} from './activity.js'
+export type {
   DecisionFamily,
   HostValues,
   LimitAxes,
@@ -43,6 +52,12 @@ export {
   resolveHeaderReset,
   resolveRetryAfter,
 } from './header-classifier.js'
+export type { MaxSameAccountWait } from './hold.js'
+export {
+  MAX_SAME_ACCOUNT_HOLD_MS,
+  readMaxSameAccountWait,
+  sameAccountHoldFacts,
+} from './hold.js'
 export { holdDelayMs } from './jitter.js'
 export { sanitizeRefusalLabel } from './labels.js'
 export type {
