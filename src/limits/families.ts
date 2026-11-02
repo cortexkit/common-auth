@@ -22,7 +22,7 @@ export interface RefusalInput {
   readonly messages?: LimitMessages
   readonly parameters?: { readonly labels?: readonly string[] }
   /**
-   * The confirmed-affinity preset's adapter opts in for re-login guidance only.
+   * Set only for re-login guidance, where the user needs to know which account to sign in again.
    * Ordinary refusals omit labels, even when the caller supplies them.
    */
   readonly labelPolicy?: 'relogin'
