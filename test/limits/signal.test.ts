@@ -1,4 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   type AccountKey,
   type LimitClassifier,
@@ -157,10 +161,17 @@ describe('limit signal contract', () => {
     expect(build.success).toBe(true)
     expect(build.logs).toEqual([])
     const code = await build.outputs[0]!.text()
-    const imported = await import(
-      `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
-    )
-    expect(typeof imported.markFromSignal).toBe('function')
+    // A file, not a data: URL: Bun 1.3.14 rejects a data: URL this long
+    // with NameTooLong before evaluating it.
+    const dir = await mkdtemp(join(tmpdir(), 'limits-bundle-'))
+    try {
+      const file = join(dir, 'limits.mjs')
+      await writeFile(file, code)
+      const imported = await import(pathToFileURL(file).href)
+      expect(typeof imported.markFromSignal).toBe('function')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 
