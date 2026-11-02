@@ -20,6 +20,7 @@ import type {
   RequestKind,
   RequestScope,
   ResponseAccount,
+  RetryDisposition,
   RetryReason,
   SameAccountRetryInput,
   SameAccountRetryResult,
@@ -71,6 +72,8 @@ interface AttemptRecord<A> {
   transport?: Transport
   status?: number
   outputStarted: boolean
+  /** An adapter's response, event or chooser veto belongs to this attempt only. */
+  hostRetry?: RetryDisposition['hostRetry']
   limit?: { readonly signal: LimitSignal; readonly delivered: Promise<void> }
   /** Set once the retry hook has decided about this attempt. */
   judged?: boolean
@@ -782,6 +785,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     if (!verdict) return
     if (verdict.quota !== undefined) noteQuota(rec, transport, verdict.quota)
     if (verdict.outputStarted) rec.outputStarted = true
+    if (verdict.hostRetry === 'veto') rec.hostRetry = 'veto'
     if (verdict.limit) noteLimit(rec, verdict.limit, transport)
     if (verdict.error !== undefined)
       finish(rec, { reason: 'failed', message: verdict.error })
@@ -986,13 +990,18 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           )
         }
         if (adapter.rewriteResponse) {
-          response =
-            (await adapter.rewriteResponse({
-              ...account,
-              request: draft.request,
-              response,
-              attempt,
-            })) ?? response
+          const rewritten = await adapter.rewriteResponse({
+            ...account,
+            request: draft.request,
+            response,
+            attempt,
+          })
+          if (rewritten && 'response' in rewritten) {
+            response = rewritten.response
+            if (rewritten.hostRetry === 'veto') rec.hostRetry = 'veto'
+          } else {
+            response = rewritten ?? response
+          }
         }
         if (response !== original) draft.response = response
       },
@@ -1135,6 +1144,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           return
         }
         const rec = picked
+        const vetoed = () => rec.hostRetry === 'veto'
         await withSelection(rec.scope, async (assertActive) => {
           const checkRetryActive = assertActive
           const retrySameAccount = adapter.retrySameAccount?.bind(adapter)
@@ -1143,6 +1153,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             retrySameAccount &&
             handle &&
             !rec.outputStarted &&
+            (!vetoed() || mixed(draft.sessionID)) &&
             !rec.sameAccountRetry
           ) {
             if (rec.ended) await rec.ended
@@ -1157,6 +1168,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   rec.accountId === accountId &&
                   pickForRetry(draft.sessionID) === rec &&
                   !rec.outputStarted &&
+                  (!vetoed() || mixed(draft.sessionID)) &&
                   (!ownership ||
                     latestTransportOwned.get(draft.sessionID) === true)
                 if (!active() || rec.sameAccountRetry) return false
@@ -1285,6 +1297,11 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                 // send it again.
                 decision = { retry: false }
                 reason = 'output-started'
+              } else if (vetoed()) {
+                // Refusals formatted by the adapter carry policy on the attributed attempt,
+                // not in message wording or a session-wide flag.
+                decision = { retry: false }
+                reason = 'adapter-veto'
               } else {
                 if (rec.limit) {
                   const refused = {
@@ -1319,7 +1336,17 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                     )
                   }
                   const hold =
-                    typeof choice === 'object' ? choice.hold : undefined
+                    typeof choice === 'object' && 'hold' in choice
+                      ? choice.hold
+                      : undefined
+                  const wait =
+                    typeof choice === 'object' && 'waitThenReselect' in choice
+                      ? choice.waitThenReselect
+                      : undefined
+                  const disposition =
+                    typeof choice === 'object' && 'hostRetry' in choice
+                      ? choice.hostRetry
+                      : undefined
                   const accountId =
                     typeof choice === 'string'
                       ? choice
@@ -1343,10 +1370,32 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                       reason: 'host-decides' as const,
                     }
                   }
-                  if (!(hostRetryLimit - draft.attempt >= 1)) {
+                  if (vetoed() || disposition === 'veto') {
+                    if (next) await releaseChoice(next)
+                    next = undefined
+                    checkRetryActive()
+                    if (mixed(draft.sessionID))
+                      return {
+                        decision: hostDecision,
+                        reason: 'host-decides' as const,
+                      }
+                    rec.hostRetry = 'veto'
+                    decision = { retry: false }
+                    reason = 'adapter-veto'
+                  } else if (!(hostRetryLimit - draft.attempt >= 1)) {
                     if (next) await releaseChoice(next)
                     next = undefined
                     reason = 'host-decides-last-account'
+                  } else if (
+                    wait &&
+                    Number.isFinite(wait.delayMs) &&
+                    wait.delayMs >= 0 &&
+                    wait.delayMs <= MAX_RETRY_HOLD_MS
+                  ) {
+                    // Only the failed attempt's context is kept. No next choice
+                    // exists to dispatch or release when the host wakes or cancels.
+                    decision = { retry: true, delay: Math.ceil(wait.delayMs) }
+                    reason = 'wait-then-reselect'
                   } else if (
                     hold &&
                     Number.isFinite(hold.delayMs) &&
