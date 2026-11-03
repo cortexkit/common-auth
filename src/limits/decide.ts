@@ -517,13 +517,26 @@ export function decideAfterLimit(
     hostRetry: continuationRetry(facts, axes),
     history: reduceRequestHistory(history, { type: 'selected' }),
   })
-  const windows = (current?.confirmedBlockers ?? signal?.windows ?? []).filter(
-    (window) => window.confirmed,
-  )
-  if (facts.phase === 'after-limit' && windows.length) {
+  // Before the first send there is no attempted account or response signal;
+  // the retained selection can still have confirmed blockers worth waiting for.
+  const holdCandidate =
+    facts.phase === 'pre-send'
+      ? (current ??
+        candidates.find(
+          (candidate) =>
+            facts.selection &&
+            sameAccount(candidate.account, facts.selection.account),
+        ))
+      : current
+  const windows = (
+    holdCandidate?.confirmedBlockers ??
+    (facts.phase === 'after-limit' ? signal?.windows : undefined) ??
+    []
+  ).filter((window) => window.confirmed)
+  if (windows.length) {
     if (axes.shortLimit.preference === 'ready-alternative-first' && alternative)
       return reroute(alternative)
-    const held = hold(facts, axes, history, current, windows)
+    const held = hold(facts, axes, history, holdCandidate, windows)
     if (held) return held
   }
   const unknown = axes.unknown[facts.host]
