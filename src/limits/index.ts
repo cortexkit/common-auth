@@ -75,6 +75,7 @@ export type {
   FailureLadderAxes,
   FailureStreak,
   LimitMark,
+  LimitMarkCause,
   MarkerAxes,
   MarkerHistory,
   MergeLaw,
@@ -134,8 +135,13 @@ export type {
   LimitsRegistry,
   LimitsRegistryEvent,
   LimitsRegistryOptions,
+  SuccessfulProbeClear,
 } from './registry.js'
-export { acquireLimitsRegistry, LIMITS_REGISTRY_KEY } from './registry.js'
+export {
+  acquireLimitsRegistry,
+  clearLimitsAfterProbe,
+  LIMITS_REGISTRY_KEY,
+} from './registry.js'
 export type {
   RequestExclusion,
   RequestHistory,

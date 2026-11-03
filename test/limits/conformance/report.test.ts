@@ -43,7 +43,7 @@ function syntheticReportInput(): ConformanceReportInput {
 }
 
 describe('conformance catalog and closed exclusions', () => {
-  test('catalog has exactly the 292 supplied row ids and their R/B/D counts', () => {
+  test('catalog has exactly the 320 supplied row ids and their R/B/D counts', () => {
     const expectedIds = [
       ...Array.from(
         { length: 110 },
@@ -55,10 +55,10 @@ describe('conformance catalog and closed exclusions', () => {
       ...Array.from({ length: 12 }, (_, i) => `AG-CLASS-${i + 1}`),
       ...Array.from({ length: 21 }, (_, i) => `AG-MARK-${i + 1}`),
       ...Array.from({ length: 70 }, (_, i) => `OA-${i + 1}`),
-      ...Array.from({ length: 41 }, (_, i) => `CL-${i + 1}`),
+      ...Array.from({ length: 69 }, (_, i) => `CL-${i + 1}`),
     ]
     expect(conformanceRows.map((row) => row.id)).toEqual(expectedIds)
-    expect(new Set(expectedIds).size).toBe(292)
+    expect(new Set(expectedIds).size).toBe(320)
     expect(
       conformancePresets.map((preset) =>
         ['R', 'B', 'D'].map(
@@ -72,7 +72,7 @@ describe('conformance catalog and closed exclusions', () => {
       [58, 52, 0],
       [55, 16, 0],
       [48, 21, 1],
-      [30, 10, 1],
+      [58, 10, 1],
     ])
     expect(
       conformanceRows.filter((row) => row.status === 'D').map((row) => row.id),
@@ -609,7 +609,7 @@ describe('synthetic fake-clock executor inputs (not real row vectors)', () => {
 })
 
 describe('synthetic conformance report inputs (not real row coverage)', () => {
-  test('synthetic complete inputs report AN 110, AG 71, OA 70, CL 41: total 292', () => {
+  test('synthetic complete inputs report AN 110, AG 71, OA 70, CL 69: total 320', () => {
     const report = buildConformanceReport(syntheticReportInput())
     expect(report).toEqual({
       'confirmed-affinity': {
@@ -634,16 +634,16 @@ describe('synthetic conformance report inputs (not real row coverage)', () => {
         total: 70,
       },
       'status-vault-order': {
-        rCovered: 30,
+        rCovered: 58,
         rExcluded: 0,
         bRows: 10,
         dWitnesses: 1,
-        total: 41,
+        total: 69,
       },
     })
     expect(
       Object.values(report).reduce((sum, preset) => sum + preset.total, 0),
-    ).toBe(292)
+    ).toBe(320)
   })
 
   test('synthetic input with even one R row missing from both lists fails', () => {

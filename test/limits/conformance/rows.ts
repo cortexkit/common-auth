@@ -90,6 +90,8 @@ export const conformanceRows: readonly ConformanceRow[] = [
   ...range('status-vault-order', 'CL-', 34, 34, 'B'),
   ...range('status-vault-order', 'CL-', 35, 37, 'R'),
   ...range('status-vault-order', 'CL-', 38, 41, 'B'),
+  // Parsed payment signals and adopter facts; wire parsing remains plugin-owned.
+  ...range('status-vault-order', 'CL-', 42, 69, 'R'),
 ]
 
 export interface VectorResult {

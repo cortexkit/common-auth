@@ -15,6 +15,7 @@ import {
   reorderVaultRoster,
 } from '../../src/claustrum/roster.js'
 import { createLimitsNamespace } from '../../src/limits/namespace.js'
+import { acquireLimitsRegistry } from '../../src/limits/registry.js'
 import { createVaultLimitsAdapter } from '../../src/limits/vault.js'
 
 const directories: string[] = []
@@ -210,4 +211,74 @@ test('changed discovery after a committed clear preserves the clear and envelope
     reason: 'cleared',
   })
   expect(stale.snapshot.marks).toEqual([])
+})
+
+test('payment cause survives discovery, admission, reorder, quota writes and registry reload', async () => {
+  const { path, namespace, roster } = await fixture()
+  const adapter = await createVaultLimitsAdapter({
+    namespace,
+    path,
+    now: () => 100,
+  })
+  const initial = await adapter.read()
+  const marked = await adapter.commit([
+    {
+      type: 'mark',
+      producerId: 'payment',
+      operationId: 'mark',
+      binding: initial.bindings[0]!,
+      baseRevision: initial.snapshot.revision,
+      scope: { kind: 'pool' },
+      window: 'requests',
+      mergeLaw: 'overwrite',
+      until: 300100,
+      evidenceAt: 100,
+      cause: 'payment-balance',
+    },
+  ])
+  expect(marked.snapshot.marks[0]?.entries[0]?.cause).toBe('payment-balance')
+  const check = async () =>
+    expect((await readVaultRoster(path))?.limits).toEqual(marked.snapshot)
+  await refreshVaultRoster({
+    path,
+    custody: { discover: async () => ({ ...inventory, view: 'new' }) },
+    projection: { now: 200 },
+  })
+  await check()
+  const row = roster.rows[0]!
+  await declineVaultRoute(path, row.routeId)
+  await check()
+  await acceptVaultRoute(path, row.routeId)
+  await check()
+  await reorderVaultRoster(path, roster.rows.map((r) => r.routeId).reverse())
+  await check()
+  expect(
+    await recordVaultAccountQuota(path, {
+      routeId: row.routeId,
+      accountIdentity: row.accountIdentity!,
+      observation: {
+        checkedAt: 200,
+        counters: { requests: { value: 7, checkedAt: 200 } },
+      },
+    }),
+  ).toBe(true)
+  await drainVaultQuota(path)
+  await check()
+  const reloaded = await createVaultLimitsAdapter({
+    namespace,
+    path,
+    now: () => 200,
+  })
+  const registry = await acquireLimitsRegistry({
+    adapter: reloaded,
+    isAccessRestrictive: () => false,
+    clock: { now: () => 200, setTimeout: () => 0, clearTimeout: () => {} },
+  })
+  try {
+    expect(registry.snapshot.marks[0]?.entries[0]?.cause).toBe(
+      'payment-balance',
+    )
+  } finally {
+    await registry.dispose()
+  }
 })

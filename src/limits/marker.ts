@@ -3,10 +3,13 @@ import type { AccountKey, LimitKind, LimitSignal } from './signal.js'
 
 export type MergeLaw = 'latest-evidence' | 'max-until' | 'overwrite'
 
+export type LimitMarkCause = 'rate-limit' | 'payment-balance'
+
 export interface LimitMark {
   readonly scope: Scope
   readonly until: number
   readonly mergeLaw: MergeLaw
+  readonly cause?: LimitMarkCause
 }
 
 export interface FailureLadderAxes {
@@ -41,6 +44,11 @@ export type MarkerAxes =
       readonly kind: 'hint'
       readonly mergeLaw: MergeLaw
       readonly defaultMs: number
+      readonly defaultMsByKind?: Readonly<
+        Partial<Record<LimitSignal['kind'], number>>
+      >
+      readonly causes?: readonly LimitMarkCause[]
+      readonly ignoredKinds?: readonly LimitSignal['kind'][]
       readonly minimumMs: number
       readonly zero: 'accept' | 'skip'
       /** Core absolute dates and host event-relative hints use different samples. */
@@ -143,6 +151,8 @@ export function markFromSignal(
   history: MarkerHistory,
 ): LimitMark | undefined {
   if (!signal || axes.kind === 'off') return undefined
+  if (axes.kind === 'hint' && axes.ignoredKinds?.includes(signal.kind))
+    return undefined
   let until: number
   switch (axes.kind) {
     case 'failure-ladder':
@@ -150,14 +160,16 @@ export function markFromSignal(
       break
     case 'hint': {
       const hint = signal.retryAfterMs
+      const clock =
+        axes.hintClock === 'signal' ? signal.observedAt : history.now
       const usable =
         hint !== undefined &&
         Number.isFinite(hint) &&
-        (hint > 0 || (hint === 0 && axes.zero === 'accept'))
+        (hint > 0 || (hint === 0 && axes.zero === 'accept')) &&
+        Number.isFinite(clock + Math.max(axes.minimumMs, hint))
       until = usable
-        ? (axes.hintClock === 'signal' ? signal.observedAt : history.now) +
-          Math.max(axes.minimumMs, hint)
-        : history.now + axes.defaultMs
+        ? clock + Math.max(axes.minimumMs, hint)
+        : history.now + (axes.defaultMsByKind?.[signal.kind] ?? axes.defaultMs)
       break
     }
     case 'reset': {
@@ -174,7 +186,15 @@ export function markFromSignal(
     }
   }
   return Number.isFinite(until)
-    ? { scope: signal.scope, until, mergeLaw: axes.mergeLaw }
+    ? {
+        scope: signal.scope,
+        until,
+        mergeLaw: axes.mergeLaw,
+        ...(axes.kind === 'hint' &&
+        axes.causes?.some((cause) => cause === signal.kind)
+          ? { cause: signal.kind as LimitMarkCause }
+          : {}),
+      }
     : undefined
 }
 

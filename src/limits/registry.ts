@@ -3,6 +3,7 @@ import type { SessionActivityStore } from './activity.js'
 import { createSessionActivityStore } from './activity.js'
 import type { IdentityBinding } from './identity.js'
 import { isIdentityCompatible, retainVerifiedIdentity } from './identity.js'
+import type { LimitMarkCause } from './marker.js'
 import type { LimitsCommand, LimitsNamespace } from './namespace.js'
 import { applyLimitsCommands, pruneLimitsNamespace } from './namespace.js'
 import type {
@@ -77,6 +78,25 @@ export interface LimitsRegistry {
   flush(): Promise<void>
   reload(): Promise<void>
   dispose(): Promise<void>
+}
+
+export type SuccessfulProbeClear = Omit<
+  Extract<LimitsCommand, { type: 'clear' }>,
+  'type'
+> & {
+  readonly cause: LimitMarkCause
+  readonly evidenceAt: number
+}
+
+/** Publish a recovery fence even when expiry already removed the observed timer.
+ * Capture binding/baseRevision with observe before the probe; dispatch to that
+ * account joins the clear acknowledgment through beforeDispatch, not here.
+ */
+export function clearLimitsAfterProbe(
+  registry: LimitsRegistry,
+  input: SuccessfulProbeClear,
+): void {
+  registry.enqueue({ ...input, type: 'clear' }, 'success')
 }
 
 interface Pending {

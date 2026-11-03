@@ -1,6 +1,6 @@
 import type { AuthorizeCredentialEpoch, IdentityBinding } from './identity.js'
 import { validateIdentityFence } from './identity.js'
-import type { MergeLaw } from './marker.js'
+import type { LimitMarkCause, MergeLaw } from './marker.js'
 import type { AccessOrder, TimedMarkEntry } from './merge-laws.js'
 import { mergeAccessState, mergeTimedMarkEntries } from './merge-laws.js'
 import { sameAccount } from './request-history.js'
@@ -67,12 +67,15 @@ export type LimitsCommand<T = unknown> = CommandBase &
         readonly until: number
         readonly evidenceAt: number
         readonly mergeLaw: MergeLaw
+        readonly cause?: LimitMarkCause
       } & MarkTarget)
     | {
         readonly type: 'clear'
         readonly keys: readonly MarkTarget[]
         /** Absent for explicit user clears; automatic clears carry their evidence time. */
         readonly evidenceAt?: number
+        /** A successful probe clears only this cause, but fences absent/expired keys too. */
+        readonly cause?: LimitMarkCause
       }
     | {
         readonly type: 'access'
@@ -274,6 +277,10 @@ export function applyLimitsCommands<T>(
             evidenceAt: command.evidenceAt,
             baseRevision: command.baseRevision,
             committedRevision: revision,
+            ...(command.cause === 'rate-limit' ||
+            command.cause === 'payment-balance'
+              ? { cause: command.cause }
+              : {}),
           },
         ],
         context.now,
@@ -283,7 +290,17 @@ export function applyLimitsCommands<T>(
       if (entries.length)
         marks.push({ key, mergeLaw: command.mergeLaw, entries })
     } else if (command.type === 'clear') {
-      const keys = command.keys.map((key) => ({ ...key, account }))
+      const keys = command.keys
+        .map((key) => ({ ...key, account }))
+        .filter(
+          (key) =>
+            command.cause === undefined ||
+            !marks.some(
+              (mark) =>
+                timedMarkKeyId(mark.key) === timedMarkKeyId(key) &&
+                mark.entries.some((entry) => entry.cause !== command.cause),
+            ),
+        )
       const ids = new Set(keys.map(timedMarkKeyId))
       const evidenceAt = command.evidenceAt
       if (

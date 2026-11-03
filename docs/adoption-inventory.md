@@ -999,6 +999,50 @@ signal with `toOpenCode2LimitSignal`, rather than replacing that host type.
 | `window-router` | openai-auth | disabled; baseline terminal metadata |
 | `status-vault-order` | claustrum-auth | disabled; baseline terminal metadata |
 
+**Confirmed payment balance.** `statusVaultOrder` consumes a plugin-supplied
+`payment-balance` signal, never a bare 402 or a provider body. It marks and
+advances in vault order, defaulting to five minutes rather than the rate-limit
+default of one minute. Numeric zero expires immediately; an invalid retry hint
+or a non-finite millisecond deadline uses the default. OpenCode 1 and Pi retain
+the signal's absolute retry deadline; OpenCode 2 uses the event-relative delay.
+`payment-cap` and unknown 402 responses pass through without a mark or advance.
+
+Optional `LimitMarkCause` metadata (`'rate-limit' | 'payment-balance'`) travels
+with the deadline on `LimitMark`, `TimedMarkEntry`, mark commands and candidate
+`TimedBlocker`s. Overwrite replaces cause and deadline together; legacy marks
+with no cause stay unknown. Plugins must forward the cause from stored entries
+when constructing blockers. No provider text, labels, credentials or bodies
+belong in this field. The optional hint-marker axes `defaultMsByKind`, `causes`
+and `ignoredKinds` keep other presets' mark policies unchanged.
+
+The optional response-event `kind` records `RequestHistory.sawPaymentBalance`
+only from parsed evidence. With this preset, an attempted balance failure and a
+429 in either order produce the existing synthetic 429 at exhaustion; balance
+alone passes the last provider response. For a fresh OpenCode 1 or Pi request, when
+every admitted, placement-eligible account is actively balance-marked, including
+a sole account, the local refusal is `claustrum-402`, message key
+`payment.insufficient-balance`, status 402, JSON
+`{"error":"claustrum-auth: insufficient balance"}`. Its Retry-After uses the
+earliest eligible balance deadline, rounded up with a one-second minimum. Mixed
+or unknown mark causes retain the existing 429. OpenCode 2 still permits its
+request phase to dispatch a timed-marked account when all accounts are marked,
+and leaves exhausted retry delays to the host. It forbids replay after output
+and never reroutes foreign or unattributable attempts. When formatting any
+actual local refusal on OpenCode 2, pass `host: 'opencode2'` to `buildRefusal`
+and carry the returned `hostRetry: 'veto'` through the adapter's `responseRetry`
+hook using response/attempt metadata, never response text matching.
+
+After a successful top-up probe (or an unconfirmed cap response on an expired
+balance probe), call `clearLimitsAfterProbe(registry, input)`. Supply the
+`binding` and `baseRevision` captured by `observe` before the probe, unique
+producer/operation ids, `evidenceAt`, `cause` and the covered `keys`. The operation
+publishes a tombstone even if expiry already pruned the timer. It leaves other
+accounts and active different-cause marks alone, and retains identity, epoch,
+newer-evidence and revision fences. It does not wait; `beforeDispatch` joins the
+clear acknowledgment before the next send to that account. Timed mark
+publication never blocks the request path. Deadline equality permits a new
+probe, not an extra millisecond wait.
+
 Only `confirmed-affinity` currently selects `shortLimit.holdBound: 'cache-ttl'`
 and `terminalMetadata: 'setting-capped-fresh'`. Its terminal setting applies to
 `terminal.source: 'pool'`, not vault refusals. The other presets select

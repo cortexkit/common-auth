@@ -24,6 +24,7 @@ import { liftedWindowsForWake, waitCheckpoint } from './wake.js'
 export interface TimedBlocker {
   readonly kind: 'hard' | 'cooldown' | 'soft'
   readonly until?: number
+  readonly cause?: import('./marker.js').LimitMarkCause
 }
 
 /**
@@ -370,6 +371,13 @@ export function decideAfterLimit(
       account: facts.attempted,
       scope: facts.requestScope,
       status,
+      kind:
+        axes.terminalStatusHistory?.paymentBalance &&
+        facts.signalApplicable !== false &&
+        facts.signal &&
+        sameAccount(facts.signal.account, facts.attempted)
+          ? facts.signal.kind
+          : undefined,
     })
   if (facts.phase === 'after-limit' && !facts.delivery.replayable)
     return pass('unsafe-output', false, 'veto')
@@ -490,6 +498,13 @@ export function decideAfterLimit(
   const counted =
     status === 429 && retainLimit !== undefined && retainCount !== undefined
   const advance = axes.advance[facts.host]
+  if (
+    facts.phase === 'after-limit' &&
+    axes.terminalStatusHistory?.paymentBalance &&
+    (signal?.kind === 'payment-cap' ||
+      (status === 402 && signal?.kind !== 'payment-balance'))
+  )
+    return pass('unhandled-failure')
   if (
     facts.phase === 'after-limit' &&
     !signal &&
@@ -651,8 +666,32 @@ export function decideAfterLimit(
       facts.phase === 'pre-send' &&
       candidates.length > 0 &&
       candidates.every((candidate) => !candidate.ready)
-    if (allMarked || (status === 401 && history.saw429)) {
-      const deadlines = candidates
+    const eligible = candidates.filter(
+      (candidate) => candidate.placementEligible,
+    )
+    const allBalance =
+      facts.phase === 'pre-send' &&
+      axes.terminalStatusHistory.paymentBalance &&
+      eligible.length > 0 &&
+      eligible.every(
+        (candidate) =>
+          !candidate.ready &&
+          candidate.blockers.length > 0 &&
+          candidate.blockers.every(
+            (blocker) =>
+              blocker.cause === 'payment-balance' &&
+              finiteFuture(blocker.until, facts.now),
+          ),
+      )
+    if (
+      allBalance ||
+      allMarked ||
+      (status === 401 && history.saw429) ||
+      (axes.terminalStatusHistory.paymentBalance &&
+        history.saw429 &&
+        history.sawPaymentBalance)
+    ) {
+      const deadlines = (allBalance ? eligible : candidates)
         .flatMap((candidate) =>
           candidate.blockers.map((blocker) => blocker.until),
         )
@@ -660,6 +699,7 @@ export function decideAfterLimit(
       return refusal(facts, axes, history, 'quota', {
         source: 'pool',
         reason: 'quota',
+        ...(allBalance ? axes.terminalStatusHistory.paymentBalance : {}),
         retryAfterMs: deadlines.length
           ? Math.max(
               axes.terminalStatusHistory.minRetryMs,

@@ -1,6 +1,7 @@
 import type { MergeLaw } from './marker.js'
 
 export interface TimedMarkEntry {
+  readonly cause?: import('./marker.js').LimitMarkCause
   readonly until: number
   readonly evidenceAt: number
   readonly baseRevision: number

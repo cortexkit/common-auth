@@ -136,6 +136,43 @@ it('merges against the durable envelope instead of saving a stale memory snapsho
   expect(result.snapshot.operationIds).toHaveLength(2)
 })
 
+it('payment cause survives pool discovery, admission, reorder, quota and registry reload', async () => {
+  const store = s.open()
+  await store.add({ id: 'a', credential: oauth('r-a'), identity: 'acct-a' })
+  const adapter = await createPoolLimitsAdapter({ namespace, store })
+  const command = mark(await adapter.read())
+  if (command.type !== 'mark') throw new Error('expected mark')
+  const marked = await adapter.commit([
+    { ...command, cause: 'payment-balance' },
+  ])
+  expect(marked.snapshot.marks[0]?.entries[0]?.cause).toBe('payment-balance')
+  const check = async () =>
+    expect((await s.config()).commonAuthLimits).toEqual(marked.snapshot)
+  await store.add({ id: 'b', credential: oauth('r-b'), identity: 'acct-b' })
+  await check()
+  await store.disable('a', 'manual')
+  await check()
+  await store.enable('a')
+  await check()
+  await store.reorder(['b', 'a'])
+  await check()
+  await store.recordQuota(
+    'a',
+    { credentialEpoch: 1, identity: 'acct-a' },
+    'reading',
+  )
+  await check()
+  await store.updateSettings(() => ({ routing: { mode: 'ordered' } }))
+  await check()
+  const reloaded = await createPoolLimitsAdapter({ namespace, store: s.open() })
+  const registry = await acquireLimitsRegistry({
+    adapter: reloaded,
+    isAccessRestrictive: () => false,
+  })
+  hooks.lifetime.finish(() => registry.dispose())
+  expect(registry.snapshot.marks[0]?.entries[0]?.cause).toBe('payment-balance')
+})
+
 it('read returns while another process holds the save lock', async () => {
   const store = s.open()
   await store.add({ id: 'a', credential: oauth('r-a'), identity: 'acct-a' })

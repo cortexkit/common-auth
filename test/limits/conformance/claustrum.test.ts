@@ -5,12 +5,16 @@ import {
   buildRefusal,
   classifyHeaders,
   classifyRetryAfter,
+  clearLimitsAfterProbe,
   createLimitsNamespace,
   createRequestHistory,
   decideAfterLimit,
   type IdentityBinding,
   type LimitDecision,
+  type LimitMarkCause,
   type LimitSignal,
+  type LimitsCommand,
+  type LimitsNamespace,
   markFromSignal,
   markIsActive,
   marksAfterSuccess,
@@ -22,6 +26,7 @@ import {
   sameAccountHoldFacts,
   scopeCovers,
   statusVaultOrder,
+  toOpenCode2LimitSignal,
 } from '../../../src/limits/index.js'
 import {
   installOpenCode2Auth,
@@ -160,6 +165,116 @@ function expected(
     retryable: true,
     hostRetry: 'leave',
     ...extra,
+  }
+}
+
+// The adopter confirms balance from provider evidence; common-auth consumes only
+// that typed signal. No provider response parser is reproduced by these vectors.
+function payment(account = A, retryAfterMs?: number): LimitSignal {
+  return {
+    account,
+    kind: 'payment-balance',
+    reason: 'payment-required',
+    status: 402,
+    scope: pool,
+    windows: [],
+    observedAt: now,
+    retryAfterMs,
+  }
+}
+function blocked(account = A, cause?: LimitMarkCause, until = now + 300000) {
+  return {
+    ...ready(account),
+    ready: false,
+    blockers: [{ kind: 'hard' as const, until, ...(cause ? { cause } : {}) }],
+  }
+}
+function paymentWire(decision: LimitDecision, retry: string) {
+  expect(decision).toMatchObject({
+    action: 'refuse',
+    family: 'claustrum-402',
+    messageKey: 'payment.insufficient-balance',
+    hostRetry: 'leave',
+  })
+  if (decision.action !== 'refuse' || decision.family !== 'claustrum-402')
+    throw new Error('not payment')
+  const wire = buildRefusal({
+    ...decision,
+    family: decision.family,
+    now,
+    parameters: { labels: ['private-account@example.invalid'] },
+  })
+  expect(wire).toMatchObject({
+    kind: 'http',
+    status: 402,
+    body: '{"error":"claustrum-auth: insufficient balance"}',
+    hostRetry: 'leave',
+  })
+  if (wire.kind !== 'http') throw new Error('not http')
+  expect([...wire.headers]).toEqual([
+    ['content-type', 'application/json'],
+    ['retry-after', retry],
+  ])
+}
+
+function registryFixture() {
+  let time = now
+  let snapshot: LimitsNamespace = createLimitsNamespace(
+    `${A.namespace}-${++sequence}`,
+    'generation',
+  )
+  const account = { ...A, namespace: snapshot.namespace }
+  const binding: IdentityBinding = { account, credentialEpoch: 'epoch' }
+  const context = () => ({
+    now: time,
+    bindings: [binding],
+    authorizeEpoch: () => true,
+  })
+  const adapter: PersistenceAdapter = {
+    namespace: snapshot.namespace,
+    async read() {
+      return { snapshot, bindings: [binding], authoritative: true }
+    },
+    async commit(commands) {
+      const result = applyLimitsCommands(snapshot, commands, context())
+      snapshot = result.snapshot
+      return { ...result, bindings: [binding], authoritative: true }
+    },
+  }
+  const acquire = () =>
+    acquireLimitsRegistry({
+      adapter,
+      isAccessRestrictive: () => false,
+      clock: { now: () => time, setTimeout: () => 0, clearTimeout: () => {} },
+    })
+  const command = (
+    operationId: string,
+    cause: LimitMarkCause = 'payment-balance',
+    until = now + 300000,
+  ): LimitsCommand => ({
+    type: 'mark',
+    producerId: 'payment-test',
+    operationId,
+    binding,
+    baseRevision: snapshot.revision,
+    scope: pool,
+    window: 'requests',
+    mergeLaw: 'overwrite',
+    evidenceAt: time,
+    until,
+    cause,
+  })
+  return {
+    adapter,
+    acquire,
+    binding,
+    command,
+    setTime: (at: number) => {
+      time = at
+    },
+    get snapshot() {
+      return snapshot
+    },
   }
 }
 
@@ -864,6 +979,595 @@ for (const setting of settings)
       'installer unsignalled HTTP 401 leaves host retry unchanged',
       () => installerCase('unsignalled'),
     )
+    for (const id of [42, 43])
+      vector(
+        id,
+        'confirmed balance marks A for five minutes and advances to B',
+        () => {
+          // CL-43 OpenRouter metadata precedence is proven by claustrum-auth's parser tests.
+          const signal = payment()
+          expect(marker(signal)).toMatchObject({
+            until: now + 300000,
+            cause: 'payment-balance',
+          })
+          for (const host of ['opencode1', 'pi'] as const) {
+            const decision = decideAfterLimit(
+              facts(setting, { host, signal, status: 402 }),
+              statusVaultOrder,
+            )
+            expect(decision).toMatchObject({
+              action: 'reroute',
+              account: B,
+              hostRetry: 'leave',
+            })
+            expect(decision.history.sawPaymentBalance).toBe(true)
+            expect(decision.history.saw429).toBe(false)
+          }
+        },
+      )
+    for (const id of [44, 45, 46, 61, 69])
+      vector(id, 'unconfirmed 402 passes without payment evidence', () => {
+        // Provider metadata/body parsing and secret redaction are proven by
+        // claustrum-auth's parser/transport tests; these facts start after parsing.
+        expect(marker(undefined)).toBeUndefined()
+        const decision = decideAfterLimit(
+          facts(setting, {
+            status: 402,
+            signal: undefined,
+            ...(id === 69 ? { host: 'opencode2', hostPhase: 'retry' } : {}),
+          }),
+          statusVaultOrder,
+        )
+        expect(decision).toMatchObject({
+          action: 'pass',
+          reason: 'unhandled-failure',
+        })
+        expect(decision.history.sawPaymentBalance).toBeUndefined()
+      })
+    function attempted(
+      kinds: readonly ('balance' | 'rate' | 'auth' | 'cap')[],
+    ) {
+      let history = facts(setting).history
+      let decision: LimitDecision | undefined
+      kinds.forEach((kind, index) => {
+        const account = index ? B : A
+        const signal =
+          kind === 'balance'
+            ? payment(account, 17000)
+            : kind === 'rate'
+              ? { ...classify({ 'Retry-After': '17' })!, account }
+              : kind === 'cap'
+                ? { ...payment(account), kind: 'payment-cap' as const }
+                : undefined
+        decision = decideAfterLimit(
+          facts(setting, {
+            attempted: account,
+            history,
+            signal,
+            status: kind === 'rate' ? 429 : kind === 'auth' ? 401 : 402,
+            selection: index ? undefined : { account: B, pin: 'preserve' },
+            candidates: [
+              blocked(
+                A,
+                kinds[0] === 'rate' ? 'rate-limit' : 'payment-balance',
+                now + 17000,
+              ),
+              index
+                ? blocked(
+                    B,
+                    kind === 'rate' ? 'rate-limit' : 'payment-balance',
+                    now + 17000,
+                  )
+                : ready(B),
+            ],
+          }),
+          statusVaultOrder,
+        )
+        history = decision.history
+        if (!index) expect(decision.action).toBe('reroute')
+      })
+      return decision!
+    }
+    for (const [id, kinds] of [
+      [47, ['balance', 'rate']],
+      [48, ['rate', 'balance']],
+    ] as const)
+      vector(
+        id,
+        'mixed attempted balance/429 produces exact synthetic 429 in either order',
+        () => {
+          const decision = attempted(kinds)
+          expect(decision).toMatchObject({
+            action: 'refuse',
+            family: 'claustrum-429',
+            retryAfterMs: 17000,
+          })
+          expect(decision.history).toMatchObject({
+            saw429: true,
+            sawPaymentBalance: true,
+          })
+          const wire = buildRefusal({
+            family: 'claustrum-429',
+            messageKey: 'quota.accounts-rate-limited',
+            now,
+            retryAfterMs: 17000,
+          })
+          expect(wire).toMatchObject({
+            kind: 'http',
+            status: 429,
+            body: '{"error":"claustrum-auth: accounts-rate-limited"}',
+          })
+          if (wire.kind === 'http')
+            expect(wire.headers.get('retry-after')).toBe('17')
+        },
+      )
+    vector(
+      49,
+      'two attempted balance failures pass the last original 402',
+      () => {
+        expect(attempted(['balance', 'balance'])).toMatchObject({
+          action: 'pass',
+          reason: 'original-response',
+        })
+      },
+    )
+    vector(
+      50,
+      'auth/balance in either order passes the last original response',
+      () => {
+        for (const kinds of [
+          ['auth', 'balance'],
+          ['balance', 'auth'],
+        ] as const)
+          expect(attempted(kinds)).toMatchObject({
+            action: 'pass',
+            reason: 'original-response',
+          })
+      },
+    )
+    vector(51, 'key-cap after 429 passes immediately without marking', () => {
+      expect(marker({ ...payment(), kind: 'payment-cap' })).toBeUndefined()
+      expect(attempted(['rate', 'cap'])).toMatchObject({
+        action: 'pass',
+        reason: 'unhandled-failure',
+      })
+    })
+    vector(
+      52,
+      'balance retry hints, zero and non-finite deadlines use finite defaults',
+      () => {
+        for (const [hint, expectedMs] of [
+          [undefined, 300000],
+          [NaN, 300000],
+          [7200000, 7200000],
+          [17000, 17000],
+          [10000, 10000],
+          [0, 0],
+          [Infinity, 300000],
+        ] as const) {
+          const signal = payment(A, hint)
+          for (const host of ['opencode1', 'pi', 'opencode2'] as const) {
+            const mark = markFromSignal(
+              signal,
+              statusVaultOrder.markers[host],
+              { now },
+            )!
+            expect(mark.until).toBe(now + expectedMs)
+            expect(mark.cause).toBe('payment-balance')
+            expect(markIsActive(mark, now)).toBe(expectedMs > 0)
+          }
+        }
+        expect(
+          marker(
+            payment(
+              A,
+              classify({ 'Retry-After': new Date(now + 10000).toUTCString() })!
+                .retryAfterMs,
+            ),
+          )?.until,
+        ).toBe(now + 10000)
+        for (const kind of ['payment-balance', 'rate-limit'] as const) {
+          const signal = {
+            ...payment(),
+            kind,
+            retryAfterMs: 1e308,
+            observedAt: 1e308,
+          }
+          expect(
+            markFromSignal(signal, statusVaultOrder.markers.opencode1, { now })
+              ?.until,
+          ).toBe(now + (kind === 'payment-balance' ? 300000 : 60000))
+          expect(
+            marker({ ...signal, observedAt: now, retryAfterMs: Infinity })
+              ?.until,
+          ).toBe(now + (kind === 'payment-balance' ? 300000 : 60000))
+        }
+        const zero = decideAfterLimit(
+          facts(setting, {
+            signal: payment(A, 0),
+            status: 402,
+            candidates: [ready(A)],
+            selection: undefined,
+          }),
+          statusVaultOrder,
+        )
+        expect(zero.action).toBe('pass')
+        expect(zero.history.tried).toHaveLength(1)
+      },
+    )
+    function presend(
+      candidates = [blocked(A, 'payment-balance')],
+      at = now + 1000,
+    ) {
+      return decideAfterLimit(
+        facts(setting, {
+          phase: 'pre-send',
+          now: at,
+          attempted: undefined,
+          status: undefined,
+          candidates,
+          selection: undefined,
+        }),
+        statusVaultOrder,
+      )
+    }
+    vector(
+      53,
+      'single balance-marked account refuses 402 without a send',
+      () => {
+        paymentWire(presend(), '299')
+        paymentWire(
+          presend([blocked(A, 'payment-balance', now + 1001)], now + 1000),
+          '1',
+        )
+      },
+    )
+    vector(
+      54,
+      'registry restart retains payment cause and refusal without provider text',
+      async () => {
+        const f = registryFixture()
+        const first = await f.acquire()
+        first.enqueue(f.command('balance'))
+        await first.dispose()
+        const second = await f.acquire()
+        try {
+          expect(second.snapshot.marks[0]?.entries[0]?.cause).toBe(
+            'payment-balance',
+          )
+          const entry = second.snapshot.marks[0]!.entries[0]!
+          paymentWire(presend([blocked(A, entry.cause, entry.until)]), '299')
+          expect(Object.keys(entry).sort()).toEqual([
+            'baseRevision',
+            'cause',
+            'committedRevision',
+            'evidenceAt',
+            'until',
+          ])
+        } finally {
+          await second.dispose()
+        }
+      },
+    )
+    async function probeRecovery(at: number) {
+      const f = registryFixture()
+      const old = f.command('delayed', 'payment-balance', now + 900000)
+      await f.adapter.commit([f.command('expired')])
+      f.setTime(at)
+      const registry = await f.acquire()
+      try {
+        expect(registry.snapshot.marks).toEqual([])
+        const observation = registry.observe(f.binding)
+        clearLimitsAfterProbe(registry, {
+          ...observation,
+          producerId: 'probe',
+          operationId: 'success',
+          cause: 'payment-balance',
+          evidenceAt: at,
+          keys: [{ scope: pool, window: 'requests' }],
+        })
+        // A different account does not join A's pending clear.
+        const other = {
+          ...f.binding,
+          account: { ...f.binding.account, accountId: 'B' },
+        }
+        await registry.beforeDispatch(other)
+        expect(registry.pendingCommands).toBe(1)
+        expect((await registry.beforeDispatch(f.binding)).blocked).toBe(false)
+        expect(f.snapshot.tombstones).toHaveLength(1)
+        const delayed = await f.adapter.commit([old])
+        expect(delayed.outcomes[0]).toMatchObject({
+          status: 'rejected',
+          reason: 'cleared',
+        })
+        expect(delayed.snapshot.marks).toEqual([])
+      } finally {
+        await registry.dispose()
+      }
+    }
+    vector(
+      55,
+      'exact expiry admits A and successful probe fences old payment marks',
+      async () => {
+        const at = now + 300000
+        expect(markIsActive(marker(payment())!, at)).toBe(false)
+        expect(
+          decideAfterLimit(
+            facts(setting, {
+              phase: 'pre-send',
+              now: at,
+              candidates: [ready(A)],
+              selection: { account: A, pin: 'preserve' },
+            }),
+            statusVaultOrder,
+          ),
+        ).toMatchObject({ action: 'reroute', account: A })
+        await probeRecovery(at)
+      },
+    )
+    vector(
+      56,
+      'confirmed balance on expired probe renews for five minutes',
+      () => {
+        const at = now + 300001
+        const signal = { ...payment(), observedAt: at }
+        const mark = markFromSignal(
+          signal,
+          statusVaultOrder.markers.opencode1,
+          { now: at },
+        )!
+        expect(mark).toMatchObject({
+          until: now + 600001,
+          cause: 'payment-balance',
+        })
+        expect(
+          decideAfterLimit(
+            facts(setting, {
+              now: at,
+              status: 402,
+              signal,
+              candidates: [blocked(A, mark.cause, mark.until), ready(B)],
+            }),
+            statusVaultOrder,
+          ),
+        ).toMatchObject({ action: 'reroute', account: B })
+      },
+    )
+    vector(
+      57,
+      'unconfirmed cap probe passes and clears only expired balance evidence',
+      async () => {
+        expect(
+          decideAfterLimit(
+            facts(setting, { status: 402, signal: undefined }),
+            statusVaultOrder,
+          ),
+        ).toMatchObject({ action: 'pass' })
+        await probeRecovery(now + 300001)
+      },
+    )
+    vector(
+      58,
+      'OC2 bridge and marker use parsed balance and event-relative delay',
+      () => {
+        const signal = payment(A, 17000)
+        expect(toOpenCode2LimitSignal(signal)).toEqual({
+          reason: 'payment-required',
+          status: 402,
+          retryAfterMs: 17000,
+        })
+        expect(marker(signal, 'opencode2', now + 250)?.until).toBe(now + 17250)
+        expect(
+          decideAfterLimit(
+            facts(setting, {
+              host: 'opencode2',
+              hostPhase: 'retry',
+              signal,
+              status: 402,
+              candidates: [
+                blocked(A, 'payment-balance', now + 17250),
+                ready(B),
+              ],
+            }),
+            statusVaultOrder,
+          ),
+        ).toMatchObject({ action: 'reroute', account: B })
+      },
+    )
+    vector(
+      59,
+      'OC2 request escapes balance mark and exhausted retry leaves host unchanged',
+      () => {
+        const candidates = [blocked(A, 'payment-balance')]
+        const base = facts(setting, {
+          host: 'opencode2',
+          candidates,
+          selection: { account: A, pin: 'preserve' },
+        })
+        expect(
+          decideAfterLimit(
+            { ...base, phase: 'pre-send', hostPhase: 'request' },
+            statusVaultOrder,
+          ),
+        ).toMatchObject({ action: 'reroute', account: A })
+        expect(
+          decideAfterLimit(
+            {
+              ...base,
+              hostPhase: 'retry',
+              status: 402,
+              signal: payment(),
+              selection: undefined,
+              remainingRetries: 0,
+            },
+            statusVaultOrder,
+          ),
+        ).toMatchObject({
+          action: 'pass',
+          reason: 'host-retries-exhausted',
+          hostRetry: 'leave',
+        })
+        expect(
+          decideAfterLimit(
+            {
+              ...base,
+              hostPhase: 'retry',
+              status: 402,
+              signal: payment(),
+              selection: undefined,
+            },
+            statusVaultOrder,
+          ),
+        ).toMatchObject({
+          action: 'pass',
+          reason: 'host-delay',
+          hostRetry: 'leave',
+        })
+      },
+    )
+    vector(
+      60,
+      'persisted overwrite replaces cause and deadline together including zero',
+      async () => {
+        for (const [first, second, duration] of [
+          ['payment-balance', 'rate-limit', 17000],
+          ['payment-balance', 'rate-limit', 0],
+          ['rate-limit', 'payment-balance', 300000],
+        ] as const) {
+          const f = registryFixture()
+          await f.adapter.commit([f.command('first', first)])
+          const registry = await f.acquire()
+          try {
+            registry.enqueue(f.command('second', second, now + duration))
+            await registry.flush()
+            const entries = registry.snapshot.marks.flatMap(
+              (mark) => mark.entries,
+            )
+            if (!duration) expect(entries).toEqual([])
+            else
+              expect(entries).toEqual([
+                {
+                  until: now + duration,
+                  cause: second,
+                  evidenceAt: now,
+                  baseRevision: 1,
+                  committedRevision: 2,
+                },
+              ])
+          } finally {
+            await registry.dispose()
+          }
+        }
+      },
+    )
+    vector(
+      62,
+      'all eligible accounts balance-marked refuse 402 at earliest deadline',
+      () => {
+        paymentWire(
+          presend([
+            blocked(A, 'payment-balance'),
+            blocked(B, 'payment-balance', now + 17001),
+          ]),
+          '17',
+        )
+      },
+    )
+    vector(
+      63,
+      'mixed balance and rate or legacy causes retain exact quota refusal',
+      () => {
+        for (const cause of ['rate-limit', undefined] as const)
+          expect(
+            presend([blocked(A, 'payment-balance'), blocked(B, cause)]),
+          ).toMatchObject({
+            action: 'refuse',
+            family: 'claustrum-429',
+            messageKey: 'quota.accounts-rate-limited',
+            retryAfterMs: 299000,
+          })
+      },
+    )
+    vector(
+      64,
+      'sole rate or legacy mark stays 429; absent payment facts are byte-identical',
+      () => {
+        const legacyAxes = {
+          ...statusVaultOrder,
+          terminalStatusHistory: { minRetryMs: 1000, defaultRetryMs: 60000 },
+        }
+        for (const cause of ['rate-limit', undefined] as const) {
+          const input = facts(setting, {
+            phase: 'pre-send',
+            candidates: [blocked(A, cause)],
+            selection: undefined,
+          })
+          expect(decideAfterLimit(input, statusVaultOrder)).toEqual(
+            decideAfterLimit(input, legacyAxes),
+          )
+          expect(presend([blocked(A, cause)])).toMatchObject({
+            action: 'refuse',
+            family: 'claustrum-429',
+          })
+        }
+        for (const status of [200, 401, 402, 403, 429, 503]) {
+          const input = facts(setting, { status })
+          expect(
+            JSON.stringify(decideAfterLimit(input, statusVaultOrder)),
+          ).toBe(JSON.stringify(decideAfterLimit(input, legacyAxes)))
+        }
+      },
+    )
+    vector(
+      65,
+      'only admitted placement-eligible accounts determine payment refusal',
+      () => {
+        for (const extra of [
+          { ...ready(B), admitted: false },
+          { ...ready(B), placementEligible: false },
+        ])
+          paymentWire(presend([blocked(A, 'payment-balance'), extra]), '299')
+        expect(
+          presend([blocked(A, 'payment-balance', now + 1000)]),
+        ).not.toMatchObject({ family: 'claustrum-402' })
+      },
+    )
+    vector(
+      66,
+      'fresh process after expiry publishes a recovery fence for a successful probe',
+      () => probeRecovery(now + 300001),
+    )
+    for (const id of [67, 68])
+      vector(
+        id,
+        'OC2 parsed balance frame marks without using wire hints; output veto stays intact',
+        () => {
+          // Frame classification is proven by claustrum-auth's inspector tests;
+          // its verdict omits retry/reset hints before reaching shared policy.
+          const signal = payment()
+          expect(marker(signal, 'opencode2')?.until).toBe(now + 300000)
+          const decision = decideAfterLimit(
+            facts(setting, {
+              host: 'opencode2',
+              hostPhase: 'retry',
+              signal,
+              status: 402,
+              delivery: {
+                owned: true,
+                attributable: true,
+                replayable: id === 67,
+              },
+            }),
+            statusVaultOrder,
+          )
+          expect(decision).toMatchObject(
+            id === 67
+              ? { action: 'reroute', account: B }
+              : { action: 'pass', reason: 'unsafe-output', hostRetry: 'veto' },
+          )
+          expect(decision.history.sawPaymentBalance).toBe(true)
+        },
+      )
   })
 
 afterAll(() => {
@@ -884,7 +1588,7 @@ afterAll(() => {
         .sort()
       expect(actual).toEqual(wanted)
     }
-    expect(results).toHaveLength(31)
-    expect(results.length + 10).toBe(41)
+    expect(results).toHaveLength(59)
+    expect(results.length + 10).toBe(69)
   }
 })

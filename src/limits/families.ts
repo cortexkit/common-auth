@@ -11,6 +11,7 @@ export type OpenCode1Family =
   | 'claude-429'
   | 'json-412'
   | 'claustrum-429'
+  | 'claustrum-402'
   | 'claude-econnreset'
 
 export type RefusalFamily = OpenCode1Family | 'pi-final'
@@ -18,6 +19,8 @@ export type HostRetry = 'leave' | 'veto'
 
 export interface RefusalInput {
   readonly family: RefusalFamily
+  /** Local responses formatted for OpenCode 2 must not be replayed by the host. */
+  readonly host?: 'opencode1' | 'opencode2' | 'pi'
   readonly messageKey: string
   readonly messages?: LimitMessages
   readonly parameters?: { readonly labels?: readonly string[] }
@@ -45,7 +48,7 @@ interface RefusalAttributes {
 
 export interface HttpRefusal extends RefusalAttributes {
   readonly kind: 'http'
-  readonly status: 412 | 429
+  readonly status: 402 | 412 | 429
   readonly headers: Headers
   readonly body: string
 }
@@ -191,6 +194,8 @@ function bodyFor(family: RefusalFamily, message: string): string {
       })
     case 'claustrum-429':
       return JSON.stringify({ error: 'claustrum-auth: accounts-rate-limited' })
+    case 'claustrum-402':
+      return JSON.stringify({ error: 'claustrum-auth: insufficient balance' })
     default:
       return message
   }
@@ -204,7 +209,7 @@ export function buildRefusal(input: RefusalInput): BuiltRefusal {
     family: input.family,
     disposition: 'refuse',
     retryable: !nonRetryable,
-    hostRetry: nonRetryable ? 'veto' : 'leave',
+    hostRetry: nonRetryable || input.host === 'opencode2' ? 'veto' : 'leave',
   }
   let body = bodyFor(input.family, textFor(input, nonRetryable))
   if (nonRetryable && (hasUnsafeWording(body) || containsEmail(body))) {
@@ -232,7 +237,12 @@ export function buildRefusal(input: RefusalInput): BuiltRefusal {
   return {
     ...attributes,
     kind: 'http',
-    status: input.family === 'json-412' ? 412 : 429,
+    status:
+      input.family === 'json-412'
+        ? 412
+        : input.family === 'claustrum-402'
+          ? 402
+          : 429,
     headers,
     body,
   }

@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, test } from 'bun:test'
+import { buildRefusal, type HostRetry } from '../../src/limits/index.js'
 import type {
   ChooseAccountInput,
   ChooseAccountResult,
@@ -107,6 +108,37 @@ const gated: InstallOpenCode2AuthOptions = {
 }
 
 describe('OpenCode 2 attempt retry dispositions', () => {
+  test('formatted payment refusal carries its veto through responseRetry', async () => {
+    const dispositions = new WeakMap<Response, HostRetry>()
+    const fx = await setup(() => 'A', {
+      limitFromError: () => undefined,
+      limitFromResponse: () => undefined,
+      rewriteResponse: () => {
+        const refusal = buildRefusal({
+          family: 'claustrum-402',
+          host: 'opencode2',
+          messageKey: 'payment.insufficient-balance',
+          now: 1000,
+          retryAfterMs: 299000,
+        })
+        if (refusal.kind !== 'http') throw new Error('expected HTTP refusal')
+        const response = new Response(refusal.body, refusal)
+        dispositions.set(response, refusal.hostRetry)
+        return response
+      },
+      responseRetry: ({ response }) => dispositions.get(response),
+    })
+    try {
+      const { response } = await fx.respond(await fx.send(), 200)
+      expect(response.status).toBe(402)
+      expect(response.headers.get('retry-after')).toBe('299')
+      expect((await fx.retry()).decision).toEqual({ retry: false })
+      expect(fx.retries.at(-1)?.reason).toBe('adapter-veto')
+      expect(fx.choices).toHaveLength(1)
+    } finally {
+      await fx.auth.dispose()
+    }
+  })
   test('rewriteResponse returns a Response or undefined for direct callers', () => {
     expectTypeOf<
       Awaited<ReturnType<NonNullable<Adapter['rewriteResponse']>>>

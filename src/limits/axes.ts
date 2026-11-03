@@ -75,6 +75,10 @@ export interface LimitAxes {
   readonly terminalStatusHistory?: {
     readonly minRetryMs: number
     readonly defaultRetryMs: number
+    readonly paymentBalance?: {
+      readonly family: RefusalFamily
+      readonly messageKey: string
+    }
   }
   readonly refusals: Readonly<Record<RefusalReason, HostValues<RefusalPolicy>>>
 }
