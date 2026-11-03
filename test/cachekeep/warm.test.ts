@@ -439,8 +439,9 @@ describe('CacheKeepManager tick/prewarm', () => {
     expect(target.warmCount).toBe(0)
     expect(log.warn).toHaveBeenCalledWith(
       'cachekeep failed',
-      expect.objectContaining({ status: 500, responseBody: 'bad' }),
+      expect.objectContaining({ status: 500, stage: 'response', class: 500 }),
     )
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain('bad')
   })
 
   test('logs cost from mock usage', async () => {

@@ -1,4 +1,5 @@
 import { combineAbortSignals } from '../util/any-signal.js'
+import { classifyFailure, type Failure } from './failure.js'
 import { type CacheKeepWindow, isWithinCacheKeepWindow } from './window.js'
 
 export interface CacheKeepLogger {
@@ -104,7 +105,7 @@ export interface CacheKeepManagerOptions<M> {
   maxBytes?: number
   /** One deadline for credential resolution and the send. Default 30 s. */
   warmTimeoutMs?: number
-  /** Delay after a failed warm, fixed or by consecutive failures. Default 10 minutes. */
+  /** Override failure delays, fixed or by consecutive failures. Defaults to expiry-bounded transient retries, otherwise 10 minutes. */
   backoffMs?: CacheKeepBackoff
   /** The configured clock window; undefined means always warm. Read on every call. */
   getWindow?: () => CacheKeepWindow | undefined
@@ -174,6 +175,7 @@ interface Target<M> {
   lastRealRequestAt: number
   lastWarmedAt?: number
   backoffUntil?: number
+  retryTimer?: ReturnType<typeof setInterval>
   failures: number
   warmCount: number
 }
@@ -186,15 +188,14 @@ const DEFAULT_MAX_TARGETS = 32
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 const DEFAULT_WARM_TIMEOUT_MS = 30_000
 const DEFAULT_BACKOFF_MS = 10 * 60_000
+const TRANSIENT_RETRY_STEP_MS = 20_000
+const TRANSIENT_RETRY_MAX_MS = 60_000
+const EXPIRY_SAFETY_MS = 5_000
 
 function positive(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? value
     : fallback
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -210,9 +211,11 @@ function errorMessage(error: unknown): string {
  * session stopped using (`sustain` lifts only the main-session idle cap, not
  * the lifetime); the target-count and byte caps evict the least recently
  * touched target; a per-target warm cap retires short-lived sessions; and a
- * failed warm backs that target off without touching the others. A retry
- * after a failure is sent only while the lifetime lasts, so a backoff that
- * runs past it retires the target instead.
+ * failed warm backs that target off without touching the others. Default
+ * transient retries use 20/40/60-second delays, clipped to the last safe start
+ * (expiry minus the warm timeout and 5 seconds). Only default-policy retries
+ * observe that deadline: first attempts and explicit backoff policies retain
+ * their existing lead-time scheduling, bounded by the cache lifetime.
  */
 export class CacheKeepManager<M = undefined> {
   private readonly targets = new Map<string, Target<M>>()
@@ -227,7 +230,7 @@ export class CacheKeepManager<M = undefined> {
   private readonly maxTargets: number
   private readonly maxBytes: number
   private readonly warmTimeoutMs: number
-  private readonly backoff: CacheKeepBackoff
+  private readonly backoff: CacheKeepBackoff | undefined
   private readonly getWindow: (() => CacheKeepWindow | undefined) | undefined
   private readonly getSustain: (() => boolean) | undefined
   private readonly setIntervalImpl: typeof globalThis.setInterval
@@ -266,7 +269,7 @@ export class CacheKeepManager<M = undefined> {
       options.warmTimeoutMs,
       DEFAULT_WARM_TIMEOUT_MS,
     )
-    this.backoff = options.backoffMs ?? DEFAULT_BACKOFF_MS
+    this.backoff = options.backoffMs
     this.getWindow = options.getWindow
     this.getSustain = options.getSustain
     this.setIntervalImpl = options.setIntervalImpl ?? globalThis.setInterval
@@ -368,7 +371,7 @@ export class CacheKeepManager<M = undefined> {
     this.startedAt = this.now()
     this.timer = this.setIntervalImpl(() => {
       void this.tick().catch((error) => {
-        this.log?.warn('cachekeep tick failed', { error: errorMessage(error) })
+        this.log?.warn('cachekeep tick failed', classifyFailure(error, 'send'))
       })
     }, this.tickIntervalMs)
     if (typeof this.timer === 'object' && 'unref' in this.timer) {
@@ -391,6 +394,7 @@ export class CacheKeepManager<M = undefined> {
       this.timer = null
     }
     this.startedAt = null
+    for (const target of this.targets.values()) this.clearRetry(target)
     this.targets.clear()
     this.totalBytes = 0
     this.log?.debug('cachekeep stopped')
@@ -454,15 +458,15 @@ export class CacheKeepManager<M = undefined> {
     if (window && !isWithinCacheKeepWindow(window, new Date(this.now()))) {
       return
     }
-    const now = this.now()
-    const leadBound = now + this.leadMs
     for (const [sessionKey, target] of [...this.targets]) {
       if (this.disposed) return
       if (this.targets.get(sessionKey) !== target) continue
+      const now = this.now()
       if (target.backoffUntil !== undefined && now < target.backoffUntil) {
         continue
       }
-      if (target.cacheExpiresAt > leadBound) continue
+      if (target.cacheExpiresAt > now + this.leadMs) continue
+      if (!this.canRetry(target)) continue
       await this.warm(sessionKey, target)
     }
   }
@@ -504,27 +508,85 @@ export class CacheKeepManager<M = undefined> {
     sessionKey: string,
     target: Target<M>,
     message: string,
-    fields: Record<string, unknown> = {},
+    failure: Failure,
+    transient = false,
+    status?: number,
   ): void {
     if (!this.isCurrent(sessionKey, target)) return
     target.failures += 1
-    const delay =
+    const now = this.now()
+    let delay =
       typeof this.backoff === 'function'
         ? this.backoff({ sessionKey, failures: target.failures })
-        : this.backoff
+        : (this.backoff ?? DEFAULT_BACKOFF_MS)
+    const deadline = this.lastRetryStart(target)
+    const fastRetry = this.backoff === undefined && transient && now < deadline
+    if (fastRetry) {
+      delay = Math.min(
+        TRANSIENT_RETRY_STEP_MS * target.failures,
+        TRANSIENT_RETRY_MAX_MS,
+        deadline - now,
+      )
+    }
     target.backoffUntil =
-      this.now() + (Number.isFinite(delay) && delay > 0 ? delay : 0)
+      now + (Number.isFinite(delay) && delay > 0 ? delay : 0)
+    this.clearRetry(target)
+    if (fastRetry) this.scheduleRetry(sessionKey, target, delay)
     this.log?.warn(message, {
       sessionKey,
       accountId: target.accountId,
       failures: target.failures,
       backoffUntil: target.backoffUntil,
-      ...fields,
+      ...failure,
+      ...(status !== undefined && { status }),
     })
+  }
+
+  private lastRetryStart(target: Target<M>): number {
+    return target.cacheExpiresAt - this.warmTimeoutMs - EXPIRY_SAFETY_MS
+  }
+
+  private canRetry(target: Target<M>): boolean {
+    return (
+      this.backoff !== undefined ||
+      target.failures === 0 ||
+      this.now() <= this.lastRetryStart(target)
+    )
+  }
+
+  private clearRetry(target: Target<M>): void {
+    if (target.retryTimer === undefined) return
+    this.clearIntervalImpl(target.retryTimer)
+    target.retryTimer = undefined
+  }
+
+  private scheduleRetry(
+    sessionKey: string,
+    target: Target<M>,
+    delay: number,
+  ): void {
+    // Use the same injected timer pair as the regular tick, but clear this
+    // interval before dispatch so it acts as a one-shot retry timer.
+    target.retryTimer = this.setIntervalImpl(() => {
+      this.clearRetry(target)
+      return (async () => {
+        // A different target can still be warming. Wait for that tick before
+        // rechecking eligibility, rather than losing this wake-up to coalescing.
+        await this.tickPromise
+        if (this.isCurrent(sessionKey, target)) await this.tick()
+      })().catch((error) => {
+        this.log?.warn('cachekeep tick failed', classifyFailure(error, 'send'))
+      })
+    }, delay)
+    if (typeof target.retryTimer === 'object' && 'unref' in target.retryTimer) {
+      target.retryTimer.unref()
+    }
   }
 
   private async warm(sessionKey: string, target: Target<M>): Promise<void> {
     if (this.retireIfExpired(sessionKey, target)) return
+    if (!this.canRetry(target)) return
+    this.clearRetry(target)
     const view = this.view(sessionKey, target)
     if (this.adapter.activeAccount) {
       let active: string | undefined
@@ -535,9 +597,8 @@ export class CacheKeepManager<M = undefined> {
           sessionKey,
           target,
           'cachekeep skip (active account unknown)',
-          {
-            error: errorMessage(error),
-          },
+          classifyFailure(error, 'authorization'),
+          true,
         )
         return
       }
@@ -561,14 +622,13 @@ export class CacheKeepManager<M = undefined> {
         sessionKey,
         target,
         'cachekeep skip (replay body unbuildable)',
-        {
-          error: errorMessage(error),
-        },
+        classifyFailure(error, 'authorization'),
       )
       return
     }
     if (!this.isCurrent(sessionKey, target)) return
     if (this.retireIfExpired(sessionKey, target)) return
+    if (!this.canRetry(target)) return
 
     const combined = combineAbortSignals([
       AbortSignal.timeout(this.warmTimeoutMs),
@@ -577,15 +637,27 @@ export class CacheKeepManager<M = undefined> {
     const signal = combined.signal
     let response: Response
     let text = ''
+    let stage: 'send' | 'response' = 'send'
+    let status: number | undefined
     try {
       response = await this.adapter.send({ target: view, body, signal })
-      // Drain the body so the connection is released; its text is only
-      // diagnostic.
-      text = await response.text().catch(() => '')
+      stage = 'response'
+      status = response.status
+      // Drain the body to release the connection and let the adapter read usage.
+      text = await response.text()
     } catch (error) {
-      this.fail(sessionKey, target, 'cachekeep failed', {
-        error: errorMessage(error),
-      })
+      this.fail(
+        sessionKey,
+        target,
+        'cachekeep failed',
+        classifyFailure(error, stage, status),
+        status === undefined ||
+          (status >= 200 && status < 300) ||
+          status === 408 ||
+          status === 429 ||
+          status >= 500,
+        status,
+      )
       return
     } finally {
       combined.dispose()
@@ -593,10 +665,16 @@ export class CacheKeepManager<M = undefined> {
     if (!this.isCurrent(sessionKey, target)) return
 
     if (!response.ok) {
-      this.fail(sessionKey, target, 'cachekeep failed', {
-        status: response.status,
-        responseBody: text.slice(0, 600),
-      })
+      this.fail(
+        sessionKey,
+        target,
+        'cachekeep failed',
+        classifyFailure(undefined, 'response', response.status),
+        response.status === 408 ||
+          response.status === 429 ||
+          response.status >= 500,
+        response.status,
+      )
       return
     }
 
@@ -610,6 +688,7 @@ export class CacheKeepManager<M = undefined> {
     target.cacheExpiresAt = now + target.ttlMs
     target.lastWarmedAt = now
     target.backoffUntil = undefined
+    this.clearRetry(target)
     target.failures = 0
     target.warmCount += 1
     this.log?.debug('cachekeep fired', {
@@ -672,6 +751,7 @@ export class CacheKeepManager<M = undefined> {
   private drop(sessionKey: string): boolean {
     const target = this.targets.get(sessionKey)
     if (!target) return false
+    this.clearRetry(target)
     this.totalBytes -= target.bodyBytes
     this.targets.delete(sessionKey)
     return true
