@@ -429,22 +429,31 @@ describe('Windows private IO logic', () => {
 })
 
 for (const mode of ['acquire', 'release', 'renew'] as const) {
-  test(`Windows lease ${mode} does not convert access or sharing errors into success`, async () => {
-    for (const errno of ['EBUSY', 'EPERM', 'EACCES']) {
-      const child = Bun.spawn(
-        [process.execPath, 'test/fs/windows-lease-probe.mjs', mode, errno],
-        { stdout: 'pipe', stderr: 'pipe' },
-      )
-      const [stdout, stderr, exit] = await Promise.all([
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-        child.exited,
-      ])
-      expect(stderr).toBe('')
-      expect(exit).toBe(0)
-      expect(JSON.parse(stdout)).toEqual({ mode, errno, checked: true })
-    }
-  })
+  // Release keeps retrying EBUSY/EPERM until its full deadline. The probe makes
+  // that deadline virtual, but every attempt still does real owner reads and a
+  // delete, about 120 attempts per errno. On a slow Windows ARM runner the three
+  // probe children together have taken more than Bun's 5 s default.
+  const timeout = mode === 'release' ? 30_000 : undefined
+  test(
+    `Windows lease ${mode} does not convert access or sharing errors into success`,
+    async () => {
+      for (const errno of ['EBUSY', 'EPERM', 'EACCES']) {
+        const child = Bun.spawn(
+          [process.execPath, 'test/fs/windows-lease-probe.mjs', mode, errno],
+          { stdout: 'pipe', stderr: 'pipe' },
+        )
+        const [stdout, stderr, exit] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ])
+        expect(stderr).toBe('')
+        expect(exit).toBe(0)
+        expect(JSON.parse(stdout)).toEqual({ mode, errno, checked: true })
+      }
+    },
+    timeout,
+  )
 }
 
 test('Windows lease release succeeds only after a sharing-refused delete actually succeeds', async () => {
