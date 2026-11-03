@@ -934,6 +934,174 @@ Pure functions over plain JSON; no file I/O, locks or clock reads (every time is
 
 **Provider → (scope, window) mapping.** The library infers no labels; a plugin maps its provider's windows when it builds observations and passes the required labels per admission call. openai-auth: the wham/header primary window → `(all, primary)`, secondary → `(all, secondary)`, spend control → the budget, and a full poll covers both pairs; required labels `['primary']` (the default). anthropic-auth: `five_hour` and `seven_day` → `(all, five_hour)` and `(all, seven_day)`; a model-scoped week such as `seven_day_opus` → `(opus, seven_day_opus)`, keeping the provider's own field name as the label. The scoped week is an additional cap, not a more specific view of the general week, so it must **not** be stored as `(opus, seven_day)`: that label would replace the general week in an `opus` projection, and an exhausted general week would then admit an `opus` request. The adapter passes its own required labels, and records a scoped week as absent only when its source covers scoped limits with authority (a poll that lists them), never because a header-shaped push lacked one. Extra usage is not mapped to the budget by default; see *Native policy that stays in the adapter* under ./routing. antigravity-auth: each per-model quota → `(<model family>, <its window label>)`.
 
+### ./limits
+
+Shared limit policy for plugin adoption, not automatic adoption into any plugin.
+Import from `@cortexkit/common-auth/limits`; the sibling
+`@cortexkit/common-auth/limits/vault` entry supplies roster persistence. Both
+published entries load without the optional peers `@cortexkit/claustrum-client`
+and `@cortexkit/subc-client`. `test/limits/dist-import.test.ts` exercises both
+entries and runs `decideAfterLimit` in an isolated project containing only the
+package's published manifest and built `dist`, without the source tree or peers.
+Build before running that test.
+
+Key runtime exports and adoption inputs:
+
+| export | input and responsibility |
+| --- | --- |
+| `decideAfterLimit(facts, axes)` | `PolicyFacts` and `LimitAxes`; returns a `LimitDecision`, without I/O |
+| `limitPresets`, `confirmedAffinity`, `earliestPoolEngine`, `windowRouter`, `statusVaultOrder` | named immutable axis bundles listed below |
+| `classifyHeaders`, `resolveReset`, `markFromSignal` | supplied response/reset evidence and failure history; no provider-specific wire parser |
+| `createSessionActivityStore`, `sameAccountHoldFacts`, `readMaxSameAccountWait` | process-local session cache activity and normalized setting/hold facts |
+| `acquireLimitsRegistry`, `LIMITS_REGISTRY_KEY` | shared namespace ownership and dispatch/control coordination |
+| `createPoolLimitsAdapter({ namespace, store, now?, logger? })` | async reference adapter returning `PersistenceAdapter`; canonical provider/store namespace |
+| `buildRefusal`, `registerLimitMessages`, `sanitizeRefusalLabel`, `formatDuration`, `formatReset` | typed refusal families, safe templates/labels and shared duration rendering |
+| `waitForPi` | abortable wait/countdown only; the caller owns sending and final presentation |
+
+The entry also exports the contracts for `AccountKey`, `LimitSignal`, scopes,
+request history, wait checkpoints and persistence commands. A plugin keeps its
+own admission and transport code; these exports are not a replacement fetch loop.
+
+**Decision boundary.** `decideAfterLimit(facts, axes)` is pure: callers supply
+time, account bindings, admission, quota evidence, request history and host
+facts. Its actions are `reroute`, `hold`, `retain`, `wait-then-reselect`,
+`exclude-for-request`, `refuse` and `pass`, carrying `retryable` and
+`hostRetry: 'leave' | 'veto'`. Provider wire parsers stay in plugins. The shared
+generic header classifier is opt-in, produces unconfirmed hints on 429/503,
+and is not selected by a preset. `markFromSignal` produces pool, family or exact-model
+marks; the plugin supplies the effective model and `familyOf(model)` mapping.
+The existing narrow `./opencode2` `LimitSignal` is unchanged; bridge a shared
+signal with `toOpenCode2LimitSignal`, rather than replacing that host type.
+
+**Presets are immutable axis bundles, not stored configuration.**
+
+| preset | adoption target | same-account setting |
+| --- | --- | --- |
+| `confirmed-affinity` | anthropic-auth | cache-TTL-bounded holds and setting-capped fresh local-pool terminal metadata |
+| `earliest-pool-engine` | antigravity-auth | disabled; conformance runs with `0` |
+| `window-router` | openai-auth | disabled; baseline terminal metadata |
+| `status-vault-order` | claustrum-auth | disabled; baseline terminal metadata |
+
+Only `confirmed-affinity` currently selects `shortLimit.holdBound: 'cache-ttl'`
+and `terminalMetadata: 'setting-capped-fresh'`. Its terminal setting applies to
+`terminal.source: 'pool'`, not vault refusals. The other presets select
+`'disabled'` and `'baseline'`, and changing the setting does not change their
+decisions. Choosing these axes for another plugin is adoption work. Retains
+have no bounded-retain overlay in this release.
+
+**Activity and waiting.** `routing.maxSameAccountWait` is `0 | 15 | 'max'`,
+defaulting to `15` for an absent or invalid value. A same-account hold must fit
+both that setting and the session cache expiry, including once-per-hold
+deterministic jitter and whole-second rounding. An activity record holds the
+full `AccountKey` (namespace, row reference and identity incarnation),
+`lastAcceptedAt` and the longest `ttlMs` written by the accepted response.
+Call `activityStore.recordAccepted({ sessionId, accountKey, currentAccountKey,
+lastAcceptedAt, ttlMs? })` for accepted responses and successful 2xx keep-warm
+prewarms; both count as cache activity. `currentAccountKey` is the authoritative
+binding at completion, so a stale incarnation's update is rejected. Unknown,
+negative or non-finite TTL means five minutes; known TTL `0` means no cache and
+never holds. Records are process-local, one per session, overwritten on an
+account change and evicted oldest-first beyond 256 sessions. Call
+`activityStore.forgetSession(sessionId)` when the plugin forgets a session or
+the host deletes it. Missing, account-mismatched, evicted or replaced-incarnation
+records cannot hold.
+
+A wait returns a target and a checkpoint of the account incarnation and
+confirmed blocker resets. Before sending, reload/revalidate admission, access,
+identity, custody and control fences, and the cache bound for a same-account
+hold. A checkpointed blocker is lifted for one dispatch only if its current
+reset is no later than both its checkpointed reset and the target, and its
+incarnation still matches. Passing time does not refresh a reading. A newer
+reset, changed incarnation, floor or capped target before the reset must
+re-decide; never send solely because a timer elapsed. Pass lifted windows to
+`./routing` admission's optional `liftedWindows` input so its unknown-reset gate
+does not reject that one dispatch; quota pulls are still requested.
+
+The library supplies host refusal envelopes, duration rendering and wording
+validation. Plugins supply typed message templates, not replacement wire
+builders. New local-pool terminal text distinguishes the capped retry delay
+from the true reset; stale or unknown evidence never becomes a real wait.
+Setting `0` uses non-retryable refusal plus veto, with only a known true reset
+as informational Retry-After. Recorded-format conformance texts remain tagged
+"changes on adoption": they are not the shared formatter's wording guarantee.
+Auth wording and Pi error-event presentation remain plugin-owned. The Pi wait
+helper only waits with an abortable countdown and returns `'elapsed'` or
+`'aborted'`; it never sends. The caller performs the wake re-check, sends or
+gives the final refusal after elapsed, and ends without refusal after abort.
+
+**Registry and persistence.** One process-wide schema-v1 registry shares each
+canonical store/roster namespace. Timed marks publish detached and debounced at
+1000 ms; clear/access commands are ordered and acknowledged before dispatch to
+the affected account only. Dispatch joins one in-flight namespace reload when
+the last successful read is older than 1000 ms; there is no read on every
+decision within the fresh interval. Active namespaces reload at least every
+1000 ms plus read latency; timers stop after 5 seconds idle and the next dispatch
+joins a reload. A failed write/reload sets `degradedAgreement`; a later read
+alone does not clear it before pending failures settle and an authoritative
+snapshot loads. There is no convergence bound while storage is unavailable.
+Dispose flushes/unsubscribes; failed flushes retain pending commands and their
+per-account dispatch barriers for the replacement owner to hydrate before
+dispatch.
+
+The pool reference adapter stores `commonAuthLimits` at the config's top level,
+outside `POOL_OWNED_KEYS`, through the optional
+`PoolStore.updateLimitsNamespace`. Activate after `initialize()` or ready
+`load()`; activation refuses with `pool-not-ready`, or `limits-unsupported` for a
+structural store lacking that method. The method reads current envelope and row
+bindings under the store locks; do not substitute `updateSettings`.
+`updateSettings` preserves the envelope and refuses attempts to alter it.
+`readSettings` and `POOL_OWNED_KEYS` keep their existing meaning. Calls inside
+`onPersisted`, `onFailure` or a pull are supported; hooks/mutators executing
+under the store locks refuse reentry immediately with `PoolReentryError`.
+Refresh/rotate and first identity discovery remain compatible; replacement or
+a conflicting known identity rejects commands observed against the old binding.
+
+### ./limits/vault
+
+The vault reference persistence adapter uses the roster's top-level `limits`
+field through `mutateVaultRoster`, not the local account store. It imports the
+roster module directly, not the optional-peer-loading `./claustrum` barrel.
+Its runtime export is
+`createVaultLimitsAdapter({ namespace, path, now?, logger? })`, returning
+`Promise<PersistenceAdapter>`; `VaultLimitsAdapterOptions` is its options type.
+`VaultRosterFile.limits` and `decodeRoster` preserve a valid envelope through
+discovery, accept, decline, reorder and quota writes. No store migration is
+required. A custom namespace may instead supply the `PersistenceAdapter`
+contract exported from `./limits`.
+
+The vault incarnation is `(routeId, addedAt)`, validated against the current
+roster under its write lock. Removal/re-addition or a conflicting known account
+rejects an old command. Alias changes, a new representative credential for the
+same account, and an unclaimed observation later bound to that account accept.
+
+**Declared persistence limits (both adapters).**
+
+- Revision ordering and clear preservation require cooperating writers holding
+  live leases. A holder stalled beyond lease expiry can still overwrite its
+  successor. This stalled-holder case is not tested or covered by the ordering
+  guarantee; writes are not fenced at commit time.
+- Older common-auth writers can strip either envelope. Loss detection sets
+  `degradedAgreement`, merges known marks, clear tombstones, operation ids and
+  access state into the present generation, and advances a recovery barrier so
+  pre-recovery commands are rejected. Restrictive access commands can be rebased
+  and resubmitted; stale timed marks cannot. A clear that no running new-version
+  process ever observed cannot be recovered. Do not promise safety against
+  arbitrary older writers.
+- At most 1024 tombstones and 1024 operation ids are kept per namespace;
+  compaction advances a low-watermark that rejects older commands. Consecutive
+  failure history is process-local; reloading persisted timed marks and reset
+  deadlines does not restore consecutive-failure counters.
+- A vault route removed and returned within the same millisecond cannot be
+  distinguished by `addedAt`. If a Claustrum hub member's plugin changes its
+  roster file path (for example after a plugin fingerprint change), that path
+  starts an empty limits namespace.
+- A different registry schema version refuses activation. Provider parsing,
+  plugin adoption, the insula reply-quota feed, background quota scheduling,
+  bounded retains and new pacing modes are outside this release's shared policy.
+  Conformance over supplied facts is not whole-plugin validation: each adopter
+  must check its provider parsers, real transport and installed host/coordinator
+  version.
+
 ### ./routing
 
 Pure functions; every input is per call and nothing is persisted. Rate-limit marks, refresh backoff, killswitch verdicts, reserve percent, pending bytes, pins, identities and `formerMainId` are all caller-held.
@@ -971,14 +1139,28 @@ Optional process-global THALAMUS routing for **vault mode only**. Routing's
 account ids are vault account ids, not plugin route ids or local pool row ids.
 Local pool rows are unknown to routing. No auth plugin adopts this client yet.
 
-Runtime exports: `askRouting`, `reportRouting`. Type exports:
+Runtime exports: `askRouting`, `reportRouting`, `holdWaitMaxS`. Type exports:
 `RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`,
 `ReportRoutingInput`.
 
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
-| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs? }` | `Promise<{ candidate, hold?: { retry_after_ms } } \| undefined>`; `candidate` is the original eligible input object with its inferred type | never throws or rejects |
+| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS? }` | `Promise<{ candidate, hold?: { retry_after_ms } } \| undefined>`; `candidate` is the original eligible input object with its inferred type | never throws or rejects |
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools send nothing |
+
+**Same-account hold cap.** `holdWaitMaxS({ sessionId, activity?, accountKey,
+maxSameAccountWait?, now })` returns whole seconds for `askRouting`'s optional
+`holdWaitMaxS` input (forwarded as `hold_wait_max_s`). Supply the current
+`activityStore.get(sessionId)` snapshot and the authoritative current `AccountKey`,
+not an account id alone. The helper computes
+`floor(max(0, min(settingMs, cacheExpiresAt - now)) / 1000)`, using the
+[limits activity rules](#limits): `0` disables a hold, `15` caps it at 900 seconds,
+and `'max'` caps it at cache expiry. It returns `0` for a missing, evicted,
+expired, mismatched or replaced-incarnation record, or a known zero TTL. With
+no usable routing accessor it returns `undefined`, so an optional integration
+does not impose a cap when routing is absent. This helper does not wait or
+authorize a send; the plugin still caps the returned routing hold and re-checks
+admission and custody before dispatch.
 
 **Selection and fallback.** Each call looks up
 `globalThis[Symbol.for('cortexkit.routing')]` at call time, so a bridge installed
@@ -987,7 +1169,7 @@ session, malformed answer or accessor failure yields `undefined`: the plugin
 keeps its own choice. `candidates` must already exclude routes refused by the
 vault, blocked by the killswitch or ineligible under other plugin rules. The
 answer must name a candidate's `accountId`; if it names a credential too, that must match the
-same candidate's `credentialId`. Only provider, model id and deadline are sent
+same candidate's `credentialId`. Only provider, model id, deadline and an optional `hold_wait_max_s` cap are sent
 with the selection request, never candidate metadata or credentials.
 
 **Deadlines and holds.** `deadlineMs` defaults to 500, clamps to 1–2000 ms, and
@@ -1217,6 +1399,7 @@ Runtime exports: `createCommandMenu(options)`, `runPiCommandMenu(menu, ui, {sess
 - `accounts.login {label?, knobs?, run(values, invocation) → LoginOutcome}`: `{status:'ready', account}` adds now; `{status:'pending', message, completion}` shows `message` (the login URL or device code) and adds the account when `completion` resolves, reporting through the invocation that asked; `{status:'cancelled', message?}`. Without it, Accounts has no add action. `accounts.protect` is passed to `store.remove` (the plugin's reserved ids and pending-operation records). `accounts.describeIdentity(row)` chooses what is shown as the identity (defaults to the recorded identity).
 - `quota.check(ids, invocation)`: the plugin's "check now" poll; without it the menu calls `store.requestReading` for each id and awaits `store.pullsSettled()`. `quota.scope` picks the projection scope (default `all`).
 - `routing.orderedVariants`: further `routing.mode` values offered between `ordered` and `sticky-balanced` (openai-auth: `main-first`, `fallback-first`); `routing.formerMainId` for the "tried in order" line.
+- `routing.sameAccountWait: true` (opt-in): adds "Longest wait on the same account" to the Routing section, with exactly "Don't wait", "15 minutes" and "Until the cache expires". The current choice is selected; absent or invalid settings read as `15`. It persists `routing.maxSameAccountWait` as number `0`, number `15` or string `'max'` through `store.updateSettings` with the plugin's `extraLocks`, and round-trips through the Pi renderer. Omitting the option leaves the menu unchanged. Showing the row alone does not enable holds: the adapter must supply the setting to the selected [limits axes](#limits).
 - `routing.vaultOrder` (0.25.0): `() → VaultRoutingOrder | undefined` (sync or async), called on every build. While the plugin routes through vault accounts it returns `{ rows, reorder(ids) }`: `rows` is every vault roster row in row order as `{ id, label }` (`id` the route id, `label` the name the plugin's menu shows for that account), and `reorder` takes route ids and sets a new order. Route ids (`vault:chatgpt:openai~ffdbede18a`) are long and opaque, so the section works in labels where it can and accepts route ids where it must: it shows `Vault account order: work, personal, …` instead of `Roster order:`, and its "Set order" input (`Vault accounts, first to last, separated by commas`) starts with the labels in order. Entries are separated by commas or line breaks, not spaces, since a label may contain spaces; each entry may be a label or a route id, and must name exactly one row (an exact match of either). The menu maps the entries to route ids before calling `reorder`; the pool roster is not touched. An account's input default is its route id instead of its label when the label would not name it alone (two accounts share the label, or the label contains a comma or line break), so the default always applies as is. Refusals write nothing and use the code `vault-invalid-order`; each quotes only the entry the user typed: `"<entry>" is not a vault account.` (matches no row), `"<entry>" matches more than one vault account; enter those accounts by route id.` (two accounts share that label), `"<entry>" names an account already in the order.` (the same account twice, by label or id). A left-out account is refused by the roster, `the order leaves out N roster route ids`, which counts without naming. Any other failure is projected as usual. A changed order reads `Order set to <labels>.`; an order already in place reads `The order is unchanged.` and writes nothing. In local mode it returns undefined and the section shows and sets the pool roster as before. Wiring: a plugin with a `ClaustrumConsumer` returns `{ rows: consumer.snapshot()?.rows.map((row) => ({ id: row.routeId, label: row.label })) ?? [], reorder: (ids) => consumer.reorder(ids) }` when `isCustodyActive()` holds. `VaultRosterRow.label` is the `mapAccount` label, defaulting to the trailing segment of `oauth:<provider>:<label>`, then the email, then the credential id; a plugin whose menu names vault accounts by email passes `row.email ?? row.label` instead. A plugin that keeps its own roster with `ClaustrumScopedCustody` builds the rows from `readVaultRoster(rosterPath)` the same way, calls `reorderVaultRoster(rosterPath, ids)` and then updates its own in-memory roster. Without `vaultOrder`, "Set order" in vault mode still orders the pool roster, which routing does not use there. Type export: `VaultRoutingOrder`.
 - `limits.labels`: the window labels floors can be set for (defaults to the labels in the pool's quota readings, else `primary`).
 - `cache`, `diagnostics`: `{title, build(invocation) → SectionContent}`; `extras`: the same with an `id` (not one of the fixed ids). A section whose `build` throws shows "This section could not be loaded." and the rest of the menu still opens.
@@ -1542,14 +1725,14 @@ Fresh OAuth reads still demand `minTtlMs` 300 000 and refuse a served token with
 
 Multi-account auth on OpenCode 2 (`@opencode/*` GA, built against `@opencode/plugin` 2.0.21, an optional peer) through the host's own provider drivers and session hooks. The host keeps the transport: its HTTP client, its WebSocket and its own `previous_response_id` chaining. Nothing here opens a connection. The recipe and its evidence are in `research/opencode2-thin/REPORT.md` (mock) and `research/opencode2-hooks-real/REPORT.md` (real backend, caching kept); the loopback proxy in `research/opencode2-loopback/` stays a fallback for the WebSocket path only.
 
-Runtime exports: `installOpenCode2Auth(ctx, adapter, options?)`, `registerOpenCode2AuthMethods(ctx, options)`, `placeholderCredential`, `placeholderSecret`, `isPlaceholderCredential`, `PLACEHOLDER_PREFIX`, `PLACEHOLDER_LIFETIME_MS`, `PLACEHOLDER_METADATA_KEY`, `VAULT_ACTIVATION_INSTRUCTIONS`, `OpenCode2AuthError`, `applyHeaderEdits`, `watchServerSentEvents`, `DEFAULT_MAX_RECORDS` (512), `MAX_RETRY_HOLD_MS` (1,200,000), `ATTEMPT_HEADER` (`x-common-auth-attempt`). Type exports: `OpenCode2AuthAdapter`, `Attempt`, `AttemptOutcome`, `AttemptEndReason`, `AccountHeadersResult`, `ResponseAccount`, `OpenCode2HookContext`, `OpenCode2AuthInstallation`, `OpenCode2AuthEvents`, `OpenCode2AuthEventName`, `InstallOpenCode2AuthOptions`, `OpenCode2AuthLogger`, `ChooseAccountInput`, `ChooseAccountResult`, `RetryHold`, `AccountRequest`, `RequestScope`, `RequestKind`, `HeaderEdits`, `LimitSignal`, `EventVerdict`, `HostError`, `Transport`, `RetryReason`, `SelectingHook`, `OpenCode2AuthFailureKind`, `PoolAuthorization`, `PoolLoginMethod`, `RegisterOpenCode2AuthMethodsOptions`, `VaultActivationMethod`, `LoginContext`, `FormAnswer`, `ServerSentEvent`.
+Runtime exports: `installOpenCode2Auth(ctx, adapter, options?)`, `registerOpenCode2AuthMethods(ctx, options)`, `placeholderCredential`, `placeholderSecret`, `isPlaceholderCredential`, `PLACEHOLDER_PREFIX`, `PLACEHOLDER_LIFETIME_MS`, `PLACEHOLDER_METADATA_KEY`, `VAULT_ACTIVATION_INSTRUCTIONS`, `OpenCode2AuthError`, `applyHeaderEdits`, `watchServerSentEvents`, `DEFAULT_MAX_RECORDS` (512), `MAX_RETRY_HOLD_MS` (3,621,000), `ATTEMPT_HEADER` (`x-common-auth-attempt`). Type exports: `OpenCode2AuthAdapter`, `Attempt`, `AttemptOutcome`, `AttemptEndReason`, `AccountHeadersResult`, `ResponseAccount`, `OpenCode2HookContext`, `OpenCode2AuthInstallation`, `OpenCode2AuthEvents`, `OpenCode2AuthEventName`, `InstallOpenCode2AuthOptions`, `OpenCode2AuthLogger`, `ChooseAccountInput`, `ChooseAccountResult`, `RetryHold`, `RetryWake`, `RetryDisposition`, `RetryWaitThenReselect`, `AccountRequest`, `RequestScope`, `RequestKind`, `HeaderEdits`, `LimitSignal`, `EventVerdict`, `HostError`, `Transport`, `RetryReason`, `SelectingHook`, `OpenCode2AuthFailureKind`, `PoolAuthorization`, `PoolLoginMethod`, `RegisterOpenCode2AuthMethodsOptions`, `VaultActivationMethod`, `LoginContext`, `FormAnswer`, `ServerSentEvent`.
 
 **What a plugin supplies** (`OpenCode2AuthAdapter<Q, A>`, `Q` being the plugin's own quota reading and `A` its per-attempt value; the library never looks inside either):
 
 | member | role |
 | --- | --- |
 | `providerID` | every hook is registered with `{providerID}`; other providers never reach the adapter |
-| `chooseAccount({providerID, modelID, sessionID, agent, kind, previousAccountId?, rerouteFrom?, phase})` | commits the account for one attempt; `phase` is `'retry'` for the retry hook's advance choice (which may hold), `'request'` for every other call. The plugin admits and routes its `/store` pool rows with `/routing` here. Every returned account, including the refused account, is kept for the next attempt of that session and kind, which does not choose again. Another account reroutes at once; the refused account keeps the host's decision and wait. An explicit `{ hold: { delayMs } }` in phase `retry` instead commits the refused account with the adapter's wait (see below). `undefined` commits nothing to routing state (see below); on a request it refuses with kind `no-account`. After undefined or a throw in the retry hook, the host decides and the next attempt chooses with `previousAccountId` and no `rerouteFrom` |
+| `chooseAccount({providerID, modelID, sessionID, agent, kind, previousAccountId?, rerouteFrom?, phase, hostAttempt?, excluded?, wake?})` | commits the account for one attempt; `phase` is `'retry'` for the retry hook's advance choice (which may hold), `'request'` for every other call. The plugin admits and routes its `/store` pool rows with `/routing` here. Every returned account, including the refused account, is kept for the next attempt of that session and kind, which does not choose again except for a targeted hold's wake re-check. Another account reroutes at once; the refused account keeps the host's decision and wait. An explicit `{ hold: { delayMs } }` in phase `retry` instead commits the refused account with the adapter's wait (see below). `undefined` commits nothing to routing state (see below); on a request it refuses with kind `no-account`. After undefined or a throw in the retry hook, the host decides and the next attempt chooses with `previousAccountId` and no `rerouteFrom` |
 | `dropChoice?({…chooseAccountInput, accountId})` | releases an unused kept choice exactly once with the full original choose input (including `phase`, `previousAccountId` and `rerouteFrom`) plus the returned account. Called for a final no-retry decision, an invalid hold delay, cancellation of a queued retry (`session.status` idle), a model or agent change, `forgetSession`, `session.deleted`, `dispose`, or record eviction by `maxRecords`; never for a choice that is used. Awaited before any later `chooseAccount` for the same session, so stale queued choices cannot be consumed; errors are logged and swallowed |
 | `accountHeaders({…scope, accountId})` | the credential and per-account headers as `HeaderEdits` (a string sets every spelling of the name, `null` removes it), or `{headers, attempt}` where `attempt` is the plugin's per-attempt value (a served credential receipt, say); called once per attempt, applied in `model.request`, `http.request` and `experimental.ws.handshake` |
 | `rewriteRequest?`, `rewriteResponse?`, `rewriteHandshakeURL?` | optional URL/body rewrite before the account headers, body-stream/status rewrite after detection, WebSocket URL rewrite; each also gets `attempt` |
@@ -1561,7 +1744,57 @@ Runtime exports: `installOpenCode2Auth(ctx, adapter, options?)`, `registerOpenCo
 | `limitFromError?(error, attempt)` | a refusal recognised only from the error the retry hook receives |
 | `onAttemptEnd?(attempt, {status?, outputStarted, limit?, error?})` | called once per attempt when it ends (rules below); `error.reason` is `failed`, `cancelled` or `abandoned`, absent when the response completed whatever its status. The retry hook waits for it to settle |
 
-Options: `gateOnPlaceholder` (opt-in request ownership, below), `hostCredentials` (values that must never reach the wire on owned requests; default `[placeholderSecret(providerID)]`), `maxRecords`, `logger` (`{warn}`).
+Options: `gateOnPlaceholder` (opt-in request ownership, below), `hostCredentials` (values that must never reach the wire on owned requests; default `[placeholderSecret(providerID)]`), `maxRecords`, `logger` (`{warn}`), `hostRetryLimit` (default 10) and `enforceRequestExclusion` (default false).
+
+**Shared-limit channels (additive).** Plugins map `./limits` decisions onto the
+chooser and response/event seams; the installer does not select a preset or
+parse provider policy. Existing account-id, untargeted `RetryHold` and
+`undefined` results retain their meaning.
+
+- `ChooseAccountInput.hostAttempt` is the retry draft's count in phase `'retry'`
+  and the consumed retry's count on a wake call; ordinary request calls omit it.
+  The adapter uses `hostRetryLimit - hostAttempt` as remaining retries. The
+  installer also enforces the budget: with fewer than one remaining, a hold,
+  wait/reselect or reroute releases its choice and leaves the host's decision.
+- `RetryHold.hold` additionally accepts `target`, `checkpoint` and
+  `kind: 'hold' | 'terminal'`. A queued hold with a target always releases its
+  reserved choice and calls `chooseAccount` in phase `'request'` with
+  `previousAccountId`, `wake: { target, checkpoint?, kind? }` and `hostAttempt`
+  before fetching account headers, whether the target is future, equal to now
+  or already past. The plugin performs the [wake re-check](#limits), then
+  returns the held account, another account or a refusal. Terminal waits omit
+  the prompt-cache bound; a hold without a target keeps the legacy queued path.
+- `RetryDisposition` is `{ hostRetry: 'leave' | 'veto' }`: it reserves no account.
+  A veto is sticky for the attributed attempt. `inspectEvent` can carry
+  `hostRetry`, and `rewriteResponse` can return `{ response, hostRetry }` to pair
+  a formatted refusal with veto even without a recognised limit. Ownership,
+  mixed-session and ambiguous-attribution fences still run first; a veto never
+  grants control over another caller's request.
+- `RetryWaitThenReselect` is `{ waitThenReselect: { delayMs } }`. It reserves no
+  account or routing pin, asks the host for one bounded delayed retry, then
+  chooses afresh. Like a hold, it requires retry phase after an account limit,
+  no output and sufficient host budget. Non-string chooser directives cannot
+  select an account in request phase and act as `undefined` there.
+- `ChooseAccountInput.excluded` is a readonly snapshot of account ids refused
+  by earlier reroutes of the logical request, supplied in both phases. Only a
+  reroute adds the refused account: a hold or wake does not. Enforcement is
+  opt-in; with `enforceRequestExclusion: true`, a choice naming an excluded
+  account warns and becomes no choice (host decides in retry phase,
+  `no-account` in request phase). With enforcement off, legacy choices are
+  honoured.
+
+**Request-token limitation.** OpenCode exposes no logical request/turn id. The
+installer gives a pending retry's token to the first later attempt of the same
+session and kind. Concurrent binding warns and retains exclusions, but a new
+concurrent request can inherit them; if an unrelated attempt consumes the
+pending retry first, the actual retry starts a fresh token and loses them.
+Attempt end alone does not retire the token: an error-status response can end
+before retry, and a plain `done` after an earlier recorded limit is not success.
+Retirement occurs on logical success without any limit/error, a final no-retry
+decision/veto, a fresh token after an un-retried terminal failure, cancellation,
+forgetting/session deletion, or idle cleanup of its queued retry. These channels
+do not promise a host retry after the host's own budget or ownership fences
+have ended it.
 
 **Request ownership (opt-in since 0.11.8).** Auth plugins must enable `gateOnPlaceholder: {credential(headers: Headers): string | undefined}` to act only when the user chose their own login method. OpenCode 2.0.22 does not expose the selected connection or method on request hooks: `model.request` runs before auth, while the transport hooks see the prepared credential for that request. The extractor must read that credential from the supplied headers, not reread `connection.active()` or other global login state. The installer compares the extracted secret byte for byte with `placeholderSecret(adapter.providerID)`: no prefix match, placeholder parsing, metadata test or provider-wide takeover. After a successful plugin login, `registerOpenCode2AuthMethods` waits for the plugin's `onLogin` callback to save the real account in its pool, then returns only the placeholder to the host. The placeholder is a synthetic marker, not a provider-issued credential, so it cannot authenticate an upstream request.
 
@@ -1625,15 +1858,15 @@ That guarantee is narrower than history equivalence. "Add-only" keeps the host's
 
 An undefined answer commits nothing to routing state: no consumed retry entry, no queued choice, and no session pin created, moved or deleted. Maintenance any request may do is allowed: refreshing a credential to check that an account is usable, and recording quota readings, since both are idempotent and the next call would do them anyway.
 
-**Same-account hold (opt-in).** `ChooseAccountResult` adds `RetryHold`, shaped as `{ hold: { delayMs: number } }`, beside the existing account ID or `undefined`. An explicitly typed adapter opts in as `OpenCode2AuthAdapter<Q, A, ChooseAccountResult>`; the third type parameter defaults to `string | undefined`, preserving the return type seen by existing adapters' direct callers. Inline adapters passed to `installOpenCode2Auth` accept the full result without an extra annotation. Code that captures the installer's adapter parameter into a variable typed as the default `OpenCode2AuthAdapter` (including installer mocks) must widen that variable to `OpenCode2AuthAdapter<Q, A, ChooseAccountResult>`: the installer can receive hold-capable choices even when the capturing code does not use them. The object cannot be confused with an account ID and needs no duplicate account identity: it always refers to `rerouteFrom.accountId`. An adapter returning a hold commits a queued choice for that account without moving its routing pin. The installer returns `{retry: true, delay: delayMs}` with retry reason `hold`; the next attempt reuses that choice without calling `chooseAccount` again, subject to the existing model and agent checks. A hold returned in phase `request` selects no account and is treated as `undefined`.
+**Same-account hold (opt-in).** `ChooseAccountResult` adds `RetryHold`, shaped as `{ hold: { delayMs: number } }`, beside the existing account ID or `undefined`. An explicitly typed adapter opts in as `OpenCode2AuthAdapter<Q, A, ChooseAccountResult>`; the third type parameter defaults to `string | undefined`, preserving the return type seen by existing adapters' direct callers. Inline adapters passed to `installOpenCode2Auth` accept the full result without an extra annotation. Code that captures the installer's adapter parameter into a variable typed as the default `OpenCode2AuthAdapter` (including installer mocks) must widen that variable to `OpenCode2AuthAdapter<Q, A, ChooseAccountResult>`: the installer can receive hold-capable choices even when the capturing code does not use them. The object cannot be confused with an account ID and needs no duplicate account identity: it always refers to `rerouteFrom.accountId`. An adapter returning a hold commits a queued choice for that account without moving its routing pin. The installer returns `{retry: true, delay: delayMs}` with retry reason `hold`; a hold without `target` keeps the legacy path, reusing that choice without calling `chooseAccount` again, subject to the existing model and agent checks. A hold with `target` instead takes the targeted wake path described under Shared-limit channels. A hold returned in phase `request` selects no account and is treated as `undefined`.
 
-The delay is the adapter's own Retry-After, including its per-session jitter. Finite, non-negative values are clamped (not refused) to `MAX_RETRY_HOLD_MS`, **20 minutes / 1,200,000 ms**, enough for a 15-minute reset plus up to 20 seconds of jitter. Values just below or at the cap are unchanged; larger finite values retry at the cap. Negative, NaN or infinite delays release the queued choice and keep the host's decision. `LimitSignal.retryAfterMs` remains informational: neither an ID nor `undefined` implicitly asks for a hold or replaces the host's wait.
+The delay is the adapter's own Retry-After, including its per-session jitter. Finite, non-negative values at or below `MAX_RETRY_HOLD_MS`, **3,621,000 ms** (one hour plus the maximum 21-second jitter), are rounded up to integer milliseconds. Larger, negative, NaN or infinite delays release the queued choice and keep the host's decision; they are not shortened into a premature retry. Each accepted hold is one `{retry: true, delay}` decision consuming one host retry, never a segmented chain or an in-hook sleep. `LimitSignal.retryAfterMs` remains informational: neither an ID nor `undefined` implicitly asks for a hold or replaces the host's wait.
 
 A hold overrides the host's `{retry: false}` **only for a recognised account-level limit before output in an untainted session**. Recognition remains the adapter's responsibility through `limitFromResponse`, `inspectEvent` or `limitFromError`; the installer does not guess from an arbitrary error message or HTTP status. This lets a recoverable usage-window refusal (`usage_limit_reached`) wait even when the host misclassifies it as final. Without such a limit the adapter is not asked for a retry choice and the host's false stands. The no-account and output-started guards are unchanged, and mixed-ownership taint still leaves the host in charge without consulting the adapter. A plain `undefined` still commits nothing and leaves the host in charge.
 
 Unused holds use the normal `dropChoice` lifecycle with the original retry input and the refused `accountId`: model/agent mismatch, record eviction, forgetting/deletion, disposal, or a revoked in-flight selection releases the choice exactly once. When the host publishes `session.status` idle (including cancellation during its retry wait), cleanup releases only pending retries recorded before that idle was observed. Retry records and idle observations receive increasing order numbers, and cleanup is serialized with that session's choice work: a retry queued after the idle survives even if cleanup was waiting for its selection to finish. Idle never revokes in-flight selections, because a delayed idle notification from an earlier turn must not refuse a healthy next turn. Account records, pins and mixed-session taint are not cleared. With no event subscription, an embedder must call `forgetSession` on cancellation. The installer never sleeps or starts a private retry loop: the host owns the wait and cancellation.
 
-**OpenCode 2.0.32 bound.** At tag `v2.0.32`, `packages/core/src/session/runner/retry.ts:31-38` caps provider-requested Retry-After at 15 minutes **before** invoking hooks. That cap does not apply to plugin hook results: lines 88-90 accept any finite, non-negative hook delay and round it up to integer milliseconds. Thus the host does not truncate a 920,000 ms hold; the installer's independent 20-minute clamp bounds adapter input on Windows, Linux and macOS. The real-host placement suite (pinned separately to 2.0.22) also exercises a short same-account hold after a usage-limit veto.
+**OpenCode 2.0.32 bound.** At tag `v2.0.32`, `packages/core/src/session/runner/retry.ts:31-38` caps provider-requested Retry-After at 15 minutes **before** invoking hooks. That cap does not apply to plugin hook results: lines 88-90 accept any finite, non-negative hook delay and round it up to integer milliseconds. Thus the host does not truncate a 920,000 ms hold; the installer's independent `MAX_RETRY_HOLD_MS` bound limits adapter input on Windows, Linux and macOS. The real-host placement suite (pinned separately to 2.0.22) also exercises a short same-account hold after a usage-limit veto.
 
 **Host credential (library decision).** The plugin's pool is the authority; the host holds only a placeholder OAuth credential, `{access: refresh: 'common-auth-placeholder.<integrationID>', expires: now + 1 year, metadata: {commonAuthPlaceholder: true}}`, so the provider stays catalogued. `registerOpenCode2AuthMethods(ctx, {integrationID, methods: [{method, authorize(answer)}], onLogin(result, {integrationID, methodID}), label?, now?})` registers each method through `ctx.integration.transform(editor => editor.method.update(...))`. A method's `authorize` returns the host's `{url, instructions, expiresAt?, mode: 'auto' | 'code', callback}` except that `callback` resolves to the plugin's own login result; the helper awaits `onLogin` (the pool write) and only then hands the host a placeholder, so a failed pool write fails the host login and stores nothing there. Host-driven `refresh` returns a fresh placeholder and never calls the plugin. A real credential stored earlier under one of these method IDs is replaced by a placeholder at its first refresh; a plugin that wants to import such a login reads it through `ctx.integration.connection` first. The installer refuses (`host-credential-on-wire`) any HTTP request or handshake that still carries a placeholder after the account headers are applied.
 
