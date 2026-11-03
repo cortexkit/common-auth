@@ -152,6 +152,7 @@ export {
 } from './request-history.js'
 export type { ResetSource, ResolvedReset } from './reset.js'
 export { resolveNamedWindowReset, resolveReset } from './reset.js'
+export { holdWaitMaxS } from './routing-hold.js'
 export type { FamilyOf, Scope } from './scope.js'
 export { scopeCovers } from './scope.js'
 export type {

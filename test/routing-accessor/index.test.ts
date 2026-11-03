@@ -5,6 +5,27 @@ import {
   reportRouting,
 } from '../../src/routing-accessor/index.js'
 
+test('routing accessor imports without limits resolution', async () => {
+  const build = await Bun.build({
+    entrypoints: [
+      new URL('../../src/routing-accessor/index.ts', import.meta.url).pathname,
+    ],
+    target: 'node',
+    plugins: [
+      {
+        name: 'no-limits',
+        setup(builder) {
+          builder.onResolve({ filter: /(?:^|[/\\])limits(?:[/\\]|$)/ }, () => {
+            throw new Error('limits must not be imported by routing-accessor')
+          })
+        },
+      },
+    ],
+  })
+  expect(build.success).toBe(true)
+  expect(build.logs).toEqual([])
+})
+
 const symbol = Symbol.for('cortexkit.routing')
 const original = Object.getOwnPropertyDescriptor(globalThis, symbol)
 const candidate = {

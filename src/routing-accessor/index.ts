@@ -1,9 +1,7 @@
 // Optional THALAMUS routing for vault mode only. Account ids here are vault
 // account ids; local pool rows are not known to the routing engine.
 
-import { routingHandle } from './hold-cap.js'
-
-export { holdWaitMaxS } from './hold-cap.js'
+import { routingHandle } from './handle.js'
 
 /** An eligible vault route, not a local pool row. */
 export interface RoutingCandidate {
@@ -24,9 +22,9 @@ export interface AskRoutingInput<
   deadlineMs?: number
   /**
    * Longest same-account hold, in seconds, that routing may advise. The
-   * holdWaitMaxS helper caps it by the setting and the current account's cache
-   * expiry, returning 0 when there is no accepted prompt cache worth waiting
-   * for. Fractions are floored and negatives become 0. Omit it to leave
+   * holdWaitMaxS helper from `./limits` caps it by the setting and the current
+   * account's cache expiry, returning 0 when there is no accepted prompt cache
+   * worth waiting for. Fractions are floored and negatives become 0. Omit it to leave
    * routing's default cap in force.
    */
   holdWaitMaxS?: number

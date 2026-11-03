@@ -953,10 +953,27 @@ Key runtime exports and adoption inputs:
 | `limitPresets`, `confirmedAffinity`, `earliestPoolEngine`, `windowRouter`, `statusVaultOrder` | named immutable axis bundles listed below |
 | `classifyHeaders`, `resolveReset`, `markFromSignal` | supplied response/reset evidence and failure history; no provider-specific wire parser |
 | `createSessionActivityStore`, `sameAccountHoldFacts`, `readMaxSameAccountWait` | process-local session cache activity and normalized setting/hold facts |
+| `holdWaitMaxS` | whole-second routing advice cap from current account identity, accepted cache activity and `routing.maxSameAccountWait`; pass the result to `askRouting`'s optional `holdWaitMaxS` input |
 | `acquireLimitsRegistry`, `LIMITS_REGISTRY_KEY` | shared namespace ownership and dispatch/control coordination |
 | `createPoolLimitsAdapter({ namespace, store, now?, logger? })` | async reference adapter returning `PersistenceAdapter`; canonical provider/store namespace |
 | `buildRefusal`, `registerLimitMessages`, `sanitizeRefusalLabel`, `formatDuration`, `formatReset` | typed refusal families, safe templates/labels and shared duration rendering |
 | `waitForPi` | abortable wait/countdown only; the caller owns sending and final presentation |
+
+**Same-account routing hold cap.** Import `holdWaitMaxS` from
+`@cortexkit/common-auth/limits`. Calling
+`holdWaitMaxS({ sessionId, activity?, accountKey, maxSameAccountWait?, now })`
+returns whole seconds for `askRouting`'s
+optional `holdWaitMaxS` input (forwarded as `hold_wait_max_s`). Supply the current
+`activityStore.get(sessionId)` snapshot and the authoritative current `AccountKey`,
+not an account id alone. The helper computes
+`floor(max(0, min(settingMs, cacheExpiresAt - now)) / 1000)`, using the
+limits activity rules: `0` disables a hold, `15` caps it at 900 seconds,
+and `'max'` caps it at cache expiry. It returns `0` for a missing, evicted,
+expired, mismatched or replaced-incarnation record, or a known zero TTL. With
+no usable routing accessor it returns `undefined`, so an optional integration
+does not impose a cap when routing is absent. This helper does not wait or
+authorize a send; the plugin still caps the returned routing hold and re-checks
+account eligibility and authorization to serve its credential before dispatch.
 
 The entry also exports the contracts for `AccountKey`, `LimitSignal`, scopes,
 request history, wait checkpoints and persistence commands. A plugin keeps its
@@ -1139,7 +1156,7 @@ Optional process-global THALAMUS routing for **vault mode only**. Routing's
 account ids are vault account ids, not plugin route ids or local pool row ids.
 Local pool rows are unknown to routing. No auth plugin adopts this client yet.
 
-Runtime exports: `askRouting`, `reportRouting`, `holdWaitMaxS`. Type exports:
+Runtime exports: `askRouting`, `reportRouting`. Type exports:
 `RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`,
 `ReportRoutingInput`.
 
@@ -1148,19 +1165,10 @@ Runtime exports: `askRouting`, `reportRouting`, `holdWaitMaxS`. Type exports:
 | `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS? }` | `Promise<{ candidate, hold?: { retry_after_ms } } \| undefined>`; `candidate` is the original eligible input object with its inferred type | never throws or rejects |
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools send nothing |
 
-**Same-account hold cap.** `holdWaitMaxS({ sessionId, activity?, accountKey,
-maxSameAccountWait?, now })` returns whole seconds for `askRouting`'s optional
-`holdWaitMaxS` input (forwarded as `hold_wait_max_s`). Supply the current
-`activityStore.get(sessionId)` snapshot and the authoritative current `AccountKey`,
-not an account id alone. The helper computes
-`floor(max(0, min(settingMs, cacheExpiresAt - now)) / 1000)`, using the
-[limits activity rules](#limits): `0` disables a hold, `15` caps it at 900 seconds,
-and `'max'` caps it at cache expiry. It returns `0` for a missing, evicted,
-expired, mismatched or replaced-incarnation record, or a known zero TTL. With
-no usable routing accessor it returns `undefined`, so an optional integration
-does not impose a cap when routing is absent. This helper does not wait or
-authorize a send; the plugin still caps the returned routing hold and re-checks
-admission and custody before dispatch.
+The optional `holdWaitMaxS` input can use the cap computed by
+[`holdWaitMaxS` from `./limits`](#limits). The routing accessor does not import
+limits policy, so callers that only ask or report routes keep a dependency-free
+entry.
 
 **Selection and fallback.** Each call looks up
 `globalThis[Symbol.for('cortexkit.routing')]` at call time, so a bridge installed

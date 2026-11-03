@@ -3,8 +3,9 @@ import {
   type AcceptedActivity,
   type AccountKey,
   createSessionActivityStore,
+  holdWaitMaxS,
 } from '../../src/limits/index.js'
-import { askRouting, holdWaitMaxS } from '../../src/routing-accessor/index.js'
+import { askRouting } from '../../src/routing-accessor/index.js'
 
 const symbol = Symbol.for('cortexkit.routing')
 const original = Object.getOwnPropertyDescriptor(globalThis, symbol)
