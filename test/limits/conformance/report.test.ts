@@ -43,10 +43,10 @@ function syntheticReportInput(): ConformanceReportInput {
 }
 
 describe('conformance catalog and closed exclusions', () => {
-  test('catalog has exactly the 282 supplied row ids and their R/B/D counts', () => {
+  test('catalog has exactly the 292 supplied row ids and their R/B/D counts', () => {
     const expectedIds = [
       ...Array.from(
-        { length: 100 },
+        { length: 110 },
         (_, i) => `AN${String(i + 1).padStart(2, '0')}`,
       ),
       ...Array.from({ length: 21 }, (_, i) => `AG-WAIT-${i + 1}`),
@@ -58,7 +58,7 @@ describe('conformance catalog and closed exclusions', () => {
       ...Array.from({ length: 41 }, (_, i) => `CL-${i + 1}`),
     ]
     expect(conformanceRows.map((row) => row.id)).toEqual(expectedIds)
-    expect(new Set(expectedIds).size).toBe(282)
+    expect(new Set(expectedIds).size).toBe(292)
     expect(
       conformancePresets.map((preset) =>
         ['R', 'B', 'D'].map(
@@ -69,7 +69,7 @@ describe('conformance catalog and closed exclusions', () => {
         ),
       ),
     ).toEqual([
-      [48, 52, 0],
+      [58, 52, 0],
       [55, 16, 0],
       [48, 21, 1],
       [30, 10, 1],
@@ -122,9 +122,9 @@ describe('conformance catalog and closed exclusions', () => {
   test('synthetic exclusions reject unknown rows and duplicate ids', () => {
     expect(() =>
       validateConformanceExclusions([
-        { rowId: 'AN101', reason: 'plugin-transport' },
+        { rowId: 'AN111', reason: 'plugin-transport' },
       ]),
-    ).toThrow('Unknown conformance row: AN101')
+    ).toThrow('Unknown conformance row: AN111')
     expect(() =>
       validateConformanceExclusions([
         { rowId: 'AN01', reason: 'plugin-transport' },
@@ -609,15 +609,15 @@ describe('synthetic fake-clock executor inputs (not real row vectors)', () => {
 })
 
 describe('synthetic conformance report inputs (not real row coverage)', () => {
-  test('synthetic complete inputs report AN 100, AG 71, OA 70, CL 41: total 282', () => {
+  test('synthetic complete inputs report AN 110, AG 71, OA 70, CL 41: total 292', () => {
     const report = buildConformanceReport(syntheticReportInput())
     expect(report).toEqual({
       'confirmed-affinity': {
-        rCovered: 48,
+        rCovered: 58,
         rExcluded: 0,
         bRows: 52,
         dWitnesses: 0,
-        total: 100,
+        total: 110,
       },
       'earliest-pool-engine': {
         rCovered: 55,
@@ -643,7 +643,7 @@ describe('synthetic conformance report inputs (not real row coverage)', () => {
     })
     expect(
       Object.values(report).reduce((sum, preset) => sum + preset.total, 0),
-    ).toBe(282)
+    ).toBe(292)
   })
 
   test('synthetic input with even one R row missing from both lists fails', () => {
@@ -694,7 +694,7 @@ describe('synthetic conformance report inputs (not real row coverage)', () => {
     const input = syntheticReportInput()
     const first = input.covered[0]!
     for (const [patch, message] of [
-      [{ rowId: 'AN101' }, 'Unknown conformance row: AN101'],
+      [{ rowId: 'AN111' }, 'Unknown conformance row: AN111'],
       [{ rowId: 'AN28' }, 'Expected R result, got B: AN28'],
       [{ rowId: 'OA-23' }, 'Expected R result, got D: OA-23'],
       [{ preset: 'window-router' }, 'Wrong preset for AN01'],

@@ -30,8 +30,8 @@ function range(
   }))
 }
 
-// The complete §7 map in shared-auth-policy-contracts.md, not a claim of test
-// coverage. Keep B ranges explicit: an omitted R must not silently become B.
+// The §7 map in shared-auth-policy-contracts.md plus the counted Anthropic rows,
+// not a claim of test coverage. Keep B ranges explicit: an omitted R must not silently become B.
 export const conformanceRows: readonly ConformanceRow[] = [
   ...range('confirmed-affinity', 'AN', 1, 27, 'R'),
   ...range('confirmed-affinity', 'AN', 28, 47, 'B'),
@@ -40,6 +40,8 @@ export const conformanceRows: readonly ConformanceRow[] = [
   ...range('confirmed-affinity', 'AN', 89, 94, 'R'),
   ...range('confirmed-affinity', 'AN', 95, 98, 'B'),
   ...range('confirmed-affinity', 'AN', 99, 100, 'R'),
+  // Counted unconfirmed retries ported from anthropic-auth's core and host tests.
+  ...range('confirmed-affinity', 'AN', 101, 110, 'R'),
 
   ...range('earliest-pool-engine', 'AG-WAIT-', 1, 21, 'R'),
   ...range('earliest-pool-engine', 'AG-INNER-', 1, 11, 'B'),

@@ -170,6 +170,7 @@ export type {
   TerminalWindow,
 } from './terminal.js'
 export { scanTerminalReset } from './terminal.js'
+export { UnconfirmedRetainCounter } from './unconfirmed-retain-counter.js'
 export type {
   LimitMessageOptions,
   LimitMessages,

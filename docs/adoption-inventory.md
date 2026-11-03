@@ -1003,8 +1003,48 @@ Only `confirmed-affinity` currently selects `shortLimit.holdBound: 'cache-ttl'`
 and `terminalMetadata: 'setting-capped-fresh'`. Its terminal setting applies to
 `terminal.source: 'pool'`, not vault refusals. The other presets select
 `'disabled'` and `'baseline'`, and changing the setting does not change their
-decisions. Choosing these axes for another plugin is adoption work. Retains
-have no bounded-retain overlay in this release.
+decisions. Choosing these axes for another plugin is adoption work.
+
+**Counted unconfirmed retains.** `confirmed-affinity` also sets
+`unconfirmedRetainLimit: 2`; the other three presets leave it unset. This is an
+axis, not a branch on the preset name. Supplying
+`PolicyFacts.unconfirmedRetainCount` opts into the counted unconfirmed-429 rule
+on all three hosts: counts `0` and `1` return `retain`, and count `2` reroutes to
+the ready alternative with reason `unconfirmed-retry-limit`. If no alternative
+is ready, ordinary exhausted-pool handling applies instead of retaining again.
+Without the count fact, every legacy host-specific decision is unchanged,
+including OpenCode 2 reselect and Pi pass-through. The legacy `retainBound: 'none'`
+field still describes that uncounted path; anthropic-auth must supply the count
+when adopting its current retry rule.
+
+The counted retain carries `incrementUnconfirmedRetain: true` and `retryMs`.
+Its wait is the minimum of 60,000 ms and all finite upstream retry/reset hints,
+each clamped to at least zero, with no jitter or rounding. With no valid hint it
+is 60,000 ms. Plugins parse retry-after seconds or HTTP dates, retry-after-ms,
+and applicable reset timestamps into `retryHintsMs` (and/or `signal.retryAfterMs`)
+without discarding shorter or past hints. Provider headers remain evidence, not
+shared-parser inputs. A confirmed hold, credential recovery, elapsed hold or
+move does not carry the increment flag. `retain` delegates the retry to the host;
+it does not introduce a plugin-owned sleep.
+
+Use the exported plugin-owned `UnconfirmedRetainCounter`, not `RequestHistory`,
+for this budget. History belongs to one logical request, while an OpenCode 2
+user turn can span several logical requests. The counter keeps only the current
+turn and full `AccountKey` per session, with at most 4,096 sessions by default
+(oldest insertion evicted; constructor accepts a positive integer capacity).
+Reading `count(sessionId, turnId, account)` does not mutate it. Pass that value
+into the pure decision, then call `increment(sessionId, turnId, account)` once
+only when executing a retain carrying the flag, never on repeated decision polls.
+The owning plugin must serialize decision/commit for the session. A changed turn
+or account starts at zero; no counter state is persisted or sent to a provider.
+
+Use the billing-lineage prompt id, falling back to the session id, for OpenCode 1
+turns; `requestOptions.billingLineage.promptId`, falling back to request kind,
+for OpenCode 2; and the latest user message's timestamp (as a string) for Pi.
+Call `clear(sessionId)` on a move, API fallback, session idle or delete, and on
+Pi `agent_settled`; call `clearAll()` on shutdown. Clearing on a move is required
+even when returning to an account already used in the same turn. These lifecycle
+hooks belong to plugins; the shared decision has no session lifecycle side effects.
 
 **Activity and waiting.** `routing.maxSameAccountWait` is `0 | 15 | 'max'`,
 defaulting to `15` for an absent or invalid value. A same-account hold must fit
@@ -1114,7 +1154,8 @@ same account, and an unclaimed observation later bound to that account accept.
   starts an empty limits namespace.
 - A different registry schema version refuses activation. Provider parsing,
   plugin adoption, the insula reply-quota feed, background quota scheduling,
-  bounded retains and new pacing modes are outside this release's shared policy.
+  and new pacing modes are outside this release's shared policy. Counted retains
+  require the plugin-owned counter and lifecycle hooks described above.
   Conformance over supplied facts is not whole-plugin validation: each adopter
   must check its provider parsers, real transport and installed host/coordinator
   version.

@@ -46,8 +46,10 @@ export interface LimitAxes {
     readonly preference: 'same-account-first' | 'ready-alternative-first'
     readonly jitter: 'session-sha256' | 'none'
   }
-  /** Bounded retention is not an adopted policy. */
+  /** Legacy uncounted retention remains unbounded. */
   readonly retainBound: 'none'
+  /** Opt-in turn/account budget when the caller supplies unconfirmedRetainCount. */
+  readonly unconfirmedRetainLimit?: number
   readonly poolWaiting:
     | { readonly kind: 'off' }
     | {

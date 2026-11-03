@@ -86,6 +86,9 @@ describe('immutable orthogonal presets', () => {
     expect(limitPresets['confirmed-affinity']).toBe(confirmedAffinity)
     for (const [name, axes] of Object.entries(limitPresets)) {
       expect(axes.retainBound).toBe('none')
+      expect(axes.unconfirmedRetainLimit).toBe(
+        name === 'confirmed-affinity' ? 2 : undefined,
+      )
       expect(axes.shortLimit.holdBound).toBe(
         name === 'confirmed-affinity' ? 'cache-ttl' : 'disabled',
       )
@@ -95,9 +98,48 @@ describe('immutable orthogonal presets', () => {
     }
     const unbounded: LimitAxes['retainBound'] = 'none'
     expect(unbounded).toBe('none')
-    // @ts-expect-error Bounded retention is not a public option.
+    // @ts-expect-error The legacy retainBound field does not select counted retries.
     const bounded: LimitAxes['retainBound'] = 'count'
     expect(String(bounded)).toBe('count')
+  })
+
+  test('uncounted decisions and other presets ignore the new count fact byte-for-byte', () => {
+    for (const host of ['opencode1', 'opencode2', 'pi'] as const) {
+      const input = { ...facts(), host, affinity: 'sticky' as const }
+      input.signal = { ...input.signal!, windows: [] }
+      for (const axes of [earliestPoolEngine, windowRouter, statusVaultOrder]) {
+        expect(axes).not.toHaveProperty('unconfirmedRetainLimit')
+        expect(
+          JSON.stringify(
+            decideAfterLimit({ ...input, unconfirmedRetainCount: 2 }, axes),
+          ),
+        ).toBe(JSON.stringify(decideAfterLimit(input, axes)))
+      }
+      const { unconfirmedRetainLimit: _, ...legacy } = confirmedAffinity
+      expect(JSON.stringify(decideAfterLimit(input, confirmedAffinity))).toBe(
+        JSON.stringify(decideAfterLimit(input, legacy)),
+      )
+    }
+  })
+
+  test('counted retry limits follow the axis rather than a preset name', () => {
+    const input = facts()
+    for (const limit of [0, 1, 3]) {
+      for (let count = 0; count <= limit; count++) {
+        const decision = decideAfterLimit(
+          {
+            ...input,
+            signal: { ...input.signal!, windows: [] },
+            unconfirmedRetainCount: count,
+          },
+          { ...confirmedAffinity, unconfirmedRetainLimit: limit },
+        )
+        expect(decision.action).toBe(count < limit ? 'retain' : 'reroute')
+        expect(decision.reason).toBe(
+          count < limit ? 'unconfirmed-limit' : 'unconfirmed-retry-limit',
+        )
+      }
+    }
   })
 
   test('all nested policy tables and arrays are frozen, not only the bundle shell', () => {

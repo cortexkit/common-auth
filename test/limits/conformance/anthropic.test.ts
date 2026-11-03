@@ -13,6 +13,7 @@ import {
   registerLimitMessages,
   sameAccountHoldFacts,
   type TerminalScanFacts,
+  UnconfirmedRetainCounter,
 } from '../../../src/limits/index.js'
 import {
   type ChooseAccountInput,
@@ -611,6 +612,9 @@ describe('confirmed-affinity proactive and host decisions', () => {
     'AN92',
     'recorded OC2 unknown quota reroutes B at delay 0, not OC1 retain',
     async () => {
+      // Before bc06ec4a added per-turn retry budgets, anthropic-auth used this
+      // uncounted OC2 path. Counted rows describe its current behavior;
+      // anthropic-auth must supply the count when adopting it.
       const decision = decideAfterLimit(
         facts([], {
           host: 'opencode2',
@@ -727,6 +731,9 @@ describe('confirmed-affinity proactive and host decisions', () => {
     'AN100',
     'recorded Pi unknown limit passes original multi-day hints, no normalized timer or wait',
     () => {
+      // Before bc06ec4a added per-turn retry budgets, anthropic-auth used this
+      // uncounted Pi path. Counted rows describe its current behavior;
+      // anthropic-auth must supply the count when adopting it.
       for (const retryHintsMs of [[432_000_000], [1500, 432_000_000]]) {
         decisionIs(
           decideAfterLimit(
@@ -1147,7 +1154,206 @@ describe('confirmed-affinity terminal conformance', () => {
   }
 })
 
-test('confirmed-affinity executed R coverage plus B boundaries accounts for AN 100', () => {
+describe('confirmed-affinity counted unconfirmed retries', () => {
+  const limitedReroute = { ...reroute, reason: 'unconfirmed-retry-limit' }
+
+  function retry(
+    counter: UnconfirmedRetainCounter,
+    patch: Partial<PolicyFacts> = {},
+    turnId = 'billing-prompt-id',
+  ) {
+    const input = facts([], patch)
+    const account = input.attempted ?? A
+    const decision = decideAfterLimit(
+      {
+        ...input,
+        unconfirmedRetainCount: counter.count(input.sessionId, turnId, account),
+      },
+      confirmedAffinity,
+    )
+    if (decision.action === 'retain' && decision.incrementUnconfirmedRetain)
+      counter.increment(input.sessionId, turnId, account)
+    return decision
+  }
+
+  vector(
+    'AN101',
+    'first and second unconfirmed retains commit only on execution',
+    () => {
+      const counter = new UnconfirmedRetainCounter()
+      const input = facts([], { unconfirmedRetainCount: 0 })
+      const first = decideAfterLimit(input, confirmedAffinity)
+      decisionIs(first, retain())
+      expect(first).toHaveProperty('incrementUnconfirmedRetain', true)
+      expect(decideAfterLimit(input, confirmedAffinity)).toEqual(first)
+      expect(counter.count('session-a', 'billing-prompt-id', A)).toBe(0)
+      decisionIs(retry(counter), retain())
+      decisionIs(retry(counter), retain())
+      expect(counter.count('session-a', 'billing-prompt-id', A)).toBe(2)
+    },
+  )
+
+  vector(
+    'AN102',
+    'third unconfirmed 429 reroutes with unconfirmed-retry-limit',
+    () => {
+      decisionIs(
+        decideAfterLimit(
+          facts([], { unconfirmedRetainCount: 2 }),
+          confirmedAffinity,
+        ),
+        limitedReroute,
+      )
+    },
+  )
+
+  vector(
+    'AN103',
+    'confirmed holds and migrations do not consume retains',
+    () => {
+      const counter = new UnconfirmedRetainCounter()
+      for (const resetMs of [120_000, 86_400_000]) {
+        const input = facts([window('5h', resetMs)])
+        const decision = retry(counter, input)
+        decisionIs(decision, resetMs === 120_000 ? held(136_000) : reroute)
+        expect(decision).not.toHaveProperty('incrementUnconfirmedRetain')
+      }
+      expect(counter.count('session-a', 'billing-prompt-id', A)).toBe(0)
+      decisionIs(retry(counter), retain())
+      decisionIs(retry(counter), retain())
+      decisionIs(retry(counter), limitedReroute)
+    },
+  )
+
+  vector(
+    'AN104',
+    'a move clears the budget even when returning to the same account',
+    () => {
+      const counter = new UnconfirmedRetainCounter()
+      retry(counter)
+      retry(counter)
+      decisionIs(retry(counter), limitedReroute)
+      counter.clear('session-a')
+      decisionIs(retry(counter), retain())
+      decisionIs(retry(counter), retain())
+      decisionIs(retry(counter), limitedReroute)
+    },
+  )
+
+  vector(
+    'AN105',
+    'a different account in the same turn has a fresh budget',
+    () => {
+      const counter = new UnconfirmedRetainCounter()
+      retry(counter)
+      retry(counter)
+      const patch = {
+        attempted: B,
+        signal: undefined,
+        selection: { account: A, pin: 'pin' as const },
+      }
+      for (let attempt = 0; attempt < 2; attempt++)
+        decisionIs(retry(counter, patch), { ...retain(), account: B })
+      decisionIs(retry(counter, patch), { ...limitedReroute, account: A })
+    },
+  )
+
+  vector(
+    'AN106',
+    'a new turn resets the budget without disturbing another session',
+    () => {
+      const counter = new UnconfirmedRetainCounter()
+      retry(counter)
+      retry(counter)
+      retry(counter, { sessionId: 'other-session' })
+      decisionIs(retry(counter, {}, 'next-prompt-id'), retain())
+      decisionIs(retry(counter, {}, 'next-prompt-id'), retain())
+      decisionIs(retry(counter, {}, 'next-prompt-id'), limitedReroute)
+      decisionIs(retry(counter, { sessionId: 'other-session' }), retain())
+      decisionIs(retry(counter, { sessionId: 'other-session' }), limitedReroute)
+    },
+  )
+
+  for (const [id, host, turnId] of [
+    ['AN107', 'opencode2', 'requestOptions.billingLineage.promptId'],
+    ['AN108', 'pi', '1700000000000'],
+  ] as const) {
+    vector(
+      id,
+      `${host} counts across logical requests in the same user turn`,
+      () => {
+        const counter = new UnconfirmedRetainCounter()
+        for (let request = 0; request < 3; request++) {
+          const decision = retry(
+            counter,
+            {
+              host,
+              hostPhase: 'retry',
+              remainingRetries: 1,
+              retryHintsMs: [432_000_000],
+              history: createRequestHistory({
+                requestId: `logical-request-${request}`,
+                originalUrl: '/v1/messages',
+                clockNow: 1000 + request,
+              }),
+            },
+            turnId,
+          )
+          decisionIs(decision, request < 2 ? retain() : limitedReroute)
+        }
+      },
+    )
+  }
+
+  vector(
+    'AN109',
+    'counted waits cap at 60s and preserve shorter finite hints including zero',
+    () => {
+      for (const [hints, signalHint, expected] of [
+        [[], undefined, 60_000],
+        [[432_000_000], undefined, 60_000],
+        [[432_000_000, 2000, Number.NaN], undefined, 2000],
+        [[60_000], 1500, 1500],
+        [[-1000], undefined, 0],
+        [[Number.POSITIVE_INFINITY, Number.NaN], 0, 0],
+      ] as const) {
+        const input = facts([], {
+          unconfirmedRetainCount: 0,
+          retryHintsMs: hints,
+        })
+        decisionIs(
+          decideAfterLimit(
+            {
+              ...input,
+              signal: { ...input.signal!, retryAfterMs: signalHint },
+            },
+            confirmedAffinity,
+          ),
+          retain(expected),
+        )
+      }
+    },
+  )
+
+  vector(
+    'AN110',
+    'exhausted budget never retains when no replacement is ready',
+    () => {
+      const decision = decideAfterLimit(
+        facts([], {
+          unconfirmedRetainCount: 2,
+          candidates: [candidate(A)],
+          selection: undefined,
+        }),
+        confirmedAffinity,
+      )
+      expect(decision.action).toBe('refuse')
+      expect(decision).not.toHaveProperty('incrementUnconfirmedRetain')
+    },
+  )
+})
+
+test('confirmed-affinity executed R coverage plus B boundaries accounts for AN 110', () => {
   const rows = conformanceRows.filter(
     (row) => row.preset === 'confirmed-affinity',
   )
@@ -1170,10 +1376,10 @@ test('confirmed-affinity executed R coverage plus B boundaries accounts for AN 1
     dWitnesses: rows.filter((row) => row.status === 'D').length,
     total: rows.length,
   }).toEqual({
-    rCovered: 48,
+    rCovered: 58,
     rExcluded: 0,
     bRows: 52,
     dWitnesses: 0,
-    total: 100,
+    total: 110,
   })
 })

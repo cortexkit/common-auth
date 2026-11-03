@@ -64,6 +64,7 @@ const engineQuota: RefusalPolicy = {
 }
 
 export const confirmedAffinity: LimitAxes = immutable<LimitAxes>({
+  unconfirmedRetainLimit: 2,
   evidence: 'per-field-overlay',
   markers: hosts({
     kind: 'reset',

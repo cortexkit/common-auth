@@ -99,6 +99,8 @@ export interface PolicyFacts {
   readonly affinity?: 'sticky' | 'broken' | 'none'
   readonly credentialRecovery?: { readonly retryMs?: number }
   readonly retryHintsMs?: readonly number[]
+  /** Committed unconfirmed retains for the current session, turn and account. */
+  readonly unconfirmedRetainCount?: number
   readonly hold?: HoldFacts
   readonly wake?: WakeFacts
   readonly remainingRetries?: number
@@ -135,6 +137,8 @@ export type LimitDecision = DecisionBase &
         readonly action: 'retain'
         readonly account: AccountKey
         readonly retryMs?: number
+        /** Commit once when executing this retain, never when polling the decision. */
+        readonly incrementUnconfirmedRetain?: true
         /** Exhaustion windows waived for this dispatch only, never persisted. */
         readonly liftedWindows?: readonly string[]
       }
@@ -479,10 +483,17 @@ export function decideAfterLimit(
       history,
     }
   }
+  // Supplying the count opts into the turn-scoped rule across all hosts;
+  // callers without it keep their existing host-specific unknown-limit policy.
+  const retainLimit = axes.unconfirmedRetainLimit
+  const retainCount = facts.unconfirmedRetainCount
+  const counted =
+    status === 429 && retainLimit !== undefined && retainCount !== undefined
   const advance = axes.advance[facts.host]
   if (
     facts.phase === 'after-limit' &&
     !signal &&
+    !counted &&
     !facts.terminal &&
     (advance.attributedLimitOnly ||
       status === undefined ||
@@ -508,11 +519,14 @@ export function decideAfterLimit(
     (!facts.attempted || !sameAccount(selected.account, facts.attempted))
       ? selected
       : undefined
-  const reroute = (candidate: LimitCandidate): LimitDecision => ({
+  const reroute = (
+    candidate: LimitCandidate,
+    reason = 'ready-alternative',
+  ): LimitDecision => ({
     action: 'reroute',
     account: candidate.account,
     pin: facts.selection?.pin ?? 'preserve',
-    reason: 'ready-alternative',
+    reason,
     retryable: true,
     hostRetry: continuationRetry(facts, axes),
     history: reduceRequestHistory(history, { type: 'selected' }),
@@ -547,32 +561,43 @@ export function decideAfterLimit(
       signal?.kind === 'rate-limit' ||
       signal?.kind === 'quota-exhausted' ||
       signal?.kind === 'capacity')
+  const retainLimitReached = counted && retainCount >= retainLimit
   if (
     unconfirmed &&
     current &&
     (unknown.affinity === 'always' || facts.affinity === 'sticky')
   ) {
-    if (unknown.action === 'pass') return pass('unconfirmed-limit')
-    if (unknown.action === 'retain') {
+    if (counted && retainLimitReached) {
+      if (alternative) return reroute(alternative, 'unconfirmed-retry-limit')
+      // With no ready replacement, use the ordinary exhausted-pool outcome.
+    } else if (counted || unknown.action === 'retain') {
       const hints = [
         ...(facts.retryHintsMs ?? []),
         signal?.retryAfterMs,
       ].filter(
         (hint): hint is number =>
-          hint !== undefined && Number.isFinite(hint) && hint >= 0,
+          hint !== undefined && Number.isFinite(hint) && (counted || hint >= 0),
       )
       return {
         action: 'retain',
         account: current.account,
         reason: 'unconfirmed-limit',
-        ...(unknown.hint === 'minimum'
-          ? { retryMs: Math.min(unknown.defaultMs, ...hints) }
-          : {}),
+        ...(counted
+          ? {
+              retryMs: Math.min(
+                60_000,
+                ...hints.map((hint) => Math.max(0, hint)),
+              ),
+              incrementUnconfirmedRetain: true as const,
+            }
+          : unknown.hint === 'minimum'
+            ? { retryMs: Math.min(unknown.defaultMs, ...hints) }
+            : {}),
         retryable: true,
         hostRetry: continuationRetry(facts, axes),
         history,
       }
-    }
+    } else if (unknown.action === 'pass') return pass('unconfirmed-limit')
   }
   if (alternative) return reroute(alternative)
   if (facts.phase === 'pre-send' && selectedReady) return reroute(selected)
