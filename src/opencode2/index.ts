@@ -49,7 +49,6 @@ export type {
   RequestKind,
   RequestScope,
   ResponseAccount,
-  ResponseWithRetryDisposition,
   RetryDisposition,
   RetryHold,
   RetryReason,

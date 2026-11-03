@@ -1076,12 +1076,16 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             response,
             attempt,
           })
-          if (rewritten && 'response' in rewritten) {
-            response = rewritten.response
-            if (rewritten.hostRetry === 'veto') rec.hostRetry = 'veto'
-          } else {
-            response = rewritten ?? response
-          }
+          response = rewritten ?? response
+        }
+        if (adapter.responseRetry) {
+          const disposition = await adapter.responseRetry({
+            ...account,
+            request: draft.request,
+            response,
+            attempt,
+          })
+          if (disposition === 'veto') rec.hostRetry = 'veto'
         }
         if (response !== original) draft.response = response
       },

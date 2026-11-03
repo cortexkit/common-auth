@@ -1736,6 +1736,7 @@ Runtime exports: `installOpenCode2Auth(ctx, adapter, options?)`, `registerOpenCo
 | `dropChoice?({…chooseAccountInput, accountId})` | releases an unused kept choice exactly once with the full original choose input (including `phase`, `previousAccountId` and `rerouteFrom`) plus the returned account. Called for a final no-retry decision, an invalid hold delay, cancellation of a queued retry (`session.status` idle), a model or agent change, `forgetSession`, `session.deleted`, `dispose`, or record eviction by `maxRecords`; never for a choice that is used. Awaited before any later `chooseAccount` for the same session, so stale queued choices cannot be consumed; errors are logged and swallowed |
 | `accountHeaders({…scope, accountId})` | the credential and per-account headers as `HeaderEdits` (a string sets every spelling of the name, `null` removes it), or `{headers, attempt}` where `attempt` is the plugin's per-attempt value (a served credential receipt, say); called once per attempt, applied in `model.request`, `http.request` and `experimental.ws.handshake` |
 | `rewriteRequest?`, `rewriteResponse?`, `rewriteHandshakeURL?` | optional URL/body rewrite before the account headers, body-stream/status rewrite after detection, WebSocket URL rewrite; each also gets `attempt` |
+| `responseRetry?({…scope, accountId, request, response, attempt})` | optional retry policy immediately after `rewriteResponse`, with the final rewritten or unchanged response; returns `'leave'`, `'veto'` or `undefined`, synchronously or asynchronously, without changing `rewriteResponse`'s `Response \| undefined` result |
 | `answeredBy?({request, response, attempt})` | optional, for an adapter whose own sender may move a request to another account after `rewriteRequest` (a bridge that retries a 401/403 on the next account): runs first in `http.response` and returns `{accountId, data?}` for the account that actually answered, or `undefined`; see "Adapter-internal account change" below |
 | `rewriteWebSocketFrame?({…scope, attempt, frame})` | optional rewrite of every outgoing WebSocket frame of the provider, from `experimental.ws.send` (registered only when this is supplied); returns the frame to send or `undefined`. It must be a deterministic function of the frame, stable per session; it may add `input` items or settings fields but must never alter, drop or reorder the items the host put in `input`, nor touch `previous_response_id` (see below); `attempt` is `undefined` for a frame no attempt can be tied to, and the rewrite still runs |
 | `quotaFromHeaders?(headers, status, attempt)` | quota in HTTP response headers |
@@ -1766,9 +1767,12 @@ parse provider policy. Existing account-id, untargeted `RetryHold` and
   the prompt-cache bound; a hold without a target keeps the legacy queued path.
 - `RetryDisposition` is `{ hostRetry: 'leave' | 'veto' }`: it reserves no account.
   A veto is sticky for the attributed attempt. `inspectEvent` can carry
-  `hostRetry`, and `rewriteResponse` can return `{ response, hostRetry }` to pair
-  a formatted refusal with veto even without a recognised limit. Ownership,
-  mixed-session and ambiguous-attribution fences still run first; a veto never
+  `hostRetry`, and `responseRetry` can return `'veto'` after `rewriteResponse`
+  to forbid host replay of a formatted refusal even without a recognised limit.
+  It receives the final response on the same attempt; `'leave'` or `undefined`
+  keeps the existing retry policy, including any earlier veto. `rewriteResponse`
+  still returns only `Response` or `undefined`, synchronously or asynchronously.
+  Ownership, mixed-session and ambiguous-attribution fences still run first; a veto never
   grants control over another caller's request.
 - `RetryWaitThenReselect` is `{ waitThenReselect: { delayMs } }`. It reserves no
   account or routing pin, asks the host for one bounded delayed retry, then

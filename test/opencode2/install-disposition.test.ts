@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, expectTypeOf, test } from 'bun:test'
 import type {
   ChooseAccountInput,
   ChooseAccountResult,
@@ -107,6 +107,15 @@ const gated: InstallOpenCode2AuthOptions = {
 }
 
 describe('OpenCode 2 attempt retry dispositions', () => {
+  test('rewriteResponse returns a Response or undefined for direct callers', () => {
+    expectTypeOf<
+      Awaited<ReturnType<NonNullable<Adapter['rewriteResponse']>>>
+    >().toEqualTypeOf<Response | undefined>()
+    expectTypeOf<
+      Parameters<NonNullable<Adapter['responseRetry']>>
+    >().toEqualTypeOf<Parameters<NonNullable<Adapter['rewriteResponse']>>>()
+  })
+
   for (const gate of [false, true]) {
     test(`chooser veto forbids replay without reserving an account (gated=${gate})`, async () => {
       const fx = await setup(
@@ -159,26 +168,29 @@ describe('OpenCode 2 attempt retry dispositions', () => {
   test('response refusal and veto belong to the same attempt without a recognised limit', async () => {
     let refuse = true
     let recoveries = 0
+    const rewrites: Parameters<NonNullable<Adapter['rewriteResponse']>>[0][] =
+      []
+    const policies: Parameters<NonNullable<Adapter['responseRetry']>>[0][] = []
     const fx = await setup(() => 'A', {
       limitFromError: () => undefined,
       limitFromResponse: () => undefined,
-      rewriteResponse: () =>
-        refuse
-          ? {
-              response: new Response(
-                '{"error":{"message":"No eligible account."}}',
-                {
-                  status: 412,
-                  headers: {
-                    'content-type': 'application/json',
-                    'retry-after': '5700',
-                    'x-extra': 'kept',
-                  },
-                },
-              ),
-              hostRetry: 'veto',
-            }
-          : undefined,
+      rewriteResponse: async (input) => {
+        rewrites.push(input)
+        return refuse
+          ? new Response('{"error":{"message":"No eligible account."}}', {
+              status: 412,
+              headers: {
+                'content-type': 'application/json',
+                'retry-after': '5700',
+                'x-extra': 'kept',
+              },
+            })
+          : undefined
+      },
+      responseRetry: async (input) => {
+        policies.push(input)
+        return input.response.status === 412 ? 'veto' : undefined
+      },
       retrySameAccount: () => {
         recoveries += 1
         return undefined
@@ -194,12 +206,24 @@ describe('OpenCode 2 attempt retry dispositions', () => {
         '{"error":{"message":"No eligible account."}}',
       )
       expect((await fx.retry()).decision).toEqual({ retry: false })
+      expect(rewrites).toHaveLength(1)
+      expect(policies).toHaveLength(1)
+      expect(policies).toEqual(
+        rewrites.map((input) => ({ ...input, response })),
+      )
+      expect(policies[0]?.request).toBe(request)
+      expect(policies[0]?.attempt).toBe(rewrites[0]?.attempt)
+      expect(policies[0]?.response).toBe(response)
+      expect(rewrites[0]?.response.status).toBe(429)
       expect(fx.retries.at(-1)?.handle?.attemptId).toBe('attempt-1')
       expect(fx.retries.at(-1)?.reason).toBe('adapter-veto')
       expect(fx.choices).toHaveLength(1)
       expect(recoveries).toBe(0)
       refuse = false
-      await fx.respond(await fx.send(), 503)
+      const unchanged = await fx.respond(await fx.send(), 503)
+      expect(policies).toHaveLength(2)
+      expect(policies[1]?.response).toBe(unchanged.response)
+      expect(policies[1]?.response).toBe(rewrites[1]?.response)
       const decision: Decision = { retry: true, delay: 72 }
       expect((await fx.retry(decision)).decision).toBe(decision)
     } finally {
@@ -208,11 +232,16 @@ describe('OpenCode 2 attempt retry dispositions', () => {
   })
 
   test('response leave permits normal rerouting rather than freezing the host proposal', async () => {
+    const seen: Response[] = []
     const fx = await setup((input) => (input.phase === 'request' ? 'A' : 'B'), {
-      rewriteResponse: ({ response }) => ({ response, hostRetry: 'leave' }),
+      responseRetry: ({ response }) => {
+        seen.push(response)
+        return 'leave'
+      },
     })
     try {
-      await fx.respond(await fx.send())
+      const { response } = await fx.respond(await fx.send())
+      expect(seen).toEqual([response])
       expect((await fx.retry({ retry: false })).decision).toEqual({
         retry: true,
         delay: 0,
@@ -223,6 +252,34 @@ describe('OpenCode 2 attempt retry dispositions', () => {
       await fx.auth.dispose()
     }
   })
+
+  for (const disposition of ['leave', undefined] as const) {
+    test(`response policy ${disposition} cannot clear an earlier event veto`, async () => {
+      const fx = await setup(() => 'A', {
+        limitFromError: () => undefined,
+        inspectEvent: () => ({ hostRetry: 'veto' }),
+        rewriteResponse: async ({ response }) => {
+          await response.text()
+          return new Response('formatted refusal', { status: 412 })
+        },
+        responseRetry: () => disposition,
+      })
+      try {
+        await fx.host.fire('http.response', {
+          ...scope,
+          request: await fx.send(),
+          response: new Response('data: refusal\n\n', {
+            headers: { 'content-type': 'text/event-stream' },
+          }),
+        })
+        expect((await fx.retry()).decision).toEqual({ retry: false })
+        expect(fx.retries.at(-1)?.reason).toBe('adapter-veto')
+        expect(fx.choices).toHaveLength(1)
+      } finally {
+        await fx.auth.dispose()
+      }
+    })
+  }
 
   test('event refusal carries a sticky attempt veto even without a limit signal', async () => {
     const fx = await setup(() => 'A', {
@@ -256,6 +313,37 @@ describe('OpenCode 2 attempt retry dispositions', () => {
 })
 
 describe('OpenCode 2 disposition fences', () => {
+  for (const latestOwned of [false, true]) {
+    test(`response veto respects ownership and mixed-session fences (latestOwned=${latestOwned})`, async () => {
+      let policies = 0
+      const fx = await setup(
+        () => 'A',
+        {
+          responseRetry: () => {
+            policies += 1
+            return 'veto'
+          },
+        },
+        gated,
+      )
+      const foreign = async () => fx.respond(await fx.send('foreign-key'))
+      try {
+        if (latestOwned) await foreign()
+        await fx.respond(await fx.send())
+        if (!latestOwned) await foreign()
+        expect(policies).toBe(1)
+        const decision: Decision = { retry: true, delay: 987 }
+        expect((await fx.retry(decision)).decision).toBe(decision)
+        expect(fx.choices).toHaveLength(1)
+        expect(fx.retries.map((event) => event.reason)).toEqual(
+          latestOwned ? ['host-decides'] : [],
+        )
+      } finally {
+        await fx.auth.dispose()
+      }
+    })
+  }
+
   for (const latestOwned of [false, true]) {
     test(`ownership and mixed-session fences precede output and source veto (latestOwned=${latestOwned})`, async () => {
       const fx = await setup(
@@ -298,7 +386,7 @@ describe('OpenCode 2 disposition fences', () => {
   test('ambiguous attempts preserve the host decision despite source vetoes', async () => {
     const fx = await setup(() => 'A', {
       limitFromResponse: () => undefined,
-      rewriteResponse: ({ response }) => ({ response, hostRetry: 'veto' }),
+      responseRetry: () => 'veto',
     })
     try {
       const first = await fx.send()

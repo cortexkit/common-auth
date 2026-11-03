@@ -148,11 +148,6 @@ export type ChooseAccountResult =
   | RetryWaitThenReselect
   | undefined
 
-/** A formatted response and retry policy returned together for the same attempt. */
-export interface ResponseWithRetryDisposition extends RetryDisposition {
-  readonly response: Response
-}
-
 /**
  * One physical send: created when an account is chosen for a request, and
  * handed back on every hook call and event that belongs to that send, so a
@@ -356,10 +351,6 @@ export interface OpenCode2AuthAdapter<
    * Optional response rewrite (body stream, status). It receives the
    * response after quota, limit and output detection have been attached, so
    * detection always sees the provider's own events.
-   * Return { response, hostRetry } to pair a formatted refusal with this attempt's
-   * retry disposition, even without a recognised limit. A veto is sticky for the
-   * attempt, but never bypasses ownership or mixed/ambiguous-session fences.
-   * Returning a plain Response or undefined keeps the existing behaviour.
    */
   rewriteResponse?(
     input: AccountRequest & {
@@ -367,11 +358,24 @@ export interface OpenCode2AuthAdapter<
       readonly response: Response
       readonly attempt: Attempt<A>
     },
-  ):
-    | Promise<Response | ResponseWithRetryDisposition | undefined>
-    | Response
-    | ResponseWithRetryDisposition
-    | undefined
+  ): Promise<Response | undefined> | Response | undefined
+  /**
+   * Optional retry policy for the final HTTP response. Runs immediately after
+   * `rewriteResponse` (or on the unchanged response when no rewrite is returned).
+   * Return `veto` to forbid host replay of a refusal the adapter formatted,
+   * even without a recognised limit. A veto is sticky for this attempt.
+   * Ownership and attribution checks still run first: a veto cannot affect a
+   * foreign request, a session with mixed ownership, or a retry whose attempt is
+   * ambiguous. `leave` or `undefined` preserves the existing retry policy,
+   * including an earlier veto.
+   */
+  responseRetry?(
+    input: AccountRequest & {
+      readonly request: Request
+      readonly response: Response
+      readonly attempt: Attempt<A>
+    },
+  ): Promise<'leave' | 'veto' | undefined> | 'leave' | 'veto' | undefined
   /**
    * Optional. For an adapter whose own sender can move a request to another
    * account after `rewriteRequest` (a bridge that answers a 401 or 403 by
