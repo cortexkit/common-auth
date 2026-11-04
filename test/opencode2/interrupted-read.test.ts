@@ -132,6 +132,9 @@ describe('interrupted HTTP output', () => {
         expect(continued.headers.get('authorization')).toBe('Bearer tok-A')
         expect(t.chooseAccount).toHaveBeenCalledTimes(1)
         expect(t.retrySameAccount).toHaveBeenCalledTimes(1)
+        const input = t.retrySameAccount.mock.calls[0]?.[0]
+        expect(input?.continuation).toBe('interrupted-read')
+        expect(input?.limit).toBeUndefined()
         expect(t.retries.at(-1)?.reason).toBe('continue-same-account')
         expect(t.dropSameAccountRetry).not.toHaveBeenCalled()
       } finally {

@@ -1311,6 +1311,9 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   error: draft.error,
                   attempt: draft.attempt,
                   ...(rec.limit ? { limit: rec.limit.signal } : {}),
+                  ...(afterOutput
+                    ? { continuation: 'interrupted-read' as const }
+                    : {}),
                 }
                 let result: SameAccountRetryResult | undefined
                 try {

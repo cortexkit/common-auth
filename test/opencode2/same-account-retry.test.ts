@@ -158,6 +158,9 @@ describe('identity-preserving retries', () => {
         )
         expect(trigger).toHaveBeenCalledTimes(1)
         expect(t.retrySameAccount).toHaveBeenCalledTimes(1)
+        expect(t.retrySameAccount.mock.calls[0]?.[0]).not.toHaveProperty(
+          'continuation',
+        )
         expect(t.chooseAccount).toHaveBeenCalledTimes(1)
         expect(t.limitFromError).not.toHaveBeenCalled()
         expect(t.retries.map((event) => event.reason)).toEqual(['same-account'])

@@ -250,6 +250,14 @@ export interface SameAccountRetryInput extends AccountRequest {
    * limitFromError is not called before this callback in a mixed session.
    */
   readonly limit?: LimitSignal
+  /**
+   * Set only when output had already started and our own HTTP body reader saw
+   * the read fail, so the host is offering to continue the step rather than
+   * retry it. The adapter approves by returning the same accountId when the
+   * account and identity are still usable; it has no prepared recovery state
+   * to consume, and `limit` is always absent here.
+   */
+  readonly continuation?: 'interrupted-read'
 }
 
 /** Request an immediate retry; a different account ID is ignored. */
