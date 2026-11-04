@@ -188,19 +188,24 @@ export function pruneLimitsNamespace<T>(
   const clears = new Map<string, ClearTombstone[]>()
   for (const clear of snapshot.tombstones) {
     const id = timedMarkKeyId(clear.key)
-    clears.set(id, [...(clears.get(id) ?? []), clear])
+    const list = clears.get(id)
+    if (list) list.push(clear)
+    else clears.set(id, [clear])
   }
   const marks = snapshot.marks.flatMap((mark) => {
+    const fences = clears.get(timedMarkKeyId(mark.key))
     const entries = mergeTimedMarkEntries(
       mark.mergeLaw,
-      mark.entries.filter(
-        (entry) =>
-          !(clears.get(timedMarkKeyId(mark.key)) ?? []).some(
-            (clear) =>
-              tombstoneCoversCause(clear, entry.cause) &&
-              entry.baseRevision < clear.revision,
-          ),
-      ),
+      fences
+        ? mark.entries.filter(
+            (entry) =>
+              !fences.some(
+                (clear) =>
+                  tombstoneCoversCause(clear, entry.cause) &&
+                  entry.baseRevision < clear.revision,
+              ),
+          )
+        : mark.entries,
       now,
     )
     return entries.length ? [{ ...mark, entries }] : []
@@ -289,12 +294,12 @@ export function applyLimitsCommands<T>(
       const key = { account, scope: command.scope, window: command.window }
       const id = timedMarkKeyId(key)
       const previous = marks.find((m) => timedMarkKeyId(m.key) === id)
-      const clears = tombstones.filter((t) => timedMarkKeyId(t.key) === id)
       if (
-        clears.some(
+        tombstones.some(
           (clear) =>
+            command.baseRevision < clear.revision &&
             tombstoneCoversCause(clear, command.cause) &&
-            command.baseRevision < clear.revision,
+            timedMarkKeyId(clear.key) === id,
         )
       ) {
         reject('cleared')
