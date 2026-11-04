@@ -466,6 +466,9 @@ describe('namespace tombstones and bounded history', () => {
     expect(reload(merged, 2000).marks).toEqual([])
   })
 
+  // 3,000 full commit-and-prune passes take about 2.2 s locally on Bun 1.3.14,
+  // but 2.4 to 5.0 s on shared GitHub runners, against Bun's 5 s default.
+  // The work is the point of the test, so it gets room instead of fewer commands.
   test('3000 commands bound tombstones and operation ids, advance watermark and reject stale bases', () => {
     let snapshot = empty()
     for (let i = 0; i < 3000; i++) {
@@ -494,7 +497,7 @@ describe('namespace tombstones and bounded history', () => {
       baseRevision: snapshot.lowWatermark,
     }
     expect(commit(snapshot, boundary).marks[0]!.entries[0]!.until).toBe(2000)
-  })
+  }, 20_000)
 
   test('operation-id compaction alone advances the watermark', () => {
     let snapshot = empty()
