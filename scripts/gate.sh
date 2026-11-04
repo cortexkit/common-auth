@@ -26,9 +26,14 @@ step=arguments
 work=
 pids=()
 names=()
+# Set only on the two intended exits. macOS /bin/bash 3.2 aborts on an
+# empty-array expansion under `set -u` yet reports status 0 to an EXIT trap,
+# so an unflagged status 0 means the gate stopped early and must fail.
+finished=
 finish() {
   local result=$?
   trap - EXIT INT TERM
+  if (( result == 0 )) && [[ -z $finished ]]; then result=1; fi
   if [[ -n "$work" ]]; then
     if (( result != 0 && ${#pids[@]} != 0 )); then
       kill "${pids[@]}" 2>/dev/null || true
@@ -41,6 +46,7 @@ finish() {
   else
     printf 'GATE_FAILED %s\n' "$step"
   fi
+  exit "$result"
 }
 trap finish EXIT
 trap 'exit 130' INT TERM
@@ -117,7 +123,7 @@ run dist-imports bun test test/fs/private-files-external.test.ts \
   test/rpc/client-subpath.test.ts test/tui-build/linking.test.ts
 # The remaining Pi slot tests exercise real lock renewal and take a minute.
 run pi-slot-imports bun test test/pi-slot/slot.test.ts --test-name-pattern 'published import graph'
-if $fast; then exit 0; fi
+if $fast; then finished=1; exit 0; fi
 unset COMMON_AUTH_OPENCODE2_E2E
 
 # The compatibility helpers copy the checkout into OS temp directories. Keep
@@ -184,3 +190,4 @@ collect
 start npm-host npm_host
 collect
 if [[ -n "$failed" ]]; then step=$failed; exit 1; fi
+finished=1
