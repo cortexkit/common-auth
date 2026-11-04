@@ -1,4 +1,5 @@
 import type {
+  LimitMarkCause,
   LimitsClock,
   LimitsPersistenceCommit,
 } from '../../src/limits/index.js'
@@ -47,6 +48,7 @@ export async function clearInChild(
   kind: 'pool' | 'vault',
   namespace: string,
   path: string,
+  cause?: LimitMarkCause,
 ): Promise<LimitsPersistenceCommit> {
   const child = runChild({
     ...s.paths,
@@ -54,6 +56,7 @@ export async function clearInChild(
     kind,
     namespace,
     path,
+    cause,
   })
   let result: LimitsPersistenceCommit
   let code: number | null

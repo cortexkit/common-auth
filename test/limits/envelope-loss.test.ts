@@ -108,7 +108,9 @@ function mark(
   }
 }
 
-function clear(view: LimitsPersistenceSnapshot): LimitsCommand {
+function clear(
+  view: LimitsPersistenceSnapshot,
+): Extract<LimitsCommand, { type: 'clear' }> {
   return {
     type: 'clear',
     producerId: 'p2',
@@ -131,6 +133,52 @@ function nextRepair(adapter: PersistenceAdapter): Promise<void> {
   if (!unsubscribe) throw new Error('Expected repair notifications')
   hooks.lifetime.unpark(unsubscribe)
   return completed.promise.finally(unsubscribe)
+}
+
+for (const kind of ['pool', 'vault'] as const) {
+  it(`${kind}: older-writer repair retains a cause fence without clearing a different-cause mark`, async () => {
+    const f = await fixture(kind)
+    const adapter = await f.adapter()
+    const initial = await adapter.read()
+    const cleared = await adapter.commit([
+      { ...clear(initial), cause: 'payment-balance' },
+    ])
+    expect(cleared.snapshot.tombstones[0]?.cause).toBe('payment-balance')
+    const marked = await adapter.commit([
+      { ...mark(initial), cause: 'rate-limit' },
+    ])
+    expect(marked.outcomes[0]?.status).toBe('committed')
+    await f.replace({ ...marked.snapshot, tombstones: [] })
+    const repaired = nextRepair(adapter)
+    expect((await adapter.read()).degradedAgreement).toBe(true)
+    await observed(hooks.lifetime, repaired)
+    const durable = (await f.durable())!
+    expect(durable.tombstones).toEqual(cleared.snapshot.tombstones)
+    expect(durable.marks[0]?.entries[0]?.cause).toBe('rate-limit')
+    const fresh = await f.adapter()
+    expect((await fresh.read()).snapshot).toEqual(durable)
+  })
+
+  for (const cause of ['payment-balance', undefined] as const) {
+    it(`${kind}: reads stored tombstones ${cause === undefined ? 'without' : 'with'} a cause`, async () => {
+      const f = await fixture(kind)
+      const adapter = await f.adapter()
+      const initial = await adapter.read()
+      const stored = await adapter.commit([{ ...clear(initial), cause }])
+      const fresh = await f.adapter()
+      expect((await fresh.read()).snapshot.tombstones).toEqual(
+        stored.snapshot.tombstones,
+      )
+      const delayed = await fresh.commit([
+        { ...mark(initial), cause: 'rate-limit' },
+      ])
+      expect(delayed.outcomes[0]?.status).toBe(
+        cause === undefined ? 'rejected' : 'committed',
+      )
+      if (cause === undefined)
+        expect(delayed.outcomes[0]?.reason).toBe('cleared')
+    })
+  }
 }
 
 it('pool recovery read and stale dispatch return while another process holds the save lock', async () => {

@@ -27,6 +27,28 @@ export interface NamespaceMark {
 export interface ClearTombstone {
   readonly key: TimedMarkKey
   readonly revision: number
+  /** Omitted by legacy writers and all-cause clears; only stored enum values belong here. */
+  readonly cause?: LimitMarkCause
+}
+
+function storedCause(
+  cause: LimitMarkCause | undefined,
+): LimitMarkCause | undefined {
+  return cause === 'rate-limit' || cause === 'payment-balance'
+    ? cause
+    : undefined
+}
+
+/** An absent cause is the conservative all-cause fence used by older writers. */
+export function tombstoneCoversCause(
+  clear: ClearTombstone,
+  cause: LimitMarkCause | undefined,
+): boolean {
+  return storedCause(clear.cause) === undefined || clear.cause === cause
+}
+
+export function clearTombstoneId(clear: ClearTombstone): string {
+  return JSON.stringify([timedMarkKeyId(clear.key), storedCause(clear.cause)])
 }
 
 export interface CommittedOperation {
@@ -163,15 +185,23 @@ export function pruneLimitsNamespace<T>(
   snapshot: LimitsNamespace<T>,
   now: number,
 ): LimitsNamespace<T> {
-  const clears = new Map(
-    snapshot.tombstones.map((t) => [timedMarkKeyId(t.key), t.revision]),
-  )
+  const clears = new Map<string, ClearTombstone[]>()
+  for (const clear of snapshot.tombstones) {
+    const id = timedMarkKeyId(clear.key)
+    clears.set(id, [...(clears.get(id) ?? []), clear])
+  }
   const marks = snapshot.marks.flatMap((mark) => {
     const entries = mergeTimedMarkEntries(
       mark.mergeLaw,
-      mark.entries,
+      mark.entries.filter(
+        (entry) =>
+          !(clears.get(timedMarkKeyId(mark.key)) ?? []).some(
+            (clear) =>
+              tombstoneCoversCause(clear, entry.cause) &&
+              entry.baseRevision < clear.revision,
+          ),
+      ),
       now,
-      clears.get(timedMarkKeyId(mark.key)),
     )
     return entries.length ? [{ ...mark, entries }] : []
   })
@@ -259,8 +289,14 @@ export function applyLimitsCommands<T>(
       const key = { account, scope: command.scope, window: command.window }
       const id = timedMarkKeyId(key)
       const previous = marks.find((m) => timedMarkKeyId(m.key) === id)
-      const clear = tombstones.find((t) => timedMarkKeyId(t.key) === id)
-      if (clear && command.baseRevision < clear.revision) {
+      const clears = tombstones.filter((t) => timedMarkKeyId(t.key) === id)
+      if (
+        clears.some(
+          (clear) =>
+            tombstoneCoversCause(clear, command.cause) &&
+            command.baseRevision < clear.revision,
+        )
+      ) {
         reject('cleared')
         continue
       }
@@ -284,12 +320,12 @@ export function applyLimitsCommands<T>(
           },
         ],
         context.now,
-        clear?.revision,
       )
       marks = marks.filter((m) => timedMarkKeyId(m.key) !== id)
       if (entries.length)
         marks.push({ key, mergeLaw: command.mergeLaw, entries })
     } else if (command.type === 'clear') {
+      const cause = storedCause(command.cause)
       const keys = command.keys
         .map((key) => ({ ...key, account }))
         .filter(
@@ -315,12 +351,22 @@ export function applyLimitsCommands<T>(
         continue
       }
       marks = marks.filter((m) => !ids.has(timedMarkKeyId(m.key)))
-      tombstones = tombstones.filter((t) => !ids.has(timedMarkKeyId(t.key)))
+      // Keep earlier fences for other causes, including an earlier all-cause clear.
+      // Replacing them would either lose a fence or extend it to unrelated evidence.
+      tombstones = tombstones.filter(
+        (t) =>
+          !ids.has(timedMarkKeyId(t.key)) ||
+          (cause !== undefined && t.cause !== cause),
+      )
       // A clear enumerates covered keys, not all scopes on the account.
       for (const key of new Map(
         keys.map((k) => [timedMarkKeyId(k), k]),
       ).values()) {
-        tombstones.push({ key, revision })
+        tombstones.push({
+          key,
+          revision,
+          ...(cause === undefined ? {} : { cause }),
+        })
       }
     } else {
       const incoming: NamespaceAccess<T> = {

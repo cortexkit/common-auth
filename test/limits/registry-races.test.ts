@@ -240,6 +240,28 @@ for (const change of [
 }
 
 for (const kind of ['pool', 'vault'] as const) {
+  test(`${kind}: delayed rate-limit lands after another process's payment-balance clear`, async () => {
+    const f = await fixture(kind)
+    const delayed = { ...f.mark(), cause: 'rate-limit' as const }
+    const cleared = await clearInChild(
+      f.s,
+      kind,
+      f.namespace,
+      f.path,
+      'payment-balance',
+    )
+    expect(cleared.outcomes[0]?.status).toBe('committed')
+    expect(delayed.baseRevision).toBeLessThan(cleared.snapshot.revision)
+    f.owner.enqueue(delayed)
+    await f.owner.flush()
+    expect(f.rejected).toEqual([])
+    await f.owner.reload()
+    expect(f.owner.snapshot.marks[0]?.entries[0]?.cause).toBe('rate-limit')
+    const durable = await f.adapter.read()
+    expect(durable.snapshot.marks[0]?.entries[0]?.cause).toBe('rate-limit')
+    expect(durable.snapshot.tombstones).toEqual(cleared.snapshot.tombstones)
+  })
+
   for (const compact of [false, true]) {
     test(`${kind}: delayed mark cannot resurrect a child clear${compact ? ' below the watermark' : ''}`, async () => {
       const f = await fixture(kind)

@@ -3,16 +3,21 @@ import {
   acquireLimitsRegistry,
   applyLimitsCommands,
   buildRefusal,
+  type ClearTombstone,
   clearLimitsAfterProbe,
   createLimitsNamespace,
   createRequestHistory,
   type LimitMark,
   type LimitsCommand,
+  type LimitsNamespace,
+  type LimitsRegistry,
   type MarkerAxes,
   type RequestHistory,
   type RequestHistoryEvent,
+  type SuccessfulProbeClear,
   type TimedBlocker,
   type TimedMarkEntry,
+  type TimedMarkKey,
 } from '../../src/limits/index.js'
 import type { OpenCode2AuthAdapter } from '../../src/opencode2/index.js'
 
@@ -84,6 +89,50 @@ test('0.33/0.34 structural limits callers need no payment fields', () => {
   expectTypeOf<
     Awaited<ReturnType<NonNullable<OpenCode2AuthAdapter['rewriteResponse']>>>
   >().toEqualTypeOf<Response | undefined>()
+})
+
+test('0.34/0.35 clear and stored-entry callers need no tombstone cause', () => {
+  const account = { namespace: 'compat', accountId: 'A', incarnation: 'one' }
+  const key = { account, scope: { kind: 'pool' as const }, window: 'requests' }
+  const tombstone = { key, revision: 1 }
+  expectTypeOf(tombstone).toExtend<ClearTombstone>()
+  expectTypeOf<Omit<ClearTombstone, 'cause'>>().toEqualTypeOf<{
+    readonly key: TimedMarkKey
+    readonly revision: number
+  }>()
+  expectTypeOf<ClearTombstone['cause']>().toEqualTypeOf<
+    'rate-limit' | 'payment-balance' | undefined
+  >()
+  expectTypeOf({
+    schemaVersion: 1 as const,
+    namespace: account.namespace,
+    generation: 'one',
+    revision: 1,
+    lowWatermark: 0,
+    tombstones: [tombstone],
+    marks: [],
+    operationIds: [],
+    access: [],
+  }).toExtend<LimitsNamespace>()
+  const clear = {
+    type: 'clear' as const,
+    binding: { account, credentialEpoch: 'one' },
+    producerId: 'legacy',
+    operationId: 'clear',
+    baseRevision: 0,
+    keys: [{ scope: key.scope, window: key.window }],
+  }
+  expectTypeOf(clear).toExtend<LimitsCommand>()
+  const probe = { ...clear, evidenceAt: 100, cause: 'payment-balance' as const }
+  expectTypeOf(probe).toExtend<SuccessfulProbeClear>()
+  expectTypeOf<Parameters<typeof clearLimitsAfterProbe>>().toEqualTypeOf<
+    [LimitsRegistry, SuccessfulProbeClear]
+  >()
+  expectTypeOf<ReturnType<typeof clearLimitsAfterProbe>>().toEqualTypeOf<void>()
+  expectTypeOf<Parameters<LimitsRegistry['enqueue']>>().toEqualTypeOf<
+    [LimitsCommand, ('success' | undefined)?]
+  >()
+  expectTypeOf<ReturnType<LimitsRegistry['enqueue']>>().toEqualTypeOf<void>()
 })
 
 test('local OpenCode 2 refusals veto host replay without text matching', () => {

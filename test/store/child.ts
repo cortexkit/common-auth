@@ -24,6 +24,7 @@ const lossTask = JSON.parse(process.argv[2] ?? '{}') as {
   configPath: string
   statePath: string
   inspect?: boolean
+  cause?: import('../../src/limits/index.js').LimitMarkCause
 }
 if (lossTask.op === 'limits-envelope-loss') {
   const { createPoolLimitsAdapter } = await import(
@@ -75,6 +76,8 @@ if (lossTask.op === 'limits-envelope-loss') {
       binding,
       baseRevision: observed.snapshot.revision,
       keys: [{ scope: { kind: 'pool' }, window: 'requests' }],
+      cause: lossTask.cause,
+      ...(lossTask.cause && { evidenceAt: 100 }),
     },
   ])
   const resume = new Promise<void>((resolve) =>

@@ -3,10 +3,12 @@ import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { mergeAccessState } from './merge-laws.js'
 import {
+  clearTombstoneId,
   createLimitsNamespace,
   type LimitsNamespace,
   pruneLimitsNamespace,
   timedMarkKeyId,
+  tombstoneCoversCause,
 } from './namespace.js'
 
 const detached = new AsyncResource('common-auth-limits-recovery')
@@ -110,6 +112,7 @@ export class EnvelopeHistory {
             !present.tombstones.some(
               (current) =>
                 timedMarkKeyId(current.key) === timedMarkKeyId(clear.key) &&
+                tombstoneCoversCause(current, clear.cause) &&
                 current.revision >= clear.revision,
             ),
         ),
@@ -155,7 +158,7 @@ export class EnvelopeHistory {
           )
       }
       for (const clear of source.tombstones) {
-        const id = timedMarkKeyId(clear.key)
+        const id = clearTombstoneId(clear)
         const old = tombstones.get(id)
         if (!old || old.revision < clear.revision) tombstones.set(id, clear)
         highest = Math.max(highest, clear.revision)
