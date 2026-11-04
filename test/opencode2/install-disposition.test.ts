@@ -377,7 +377,7 @@ describe('OpenCode 2 disposition fences', () => {
   }
 
   for (const latestOwned of [false, true]) {
-    test(`ownership and mixed-session fences precede output and source veto (latestOwned=${latestOwned})`, async () => {
+    test(`foreign transport defers to host, but mixed owned output refuses (latestOwned=${latestOwned})`, async () => {
       const fx = await setup(
         () => 'A',
         {
@@ -404,10 +404,12 @@ describe('OpenCode 2 disposition fences', () => {
         })
         if (!latestOwned) await fx.send('foreign-key')
         const decision: Decision = { retry: true, delay: 987 }
-        expect((await fx.retry(decision)).decision).toBe(decision)
+        const result = (await fx.retry(decision)).decision
+        if (latestOwned) expect(result).toEqual({ retry: false })
+        else expect(result).toBe(decision)
         expect(fx.choices).toHaveLength(1)
         expect(fx.retries.map((event) => event.reason)).toEqual(
-          latestOwned ? ['host-decides'] : [],
+          latestOwned ? ['output-started'] : [],
         )
       } finally {
         await fx.auth.dispose()

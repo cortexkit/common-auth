@@ -494,7 +494,7 @@ export interface OpenCode2AuthAdapter<
    * A different accountId is ignored. Never move a routing pin or select another
    * account here: use chooseAccount for failover and holds.
    *
-   * Runs only for an attributable attempt before output, and, when gated, only
+   * Runs for an attributable attempt before output, and, when gated, only
    * while the latest transport is owned. Unlike failover and holds, it also runs
    * in mixed-ownership sessions. The next matching owned request skips selection
    * and calls accountHeaders again for this account, so newer credentials or a
@@ -506,6 +506,12 @@ export interface OpenCode2AuthAdapter<
    * No choice was committed through chooseAccount; unused recovery state is
    * released through dropSameAccountRetry instead of dropChoice.
    * Errors are logged and treated as declining the retry.
+   * After output it also gates a host-approved continuation when the attributed
+   * HTTP body reader failed, no limit or veto exists, ownership is unmixed and
+   * the host retry budget remains. The host's decision and delay are preserved;
+   * the callback must decline if the account is no longer usable or its identity
+   * changed. Native WebSocket failures and clean but incomplete streams lack
+   * the structured host error fields needed to allow this exception.
    */
   retrySameAccount?(
     input: SameAccountRetryInput,
@@ -596,7 +602,9 @@ export interface InstallOpenCode2AuthOptions {
  *
  * - `reroute`: refused for a limit before any output, and `chooseAccount`
  *   named another account for the next attempt, so the host retries at once;
- * - `output-started`: output had reached the user, so no retry;
+ * - `output-started`: output reached the user without a safe continuation, so no retry;
+ * - `continue-same-account`: a witnessed HTTP read failure after output, with
+ *   adapter-approved identity preservation; keeps the host's continuation and delay;
  * - `no-account`: the attempt had no account, so no retry;
  * - `host-decides-last-account`: refused for a limit before any output, but
  *   no other account can serve the next attempt, so the host's own decision
@@ -617,6 +625,7 @@ export type RetryReason =
   | 'wait-then-reselect'
   | 'adapter-veto'
   | 'same-account'
+  | 'continue-same-account'
   | 'output-started'
   | 'no-account'
   | 'host-decides-last-account'

@@ -77,6 +77,8 @@ interface AttemptRecord<A> {
   transport?: Transport
   status?: number
   outputStarted: boolean
+  /** The attributed HTTP body reader rejected, not merely a host error report. */
+  httpReadFailed?: boolean
   /** An adapter's response, event or chooser veto belongs to this attempt only. */
   hostRetry?: RetryDisposition['hostRetry']
   limit?: { readonly signal: LimitSignal; readonly delivered: Promise<void> }
@@ -108,6 +110,8 @@ interface PendingRetry {
   readonly sameAccount?: {
     readonly accountId: string
     readonly input: SameAccountRetryInput
+    /** Output already exists: a changed route must fail rather than choose afresh. */
+    readonly continuation?: boolean
   }
   readonly rerouteFrom?: {
     readonly accountId: string
@@ -225,7 +229,8 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
  * - `retry` asks the host to retry at once when an account was refused
  *   before any output and `chooseAccount` names another account for the
  *   next attempt, keeps the host's decision when the refused account was the
- *   last one that can serve, and refuses to retry once output has started.
+ *   last one that can serve. After output, only a witnessed HTTP read failure
+ *   with adapter-approved same-account continuation can keep the host's retry.
  *
  * Attribution. A send belongs to the attempt named by the mark
  * `model.request` left on it, so several attempts of one session and kind
@@ -672,6 +677,16 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           )
           assertActive()
         }
+        if (
+          sameAccount?.continuation &&
+          (!sameRoute || mixed(scope.sessionID))
+        ) {
+          if (sameRoute)
+            await inChoiceOrder(scope.sessionID, () =>
+              releaseSameAccount(sameAccount),
+            )
+          throw noAccount(scope)
+        }
         const choice = sameRoute
           ? sameAccount.accountId
           : matches && wake === undefined
@@ -1061,7 +1076,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             )
           }
           response = new Response(
-            trackBody(body, (error) => finish(rec, error)),
+            trackBody(body, (error) => {
+              if (error?.reason === 'failed') rec.httpReadFailed = true
+              finish(rec, error)
+            }),
             {
               status: original.status,
               statusText: original.statusText,
@@ -1209,10 +1227,6 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             hostDecision,
             decision: hostDecision,
           })
-        if (mixed(draft.sessionID) && !adapter.retrySameAccount) {
-          await hostDecides()
-          return
-        }
         const picked = pickForRetry(draft.sessionID)
         if (!picked) return
         if (picked === 'ambiguous') {
@@ -1228,15 +1242,62 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           return
         }
         const rec = picked
+        const refuseOutput = async () => {
+          draft.decision = { retry: false }
+          await emit('retry', {
+            sessionID: draft.sessionID,
+            accountId: rec.accountId,
+            kind: rec.scope.kind,
+            attempt: draft.attempt,
+            reason: 'output-started',
+            hostDecision,
+            decision: draft.decision,
+            handle: rec.attempt,
+          })
+        }
+        if (mixed(draft.sessionID) && !adapter.retrySameAccount) {
+          if (rec.outputStarted) await refuseOutput()
+          else await hostDecides()
+          return
+        }
         const vetoed = () => rec.hostRetry === 'veto'
         await withSelection(rec.scope, async (assertActive) => {
           const checkRetryActive = assertActive
           const retrySameAccount = adapter.retrySameAccount?.bind(adapter)
           const handle = rec.attempt
+          const afterOutput = rec.outputStarted
+          if (
+            afterOutput &&
+            rec.httpReadFailed &&
+            retrySameAccount &&
+            handle &&
+            !mixed(draft.sessionID)
+          ) {
+            if (!rec.limit) {
+              const signal = adapter.limitFromError?.(draft.error, handle)
+              if (signal) noteLimit(rec, signal, 'error')
+            }
+            if (rec.ended) await rec.ended
+            if (rec.limit) await rec.limit.delivered
+            checkRetryActive()
+          }
+          // The host drops read-operation metadata from its retry error. Only
+          // our attributed body reader can prove a read failed; wording cannot.
+          const canContinue = () =>
+            rec.httpReadFailed === true &&
+            draft.error.type === 'provider.transport' &&
+            hostDecision.retry &&
+            hostRetryLimit - draft.attempt >= 1 &&
+            !rec.limit &&
+            !(rec.status !== undefined && rec.status >= 400) &&
+            !(draft.error.status !== undefined && draft.error.status >= 400) &&
+            !handle?.reboundFrom &&
+            !vetoed() &&
+            !mixed(draft.sessionID)
           if (
             retrySameAccount &&
             handle &&
-            !rec.outputStarted &&
+            (!afterOutput || canContinue()) &&
             (!vetoed() || mixed(draft.sessionID)) &&
             !rec.sameAccountRetry
           ) {
@@ -1251,7 +1312,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   attempts.has(rec.id) &&
                   rec.accountId === accountId &&
                   pickForRetry(draft.sessionID) === rec &&
-                  !rec.outputStarted &&
+                  rec.outputStarted === afterOutput &&
+                  (!afterOutput || canContinue()) &&
                   (!vetoed() || mixed(draft.sessionID)) &&
                   (!ownership ||
                     latestTransportOwned.get(draft.sessionID) === true)
@@ -1280,7 +1342,11 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   checkRetryActive()
                   return false
                 }
-                const sameAccount = { accountId: result.accountId, input }
+                const sameAccount = {
+                  accountId: result.accountId,
+                  input,
+                  ...(afterOutput ? { continuation: true } : {}),
+                }
                 try {
                   checkRetryActive()
                 } catch (error) {
@@ -1315,7 +1381,9 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                   sameAccount,
                 })
                 rec.judged = true
-                draft.decision = { retry: true, delay: 0 }
+                draft.decision = afterOutput
+                  ? hostDecision
+                  : { retry: true, delay: 0 }
                 return true
               },
             )
@@ -1326,7 +1394,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                 accountId: rec.accountId,
                 kind: rec.scope.kind,
                 attempt: draft.attempt,
-                reason: 'same-account',
+                reason: afterOutput ? 'continue-same-account' : 'same-account',
                 hostDecision,
                 decision: draft.decision,
                 handle: rec.attempt,
@@ -1336,7 +1404,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           }
           // Recheck after entering selection before attributing an identity-less error.
           if (mixed(draft.sessionID)) {
-            await hostDecides()
+            if (rec.outputStarted) await refuseOutput()
+            else await hostDecides()
             return
           }
           rec.judged = true
@@ -1354,21 +1423,22 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           const { decision, reason } = await inChoiceOrder(
             rec.scope.sessionID,
             async () => {
-              checkRetryActive()
-              if (mixed(draft.sessionID))
+              const mixedDecision = () => {
+                if (rec.outputStarted) draft.decision = { retry: false }
                 return {
-                  decision: hostDecision,
-                  reason: 'host-decides' as const,
+                  decision: draft.decision,
+                  reason: rec.outputStarted
+                    ? ('output-started' as const)
+                    : ('host-decides' as const),
                 }
+              }
+              checkRetryActive()
+              if (mixed(draft.sessionID)) return mixedDecision()
               const old = pendingRetries.get(rec.key)
               pendingRetries.delete(rec.key)
               if (old) await releaseRetry(old)
               checkRetryActive()
-              if (mixed(draft.sessionID))
-                return {
-                  decision: hostDecision,
-                  reason: 'host-decides' as const,
-                }
+              if (mixed(draft.sessionID)) return mixedDecision()
               let decision: SessionRetryDecision = hostDecision
               let reason: RetryReason
               let rerouteFrom: PendingRetry['rerouteFrom']
@@ -1378,8 +1448,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                 decision = { retry: false }
                 reason = 'no-account'
               } else if (rec.outputStarted) {
-                // The user has already seen part of this answer; a retry would
-                // send it again.
+                // Only the guarded same-account path above may continue partial output.
                 decision = { retry: false }
                 reason = 'output-started'
               } else if (vetoed()) {
