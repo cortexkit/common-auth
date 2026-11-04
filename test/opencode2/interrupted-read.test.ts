@@ -156,7 +156,8 @@ describe('interrupted HTTP output', () => {
     'host-declined',
     'budget-exhausted',
   ] as const) {
-    test(`${refusal} still refuses after a witnessed read failure`, async () => {
+    const behavior = refusal === 'mixed' ? 'defers to host' : 'still refuses'
+    test(`${refusal} ${behavior} after a witnessed read failure`, async () => {
       const t = await setup()
       try {
         if (refusal === 'response-veto') t.adapter.responseRetry = () => 'veto'
@@ -178,12 +179,14 @@ describe('interrupted HTTP output', () => {
             : [{ type: 'delta' }],
           refusal === 'response-429' ? 429 : 200,
         )
+        const hostDecision: SessionRetryDecision =
+          refusal === 'host-declined'
+            ? { retry: false }
+            : { retry: true, delay: 37 }
         const decision = (
           await t.retry(
             refusal === 'budget-exhausted' ? 4 : 1,
-            refusal === 'host-declined'
-              ? { retry: false }
-              : { retry: true, delay: 37 },
+            hostDecision,
             refusal === 'host-payment'
               ? {
                   type: 'provider.quota',
@@ -195,8 +198,11 @@ describe('interrupted HTTP output', () => {
                 : undefined,
           )
         ).decision
-        expect(decision).toEqual({ retry: false })
-        expect(t.retries.at(-1)?.reason).toBe('output-started')
+        if (refusal === 'mixed') expect(decision).toBe(hostDecision)
+        else expect(decision).toEqual({ retry: false })
+        expect(t.retries.at(-1)?.reason).toBe(
+          refusal === 'mixed' ? 'host-decides' : 'output-started',
+        )
         expect(t.chooseAccount).toHaveBeenCalledTimes(1)
         if (
           ![
@@ -208,6 +214,10 @@ describe('interrupted HTTP output', () => {
           expect(t.retrySameAccount).not.toHaveBeenCalled()
         if (refusal === 'different-account')
           expect(t.dropSameAccountRetry).toHaveBeenCalledTimes(1)
+        if (refusal === 'mixed') {
+          t.plan.next = 'B'
+          expect((await t.send()).request.headers.get('x-account')).toBe('B')
+        }
       } finally {
         await t.auth.dispose()
       }
@@ -289,7 +299,7 @@ describe('interrupted HTTP output', () => {
   })
 
   for (const cancellation of ['dispose', 'forget', 'mixed'] as const) {
-    test(`${cancellation} during the continuation check rejects and releases the result`, async () => {
+    test(`${cancellation} during the continuation check releases the result`, async () => {
       const t = await setup()
       let entered!: () => void
       const started = new Promise<void>((resolve) => {
@@ -305,7 +315,8 @@ describe('interrupted HTTP output', () => {
       })
       try {
         await t.interrupt((await t.send()).request)
-        const retrying = t.retry()
+        const hostDecision = { retry: true as const, delay: 37 }
+        const retrying = t.retry(1, hostDecision)
         await started
         const disposing =
           cancellation === 'dispose' ? t.auth.dispose() : undefined
@@ -313,8 +324,10 @@ describe('interrupted HTTP output', () => {
         if (cancellation === 'mixed') await t.send(false)
         complete({ accountId: 'A' })
         if (cancellation === 'mixed') {
-          expect((await retrying).decision).toEqual({ retry: false })
-          expect(t.retries.at(-1)?.reason).toBe('output-started')
+          expect((await retrying).decision).toBe(hostDecision)
+          expect(t.retries.at(-1)?.reason).toBe('host-decides')
+          t.plan.next = 'B'
+          expect((await t.send()).request.headers.get('x-account')).toBe('B')
         } else {
           await expect(retrying).rejects.toMatchObject({ kind: 'no-account' })
         }

@@ -1227,6 +1227,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             hostDecision,
             decision: hostDecision,
           })
+        if (mixed(draft.sessionID) && !adapter.retrySameAccount) {
+          await hostDecides()
+          return
+        }
         const picked = pickForRetry(draft.sessionID)
         if (!picked) return
         if (picked === 'ambiguous') {
@@ -1242,24 +1246,6 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           return
         }
         const rec = picked
-        const refuseOutput = async () => {
-          draft.decision = { retry: false }
-          await emit('retry', {
-            sessionID: draft.sessionID,
-            accountId: rec.accountId,
-            kind: rec.scope.kind,
-            attempt: draft.attempt,
-            reason: 'output-started',
-            hostDecision,
-            decision: draft.decision,
-            handle: rec.attempt,
-          })
-        }
-        if (mixed(draft.sessionID) && !adapter.retrySameAccount) {
-          if (rec.outputStarted) await refuseOutput()
-          else await hostDecides()
-          return
-        }
         const vetoed = () => rec.hostRetry === 'veto'
         await withSelection(rec.scope, async (assertActive) => {
           const checkRetryActive = assertActive
@@ -1404,8 +1390,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           }
           // Recheck after entering selection before attributing an identity-less error.
           if (mixed(draft.sessionID)) {
-            if (rec.outputStarted) await refuseOutput()
-            else await hostDecides()
+            await hostDecides()
             return
           }
           rec.judged = true
@@ -1423,22 +1408,21 @@ export async function installOpenCode2Auth<Q, A = unknown>(
           const { decision, reason } = await inChoiceOrder(
             rec.scope.sessionID,
             async () => {
-              const mixedDecision = () => {
-                if (rec.outputStarted) draft.decision = { retry: false }
-                return {
-                  decision: draft.decision,
-                  reason: rec.outputStarted
-                    ? ('output-started' as const)
-                    : ('host-decides' as const),
-                }
-              }
               checkRetryActive()
-              if (mixed(draft.sessionID)) return mixedDecision()
+              if (mixed(draft.sessionID))
+                return {
+                  decision: hostDecision,
+                  reason: 'host-decides' as const,
+                }
               const old = pendingRetries.get(rec.key)
               pendingRetries.delete(rec.key)
               if (old) await releaseRetry(old)
               checkRetryActive()
-              if (mixed(draft.sessionID)) return mixedDecision()
+              if (mixed(draft.sessionID))
+                return {
+                  decision: hostDecision,
+                  reason: 'host-decides' as const,
+                }
               let decision: SessionRetryDecision = hostDecision
               let reason: RetryReason
               let rerouteFrom: PendingRetry['rerouteFrom']
