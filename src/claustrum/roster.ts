@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { FileReadCache } from '../fs/file-read-cache.js'
 import {
   acquireRefreshFileLock,
   LockContentionError,
@@ -532,7 +533,23 @@ export function decodedVaultRoster(roster: VaultRosterFile): VaultRosterFile {
   return decodeRoster(JSON.parse(JSON.stringify(roster)))
 }
 
+const rosterReadCache = new FileReadCache<VaultRosterFile | undefined>({
+  followSymlinks: true,
+})
+
 export async function readVaultRoster(
+  path: string,
+): Promise<VaultRosterFile | undefined> {
+  // Windows permission, owner and ancestry checks must still run on every read.
+  if (windowsPrivateFiles) return readFreshVaultRoster(path)
+  const roster = await rosterReadCache.read([path], ([resolvedPath = path]) =>
+    readFreshVaultRoster(resolvedPath),
+  )
+  // Callers edit rows and nested limits data; none may own the cached objects.
+  return structuredClone(roster)
+}
+
+async function readFreshVaultRoster(
   path: string,
 ): Promise<VaultRosterFile | undefined> {
   let text: string
@@ -598,7 +615,8 @@ export async function mutateVaultRoster<T>(
     path,
     { ...WRITE_LOCK, signal: options.signal },
     async (lock) => {
-      const current = await readVaultRoster(path)
+      // A read-modify-write always observes the file under its write lock.
+      const current = await readFreshVaultRoster(path)
       const { next, result } = await change(current, {
         assertOwned: () => lock.assertOwned(),
       })
