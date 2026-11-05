@@ -10,7 +10,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.14",
-        "@cortexkit/claustrum-client": "^0.14.0",
+        "@cortexkit/claustrum-client": "^0.15.0",
         "@cortexkit/subc-client": "0.22.2",
         "@earendil-works/pi-coding-agent": "1.0.4",
         "@opencode/plugin": "2.0.21",
@@ -187,7 +187,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.14", "", { "os": "win32", "cpu": "x64" }, "sha512-oJWmBhoHsnhUKIke+0gXDX0mltJrWHA1UyHsrTlXwX0TL64ilVZAo+TYZm97baecV0esBdpzy3k96q+09JaZUQ=="],
 
-    "@cortexkit/claustrum-client": ["@cortexkit/claustrum-client@0.14.0", "", { "dependencies": { "@cortexkit/store": "^0.2.1", "@cortexkit/subc-client": "^0.22.0" } }, "sha512-L6fb47lONPACfVXpx6+vK/HKq2y5iCtUg+DPk5tPk0YUordIRD6NsrVLTx2HKxJm+QBV9HkS8FR75ulggpbGrQ=="],
+    "@cortexkit/claustrum-client": ["@cortexkit/claustrum-client@0.15.0", "", { "dependencies": { "@cortexkit/store": "^0.2.1", "@cortexkit/subc-client": "^0.22.0" } }, "sha512-1foTSPsqwB2lyUtK5XWUgONUyi7ef9KNysf1MZxsnuD5LzV2kP9kFDvDuGfdRnQWMWrXnUmdCc1zZcqpFNvUEQ=="],
 
     "@cortexkit/private-files": ["@cortexkit/private-files@0.2.2", "", {}, "sha512-BdRxi4mzPkTUiZxKTlQV/RsESk5f34+sLk0qQLv1QlBQdkq2zw8yc0b3dm1qmZ5RfeChiBKEGgL6Qw31RCSaeA=="],
 
