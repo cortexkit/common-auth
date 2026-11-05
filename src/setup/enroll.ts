@@ -117,6 +117,15 @@ export async function connectSetupHost(
         await writeEnrollmentTokenFile(path, file)
       },
     })
+    await fence()
+    const initial = await manager.status()
+    if (initial.state === 'approved') {
+      printLine(
+        terminal,
+        `Already connected as ${initial.approvedName ?? initial.proposedName}.`,
+      )
+      return
+    }
     printLine(terminal, `Asking the vault to connect ${name}…`)
     const deadline = now() + ENROLLMENT_WAIT_MS
     let printedRequest: string | undefined
@@ -124,7 +133,6 @@ export async function connectSetupHost(
     let reportedCode: string | undefined
     let failedProposals = 0
     for (;;) {
-      await fence()
       const status = await manager.reconcile()
       if (status.state === 'approved') {
         printLine(terminal, `Connected ${host} to Claustrum.`)
@@ -184,6 +192,7 @@ export async function connectSetupHost(
       const remaining = deadline - now()
       if (remaining <= 0) break
       await wait(Math.min(pause, remaining))
+      await fence()
     }
     if (printedRequest)
       throw new HostNotEnrolledError(

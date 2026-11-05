@@ -219,6 +219,52 @@ describe('setup enrollment wait', () => {
     expect(before).toBe('Asking the vault to connect test-auth-opencode…\n')
   })
 
+  test('an already approved host prints its approved name instead of the proposed name', async () => {
+    const root = await profile()
+    let proposals = 0
+    let polls = 0
+    let closed = 0
+    const io = {
+      ...clock(),
+      connect: async () =>
+        vault({
+          close() {
+            closed++
+          },
+          async enrollPropose() {
+            proposals++
+            return { requestId: 'request-1' }
+          },
+          async enrollPoll() {
+            polls++
+            return {
+              status: 'approved',
+              token: 'f'.repeat(64),
+              tokenGeneration: 1,
+              name: 'operator-approved-host',
+            }
+          },
+        }),
+    }
+    await connectSetupHost(
+      plugin(root),
+      'opencode',
+      io,
+      terminal(),
+      async () => {},
+    )
+
+    const term = terminal()
+    await connectSetupHost(plugin(root), 'opencode', io, term, async () => {})
+
+    expect(term.lines.join('')).toBe(
+      'Already connected as operator-approved-host.\n',
+    )
+    expect(proposals).toBe(1)
+    expect(polls).toBe(1)
+    expect(closed).toBe(2)
+  })
+
   test('a request still waiting for approval at the bound repeats the approve command', async () => {
     const root = await profile()
     const time = clock()
