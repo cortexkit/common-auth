@@ -141,7 +141,7 @@
     "@opencode/plugin": ">=2.0.21",
     "@opentui/core": ">=0.4.5",
     "@opentui/solid": ">=0.4.5",
-    "solid-js": "1.9.12"
+    "solid-js": ">=1.9.12 <2"
   },
   "peerDependenciesMeta": {
     "@opentui/core": {
@@ -178,7 +178,7 @@
     "lefthook": "2.1.14",
     "pi-coding-agent-086": "npm:@earendil-works/pi-coding-agent@0.86.1",
     "proper-lockfile": "4.1.2",
-    "solid-js": "1.9.12",
+    "solid-js": "1.9.18",
     "typescript": "7.0.2"
   }
 }
