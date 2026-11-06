@@ -1,5 +1,8 @@
-// Optional THALAMUS routing for vault mode only. Account ids here are vault
-// account ids; local pool rows are not known to the routing engine.
+/**
+ * Optional THALAMUS routing for vault mode and advisory turn notes for request
+ * shaping. Account ids are vault account ids, not local pool rows. Nothing is
+ * persisted here; plugins on routes the runner does not serve get no turn notes.
+ */
 
 import { routingHandle } from './handle.js'
 
@@ -49,35 +52,98 @@ interface RoutingReportIdentity {
   credentialId?: string
 }
 
-export type ReportRoutingInput = RoutingReportIdentity &
-  (
-    | {
-        outcome: 'served'
-        /**
-         * Pass only rate-limit headers, never the whole response headers.
-         * Values are forwarded unchanged; do not include tokens, emails or labels.
-         */
-        headers: Readonly<Record<string, string>>
-      }
-    | {
-        outcome: 'exhausted'
-        /** The exhausted quota window; keep scoped quota groups in `pool`. */
-        window: '5h' | '7d'
-        /**
-         * Scoped quota group, such as Antigravity's `3p` or `gemini`.
-         * Must match `^[a-z0-9._-]{1,64}$`. Routing compares names exactly, so
-         * callers must lowercase names from elsewhere (e.g. `Fable` to `fable`).
-         * Names are never rewritten here. Omit or pass `undefined` to block the
-         * whole account; include to block only this pool.
-         */
-        pool?: string
-        /** Optional reset time in epoch milliseconds. */
-        resetsAt?: number
-      }
-  )
+export type ReportRoutingInput =
+  | (RoutingReportIdentity &
+      (
+        | {
+            outcome: 'served'
+            /**
+             * Pass only rate-limit headers, never the whole response headers.
+             * Values are forwarded unchanged; do not include tokens, emails or labels.
+             */
+            headers: Readonly<Record<string, string>>
+          }
+        | {
+            outcome: 'exhausted'
+            /** The exhausted quota window; keep scoped quota groups in `pool`. */
+            window: '5h' | '7d'
+            /**
+             * Scoped quota group, such as Antigravity's `3p` or `gemini`.
+             * Must match `^[a-z0-9._-]{1,64}$`. Routing compares names exactly, so
+             * callers must lowercase names from elsewhere (e.g. `Fable` to `fable`).
+             * Names are never rewritten here. Omit or pass `undefined` to block the
+             * whole account; include to block only this pool.
+             */
+            pool?: string
+            /** Optional reset time in epoch milliseconds. */
+            resetsAt?: number
+          }
+      ))
+  | {
+      sessionId: string
+      kind: 'turn_notes_supported'
+      model: string
+      supported: boolean
+    }
+  | {
+      sessionId: string
+      kind: 'turn_note_skipped'
+      after_tool_use_id: string
+      reason:
+        | 'anchor_missing'
+        | 'before_user_message'
+        | 'unsupported_model'
+        | 'not_oauth'
+    }
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+/**
+ * Read advisory input for request shaping, in landing order, without persisting
+ * it. If no routing handle is available or the runner does not serve the route,
+ * returns [].
+ */
+export function turnNotes(
+  sessionId: string,
+): readonly { afterToolUseId: string; text: string }[] {
+  try {
+    const handle = routingHandle(sessionId)
+    if (!handle) return []
+    const read = handle.turn_notes
+    if (typeof read !== 'function') return []
+    const answer: unknown = read.call(handle)
+    if (isObject(answer) && typeof answer.then === 'function') {
+      void Promise.resolve(answer).catch(() => {})
+      return []
+    }
+    if (!Array.isArray(answer)) return []
+    const notes: { afterToolUseId: string; text: string }[] = []
+    const encoder = new TextEncoder()
+    for (const entry of answer) {
+      try {
+        if (!isObject(entry) || Array.isArray(entry)) continue
+        const afterToolUseId = entry.after_tool_use_id
+        const text = entry.text
+        if (
+          typeof afterToolUseId !== 'string' ||
+          afterToolUseId.length === 0 ||
+          typeof text !== 'string' ||
+          text.length === 0 ||
+          encoder.encode(text).byteLength > 16_384
+        )
+          continue
+        notes.push({ afterToolUseId, text })
+      } catch {
+        // One unreadable note entry must not hide its valid neighbours.
+      }
+    }
+    return notes
+  } catch {
+    // Turn notes are optional and must not break request shaping.
+    return []
+  }
 }
 
 function selectionFor<Candidate extends RoutingCandidate>(
@@ -153,9 +219,10 @@ export async function askRouting<Candidate extends RoutingCandidate>(
 }
 
 /**
- * Report a vault request without waiting for routing. Only contract fields are
- * sent, and all accessor failures are ignored. Headers must already be limited
- * to rate-limit headers by the caller; values are not filtered or redacted here.
+ * Report a vault request or turn-note event without waiting for routing. Only
+ * contract fields are sent, and all accessor failures are ignored. Headers must
+ * already be limited to rate-limit headers by the caller; values are not filtered
+ * or redacted here.
  */
 export function reportRouting(input: ReportRoutingInput): void {
   try {
@@ -163,39 +230,79 @@ export function reportRouting(input: ReportRoutingInput): void {
     if (!handle) return
     const report = handle.report
     if (typeof report !== 'function') return
-    const identity = {
-      account_id: input.accountId,
-      ...(input.credentialId !== undefined
-        ? { credential_id: input.credentialId }
-        : {}),
-    }
     let payload: unknown
-    switch (input.outcome) {
-      case 'served':
-        payload = { ...identity, outcome: 'served', headers: input.headers }
-        break
-      case 'exhausted': {
-        const { window, pool } = input
-        if (window !== '5h' && window !== '7d') return
-        // An undefined pool means the whole account, as an omitted one does.
-        if (
-          pool !== undefined &&
-          (typeof pool !== 'string' || !/^[a-z0-9._-]{1,64}$/.test(pool))
-        )
-          return
-        payload = {
-          ...identity,
-          outcome: 'exhausted',
-          window,
-          ...(pool ? { pool } : {}),
-          ...(input.resetsAt !== undefined
-            ? { resets_at: input.resetsAt }
-            : {}),
+    if ('kind' in input) {
+      switch (input.kind) {
+        case 'turn_notes_supported': {
+          const { model, supported } = input
+          if (
+            typeof model !== 'string' ||
+            model.length === 0 ||
+            typeof supported !== 'boolean'
+          )
+            return
+          payload = {
+            kind: 'turn_notes_supported',
+            model,
+            supported,
+          }
+          break
         }
-        break
+        case 'turn_note_skipped': {
+          const { after_tool_use_id, reason } = input
+          if (
+            typeof after_tool_use_id !== 'string' ||
+            after_tool_use_id.length === 0 ||
+            (reason !== 'anchor_missing' &&
+              reason !== 'before_user_message' &&
+              reason !== 'unsupported_model' &&
+              reason !== 'not_oauth')
+          )
+            return
+          payload = {
+            kind: 'turn_note_skipped',
+            after_tool_use_id,
+            reason,
+          }
+          break
+        }
+        default:
+          return
       }
-      default:
-        return
+    } else {
+      const identity = {
+        account_id: input.accountId,
+        ...(input.credentialId !== undefined
+          ? { credential_id: input.credentialId }
+          : {}),
+      }
+      switch (input.outcome) {
+        case 'served':
+          payload = { ...identity, outcome: 'served', headers: input.headers }
+          break
+        case 'exhausted': {
+          const { window, pool } = input
+          if (window !== '5h' && window !== '7d') return
+          // An undefined pool means the whole account, as an omitted one does.
+          if (
+            pool !== undefined &&
+            (typeof pool !== 'string' || !/^[a-z0-9._-]{1,64}$/.test(pool))
+          )
+            return
+          payload = {
+            ...identity,
+            outcome: 'exhausted',
+            window,
+            ...(pool ? { pool } : {}),
+            ...(input.resetsAt !== undefined
+              ? { resets_at: input.resetsAt }
+              : {}),
+          }
+          break
+        }
+        default:
+          return
+      }
     }
     // A broken bridge may return a rejected promise despite its void contract.
     const pending: unknown = report.call(handle, payload)

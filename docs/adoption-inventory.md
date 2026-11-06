@@ -1277,11 +1277,12 @@ Pure functions; every input is per call and nothing is persisted. Rate-limit mar
 
 ### ./routing-accessor
 
-Optional process-global THALAMUS routing for **vault mode only**. Routing's
-account ids are vault account ids, not plugin route ids or local pool row ids.
-Local pool rows are unknown to routing. No auth plugin adopts this client yet.
+Optional process-global THALAMUS routing for **vault mode only**, plus advisory
+turn notes for request shaping. Routing's account ids are vault account ids, not
+plugin route ids or local pool row ids. Local pool rows are unknown to routing.
+No auth plugin adopts this client yet.
 
-Runtime exports: `askRouting`, `reportRouting`. Type exports:
+Runtime exports: `askRouting`, `reportRouting`, `turnNotes`. Type exports:
 `RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`,
 `ReportRoutingInput`.
 
@@ -1289,6 +1290,23 @@ Runtime exports: `askRouting`, `reportRouting`. Type exports:
 | --- | --- | --- | --- |
 | `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS? }` | `Promise<{ candidate, hold?: { retry_after_ms } } \| undefined>`; `candidate` is the original eligible input object with its inferred type | never throws or rejects |
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools send nothing |
+| `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
+| `reportRouting(input)` (turn notes) | `{ sessionId, kind: 'turn_notes_supported', model: string, supported: boolean }` or `{ sessionId, kind: 'turn_note_skipped', after_tool_use_id: string, reason: 'anchor_missing' \| 'before_user_message' \| 'unsupported_model' \| 'not_oauth' }` | `void`; one fire-and-forget call per event, never batched | never throws; invalid payloads send nothing |
+
+`turnNotes` synchronously reads the handle's `turn_notes()` member as advisory
+input for request shaping. Nothing is persisted by this module. Plugins on routes
+the runner does not serve simply get `[]`. Each note's `afterToolUseId` is the
+provider's tool-call id exactly as it appears in the request body. Both fields
+must be non-empty strings, and `text` must be at most 16,384 UTF-8 bytes. Async or
+non-array results are ignored; valid neighbours of invalid entries keep their
+original order. The returned array and objects do not share mutable state with
+the values returned by `turn_notes()`.
+
+Turn-note reports use the same session handle's `report(payload)` path, without
+a session field or account identity in the payload. `model` and
+`after_tool_use_id` must be non-empty strings, `supported` must be a boolean, and
+the four skip reasons above form a closed set. Reporting once per session and
+model or anchor is the caller's responsibility; the accessor does not deduplicate.
 
 The optional `holdWaitMaxS` input can use the cap computed by
 [`holdWaitMaxS` from `./limits`](#limits). The routing accessor does not import
