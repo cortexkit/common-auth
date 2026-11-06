@@ -955,7 +955,7 @@ Key runtime exports and adoption inputs:
 | `createSessionActivityStore`, `sameAccountHoldFacts`, `readMaxSameAccountWait` | process-local session cache activity and normalized setting/hold facts |
 | `holdWaitMaxS` | whole-second routing advice cap from current account identity, accepted cache activity and `routing.maxSameAccountWait`; pass the result to `askRouting`'s optional `holdWaitMaxS` input |
 | `acquireLimitsRegistry`, `LIMITS_REGISTRY_KEY` | shared namespace ownership and dispatch/control coordination |
-| `canonicalLimitsPath(path)` | canonical parent folder plus the store basename, for path-based namespaces |
+| `canonicalLimitsPath(path)` | nearest existing ancestor resolved through links, plus the missing folders and the store basename, for path-based namespaces |
 | `LimitsEnvelopeConflictError`, `LimitsEnvelopeUnsupportedError` | terminal adapter errors: competing namespace writers or an unknown envelope schema |
 | `createPoolLimitsAdapter({ namespace, store, now?, logger? })` | async reference adapter returning `PersistenceAdapter`; canonical provider/store namespace |
 | `buildRefusal`, `registerLimitMessages`, `sanitizeRefusalLabel`, `formatDuration`, `formatReset` | typed refusal families, safe templates/labels and shared duration rendering |
@@ -1147,11 +1147,12 @@ per-account dispatch barriers for the replacement owner to hydrate before
 dispatch.
 
 Build path-based namespaces with `canonicalLimitsPath(path)`, for example
-`JSON.stringify(['my-plugin', provider, canonicalLimitsPath(path)])`. It joins
-`fs.realpathSync.native(dirname(path))` with `basename(path)`, so symlinked parent
-folders agree even before the store file exists. A missing parent falls back to
-`path.resolve(path)`; no lowercasing is performed. Adapters use the namespace
-they receive unchanged.
+`JSON.stringify(['my-plugin', provider, canonicalLimitsPath(path)])`. It resolves
+the nearest existing ancestor folder with `fs.realpathSync.native` and appends
+the missing folders and the file name unchanged, so symlinked folders agree
+even before the store file or its folders exist, and still agree after they are
+created. When no ancestor exists it returns `path.resolve(path)`; no lowercasing
+is performed. Adapters use the namespace they receive unchanged.
 
 Both adapters treat a foreign-namespace or malformed schema-v1 envelope (including
 a non-object value) as fresh, authoritative state. The next commit replaces it
