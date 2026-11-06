@@ -1724,28 +1724,29 @@ for (const barrier of [
     const before = await bytes()
     const originalOpen = fs.open
     let configTemps = 0
+    // Lock leases are staged as `<config>.<name>.lock.<uuid>.tmp`; only the
+    // config file's own replacement temps count toward the barrier.
+    const isConfigTemp = (path: string) =>
+      path.startsWith(`${configPath}.`) &&
+      path.endsWith('.tmp') &&
+      !path.includes('.lock.')
     const spy = spyOn(fs, 'open').mockImplementation(
       async (...args: Parameters<typeof fs.open>) => {
         const handle = await originalOpen(...args)
         const path = String(args[0])
-        if (path.startsWith(`${configPath}.`) && path.endsWith('.tmp'))
-          configTemps++
+        if (isConfigTemp(path)) configTemps++
         const reject =
           barrier === 'pre-decision-state'
             ? path === statePath
             : barrier === 'pre-decision-config'
-              ? path.startsWith(`${configPath}.`) &&
-                path.endsWith('.tmp') &&
-                configTemps === 1
+              ? isConfigTemp(path) && configTemps === 1
               : barrier === 'decision-directory'
                 ? path === dirname(configPath)
                 : barrier === 'replay-config'
                   ? path === configPath
                   : barrier === 'cleanup-state'
                     ? path.startsWith(`${statePath}.`) && path.endsWith('.tmp')
-                    : path.startsWith(`${configPath}.`) &&
-                      path.endsWith('.tmp') &&
-                      configTemps === 2
+                    : isConfigTemp(path) && configTemps === 2
         if (reject)
           handle.sync = async () => {
             throw new Error('injected sync failure')
