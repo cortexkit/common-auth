@@ -586,6 +586,8 @@ export interface VaultRosterLockContext {
 
 export interface MutateVaultRosterOptions {
   signal?: AbortSignal
+  /** Runs under the roster lock once published, even if a later step fails. Must not throw. */
+  onPublished?: () => void
   /**
    * Runs when the new roster is fully staged on disk, immediately before the
    * rename that publishes it, so a caller can confirm a lease of its own at
@@ -624,13 +626,25 @@ export async function mutateVaultRoster<T>(
         await lock.assertOwned()
         // Staging the file takes several awaited steps; check both the caller's
         // lease and this lock again at the last moment before the rename.
-        await writeJsonAtomic(path, next, {
-          beforeRename: async () => {
-            await options.beforePublish?.()
-            options.signal?.throwIfAborted()
-            await lock.assertOwned()
-          },
-        })
+        try {
+          await writeJsonAtomic(path, next, {
+            beforeRename: async () => {
+              await options.beforePublish?.()
+              options.signal?.throwIfAborted()
+              await lock.assertOwned()
+            },
+          })
+        } catch (error) {
+          if (
+            error &&
+            typeof error === 'object' &&
+            'published' in error &&
+            error.published === true
+          )
+            options.onPublished?.()
+          throw error
+        }
+        options.onPublished?.()
       }
       return result
     },

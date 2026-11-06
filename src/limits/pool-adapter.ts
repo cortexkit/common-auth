@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { PoolOperationError } from '../store/errors.js'
 import type { PoolLimitsRow } from '../store/limits-namespace.js'
 import type { PoolStore } from '../store/pool.js'
+import { EnvelopeGuard } from './envelope.js'
 import {
   EnvelopeHistory,
   EnvelopeRepair,
@@ -26,7 +27,7 @@ export interface PoolLimitsAdapterOptions {
   readonly namespace: string
   readonly store: PoolStore
   readonly now?: () => number
-  /** Receives a warning when a detached envelope repair fails. */
+  /** Receives redacted replacement warnings and background envelope-loss repair failures. */
   readonly logger?: LimitsRecoveryLogger
 }
 
@@ -52,40 +53,6 @@ function bindingsOf(
   )
 }
 
-function decodeEnvelope(
-  value: unknown,
-  namespace: string,
-  generation: string,
-): LimitsNamespace {
-  if (value === undefined) return createLimitsNamespace(namespace, generation)
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    !('schemaVersion' in value) ||
-    value.schemaVersion !== 1 ||
-    !('namespace' in value) ||
-    value.namespace !== namespace ||
-    !('generation' in value) ||
-    typeof value.generation !== 'string' ||
-    !('revision' in value) ||
-    !Number.isSafeInteger(value.revision) ||
-    (value.revision as number) < 0 ||
-    !('lowWatermark' in value) ||
-    !Number.isSafeInteger(value.lowWatermark) ||
-    (value.lowWatermark as number) < 0 ||
-    !('marks' in value) ||
-    !Array.isArray(value.marks) ||
-    !('tombstones' in value) ||
-    !Array.isArray(value.tombstones) ||
-    !('operationIds' in value) ||
-    !Array.isArray(value.operationIds) ||
-    !('access' in value) ||
-    !Array.isArray(value.access)
-  )
-    throw new TypeError('Invalid or unsupported pool limits namespace')
-  return value as LimitsNamespace
-}
-
 /**
  * Activate after initialize/load reports ready. Reads never acquire a write
  * lock; recovery is detached and commits merge under the store locks.
@@ -98,7 +65,8 @@ export async function createPoolLimitsAdapter(
     throw new LimitsPersistenceRefusal('limits-unsupported')
   const update = store.updateLimitsNamespace.bind(store)
   const generation = randomUUID()
-  const history = new EnvelopeHistory()
+  let history = new EnvelopeHistory()
+  const guard = new EnvelopeGuard(namespace, options.logger)
   const repair = new EnvelopeRepair(options.logger)
   const now = options.now ?? Date.now
   const readBindings = async () => {
@@ -114,14 +82,12 @@ export async function createPoolLimitsAdapter(
     const settings = await store.readSettings()
     if (settings.status !== 'ready')
       throw new LimitsPersistenceRefusal('pool-not-ready')
-    const envelope = settings.settings.commonAuthLimits
-    return envelope === undefined
-      ? undefined
-      : decodeEnvelope(envelope, namespace, generation)
+    return guard.decode(settings.settings.commonAuthLimits)
   }
   const read = async (
     previous?: LimitsNamespace,
   ): Promise<LimitsPersistenceSnapshot> => {
+    guard.assertWritable()
     let bindings = await readBindings()
     let snapshot = await readEnvelope()
     let last: LimitsPersistenceSnapshot | undefined
@@ -136,21 +102,30 @@ export async function createPoolLimitsAdapter(
         isDeepStrictEqual(bindings, checked) &&
         isDeepStrictEqual(snapshot, checkedSnapshot)
       last = {
-        snapshot: snapshot ?? createLimitsNamespace(namespace, generation),
+        snapshot:
+          snapshot.snapshot ?? createLimitsNamespace(namespace, generation),
         bindings,
         authoritative: stable,
       }
       if (stable) {
-        if (history.lost(snapshot, previous)) {
+        if (
+          !snapshot.replacement &&
+          history.lost(snapshot.snapshot, previous)
+        ) {
           repair.schedule(() => adapter.commit([], previous))
           return {
-            snapshot: history.recover(snapshot, previous, namespace, now()),
+            snapshot: history.recover(
+              snapshot.snapshot,
+              previous,
+              namespace,
+              now(),
+            ),
             bindings,
             authoritative: false,
             degradedAgreement: true,
           }
         }
-        if (snapshot) history.remember(snapshot)
+        if (snapshot.snapshot) history.remember(snapshot.snapshot)
         return last
       }
       bindings = checked
@@ -163,36 +138,52 @@ export async function createPoolLimitsAdapter(
     read,
     subscribe: repair.subscribe,
     async commit(commands, previous) {
+      guard.assertWritable()
       let committed: LimitsPersistenceCommit | undefined
+      let replacement: ReturnType<EnvelopeGuard['decode']>['replacement']
+      const onPublished = () => {
+        if (guard.didCommit(replacement) && committed) {
+          history = new EnvelopeHistory()
+          history.remember(committed.snapshot, previous)
+        }
+      }
       try {
-        await update((envelope, rows) => {
-          const bindings = bindingsOf(namespace, rows)
-          const present =
-            envelope === undefined
-              ? undefined
-              : decodeEnvelope(envelope, namespace, generation)
-          const degradedAgreement = history.lost(present, previous)
-          const result = applyLimitsCommands(
-            degradedAgreement
-              ? history.recover(present, previous, namespace, now())
-              : (present ?? createLimitsNamespace(namespace, generation)),
-            commands,
-            {
-              now: now(),
+        await update(
+          (envelope, rows) => {
+            const bindings = bindingsOf(namespace, rows)
+            const decoded = guard.decode(envelope)
+            const present = decoded.snapshot
+            replacement = decoded.replacement
+            const degradedAgreement =
+              !replacement && history.lost(present, previous)
+            const result = applyLimitsCommands(
+              degradedAgreement
+                ? history.recover(present, previous, namespace, now())
+                : (present ?? createLimitsNamespace(namespace, generation)),
+              commands,
+              {
+                now: now(),
+                bindings,
+                authorizeEpoch: (observed, current) =>
+                  observed.credentialEpoch === current.credentialEpoch,
+              },
+            )
+            committed = {
+              ...result,
               bindings,
-              authorizeEpoch: (observed, current) =>
-                observed.credentialEpoch === current.credentialEpoch,
-            },
-          )
-          committed = {
-            ...result,
-            bindings,
-            authoritative: true,
-            degradedAgreement,
-          }
-          return result.snapshot
-        })
+              authoritative: true,
+              degradedAgreement,
+            }
+            return result.snapshot
+          },
+          {
+            beforePublish: () => guard.assertWritable(),
+            onPublished,
+          },
+        )
       } catch (error) {
+        // Store operations wrap mutator failures; preserve the typed terminal refusal.
+        guard.assertWritable()
         if (
           error instanceof PoolOperationError &&
           (error.kind === 'pending-migration' || error.kind === 'load-error')
@@ -201,6 +192,7 @@ export async function createPoolLimitsAdapter(
         throw error
       }
       if (!committed) throw new Error('Pool limits mutator was not called')
+      onPublished()
       history.remember(committed.snapshot, previous)
       return committed
     },

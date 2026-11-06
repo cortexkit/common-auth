@@ -12,10 +12,18 @@ export type PoolLimitsMutator = (
   rows: readonly PoolLimitsRow[],
 ) => unknown | Promise<unknown>
 
+/** Publication bookkeeping runs under the same locks as the namespace merge. */
+export interface PoolLimitsWriteOptions {
+  readonly beforePublish?: () => void
+  /** Runs once publication happened, even if a later step fails. Must not throw. */
+  readonly onPublished?: () => void
+}
+
 /** A namespace merge and its check of current row bindings share one locked config snapshot. */
 export async function updatePoolLimitsNamespace(
   rt: StoreRuntime,
   mutator: PoolLimitsMutator,
+  options: PoolLimitsWriteOptions = {},
 ): Promise<void> {
   assertLimitsWriteAllowed()
   const { ctx } = rt
@@ -42,13 +50,26 @@ export async function updatePoolLimitsNamespace(
         operation: 'updateLimitsNamespace' as const,
         rowId: undefined,
       }
-      await writeJsonAtomic(ctx.configPath, config, {
-        beforeRename: async () => {
-          await ctx.onStep?.('before-config-write', info)
-          await locks.assertAll()
-        },
-      })
+      try {
+        await writeJsonAtomic(ctx.configPath, config, {
+          beforeRename: async () => {
+            await ctx.onStep?.('before-config-write', info)
+            await locks.assertAll()
+            options.beforePublish?.()
+          },
+        })
+      } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'published' in error &&
+          error.published === true
+        )
+          options.onPublished?.()
+        throw error
+      }
       progress.writes++
+      options.onPublished?.()
       await ctx.onStep?.('after-config-write', info)
     },
   )

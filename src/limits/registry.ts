@@ -1,11 +1,19 @@
 import { AsyncResource } from 'node:async_hooks'
 import type { SessionActivityStore } from './activity.js'
 import { createSessionActivityStore } from './activity.js'
+import {
+  type LimitsAbandonReason,
+  limitsEnvelopeAbandonReason,
+} from './envelope.js'
 import type { IdentityBinding } from './identity.js'
 import { isIdentityCompatible, retainVerifiedIdentity } from './identity.js'
 import type { LimitMarkCause } from './marker.js'
 import type { LimitsCommand, LimitsNamespace } from './namespace.js'
-import { applyLimitsCommands, pruneLimitsNamespace } from './namespace.js'
+import {
+  applyLimitsCommands,
+  createLimitsNamespace,
+  pruneLimitsNamespace,
+} from './namespace.js'
 import type {
   LimitsPersistenceOutcome,
   LimitsPersistenceSnapshot,
@@ -50,6 +58,8 @@ export interface LimitsRegistryOptions {
   /** Access is provider-owned; the registry must not guess its stored shape. */
   readonly isAccessRestrictive: (state: unknown) => boolean
   readonly onEvent?: (event: LimitsRegistryEvent) => void
+  /** Release this owner and serve without tracking; do not reacquire this store in this process. */
+  readonly onAbandon?: (reason: LimitsAbandonReason) => void
   readonly onRejected?: (
     command: LimitsCommand,
     outcome: LimitsPersistenceOutcome,
@@ -61,6 +71,8 @@ export interface LimitsDispatchView {
   readonly blocked: boolean
 }
 export interface LimitsRegistry {
+  /** Terminal loss of tracking, not a dispatch refusal. Disposal never flushes after abandonment. */
+  readonly abandoned: LimitsAbandonReason | undefined
   readonly snapshot: LimitsNamespace
   readonly lastReloadAt: number
   readonly degradedAgreement: boolean
@@ -105,6 +117,7 @@ interface Pending {
   readonly recoveryRetries?: number
 }
 interface Listener {
+  onAbandon?: LimitsRegistryOptions['onAbandon']
   onEvent?: LimitsRegistryOptions['onEvent']
   onRejected?: LimitsRegistryOptions['onRejected']
 }
@@ -158,6 +171,7 @@ class Runtime {
   lastReadAttempt = Number.NEGATIVE_INFINITY
   generation = 0
   degradedAgreement = false
+  abandoned?: LimitsAbandonReason
   lastFailure: unknown
   dirty = true
   live = false
@@ -167,6 +181,10 @@ class Runtime {
   reading?: Promise<void>
   writing?: Promise<void>
   handoff: Promise<void> = Promise.resolve()
+  private resolveAbandonment!: () => void
+  private readonly abandonment = new Promise<void>((resolve) => {
+    this.resolveAbandonment = resolve
+  })
 
   constructor(options: LimitsRegistryOptions) {
     this.adapter = options.adapter
@@ -175,11 +193,36 @@ class Runtime {
   }
 
   fail(error: unknown): void {
+    if (this.abandoned) return
+    const reason = limitsEnvelopeAbandonReason(error)
+    if (reason) {
+      this.abandoned = reason
+      this.lastFailure = error
+      this.live = false
+      this.generation++
+      this.cancelTimers()
+      this.unsubscribe?.()
+      this.unsubscribe = undefined
+      this.journal.clear()
+      this.failed.clear()
+      this.restrictions.clear()
+      this.recoveryView = undefined
+      this.resolveAbandonment()
+      for (const listener of this.listeners) {
+        try {
+          listener.onAbandon?.(reason)
+        } catch {
+          // Owners cannot prevent terminal cleanup for other owners.
+        }
+      }
+      return
+    }
     this.degradedAgreement = true
     this.lastFailure = error
   }
 
   reconcile(view: LimitsPersistenceSnapshot): boolean {
+    if (this.abandoned) return false
     if (
       view.snapshot.schemaVersion !== 1 ||
       view.snapshot.namespace !== this.adapter.namespace
@@ -287,11 +330,12 @@ class Runtime {
   }
 
   async start(adapter: PersistenceAdapter): Promise<void> {
+    if (this.abandoned) throw this.lastFailure
     this.adapter = adapter
     this.live = true
     const generation = ++this.generation
     await this.reload()
-    if (!this.snapshot)
+    if (this.abandoned || !this.snapshot)
       throw this.lastFailure ?? new Error('limits-hydration-failed')
     this.unsubscribe = adapter.subscribe?.(() => {
       if (!this.live || this.generation !== generation) return
@@ -304,6 +348,7 @@ class Runtime {
   }
 
   reload(): Promise<void> {
+    if (this.abandoned) return Promise.resolve()
     if (this.reading) return this.reading
     const started = this.clock.now()
     this.lastReadAttempt = started
@@ -336,6 +381,11 @@ class Runtime {
   }
 
   provisional(): LimitsNamespace {
+    if (this.abandoned)
+      return createLimitsNamespace(
+        this.adapter.namespace,
+        this.snapshot?.generation ?? '',
+      )
     const snapshot = this.recoveryView?.snapshot ?? this.snapshot
     const pending = [...this.journal.values()]
       .map((p) => p.command)
@@ -360,6 +410,7 @@ class Runtime {
   }
 
   enqueue(command: LimitsCommand, event?: 'success'): void {
+    if (this.abandoned) return
     if (command.binding.account.namespace !== this.adapter.namespace)
       throw new Error('wrong-namespace')
     const id = opId(command)
@@ -378,17 +429,19 @@ class Runtime {
   }
 
   flush(): Promise<void> {
+    if (this.abandoned) return this.writing ?? Promise.resolve()
     if (this.writing) return this.writing
     if (!this.journal.size) return Promise.resolve()
     this.writing = detached
       .runInAsyncScope(async () => {
         let batch = [...this.journal.values()]
-        while (batch.length) {
+        while (batch.length && !this.abandoned) {
           try {
             const result = await this.adapter.commit(
               batch.map((p) => p.command),
               this.snapshot,
             )
+            if (this.abandoned) return
             this.reconcile(result)
             if (!result.authoritative)
               throw new Error('limits-unverifiable-commit')
@@ -400,6 +453,11 @@ class Runtime {
               this.settle(pending, outcome)
             }
           } catch (error) {
+            if (limitsEnvelopeAbandonReason(error)) {
+              this.fail(error)
+              return
+            }
+            if (this.abandoned) return
             if (
               error instanceof LimitsPersistenceRefusal &&
               error.code === 'pool-not-ready'
@@ -487,6 +545,7 @@ class Runtime {
   }
 
   async beforeDispatch(binding: IdentityBinding): Promise<LimitsDispatchView> {
+    if (this.abandoned) return { snapshot: this.provisional(), blocked: false }
     this.touch()
     const controls = () =>
       [...this.journal.values()].some(
@@ -494,9 +553,10 @@ class Runtime {
           p.command.type !== 'mark' &&
           sameAccount(p.command.binding.account, binding.account),
       )
-    if (controls()) await this.flush()
+    if (controls()) await Promise.race([this.flush(), this.abandonment])
     if (this.dirty || this.clock.now() - this.lastReloadAt >= RELOAD_MS)
-      await this.reload()
+      await Promise.race([this.reload(), this.abandonment])
+    if (this.abandoned) return { snapshot: this.provisional(), blocked: false }
     const current = (this.recoveryView?.bindings ?? this.bindings).find((b) =>
       sameAccount(b.account, binding.account),
     )
@@ -542,6 +602,7 @@ export async function acquireLimitsRegistry(
   }
   const state = runtime
   const listener: Listener = {
+    onAbandon: options.onAbandon,
     onEvent: options.onEvent,
     onRejected: options.onRejected,
   }
@@ -566,6 +627,9 @@ export async function acquireLimitsRegistry(
     if (disposed) throw new Error('limits-registry-disposed')
   }
   return {
+    get abandoned() {
+      return state.abandoned
+    },
     get snapshot() {
       active()
       return state.provisional()

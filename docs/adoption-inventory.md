@@ -955,6 +955,8 @@ Key runtime exports and adoption inputs:
 | `createSessionActivityStore`, `sameAccountHoldFacts`, `readMaxSameAccountWait` | process-local session cache activity and normalized setting/hold facts |
 | `holdWaitMaxS` | whole-second routing advice cap from current account identity, accepted cache activity and `routing.maxSameAccountWait`; pass the result to `askRouting`'s optional `holdWaitMaxS` input |
 | `acquireLimitsRegistry`, `LIMITS_REGISTRY_KEY` | shared namespace ownership and dispatch/control coordination |
+| `canonicalLimitsPath(path)` | canonical parent folder plus the store basename, for path-based namespaces |
+| `LimitsEnvelopeConflictError`, `LimitsEnvelopeUnsupportedError` | terminal adapter errors: competing namespace writers or an unknown envelope schema |
 | `createPoolLimitsAdapter({ namespace, store, now?, logger? })` | async reference adapter returning `PersistenceAdapter`; canonical provider/store namespace |
 | `buildRefusal`, `registerLimitMessages`, `sanitizeRefusalLabel`, `formatDuration`, `formatReset` | typed refusal families, safe templates/labels and shared duration rendering |
 | `waitForPi` | abortable wait/countdown only; the caller owns sending and final presentation |
@@ -1144,6 +1146,38 @@ Dispose flushes/unsubscribes; failed flushes retain pending commands and their
 per-account dispatch barriers for the replacement owner to hydrate before
 dispatch.
 
+Build path-based namespaces with `canonicalLimitsPath(path)`, for example
+`JSON.stringify(['my-plugin', provider, canonicalLimitsPath(path)])`. It joins
+`fs.realpathSync.native(dirname(path))` with `basename(path)`, so symlinked parent
+folders agree even before the store file exists. A missing parent falls back to
+`path.resolve(path)`; no lowercasing is performed. Adapters use the namespace
+they receive unchanged.
+
+Both adapters treat a foreign-namespace or malformed schema-v1 envelope (including
+a non-object value) as fresh, authoritative state. The next commit replaces it
+under the existing store lock and emits one redacted logger warning containing
+only `foreign-namespace` or `malformed`, not a path, namespace or account. Timed
+marks are advisory; losing them costs at most another provider answer per account.
+Commands bound to the old namespace remain rejected as `wrong-namespace`. Each
+adapter can replace once in its lifetime. Another replaceable envelope then
+permanently throws `LimitsEnvelopeConflictError`; an object with any schemaVersion
+other than 1 permanently throws `LimitsEnvelopeUnsupportedError` without writing.
+Neither terminal error permits internal envelope-loss repair to write. For valid
+envelopes, missing or rolled-back state still triggers restrictive recovery from
+durable observations; agreement stays degraded until repair is acknowledged.
+
+If the first registry read throws either terminal error, acquisition rejects with
+that error. After hydration, a terminal read or commit abandons tracking instead:
+the read-only `registry.abandoned` becomes `'conflict'` or `'unsupported'`
+(`LimitsAbandonReason`), and optional `onAbandon(reason)` acquire callbacks notify
+owners. Abandonment stops reload/publication timers, unsubscribes, drops pending
+journals and restrictions without flushing, and initiates no more adapter writes.
+`beforeDispatch` returns an empty limits snapshot and `blocked: false`; abandonment
+means no limits tracking, never a refusal to send requests. `dispose()` after
+abandonment does not flush. Owners should release the registry, serve without it,
+and not reacquire that store in the same process. A commit already in flight
+cannot be cancelled by the registry; its result is ignored after abandonment.
+
 The pool reference adapter stores `commonAuthLimits` at the config's top level,
 outside `POOL_OWNED_KEYS`, through the optional
 `PoolStore.updateLimitsNamespace`. Activate after `initialize()` or ready
@@ -1156,6 +1190,12 @@ bindings under the store locks; do not substitute `updateSettings`.
 under the store locks refuse reentry immediately with `PoolReentryError`.
 Refresh/rotate and first identity discovery remain compatible; replacement or
 a conflicting known identity rejects commands observed against the old binding.
+The optional second argument to `updateLimitsNamespace` is
+`PoolLimitsWriteOptions`: `beforePublish()` checks immediately before publication,
+and non-throwing `onPublished()` records publication while the locks remain held,
+even if a later step fails. The limits adapter uses these hooks to consume its
+replacement allowance before post-write failures or another writer can intervene.
+`MutateVaultRosterOptions.onPublished` provides the same notification for rosters.
 
 ### ./limits/vault
 

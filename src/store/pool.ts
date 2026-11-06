@@ -299,7 +299,10 @@ export interface PoolStore {
    * onPersisted/onFailure hook or a pull, but not in a lock-held mutator.
    * Optional so existing structural implementations remain compatible.
    */
-  updateLimitsNamespace?(mutator: PoolLimitsMutator): Promise<void>
+  updateLimitsNamespace?(
+    mutator: PoolLimitsMutator,
+    options?: import('./limits-namespace.js').PoolLimitsWriteOptions,
+  ): Promise<void>
   /**
    * Records the identity a lookup found for the row's credential. Since
    * 0.3.1 it takes the credential epoch the lookup was issued for, and
@@ -479,7 +482,8 @@ export function openPoolStore(options: OpenPoolStoreOptions): PoolStore {
     readSettings: () => readPoolSettings(rt),
     updateSettings: (mutator, callOptions) =>
       updatePoolSettings(rt, mutator, callOptions),
-    updateLimitsNamespace: (mutator) => updatePoolLimitsNamespace(rt, mutator),
+    updateLimitsNamespace: (mutator, options) =>
+      updatePoolLimitsNamespace(rt, mutator, options),
     recordIdentity: (id, identity, attribution, callOptions) =>
       recordRowIdentity(rt, id, identity, attribution, callOptions),
     refresh: (id, provider, callOptions) =>
