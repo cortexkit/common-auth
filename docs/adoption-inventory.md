@@ -1298,7 +1298,8 @@ Runtime exports: `askRouting`, `reportRouting`, `turnNotes`. Type exports:
 input for request shaping. Nothing is persisted by this module. Plugins on routes
 the runner does not serve simply get `[]`. Each note's `afterToolUseId` is the
 provider's tool-call id exactly as it appears in the request body. Both fields
-must be non-empty strings, and `text` must be at most 16,384 UTF-8 bytes. Async or
+must be strings; the id must be non-empty, `text` must contain something other
+than whitespace, and `text` must be at most 16,384 UTF-8 bytes. Async or
 non-array results are ignored; valid neighbours of invalid entries keep their
 original order. The returned array and objects do not share mutable state with
 the values returned by `turn_notes()`.

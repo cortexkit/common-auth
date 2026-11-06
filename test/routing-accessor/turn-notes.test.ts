@@ -149,6 +149,7 @@ describe('turnNotes', () => {
       { after_tool_use_id: '', text: 'invalid' },
       { after_tool_use_id: 'tool', text: 1 },
       { after_tool_use_id: 'tool', text: '' },
+      { after_tool_use_id: 'tool', text: ' \n\t ' },
       { after_tool_use_id: 'tool', text: 'x'.repeat(16_385) },
       {
         get after_tool_use_id() {
