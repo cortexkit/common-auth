@@ -2,7 +2,24 @@ import { expect, test } from 'bun:test'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { assertEmittedPublishList } from '@cortexkit/common-auth/tui-build'
+import { packedRecords } from '../../src/tui-build/publish-list.js'
 import { makeRepoScratchDir } from '../fixtures/scratch.js'
+
+// Record shapes as printed by real `npm pack --json --dry-run`: npm 11.19.1
+// prints an array, npm 12.2.1 an object keyed by package name.
+const record = {
+  id: 'probe-pkg@1.0.0',
+  name: 'probe-pkg',
+  filename: 'probe-pkg-1.0.0.tgz',
+  files: [{ path: 'index.js' }, { path: 'package.json' }],
+}
+
+test('packedRecords reads npm 11 arrays and npm 12 objects alike', () => {
+  expect(packedRecords([record])).toEqual([record])
+  expect(packedRecords({ 'probe-pkg': record })).toEqual([record])
+  expect(packedRecords(null)).toEqual([])
+  expect(packedRecords('probe-pkg')).toEqual([])
+})
 
 // Each assertEmittedPublishList call runs `npm pack --dry-run`, five in this
 // test; npm's own start-up dominates, and on a loaded machine the five spawns
