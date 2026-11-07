@@ -1,4 +1,5 @@
 import { expect } from 'bun:test'
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -1282,17 +1283,27 @@ test('a list whose unlocked read races a writer never overwrites the newer file'
     custody: inventory([work, other]),
   })
   const route = routeOf(first, work.credentialId).routeId
+  // Produce the file a peer's decline commits, then put the original back, so
+  // the hook below can land that commit at a known moment.
+  const original = await readFile(path)
+  await declineVaultRoute(path, route)
+  const declinedBytes = await readFile(path)
+  await writeFile(`${path}.restore`, original)
+  await rename(`${path}.restore`, path)
   // The second list leaves `work` out, so committing it would remove that
   // account and write a file unlike the one it read: it has to take the lock.
   let raced: VaultRosterFile | undefined
   const roster = await refreshVaultRoster({
     path,
     custody: inventory([other], 'v'),
-    // Runs once the list is in hand and before the commit decides: the file
-    // gains a decline that this refresh must not throw away.
-    onInventory: async () => {
-      await declineVaultRoute(path, route)
-      raced = await readVaultRoster(path)
+    // The refresh calls this hook without awaiting it, once the list is in
+    // hand and before the commit decides. The peer's commit (an atomic rename,
+    // as a real writer's) therefore has to happen synchronously here; an async
+    // hook would race the decision and could finish after the test.
+    onInventory: () => {
+      writeFileSync(`${path}.peer`, declinedBytes)
+      renameSync(`${path}.peer`, path)
+      raced = JSON.parse(readFileSync(path, 'utf8')) as VaultRosterFile
     },
   })
   expect(raced?.rows).toHaveLength(2)
