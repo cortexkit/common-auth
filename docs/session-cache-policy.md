@@ -32,9 +32,10 @@ shape; failures in getters, accessors or methods cannot break a request.
 No handle, a missing/non-function `cache` method or a `null` policy means the
 plugin keeps its own settings. An omitted `ttl` or `keep_warm` also leaves that
 setting at the plugin's default; common-auth does not invent a default. Core sets
-each plan's keep-warm mode, `auto` unless configured otherwise. A session whose
-plan carries no cache field doesn't warm: Thalamus passes `keep_warm: 'off'` for
-it, and a plugin can't tell that from an explicit `off`. Lifetimes are
+each plan's keep-warm mode, `auto` unless configured otherwise. For a session
+whose plan or creating send never carried a cache field, Thalamus returns `null`,
+so the plugin keeps its own setting; an explicit `off` comes only from core.
+Lifetimes are
 requests: apply the lifetime supported by the selected provider route, not a
 promise that every route can provide short or long caches. Report the lifetime
 actually used.
