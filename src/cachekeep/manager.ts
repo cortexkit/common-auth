@@ -372,7 +372,7 @@ export class CacheKeepManager<M = undefined> {
       this.log?.debug('cachekeep evicted least recently used target', {
         sessionKey: evictKey,
       })
-      this.drop(evictKey)
+      this.drop(evictKey, 'evicted')
     }
 
     const isSubagent = input.isSubagent === true
@@ -452,7 +452,8 @@ export class CacheKeepManager<M = undefined> {
       this.timer = null
     }
     this.startedAt = null
-    for (const sessionKey of this.targets.keys()) this.drop(sessionKey)
+    for (const sessionKey of this.targets.keys())
+      this.drop(sessionKey, 'stopped')
     this.totalBytes = 0
     this.log?.debug('cachekeep stopped')
   }
@@ -806,7 +807,7 @@ export class CacheKeepManager<M = undefined> {
           accountId: target.accountId,
           activeAccountId: active,
         })
-        this.drop(sessionKey)
+        this.drop(sessionKey, 'account-changed')
         return
       }
     }

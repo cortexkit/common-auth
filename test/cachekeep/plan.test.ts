@@ -556,6 +556,42 @@ describe('CacheKeepManager plan bounds and liveness', () => {
     expect(onWarmStopped).toHaveBeenCalledTimes(1)
   })
 
+  // Plugins forward the `onWarmStopped` reason to Thalamus as
+  // `cache_warm_stopped`. A session the manager only let go of (evicted for
+  // room, keep-warm shut down, moved to another account) has not ended, so it
+  // must not be reported as `session-ended`.
+  test.each([
+    ['remove', 'session-ended'],
+    ['evict', 'evicted'],
+    ['stop', 'stopped'],
+    ['account change', 'account-changed'],
+  ] as const)('%s reports the stop reason %s', async (action, reason) => {
+    let active = 'acct'
+    const { mgr, track, warm, onWarmStopped } = harness(
+      { maxTargets: 1 },
+      {
+        plan: () => ({ mode: 'always' }),
+        activeAccount: () => active,
+      },
+    )
+    mgr.track({
+      sessionKey: 'session',
+      bodyText: body('session'),
+      accountId: 'acct',
+    })
+    await warm()
+    expect(onWarmStopped).not.toHaveBeenCalled()
+    if (action === 'remove') mgr.remove('session')
+    if (action === 'evict') track('other')
+    if (action === 'stop') mgr.stop()
+    if (action === 'account change') {
+      active = 'other-acct'
+      await warm()
+    }
+    expect(onWarmStopped).toHaveBeenCalledTimes(1)
+    expect(onWarmStopped.mock.calls[0]?.[1].reason).toBe(reason)
+  })
+
   test.each(['remove', 'stop', 'retrack', 'evict', 'expiry'] as const)(
     '%s clears the pending one-shot and cannot send its stale callback',
     async (action) => {

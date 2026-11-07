@@ -128,7 +128,11 @@ bounds; all targets retain lifetime, target-count, byte and LRU bounds. Wire
 `onWarmed(sessionKey, { at })` to report a successful warm touch with the applied
 lifetime, and `onWarmStopped(sessionKey, { at, reason })` to report retirement.
 The manager calls these without awaiting them and reports stops only for targets
-that have actually warmed. Real requests reset count, costs and warm timestamps,
+that have actually warmed. Besides the stop reasons `decideCacheKeep` returns, it reports
+`session-ended` (the plan or the session went away), `evicted` (dropped to make
+room under the target or byte caps), `stopped` (the manager was stopped),
+`account-changed` (the session now routes to another account), `expired`, and
+`idle`. Real requests reset count, costs and warm timestamps,
 but do not erase the fact that a target warmed earlier in its life.
 
 ## Report after handing the reply to the host
