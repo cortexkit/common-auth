@@ -19,6 +19,7 @@ import {
   ClaustrumUnreachableError,
   connectVaultHost,
   enrollmentAuthority,
+  hasVaultHost,
   vaultAuthority,
 } from '../../src/claustrum/index.js'
 import { inventoryRow, unknownGrants } from './helpers.js'
@@ -88,6 +89,17 @@ describe('Thalamus host vault', () => {
     else delete globals[symbol]
     mock.restore()
     await fs.rm(directory, { recursive: true, force: true })
+  })
+
+  test('hasVaultHost is exported and true only for the exact marker value', () => {
+    expect(hasVaultHost()).toBe(true)
+    process.env.CORTEXKIT_VAULT_HOST = 'Thalamus'
+    expect(hasVaultHost()).toBe(false)
+    delete process.env.CORTEXKIT_VAULT_HOST
+    expect(hasVaultHost()).toBe(false)
+    // An accessor installed without the marker never selects host mode.
+    globals[symbol] = () => ({})
+    expect(hasVaultHost()).toBe(false)
   })
 
   function custody(

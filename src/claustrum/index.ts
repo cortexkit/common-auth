@@ -86,6 +86,7 @@ export {
 } from './errors.js'
 export {
   connectVaultHost,
+  hasVaultHost,
   VAULT_HOST_CONNECT_REFUSAL,
   VAULT_HOST_STATUS,
 } from './host.js'
