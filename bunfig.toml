@@ -1,0 +1,4 @@
+[test]
+# Clears environment that would change what the tests exercise, before any
+# test file loads (see test/setup-env.ts).
+preload = ["./test/setup-env.ts"]

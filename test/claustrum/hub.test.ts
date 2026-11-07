@@ -2958,7 +2958,10 @@ function hubProcess(args: string[]) {
       fileURLToPath(new URL('../fixtures/hub-process.ts', import.meta.url)),
       ...args,
     ],
-    { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+    // Pass process.env explicitly: Bun.spawn's default is the environment the
+    // test process started with, so the preload's cleared variables would
+    // otherwise come back in the child.
+    { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', env: process.env },
   )
   const reader = child.stdout.getReader()
   const decoder = new TextDecoder()
