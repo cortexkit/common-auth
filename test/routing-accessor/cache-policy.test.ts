@@ -135,6 +135,21 @@ describe('sessionCachePolicy', () => {
     expect(policy?.hours?.from).toBe('09:15')
   })
 
+  test('warns once for an invalid policy that cannot be inspected', () => {
+    const unreadable = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error('uninspectable policy')
+        },
+      },
+    )
+    cache(unreadable)
+    expect(sessionCachePolicy('session')).toBeNull()
+    expect(sessionCachePolicy('session')).toBeNull()
+    expect(warning).toHaveBeenCalledTimes(1)
+  })
+
   test('reads the handle and bound cache method fresh for every decision', () => {
     let answer: unknown = { ttl: 'short' }
     const read = mock(function (this: unknown) {

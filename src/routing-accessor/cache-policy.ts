@@ -64,14 +64,20 @@ function shape(value: unknown, seen = new Set<object>()): string {
 }
 
 function invalid(kind: 'cache' | 'tool_wait', value: unknown): null {
+  let fingerprint = 'unreadable'
   try {
-    const key = `${kind}:${shape(value)}`
+    fingerprint = shape(value)
+  } catch {
+    // Uninspectable proxies share one diagnostic shape, without invoking getters.
+  }
+  try {
+    const key = `${kind}:${fingerprint}`
     if (!warned.has(key)) {
       warned.add(key)
       console.warn(`[common-auth] Ignoring invalid session ${kind} policy`)
     }
   } catch {
-    // Even diagnostic inspection of a hostile proxy must not break a request.
+    // A broken warning sink must not break a request either.
   }
   return null
 }
