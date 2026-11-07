@@ -5,6 +5,7 @@ export type {
   CacheKeepBackoff,
   CacheKeepLogger,
   CacheKeepManagerOptions,
+  CacheKeepPlan,
   CacheKeepProfile,
   CacheKeepSendInput,
   CacheKeepStatus,

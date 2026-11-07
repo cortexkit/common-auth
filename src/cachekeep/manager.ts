@@ -1,4 +1,9 @@
+import type {
+  SessionCacheHours,
+  SessionKeepWarmMode,
+} from '../routing-accessor/cache-policy.js'
 import { combineAbortSignals } from '../util/any-signal.js'
+import { type CacheKeepDecision, decideCacheKeep } from './decision.js'
 import { classifyFailure, type Failure } from './failure.js'
 import { type CacheKeepWindow, isWithinCacheKeepWindow } from './window.js'
 
@@ -16,9 +21,9 @@ export interface CacheKeepLogger {
 export interface CacheKeepProfile {
   /** Provider cache lifetime for this request; defaults to the manager's `ttlMs`. */
   ttlMs?: number
-  /** Drop the target after this many successful warms; unlimited when absent. */
+  /** Legacy/unpriced-auto warm cap; unlimited when absent. */
   maxWarms?: number
-  /** Idle bound replacing the main or subagent default for this target. */
+  /** Legacy/unpriced-auto idle bound replacing the main or subagent default. */
   maxIdleMs?: number
 }
 
@@ -41,12 +46,28 @@ export interface CacheKeepSendInput<M> {
   signal: AbortSignal
 }
 
+/** A fresh, plugin-validated session policy with optional provider prices. */
+export interface CacheKeepPlan {
+  mode: SessionKeepWarmMode
+  hours?: SessionCacheHours
+  costs?: { nextWarm: number; rewrite: number }
+}
+
 /**
  * The provider half of keep-warm. The manager decides when and what to warm;
  * the plugin turns a captured request into a replay, resolves the account's
  * credential, sends it and reads usage back.
  */
 export interface CacheKeepAdapter<M> {
+  /** Read a fresh policy; undefined preserves legacy only if never planned. */
+  plan?(sessionKey: string): CacheKeepPlan | undefined
+  /** Successful warm reports never block scheduling. */
+  onWarmed?(sessionKey: string, input: { at: number }): void | Promise<void>
+  /** Report retirement only after a target has successfully warmed. */
+  onWarmStopped?(
+    sessionKey: string,
+    input: { at: number; reason: string },
+  ): void | Promise<void>
   /** Build the replay body from the captured one. A throw backs the target off. */
   buildBody(target: CacheKeepTargetView<M>): string | Promise<string>
   /**
@@ -117,7 +138,14 @@ export interface CacheKeepManagerOptions<M> {
 
 export type CacheKeepTrackResult =
   | { tracked: true }
-  | { tracked: false; reason: 'body-exceeds-max-bytes' | 'outside-window' }
+  | {
+      tracked: false
+      reason:
+        | 'body-exceeds-max-bytes'
+        | 'outside-window'
+        | 'unsupported'
+        | 'session-ended'
+    }
 
 export type CacheKeepTrackInput<M> = {
   sessionKey: string
@@ -135,6 +163,7 @@ export type CacheKeepTrackInput<M> = {
 
 export interface CacheKeepTargetStatus {
   sessionKey: string
+  mode?: SessionKeepWarmMode
   accountId: string | undefined
   isSubagent: boolean
   cacheExpiresAt: number
@@ -163,6 +192,11 @@ export interface CacheKeepStatus {
 }
 
 interface Target<M> {
+  plan?: CacheKeepPlan
+  planTimer?: ReturnType<typeof setInterval>
+  planDueAt?: number
+  warmCostSoFar: number
+  hasWarmed: boolean
   bodyText: string
   bodyBytes: number
   accountId: string | undefined
@@ -202,7 +236,7 @@ function positive(value: number | undefined, fallback: number): number {
  * Keeps idle prompt caches warm: one target per session holding the latest
  * request body, replayed just before the provider's cache would expire.
  *
- * Bounds, in the order they act: a target retires once its last confirmed
+ * Without a session plan, bounds act in this order: a target retires once its last confirmed
  * cache lifetime ends (`cacheExpiresAt`, set by its capture or its last
  * successful warm), whatever else holds, because replaying a history whose
  * cache has expired rebuilds a cold cache instead of keeping a warm one
@@ -216,6 +250,9 @@ function positive(value: number | undefined, fallback: number): number {
  * (expiry minus the warm timeout and 5 seconds). Only default-policy retries
  * observe that deadline: first attempts and explicit backoff policies retain
  * their existing lead-time scheduling, bounded by the cache lifetime.
+ * Session plans use the shared decision rule and one-shot due timers instead;
+ * only unpriced auto keeps the legacy idle and profile warm bounds. Lifetime,
+ * target-count, byte and LRU bounds apply to every target.
  */
 export class CacheKeepManager<M = undefined> {
   private readonly targets = new Map<string, Target<M>>()
@@ -241,6 +278,7 @@ export class CacheKeepManager<M = undefined> {
   private totalBytes = 0
   private tickPromise: Promise<void> | null = null
   private disposed = false
+  private planWarningLogged = false
   private abortController = new AbortController()
 
   constructor(options: CacheKeepManagerOptions<M>) {
@@ -284,7 +322,17 @@ export class CacheKeepManager<M = undefined> {
    */
   track(input: CacheKeepTrackInput<M>): CacheKeepTrackResult {
     const { sessionKey, bodyText } = input
-    this.pruneStale()
+    const previous = this.targets.get(sessionKey)
+    const plan = this.readPlan(sessionKey)
+    if (!plan && previous?.plan) {
+      this.drop(sessionKey, 'session-ended')
+      return { tracked: false, reason: 'session-ended' }
+    }
+    if (plan?.mode === 'off') {
+      this.drop(sessionKey, 'unsupported')
+      return { tracked: false, reason: 'unsupported' }
+    }
+    this.pruneStale(plan ? sessionKey : undefined)
 
     const bodyBytes = Buffer.byteLength(bodyText, 'utf8')
     if (bodyBytes > this.maxBytes) {
@@ -297,7 +345,11 @@ export class CacheKeepManager<M = undefined> {
     }
 
     const window = this.getWindow?.()
-    if (window && !isWithinCacheKeepWindow(window, new Date(this.now()))) {
+    if (
+      !plan &&
+      window &&
+      !isWithinCacheKeepWindow(window, new Date(this.now()))
+    ) {
       this.log?.debug('cachekeep track skipped (outside window)', {
         sessionKey,
         startHour: window.startHour,
@@ -308,7 +360,8 @@ export class CacheKeepManager<M = undefined> {
 
     // Delete before re-adding so a retracked session is also the most recent
     // in insertion order.
-    this.drop(sessionKey)
+    const hasWarmed = this.targets.get(sessionKey)?.hasWarmed ?? false
+    this.drop(sessionKey, null)
 
     while (
       this.targets.size >= this.maxTargets ||
@@ -332,7 +385,10 @@ export class CacheKeepManager<M = undefined> {
     })
     const ttlMs = positive(profile?.ttlMs, this.ttlMs)
     const now = this.now()
-    this.targets.set(sessionKey, {
+    const target: Target<M> = {
+      plan,
+      warmCostSoFar: 0,
+      hasWarmed,
       bodyText,
       bodyBytes,
       accountId,
@@ -351,10 +407,12 @@ export class CacheKeepManager<M = undefined> {
       lastRealRequestAt: now,
       failures: 0,
       warmCount: 0,
-    })
+    }
+    this.targets.set(sessionKey, target)
     this.totalBytes += bodyBytes
     this.log?.debug('cachekeep captured target', { sessionKey, accountId })
     this.start()
+    if (plan) this.planDecision(sessionKey, target)
     return { tracked: true }
   }
 
@@ -394,8 +452,7 @@ export class CacheKeepManager<M = undefined> {
       this.timer = null
     }
     this.startedAt = null
-    for (const target of this.targets.values()) this.clearRetry(target)
-    this.targets.clear()
+    for (const sessionKey of this.targets.keys()) this.drop(sessionKey)
     this.totalBytes = 0
     this.log?.debug('cachekeep stopped')
   }
@@ -417,6 +474,7 @@ export class CacheKeepManager<M = undefined> {
       ...(window ? { window } : {}),
       targets: [...this.targets].map(([sessionKey, target]) => ({
         sessionKey,
+        ...(target.plan ? { mode: target.plan.mode } : {}),
         accountId: target.accountId,
         isSubagent: target.isSubagent,
         cacheExpiresAt: target.cacheExpiresAt,
@@ -455,17 +513,27 @@ export class CacheKeepManager<M = undefined> {
     // their cache lifetime ends, so one still alive when the window reopens
     // is warmed again.
     const window = this.getWindow?.()
-    if (window && !isWithinCacheKeepWindow(window, new Date(this.now()))) {
-      return
-    }
+    const outsideWindow =
+      window && !isWithinCacheKeepWindow(window, new Date(this.now()))
     for (const [sessionKey, target] of [...this.targets]) {
       if (this.disposed) return
       if (this.targets.get(sessionKey) !== target) continue
+      if (!this.refreshPlan(sessionKey, target)) continue
       const now = this.now()
+      if (target.plan) {
+        const decision = this.planDecision(sessionKey, target)
+        if (decision.action !== 'warm') continue
+        if (target.backoffUntil !== undefined && now < target.backoffUntil) {
+          this.schedulePlan(sessionKey, target, target.backoffUntil)
+          continue
+        }
+      } else {
+        if (outsideWindow) continue
+        if (target.cacheExpiresAt > now + this.leadMs) continue
+      }
       if (target.backoffUntil !== undefined && now < target.backoffUntil) {
         continue
       }
-      if (target.cacheExpiresAt > now + this.leadMs) continue
       if (!this.canRetry(target)) continue
       await this.warm(sessionKey, target)
     }
@@ -484,7 +552,7 @@ export class CacheKeepManager<M = undefined> {
       cacheExpiresAt: target.cacheExpiresAt,
       failures: target.failures,
     })
-    this.drop(sessionKey)
+    this.drop(sessionKey, target.plan ? 'cost-cap' : 'expired')
     return true
   }
 
@@ -501,6 +569,132 @@ export class CacheKeepManager<M = undefined> {
       meta: target.meta,
       warmCount: target.warmCount,
       ttlMs: target.ttlMs,
+    }
+  }
+
+  private readPlan(sessionKey: string): CacheKeepPlan | undefined {
+    try {
+      return this.adapter.plan?.(sessionKey)
+    } catch {
+      if (!this.planWarningLogged) {
+        this.planWarningLogged = true
+        this.log?.warn('cachekeep plan unavailable')
+      }
+      return undefined
+    }
+  }
+
+  private refreshPlan(sessionKey: string, target: Target<M>): boolean {
+    const plan = this.readPlan(sessionKey)
+    if (!plan && target.plan) {
+      this.drop(sessionKey, 'session-ended')
+      return false
+    }
+    target.plan = plan
+    if (plan?.mode === 'off') {
+      this.drop(sessionKey, 'unsupported')
+      return false
+    }
+    return true
+  }
+
+  private usesLegacyBounds(target: Target<M>): boolean {
+    return !target.plan || (target.plan.mode === 'auto' && !target.plan.costs)
+  }
+
+  private planDecision(
+    sessionKey: string,
+    target: Target<M>,
+  ): CacheKeepDecision {
+    const plan = target.plan
+    if (!plan) return { action: 'stop', reason: 'session-ended' }
+    if (this.usesLegacyBounds(target)) {
+      if (this.retireIfIdle(sessionKey, target, this.getSustain?.() === true)) {
+        return { action: 'stop', reason: 'idle' }
+      }
+      if (
+        target.maxWarms !== undefined &&
+        target.warmCount >= target.maxWarms
+      ) {
+        this.drop(sessionKey, 'count-cap')
+        return { action: 'stop', reason: 'count-cap' }
+      }
+    }
+    const decision =
+      plan.mode === 'hours' && !plan.hours
+        ? ({ action: 'stop', reason: 'unsupported' } as const)
+        : decideCacheKeep({
+            ...(plan.mode === 'hours'
+              ? { mode: plan.mode, hours: plan.hours as SessionCacheHours }
+              : { mode: plan.mode }),
+            now: this.now(),
+            ttlMs: target.ttlMs,
+            lastRealRequestAt: target.lastRealRequestAt,
+            lastWarmAt: target.lastWarmedAt,
+            warmsSinceLastRealRequest: target.warmCount,
+            ...(plan.costs
+              ? {
+                  warmCostSoFar: target.warmCostSoFar,
+                  nextWarmCost: plan.costs.nextWarm,
+                  rewriteCost: plan.costs.rewrite,
+                }
+              : {}),
+          })
+    if (decision.action === 'stop') this.drop(sessionKey, decision.reason)
+    else if (decision.action === 'wait') {
+      this.schedulePlan(
+        sessionKey,
+        target,
+        Math.max(decision.until, target.backoffUntil ?? 0),
+      )
+    } else this.clearPlanTimer(target)
+    return decision
+  }
+
+  private clearPlanTimer(target: Target<M>): void {
+    if (target.planTimer === undefined) return
+    this.clearIntervalImpl(target.planTimer)
+    target.planTimer = undefined
+    target.planDueAt = undefined
+  }
+
+  private schedulePlan(
+    sessionKey: string,
+    target: Target<M>,
+    until: number,
+  ): void {
+    if (target.planTimer !== undefined && target.planDueAt === until) return
+    this.clearPlanTimer(target)
+    target.planDueAt = until
+    // Clear the injected interval before dispatch to make it a one-shot, just
+    // like retries. Waiting for an in-flight tick prevents a lost wake-up.
+    target.planTimer = this.setIntervalImpl(
+      () => {
+        this.clearPlanTimer(target)
+        return (async () => {
+          await this.tickPromise
+          if (this.isCurrent(sessionKey, target)) await this.tick()
+        })().catch((error) => {
+          this.log?.warn(
+            'cachekeep tick failed',
+            classifyFailure(error, 'send'),
+          )
+        })
+      },
+      Math.max(0, until - this.now()),
+    )
+    if (typeof target.planTimer === 'object' && 'unref' in target.planTimer) {
+      target.planTimer.unref()
+    }
+  }
+
+  private report(callback: () => void | Promise<void>): void {
+    try {
+      void Promise.resolve(callback()).catch(() => {
+        this.log?.debug('cachekeep report failed')
+      })
+    } catch {
+      this.log?.debug('cachekeep report failed')
     }
   }
 
@@ -532,6 +726,9 @@ export class CacheKeepManager<M = undefined> {
       now + (Number.isFinite(delay) && delay > 0 ? delay : 0)
     this.clearRetry(target)
     if (fastRetry) this.scheduleRetry(sessionKey, target, delay)
+    else if (target.plan) {
+      this.schedulePlan(sessionKey, target, target.backoffUntil)
+    }
     this.log?.warn(message, {
       sessionKey,
       accountId: target.accountId,
@@ -630,6 +827,15 @@ export class CacheKeepManager<M = undefined> {
     if (this.retireIfExpired(sessionKey, target)) return
     if (!this.canRetry(target)) return
 
+    if (!this.refreshPlan(sessionKey, target)) return
+    if (
+      target.plan &&
+      this.planDecision(sessionKey, target).action !== 'warm'
+    ) {
+      return
+    }
+    const nextWarmCost = target.plan?.costs?.nextWarm ?? 0
+
     const combined = combineAbortSignals([
       AbortSignal.timeout(this.warmTimeoutMs),
       this.abortController.signal,
@@ -691,18 +897,31 @@ export class CacheKeepManager<M = undefined> {
     this.clearRetry(target)
     target.failures = 0
     target.warmCount += 1
+    target.hasWarmed = true
+    target.warmCostSoFar += nextWarmCost
+    if (this.adapter.onWarmed) {
+      this.report(() => this.adapter.onWarmed?.(sessionKey, { at: now }))
+    }
     this.log?.debug('cachekeep fired', {
       sessionKey,
       accountId: target.accountId,
       warmCount: target.warmCount,
       ...usage,
     })
-    if (target.maxWarms !== undefined && target.warmCount >= target.maxWarms) {
+    if (
+      this.usesLegacyBounds(target) &&
+      target.maxWarms !== undefined &&
+      target.warmCount >= target.maxWarms
+    ) {
       this.log?.debug('cachekeep retired target (warm cap reached)', {
         sessionKey,
         warmCount: target.warmCount,
       })
-      this.drop(sessionKey)
+      this.drop(sessionKey, 'count-cap')
+    }
+    if (target.plan && this.isCurrent(sessionKey, target)) {
+      if (this.refreshPlan(sessionKey, target))
+        this.planDecision(sessionKey, target)
     }
   }
 
@@ -710,24 +929,37 @@ export class CacheKeepManager<M = undefined> {
     return isSubagent ? this.maxSubagentIdleMs : this.maxIdleWarmMs
   }
 
-  private pruneStale(): void {
+  private pruneStale(skipSessionKey?: string): void {
     const now = this.now()
     const sustain = this.getSustain?.() === true
     for (const [sessionKey, target] of [...this.targets]) {
+      if (sessionKey === skipSessionKey) continue
       if (this.retireIfExpired(sessionKey, target)) continue
-      // Sustain exempts main sessions from the idle cap only; the lifetime,
-      // window, count, byte and warm caps still apply to them.
-      if (sustain && !target.isSubagent) continue
-      const maxIdleMs = target.maxIdleMs ?? this.idleDefault(target.isSubagent)
-      if (target.lastRealRequestAt >= now - maxIdleMs) continue
-      this.log?.debug('cachekeep pruned idle target', {
-        sessionKey,
-        accountId: target.accountId,
-        lastRealRequestAt: target.lastRealRequestAt,
-        maxIdleMs,
-      })
-      this.drop(sessionKey)
+      if (!this.refreshPlan(sessionKey, target)) continue
+      if (!this.usesLegacyBounds(target)) continue
+      this.retireIfIdle(sessionKey, target, sustain, now)
     }
+  }
+
+  private retireIfIdle(
+    sessionKey: string,
+    target: Target<M>,
+    sustain: boolean,
+    now = this.now(),
+  ): boolean {
+    // Sustain exempts main sessions from the idle cap only; the lifetime,
+    // window, count, byte and warm caps still apply to them.
+    if (sustain && !target.isSubagent) return false
+    const maxIdleMs = target.maxIdleMs ?? this.idleDefault(target.isSubagent)
+    if (target.lastRealRequestAt >= now - maxIdleMs) return false
+    this.log?.debug('cachekeep pruned idle target', {
+      sessionKey,
+      accountId: target.accountId,
+      lastRealRequestAt: target.lastRealRequestAt,
+      maxIdleMs,
+    })
+    this.drop(sessionKey, 'idle')
+    return true
   }
 
   private leastRecentlyTouched(): string | undefined {
@@ -748,12 +980,21 @@ export class CacheKeepManager<M = undefined> {
     return evictKey
   }
 
-  private drop(sessionKey: string): boolean {
+  private drop(
+    sessionKey: string,
+    reason: string | null = 'session-ended',
+  ): boolean {
     const target = this.targets.get(sessionKey)
     if (!target) return false
     this.clearRetry(target)
+    this.clearPlanTimer(target)
     this.totalBytes -= target.bodyBytes
     this.targets.delete(sessionKey)
+    if (reason !== null && target.hasWarmed && this.adapter.onWarmStopped) {
+      this.report(() =>
+        this.adapter.onWarmStopped?.(sessionKey, { at: this.now(), reason }),
+      )
+    }
     return true
   }
 }

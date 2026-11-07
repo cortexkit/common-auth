@@ -2,9 +2,9 @@
 
 `@cortexkit/common-auth/routing-accessor` reads the optional Thalamus bridge;
 `@cortexkit/common-auth/cachekeep` supplies the pure `decideCacheKeep` rule. Both
-are opt-in additions: the existing `CacheKeepManager` is unchanged. Plugins must
-use the rule in their scheduler to adopt these modes; importing it does not
-change the manager's legacy scheduling or bounds.
+are opt-in additions: importing them does not change `CacheKeepManager`'s legacy
+scheduling or bounds. Plugins can use the rule in their own scheduler or opt in
+through the manager's per-session adapter hook.
 
 ## Read on each decision
 
@@ -115,6 +115,21 @@ request snapshots, timers and any send-in-flight exclusion. Replay the exact
 last real request body after its request-shaping transformations (such as context
 trimming and cache markers), rather than shaping it again. A warm is not a new
 model step or real-request activity.
+
+## Using CacheKeepManager
+
+Supply `adapter.plan(sessionKey)` to opt in per session, mapping a fresh
+`sessionCachePolicy(sessionKey)` to `{ mode, hours?, costs? }`. The manager never
+reads the routing accessor itself. `undefined` keeps legacy behaviour for a
+target that never had a plan; a previously planned target stops with
+`session-ended`. Plans bypass the legacy clock window and schedule their own
+one-shot due times. Only `auto` without costs retains legacy idle/profile warm
+bounds; all targets retain lifetime, target-count, byte and LRU bounds. Wire
+`onWarmed(sessionKey, { at })` to report a successful warm touch with the applied
+lifetime, and `onWarmStopped(sessionKey, { at, reason })` to report retirement.
+The manager calls these without awaiting them and reports stops only for targets
+that have actually warmed. Real requests reset count, costs and warm timestamps,
+but do not erase the fact that a target warmed earlier in its life.
 
 ## Report after handing the reply to the host
 
