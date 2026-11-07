@@ -6,6 +6,23 @@
 
 import { routingHandle } from './handle.js'
 
+export type {
+  CacheTouchInput,
+  CacheWarmStoppedInput,
+  CacheWarmStopReason,
+  SessionCacheHours,
+  SessionCachePolicy,
+  SessionCacheTtl,
+  SessionKeepWarmMode,
+  SessionToolWait,
+} from './cache-policy.js'
+export {
+  reportCacheTouch,
+  reportCacheWarmStopped,
+  sessionCachePolicy,
+  sessionToolWait,
+} from './cache-policy.js'
+
 /** An eligible vault route, not a local pool row. */
 export interface RoutingCandidate {
   /** Vault account id, not the plugin's route id. */

@@ -1,3 +1,5 @@
+export type { CacheKeepDecision, CacheKeepDecisionInput } from './decision.js'
+export { decideCacheKeep } from './decision.js'
 export type {
   CacheKeepAdapter,
   CacheKeepBackoff,

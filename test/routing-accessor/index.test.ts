@@ -5,7 +5,7 @@ import {
   reportRouting,
 } from '../../src/routing-accessor/index.js'
 
-test('routing accessor imports without limits resolution', async () => {
+test('routing accessor keeps its dependency-free bridge closure', async () => {
   const build = await Bun.build({
     entrypoints: [
       new URL('../../src/routing-accessor/index.ts', import.meta.url).pathname,
@@ -13,10 +13,47 @@ test('routing accessor imports without limits resolution', async () => {
     target: 'node',
     plugins: [
       {
-        name: 'no-limits',
+        name: 'bridge-closure',
         setup(builder) {
-          builder.onResolve({ filter: /(?:^|[/\\])limits(?:[/\\]|$)/ }, () => {
-            throw new Error('limits must not be imported by routing-accessor')
+          builder.onResolve({ filter: /.*/ }, (args) => {
+            if (!args.importer) return
+            // Bun injects its own Node target runtime, outside the source graph.
+            if (args.importer === 'runtime' && args.path === 'node:module')
+              return
+            if (
+              args.path === './handle.js' ||
+              args.path === './cache-policy.js'
+            )
+              return
+            throw new Error(
+              `routing-accessor must stay dependency-free: ${args.path} from ${args.importer}`,
+            )
+          })
+        },
+      },
+    ],
+  })
+  expect(build.success).toBe(true)
+  expect(build.logs).toEqual([])
+})
+
+test('routing handle itself has no dependencies', async () => {
+  const build = await Bun.build({
+    entrypoints: [
+      new URL('../../src/routing-accessor/handle.ts', import.meta.url).pathname,
+    ],
+    target: 'node',
+    plugins: [
+      {
+        name: 'handle-closure',
+        setup(builder) {
+          builder.onResolve({ filter: /.*/ }, (args) => {
+            if (args.importer === 'runtime' && args.path === 'node:module')
+              return
+            if (args.importer)
+              throw new Error(
+                `routing handle must not import dependencies: ${args.path} from ${args.importer}`,
+              )
           })
         },
       },
