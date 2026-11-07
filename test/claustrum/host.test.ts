@@ -305,6 +305,45 @@ describe('Thalamus host vault', () => {
     expect(second.reportAuthFailureScoped).not.toHaveBeenCalled()
   })
 
+  test('replacing a relay preserves hosted receipts and their empty enrollment argument', async () => {
+    const first = client()
+    globals[symbol] = () => first
+    const direct = custody()
+    const receipt = await direct.authorize(identity)
+    const second = client()
+    globals[symbol] = () => second
+    direct.replaceClient(connectVaultHost('openai-auth'))
+    expect(first.close).not.toHaveBeenCalled()
+    expect(second.close).not.toHaveBeenCalled()
+    first.close()
+    await direct.reportFailure(receipt, 401, 'direct')
+    expect(first.reportAuthFailureScoped).not.toHaveBeenCalled()
+    expect(second.reportAuthFailureScoped).toHaveBeenCalledWith({
+      credentialId: identity.credentialId,
+      enrollmentToken: '',
+      providerStatus: 401,
+      recordVersion: 7,
+      reporterSource: 'direct',
+    })
+    await direct.authorize(identity)
+    expect(first.getScoped).toHaveBeenCalledTimes(1)
+    expect(second.getScoped).toHaveBeenCalledTimes(1)
+  })
+
+  test('replacing a hosted client refuses a native client without changing custody', async () => {
+    const host = client()
+    globals[symbol] = () => host
+    const direct = custody()
+    const native = client()
+    expect(() => direct.replaceClient(native)).toThrow(
+      ClaustrumUnreachableError,
+    )
+    await direct.authorize(identity)
+    expect(host.getScoped).toHaveBeenCalledTimes(1)
+    expect(native.getScoped).not.toHaveBeenCalled()
+    expect(native.close).not.toHaveBeenCalled()
+  })
+
   test('native adapters remain structurally strict outside host authority', async () => {
     delete process.env.CORTEXKIT_VAULT_HOST
     const accessor = mock(() => client())

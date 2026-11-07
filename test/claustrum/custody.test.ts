@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import {
   ClaustrumClient,
   type ClaustrumConnector,
@@ -6,15 +6,23 @@ import {
 import {
   type ClaustrumScopedClient,
   ClaustrumScopedCustody,
+  ClaustrumUnreachableError,
   decideScopedRetryAfter401,
   isScopedCredentialRotation,
 } from '../../src/claustrum/index.ts'
+import type {
+  ScopedWatchEnd,
+  ScopedWatchNoticeShape,
+} from '../../src/claustrum/watch.ts'
 import {
   captureLogger,
+  deferred,
+  fakeTimers,
   family,
   inventoryRow,
   realApiKeyRow,
   unknownGrants,
+  until,
 } from './helpers.ts'
 
 const identity = {
@@ -63,6 +71,7 @@ function fixture(
   })
   return {
     custody,
+    client,
     gets,
     reports,
     logs,
@@ -71,6 +80,255 @@ function fixture(
     },
   }
 }
+
+describe('scoped custody client replacement', () => {
+  test('reports a pre-swap 401 through the replacement with the original token and version', async () => {
+    const first = fixture()
+    const next = fixture({
+      getScoped: async () => ({
+        ...served,
+        material: 'next-access',
+        recordVersion: 8,
+        expiresAtMs: 1_000_000,
+      }),
+    })
+    const attempt = await first.custody.authorize(identity)
+    first.rotate()
+    first.custody.replaceClient(next.client)
+    await first.custody.authorize(identity)
+    await first.custody.reportFailure(attempt, 403, 'direct')
+    await first.custody.reportFailure(attempt, 429, 'direct')
+    expect(next.reports).toEqual([])
+    await first.custody.reportFailure(attempt, 401, 'relay_status_field')
+    expect(next.reports).toEqual([
+      {
+        credentialId: identity.credentialId,
+        enrollmentToken: '01'.repeat(32),
+        providerStatus: 401,
+        recordVersion: 7,
+        reporterSource: 'relay_status_field',
+      },
+    ])
+    expect(first.reports).toEqual([])
+  })
+
+  test('authorizes and lists through the replacement client', async () => {
+    const first = fixture()
+    const next = fixture({
+      listScoped: mock(async () => ({
+        rows: [row],
+        view: 'next-view',
+        ...unknownGrants,
+      })),
+    })
+    first.custody.replaceClient(next.client)
+    expect((await first.custody.authorize(identity)).accessToken).toBe(
+      'test-access',
+    )
+    expect(next.gets).toEqual([
+      {
+        credentialId: identity.credentialId,
+        enrollmentToken: '01'.repeat(32),
+        minTtlMs: 300_000,
+      },
+    ])
+    expect(first.gets).toEqual([])
+    expect((await first.custody.discover()).view).toBe('next-view')
+    expect(next.client.listScoped).toHaveBeenCalledWith('01'.repeat(32))
+  })
+
+  test('keeps a last-good receipt across replacement and drops a kept 401 without reporting', async () => {
+    const timers = fakeTimers()
+    const first = fixture(
+      {
+        listScoped: async () => {
+          throw new ClaustrumUnreachableError()
+        },
+      },
+      timers,
+    )
+    const next = fixture({
+      getScoped: async () => {
+        throw new ClaustrumUnreachableError()
+      },
+      listScoped: async () => {
+        throw new ClaustrumUnreachableError()
+      },
+    })
+    try {
+      const original = await first.custody.authorize(identity)
+      first.custody.transportLost()
+      const before = await first.custody.authorize(identity)
+      expect(before.fromKeptReceipt).toBe(true)
+      const state = first.custody.keptReceiptState()
+      first.custody.replaceClient(next.client)
+      expect(first.custody.keptReceiptState()).toEqual(state)
+      const kept = await first.custody.authorize(identity)
+      expect(kept.fromKeptReceipt).toBe(true)
+      expect(kept.accessToken).toBe(original.accessToken)
+      expect(kept.recordVersion).toBe(7)
+      await first.custody.reportFailure(kept, 401, 'direct')
+      expect(first.reports).toEqual([])
+      expect(next.reports).toEqual([])
+      await expect(first.custody.authorize(identity)).rejects.toThrow()
+    } finally {
+      await first.custody.dispose()
+    }
+  })
+
+  test('refuses another custody receipt after replacement', async () => {
+    const first = fixture()
+    const next = fixture()
+    const foreign = await next.custody.authorize(identity)
+    first.custody.replaceClient(next.client)
+    await expect(
+      first.custody.reportFailure(foreign, 401, 'direct'),
+    ).rejects.toMatchObject({ kind: 'no-receipt' })
+    expect(first.reports).toEqual([])
+    expect(next.reports).toEqual([])
+  })
+
+  test('replacement never closes either client and disposal closes only the current client', async () => {
+    const first = fixture({ close: mock(() => {}) })
+    const next = fixture({ close: mock(() => {}) })
+    first.custody.replaceClient(next.client)
+    expect(first.client.close).not.toHaveBeenCalled()
+    expect(next.client.close).not.toHaveBeenCalled()
+    await first.custody.dispose()
+    expect(first.client.close).not.toHaveBeenCalled()
+    expect(next.client.close).toHaveBeenCalledTimes(1)
+    expect(() => first.custody.replaceClient(first.client)).toThrow(
+      expect.objectContaining({ kind: 'closed' }),
+    )
+    expect(() => first.custody.replaceClient(next.client)).toThrow(
+      expect.objectContaining({ kind: 'closed' }),
+    )
+  })
+
+  test('queued usage follows the replacement and retains ownership', async () => {
+    const first = fixture({ reportUsageScoped: mock(async () => {}) })
+    const next = fixture({ reportUsageScoped: mock(async () => {}) })
+    await first.custody.authorize(identity)
+    first.custody.reportUsage({
+      credentialId: identity.credentialId,
+      reading: { provider: 'test-provider', observedAtMs: 1 },
+    })
+    first.custody.replaceClient(next.client)
+    await first.custody.dispose()
+    expect(first.client.reportUsageScoped).not.toHaveBeenCalled()
+    expect(next.client.reportUsageScoped).toHaveBeenCalledTimes(1)
+    expect(next.client.reportUsageScoped).toHaveBeenCalledWith({
+      credentialId: identity.credentialId,
+      reading: { provider: 'test-provider', observedAtMs: 1 },
+      enrollmentToken: '01'.repeat(32),
+    })
+  })
+
+  function watchFixture() {
+    let opened = false
+    let notice!: (notice: ScopedWatchNoticeShape) => void
+    const ended = deferred<ScopedWatchEnd>()
+    const stop = mock(() => ended.resolve({ kind: 'ended' }))
+    const f = fixture({
+      watchScoped: mock((onNotice) => {
+        opened = true
+        notice = onNotice
+        return { stop, closed: ended.promise }
+      }),
+    })
+    return {
+      ...f,
+      stop,
+      opened: () => opened,
+      notify: (seq = 1) =>
+        notice({ kind: 'changed', view: 'view-1', epoch: 'epoch', seq }),
+    }
+  }
+
+  test('reopens watches on replacement with the same handle and discovers across the gap', async () => {
+    const first = watchFixture()
+    const next = watchFixture()
+    const views: string[] = []
+    const modes: string[] = []
+    await first.custody.discover()
+    const watch = first.custody.watchRoster({
+      onView: (view) => {
+        views.push(view)
+      },
+      onMode: (mode) => modes.push(mode),
+    })
+    try {
+      await until(first.opened, 'first watch opens')
+      first.notify()
+      await until(() => watch.mode === 'watching', 'first watch accepted')
+      first.custody.replaceClient(next.client)
+      expect(first.stop).toHaveBeenCalledTimes(1)
+      expect(watch.mode).toBe('polling')
+      await until(next.opened, 'replacement watch opens')
+      next.notify()
+      await until(() => views.length === 1, 'discovery across replacement gap')
+      expect(views).toEqual(['view-1'])
+      expect(watch.mode).toBe('watching')
+      expect(modes).toEqual(['watching', 'polling', 'watching'])
+      first.notify(3)
+      await Bun.sleep(0)
+      expect(views).toEqual(['view-1'])
+      watch.close()
+      expect(next.stop).toHaveBeenCalledTimes(1)
+    } finally {
+      await first.custody.dispose()
+    }
+  })
+
+  test('same-client replacement leaves its receipt and open watch unchanged', async () => {
+    const first = watchFixture()
+    const attempt = await first.custody.authorize(identity)
+    const watch = first.custody.watchRoster({ onView: () => {} })
+    try {
+      await until(first.opened, 'watch opens')
+      first.notify()
+      first.custody.replaceClient(first.client)
+      expect(first.stop).not.toHaveBeenCalled()
+      expect(first.client.watchScoped).toHaveBeenCalledTimes(1)
+      expect(watch.mode).toBe('watching')
+      await first.custody.reportFailure(attempt, 401, 'direct')
+      expect(first.reports).toHaveLength(1)
+    } finally {
+      watch.close()
+      await first.custody.dispose()
+    }
+  })
+
+  test('replacement waits for an in-flight watch discovery before discovering again', async () => {
+    const first = watchFixture()
+    const next = watchFixture()
+    const blocked = deferred<void>()
+    const onView = mock(() => blocked.promise)
+    const watch = first.custody.watchRoster({ onView })
+    try {
+      await until(first.opened, 'first watch opens')
+      first.notify()
+      await until(
+        () => onView.mock.calls.length === 1,
+        'first discovery starts',
+      )
+      first.custody.replaceClient(next.client)
+      await until(next.opened, 'replacement watch opens')
+      next.notify()
+      await Bun.sleep(0)
+      expect(onView).toHaveBeenCalledTimes(1)
+      blocked.resolve()
+      await until(
+        () => onView.mock.calls.length === 2,
+        'replacement discovery starts',
+      )
+    } finally {
+      blocked.resolve()
+      watch.close()
+      await first.custody.dispose()
+    }
+  })
+})
 
 describe('scoped custody dispatch authorization', () => {
   test('a real apikey row is mine and serves with the derived api_key type', async () => {

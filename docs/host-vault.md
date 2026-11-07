@@ -54,9 +54,23 @@ same polling/no-report fallback when absent. Host error shapes are normalized
 only at this boundary: structured vault refusals become this package's
 `ClaustrumCredentialError` without the host message, and relay loss becomes
 `ClaustrumUnreachableError`. Native clients retain strict error identity.
-Receipts retain their serving client for 401 reports. An unreachable vault still
-permits the last good receipt; a vault that answers with a refusal drops the
-cached receipt. Expiry margins and identity assertions are unchanged.
+Receipts retain their send-time enrollment argument for 401 reports. An
+unreachable vault still permits the last good receipt; a vault that answers with a
+refusal drops the cached receipt. Hosted receipts get the same expiry margins and
+identity checks as receipts served over a direct vault connection.
+
+After a relay outage, direct-custody callers can obtain a new wrapped client with
+`connectVaultHost(pluginId)`, confirm it can read the vault's roster, then call
+`custody.replaceClient(next)` on the existing custody before closing the old
+client themselves. Replace only the connection to the same vault: receipts and
+kept last-good receipts survive, and a 401 on an earlier fresh receipt goes through
+the new client with its original credential id, record version and enrollment
+argument (empty while hosted). Open roster watches automatically restart on
+`next`, keeping their existing handles; the first notice asks for discovery to
+cover the unwatched gap. Usage reports also follow the new client.
+`replaceClient` closes neither client; `close()`/`dispose()` still closes the
+client custody currently holds. Passing that same client is a no-op, and a
+disposed custody refuses replacement.
 
 ## Plugin adoption checklist
 
