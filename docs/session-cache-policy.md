@@ -136,8 +136,9 @@ reportCacheWarmStopped(sessionId, {
 Touches become exactly `{ kind: 'cache_touch', at, ttl_ms, source }`, with the
 lifetime actually applied by the provider. Stops become exactly
 `{ kind: 'cache_warm_stopped', at, reason }`. Known stop reasons are `cost-cap`,
-`count-cap`, `outside-hours`, `session-ended`, and `unsupported`; any future
-runner-defined string is also accepted. Report stops only after the session has
+`count-cap`, `outside-hours`, `session-ended`, and `unsupported`, the reasons
+the llm-runner contract defines; any other string is also accepted, for reasons
+it adds later. Report stops only after the session has
 actually warmed. Both helpers are synchronous fire-and-forget, absorb all bridge
 failures, and never retry. The bridge itself retains and resends the newest
 undelivered touch.

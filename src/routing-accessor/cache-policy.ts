@@ -20,7 +20,10 @@ export interface SessionToolWait {
   since: number
 }
 
-/** Known runner reasons, with room for future runner-defined strings. */
+/**
+ * The stop reasons the llm-runner contract defines today; any other string is
+ * accepted too, for reasons that contract adds later.
+ */
 export type CacheWarmStopReason =
   | 'cost-cap'
   | 'count-cap'
