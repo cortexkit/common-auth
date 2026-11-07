@@ -117,6 +117,23 @@ async function scenario() {
   }
 }
 
+test('exhausted daemon route_busy keeps the last-good custody receipt', async () => {
+  const s = await scenario()
+  await s.custody.authorize(identity)
+  s.setGet(async () => {
+    throw new ClaustrumCredentialError('route_busy', 'transient', 'retry')
+  })
+
+  const kept = await s.custody.authorize(identity)
+  expect(kept.fromKeptReceipt).toBe(true)
+  expect(kept.accessToken).toBe('kept')
+  expect(s.calls.gets).toBe(2)
+  expect(s.custody.keptReceiptState()).toEqual({
+    active: true,
+    since: 1_000_000,
+  })
+})
+
 test('outage kept authorizations never wait for foreground or background transport', async () => {
   const s = await scenario()
   await s.custody.authorize(identity)

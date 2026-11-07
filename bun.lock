@@ -10,8 +10,8 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.14",
-        "@cortexkit/claustrum-client": "^0.15.0",
-        "@cortexkit/subc-client": "0.22.2",
+        "@cortexkit/claustrum-client": "^0.16.0",
+        "@cortexkit/subc-client": "0.24.0",
         "@earendil-works/pi-coding-agent": "1.0.4",
         "@opencode/plugin": "2.0.21",
         "@opentui/core": ">=0.5.12",
@@ -28,7 +28,7 @@
       },
       "peerDependencies": {
         "@cortexkit/claustrum-client": ">=0.6.2",
-        "@cortexkit/subc-client": "^0.16.0 || ^0.22.0",
+        "@cortexkit/subc-client": "^0.16.0 || ^0.22.0 || ^0.24.0",
         "@opencode/plugin": ">=2.0.21",
         "@opentui/core": ">=0.4.5",
         "@opentui/solid": ">=0.4.5",
@@ -187,13 +187,13 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.14", "", { "os": "win32", "cpu": "x64" }, "sha512-oJWmBhoHsnhUKIke+0gXDX0mltJrWHA1UyHsrTlXwX0TL64ilVZAo+TYZm97baecV0esBdpzy3k96q+09JaZUQ=="],
 
-    "@cortexkit/claustrum-client": ["@cortexkit/claustrum-client@0.15.0", "", { "dependencies": { "@cortexkit/store": "^0.2.1", "@cortexkit/subc-client": "^0.22.0" } }, "sha512-1foTSPsqwB2lyUtK5XWUgONUyi7ef9KNysf1MZxsnuD5LzV2kP9kFDvDuGfdRnQWMWrXnUmdCc1zZcqpFNvUEQ=="],
+    "@cortexkit/claustrum-client": ["@cortexkit/claustrum-client@0.16.0", "", { "dependencies": { "@cortexkit/store": "^0.2.3", "@cortexkit/subc-client": "^0.24.0" } }, "sha512-K2iY0j0pJscnmjs3Z5cXxL2sJPuAuf/EnaYM1/6CCmMGgenibp8yaaPu0ijxOztWxxyJwtzIrHCdVKtzMtdmSw=="],
 
     "@cortexkit/private-files": ["@cortexkit/private-files@0.2.2", "", {}, "sha512-BdRxi4mzPkTUiZxKTlQV/RsESk5f34+sLk0qQLv1QlBQdkq2zw8yc0b3dm1qmZ5RfeChiBKEGgL6Qw31RCSaeA=="],
 
-    "@cortexkit/store": ["@cortexkit/store@0.2.2", "", { "dependencies": { "@cortexkit/private-files": "^0.1.0" } }, "sha512-mUeclFaZkdxS5YVsGvBUJTy3uulK1IywZAPAg5Wh1+lrrk+8ByXLgDKYC64igu/84tpIFY5mmZwa3ol2ErxnHA=="],
+    "@cortexkit/store": ["@cortexkit/store@0.2.3", "", { "dependencies": { "@cortexkit/private-files": "^0.2.0" } }, "sha512-cOCjAhb2rJp9u71xHXTlb2tS67237hHVN5DCB+aVh9S/FSu1UjOj8j/LjTSnVAZYXrNuWWb8eoQghiEcDtNT8g=="],
 
-    "@cortexkit/subc-client": ["@cortexkit/subc-client@0.22.2", "", {}, "sha512-Krcqlxsn4bA0MLjx9x2Gf9nENxIhjE9AcRDGP8o5FtHt6YMuvLZIwk0+vzv4e8n33k9PscOrVpXFZA9/loUKug=="],
+    "@cortexkit/subc-client": ["@cortexkit/subc-client@0.24.0", "", {}, "sha512-adx2FoWdJqqEyOOChX3I7SKOUhoxDohK1lCn6Kj4OQvB4jIKONJ/8MoCc/jDnRidoiOx+k+K/nZcybHMYbBc5Q=="],
 
     "@earendil-works/chord": ["@earendil-works/chord@1.1.0", "", { "dependencies": { "esbuild": "0.28.2" } }, "sha512-gsHzKfyQ3t0ZIQ3cLBjJ5Vqy1TYnFyruHIV3g3BwmulCDYe5BW4yT9vaJk9QzN6YANILIO75uzuq+Gdxtzz1og=="],
 
@@ -1014,8 +1014,6 @@
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "@babel/helper-create-class-features-plugin/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
-
-    "@cortexkit/store/@cortexkit/private-files": ["@cortexkit/private-files@0.1.0", "", {}, "sha512-gQ3Ad0UohqGxA92CM64+UWWap8deP+uYA0cW0RV5owLWHG+S9sHci0HHr9ZYEZiyPsgF0wj/zbznqBXz1+GAPQ=="],
 
     "@earendil-works/pi-tui/marked": ["marked@18.0.11", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-HnslJfsZkRPBDJRHvVtAaWlZHEpSu7u8LgQuJCELjRKuWR+hpq4A7sLq3p8HaI9ypVoXDXxV34CsQJEe1+J5Aw=="],
 

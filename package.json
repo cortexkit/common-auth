@@ -137,7 +137,7 @@
   },
   "peerDependencies": {
     "@cortexkit/claustrum-client": ">=0.6.2",
-    "@cortexkit/subc-client": "^0.16.0 || ^0.22.0",
+    "@cortexkit/subc-client": "^0.16.0 || ^0.22.0 || ^0.24.0",
     "@opencode/plugin": ">=2.0.21",
     "@opentui/core": ">=0.4.5",
     "@opentui/solid": ">=0.4.5",
@@ -165,8 +165,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
-    "@cortexkit/claustrum-client": "^0.15.0",
-    "@cortexkit/subc-client": "0.22.2",
+    "@cortexkit/claustrum-client": "^0.16.0",
+    "@cortexkit/subc-client": "0.24.0",
     "@earendil-works/pi-coding-agent": "1.0.4",
     "@opencode/plugin": "2.0.21",
     "@opentui/core": ">=0.5.12",

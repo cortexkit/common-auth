@@ -21,6 +21,7 @@ const unreachable = [
   'unavailable',
   'timeout',
   'route_closed',
+  'route_busy',
   'daemon_draining',
   'connection_closed',
   'connection_dropped',
@@ -84,6 +85,14 @@ const answered = [
   'EPERM',
   'ERR_PRIVATE_FILES_SECURITY',
 ]
+
+test('exhausted daemon route_busy is unreachable, not a vault answer', () => {
+  expect(
+    classifyVaultFailure(
+      new ClaustrumCredentialError('route_busy', 'transient', 'retry'),
+    ),
+  ).toBe('unreachable')
+})
 
 test('vault failure table classifies every reviewed code and rejects unknown codes', () => {
   expect(Object.keys(VAULT_FAILURE_CLASSES).sort()).toEqual(

@@ -17,6 +17,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import * as claustrumClient from '@cortexkit/claustrum-client'
 import {
   ClaustrumCredentialError,
   writeEnrollmentTokenFile,
@@ -789,6 +790,32 @@ describe('disconnectClaustrumEnrollment', () => {
 })
 
 describe('ClaustrumEnrollmentManager', () => {
+  test('request-secret hash matches the vault decoded-byte enrollment vector', async () => {
+    const fixedHash =
+      '72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793'
+    // The fixed vector also covers supported clients older than the SDK helper.
+    const expected =
+      'enrollmentSecretHash' in claustrumClient &&
+      typeof claustrumClient.enrollmentSecretHash === 'function'
+        ? claustrumClient.enrollmentSecretHash(secret)
+        : fixedHash
+    expect(expected).toBe(fixedHash)
+    const paths = await fixture()
+    const hashes: string[] = []
+    const instance = manager(
+      paths,
+      client({
+        enrollPropose: async ({ requestSecretHash }) => {
+          hashes.push(requestSecretHash)
+          return { requestId: 'request-vector' }
+        },
+      }),
+    )
+
+    await instance.reconcile()
+    expect(hashes).toEqual([expected])
+  })
+
   test('persists the raw secret before proposing and hashes the decoded bytes', async () => {
     const paths = await fixture()
     const calls: string[] = []

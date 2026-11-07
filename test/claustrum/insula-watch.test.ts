@@ -1,5 +1,6 @@
 import { expect } from 'bun:test'
 import { join } from 'node:path'
+import { SubcCallError } from '@cortexkit/subc-client'
 import {
   acquireInsulaQuotaSource,
   ClaustrumConsumer,
@@ -80,7 +81,13 @@ async function realSource(watch: MockWatchMode) {
  * A transport whose watch notices and usage.get replies the test drives
  * directly, so read counts do not depend on socket timing.
  */
-async function fakeSource(options: { holdReads?: boolean } = {}) {
+async function fakeSource(
+  options: {
+    holdReads?: boolean
+    watchError?: Error
+    timers?: ReturnType<typeof fakeTimers>
+  } = {},
+) {
   const dir = await tempDir('insula-fake-')
   let onNotice: ((body: Uint8Array) => void) | undefined
   const watch = Promise.withResolvers<void>()
@@ -97,12 +104,19 @@ async function fakeSource(options: { holdReads?: boolean } = {}) {
     },
     watchUsage: (notice) => {
       onNotice = notice
-      return { stop: () => watch.resolve(), closed: watch.promise }
+      return {
+        stop: () => watch.resolve(),
+        closed: options.watchError
+          ? Promise.reject(options.watchError)
+          : watch.promise,
+      }
     },
   }
   const shared = acquireInsulaQuotaSource(transport, await writeToken(dir))
   releases.push(shared.release)
-  releases.unshift(shared.source.watch({ provider: 'codex' }))
+  releases.unshift(
+    shared.source.watch({ provider: 'codex', ...options.timers }),
+  )
   return {
     source: shared.source,
     reads: () => reads,
@@ -237,6 +251,21 @@ test.each([
     expect(s.daemon.usageWatchRequests).toBe(1)
   },
 )
+
+test('a not_sent route_busy watch close retries instead of treating it as an insula answer', async () => {
+  const timers = fakeTimers()
+  const s = await fakeSource({
+    watchError: new SubcCallError(
+      'not_sent',
+      'daemon refused before forwarding',
+      'route_busy',
+    ),
+    timers,
+  })
+  await until(() => s.source.watchMode() === 'fallback', 'fallback')
+  expect(s.reads()).toBe(1)
+  expect(timers.pending()).toEqual([WATCH_RETRY_MS])
+})
 
 test('a watch that never opens reads once, polls, and tries again much later', async () => {
   const s = await realSource('accept')
