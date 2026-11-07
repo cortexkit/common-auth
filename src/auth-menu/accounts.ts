@@ -1,3 +1,4 @@
+import { hasVaultHost, VAULT_HOST_STATUS } from '../claustrum/host.js'
 import {
   formatQuota,
   isQuotaMap,
@@ -451,7 +452,10 @@ export function deleteAllAction(options: AccountMenuOptions): MenuAction {
 export async function accountMenuActions(
   options: AccountMenuOptions,
 ): Promise<MenuAction[]> {
-  return actionsFor(options, (await options.custody?.()) === true)
+  return actionsFor(
+    options,
+    hasVaultHost() || (await options.custody?.()) === true,
+  )
 }
 
 function actionsFor(
@@ -488,7 +492,8 @@ function actionsFor(
 export async function runAccountMenu(
   options: AccountMenuOptions,
 ): Promise<MenuOutcome> {
-  const custody = (await options.custody?.()) === true
+  const hosted = hasVaultHost()
+  const custody = hosted || (await options.custody?.()) === true
   const actions = actionsFor(options, custody)
   const [read, status] = await Promise.all([
     readRows(options.store),
@@ -499,7 +504,11 @@ export async function runAccountMenu(
     subtitle: custody
       ? 'Accounts come from the vault; select an action'
       : 'Select an account action',
-    status: [...status, ...accountLines(read)],
+    status: [
+      ...status,
+      ...(hosted ? [VAULT_HOST_STATUS] : []),
+      ...accountLines(read),
+    ],
     actions,
     ...(options.terminal ? { terminal: options.terminal } : {}),
   })

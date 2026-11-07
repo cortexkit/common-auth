@@ -13,6 +13,7 @@ import {
 } from './availability.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
+import { connectVaultHost, hasVaultHost } from './host.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
 import type { InsulaUsageTransport } from './insula.js'
 import { drainShutdown, shutdownWarning } from './shutdown.js'
@@ -511,11 +512,11 @@ function grantReachOf(
 
 /**
  * Reads this consumer's vault credentials (list, fetch, 401 report), with the
- * enrollment token as authorization. Used by every host of a plugin. Every
- * physical send asks the vault first while reachable. Only an unreachable vault permits
- * reuse of the last validated receipt, in memory and bounded by its expiry.
- * The enrollment token is re-read per operation so revocation and disconnect
- * still take effect without a process restart.
+ * enrollment token or the host's grant as authorization. Used by every host of a
+ * plugin. Every physical send asks the vault first while reachable. Only an
+ * unreachable vault permits reuse of the last validated receipt, in memory and
+ * bounded by its expiry. Outside host authority the enrollment token is re-read
+ * per operation so revocation and disconnect still take effect without a restart.
  */
 export class ClaustrumScopedCustody {
   readonly #client: ClaustrumScopedClient
@@ -525,7 +526,10 @@ export class ClaustrumScopedCustody {
   readonly #parseIdentity?: IdentityParser
   readonly #requireAssertion: boolean
   readonly #logger: ClaustrumLogger
-  readonly #provenance = new WeakMap<ClaustrumScopedAttempt, string>()
+  readonly #provenance = new WeakMap<
+    ClaustrumScopedAttempt,
+    { token: string; client: ClaustrumScopedClient }
+  >()
   readonly #reports = new WeakMap<ClaustrumScopedAttempt, Promise<void>>()
   readonly #kept = new Map<string, KeptReceipt>()
   readonly #keptAttempts = new WeakMap<ClaustrumScopedAttempt, string>()
@@ -549,7 +553,9 @@ export class ClaustrumScopedCustody {
   #disposing?: Promise<void>
 
   constructor(options: {
-    client: ClaustrumScopedClient
+    client?: ClaustrumScopedClient
+    /** Enrollment-name prefix, required when using the default host client. */
+    pluginId?: string
     family: ClaustrumFamilyInput
     tokenPath?: string
     readToken?: () => Promise<EnrollmentTokenFile>
@@ -572,13 +578,20 @@ export class ClaustrumScopedCustody {
       this.#readToken = options.readToken
     } else if (tokenPath) {
       this.#readToken = () => readClaustrumEnrollmentToken(tokenPath)
+    } else if (hasVaultHost()) {
+      this.#readToken = async () => {
+        throw new ClaustrumConsumerError(
+          'not-enrolled',
+          'Claustrum enrollment token path is required',
+        )
+      }
     } else {
       throw new ClaustrumConsumerError(
         'not-enrolled',
         'Claustrum enrollment token path is required',
       )
     }
-    this.#client = options.client
+    this.#client = options.client ?? connectVaultHost(options.pluginId)
     this.#family = options.family
     this.#parseIdentity = options.parseIdentity
     this.#requireAssertion = options.requireAssertion ?? false
@@ -590,7 +603,8 @@ export class ClaustrumScopedCustody {
     this.#usage = new ScopedUsageReporter({
       client: this.#client,
       owns: (id) => this.#usageServed.has(id),
-      token: async () => checkedEnrollmentToken(await this.#readToken()),
+      token: async () =>
+        hasVaultHost() ? '' : checkedEnrollmentToken(await this.#readToken()),
       logger: this.#logger,
       setTimeout: this.#setTimeout,
       clearTimeout: this.#clearTimeout,
@@ -667,6 +681,8 @@ export class ClaustrumScopedCustody {
 
   async #token(signal?: AbortSignal): Promise<string> {
     this.#check(signal)
+    // The host ignores this empty argument; it never reaches a vault as a token.
+    if (hasVaultHost()) return ''
     if (phaseDiagnostics.hasSubscribers)
       phaseDiagnostics.publish({
         logger: this.#logger,
@@ -997,7 +1013,10 @@ export class ClaustrumScopedCustody {
         { value: kept.attempt.accessToken, enumerable: false },
       ),
     )
-    this.#provenance.set(attempt, token)
+    this.#provenance.set(
+      attempt,
+      this.#provenance.get(kept.attempt) ?? { token, client: this.#client },
+    )
     this.#keptAttempts.set(attempt, routeId)
     return attempt
   }
@@ -1121,7 +1140,7 @@ export class ClaustrumScopedCustody {
         { value: accessToken, enumerable: false },
       ),
     ) as ClaustrumScopedAttempt
-    this.#provenance.set(attempt, token)
+    this.#provenance.set(attempt, { token, client: this.#client })
     return attempt
   }
 
@@ -1129,8 +1148,8 @@ export class ClaustrumScopedCustody {
    * Report that a send this consumer actually made was rejected. Only a 401
    * is reported (the vault refuses 429, 402 and 5xx reports), addressed by
    * credential id with the exact record version that send was served, and
-   * signed with the enrollment token that authorized it. A receipt this
-   * custody did not issue is refused rather than reported.
+   * sent through the client and enrollment token that authorized it. A receipt
+   * this custody did not issue is refused rather than reported.
    */
   async reportFailure(
     attempt: ClaustrumScopedAttempt,
@@ -1139,8 +1158,8 @@ export class ClaustrumScopedCustody {
   ): Promise<void> {
     if (status !== 401) return
     this.#check()
-    const token = this.#provenance.get(attempt)
-    if (!token)
+    const provenance = this.#provenance.get(attempt)
+    if (!provenance)
       throw new ClaustrumConsumerError(
         'no-receipt',
         'Claustrum failure report requires an original dispatch receipt',
@@ -1163,9 +1182,9 @@ export class ClaustrumScopedCustody {
     const pending = this.#reports.get(attempt)
     if (pending) return pending
     const report = this.#call(() =>
-      this.#client.reportAuthFailureScoped({
+      provenance.client.reportAuthFailureScoped({
         credentialId: attempt.credentialId,
-        enrollmentToken: token,
+        enrollmentToken: provenance.token,
         providerStatus: 401,
         recordVersion: attempt.recordVersion,
         reporterSource,

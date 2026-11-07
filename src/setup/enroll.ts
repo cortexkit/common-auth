@@ -7,6 +7,7 @@ import {
   hostEnrollmentPaths,
   UNSUPPORTED_ENROLLMENT_CODE,
 } from '../claustrum/enrollment.js'
+import { hasVaultHost, VAULT_HOST_CONNECT_REFUSAL } from '../claustrum/host.js'
 import {
   ProcessFenceViolationError,
   ProcessInspectionError,
@@ -88,6 +89,7 @@ export async function connectSetupHost(
   terminal: MenuTerminal,
   fence: () => Promise<void>,
 ): Promise<void> {
+  if (hasVaultHost()) throw new Error(VAULT_HOST_CONNECT_REFUSAL)
   const { name, paths: input } = plugin.vault.hosts[host]
   const paths = hostEnrollmentPaths(input)
   await fence()

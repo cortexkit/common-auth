@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ClaustrumCredentialError } from '@cortexkit/claustrum-client'
 import type { ClaustrumEnrollmentConnection } from '../../src/claustrum/index.js'
+import { VAULT_HOST_CONNECT_REFUSAL } from '../../src/claustrum/index.js'
 import {
   connectSetupHost,
   HostNotEnrolledError,
@@ -70,6 +71,37 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
 
 const unsupported = () =>
   new ClaustrumCredentialError('unknown_method', 'transient', 'retry')
+
+test('hosted setup and Connect refuse with Served by Thalamus before any enrollment', async () => {
+  const root = await profile()
+  const previous = process.env.CORTEXKIT_VAULT_HOST
+  process.env.CORTEXKIT_VAULT_HOST = 'thalamus'
+  try {
+    const connect = mock(async () => vault({}))
+    const fence = mock(async () => {})
+    const setup = plugin(root)
+    setup.signInLocal = mock(async () => {})
+    const io = { ...fakeIO(root), connect }
+    const direct = await rejection(
+      connectSetupHost(setup, 'opencode', io, terminal(), fence),
+    )
+    expect(direct.message).toBe(VAULT_HOST_CONNECT_REFUSAL)
+    for (const argv of [
+      ['--claustrum', '--yes'],
+      ['--enroll-only', '--yes'],
+      ['--no-claustrum', '--yes'],
+    ]) {
+      const error = await rejection(runSetup(setup, argv, io))
+      expect(error.message).toBe('Served by Thalamus')
+    }
+    expect(connect).not.toHaveBeenCalled()
+    expect(fence).not.toHaveBeenCalled()
+    expect(setup.signInLocal).not.toHaveBeenCalled()
+  } finally {
+    if (previous === undefined) delete process.env.CORTEXKIT_VAULT_HOST
+    else process.env.CORTEXKIT_VAULT_HOST = previous
+  }
+})
 
 describe('setup enrollment wait', () => {
   test('a proposal refused with unknown_method stops after one attempt with the fixed message', async () => {

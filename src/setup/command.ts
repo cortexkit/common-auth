@@ -4,10 +4,8 @@ import {
   printLine,
   processTerminal,
 } from '../auth-menu/terminal.js'
-import {
-  enrollmentAuthority,
-  hostEnrollmentPaths,
-} from '../claustrum/enrollment.js'
+import { hostEnrollmentPaths, vaultAuthority } from '../claustrum/enrollment.js'
+import { hasVaultHost, VAULT_HOST_CONNECT_REFUSAL } from '../claustrum/host.js'
 import { recordSetupEnrollment, setupEnrollmentLine } from './command-error.js'
 import { defaultCommandRunner } from './command-runner.js'
 import { detectHosts } from './detect.js'
@@ -63,7 +61,7 @@ function validatePlugin(plugin: SetupPlugin) {
  * Turn what setup recorded into one outcome per selected host, in setup order.
  * A host setup never reached was never asked to enroll. Only a host whose
  * enrollment was in flight when setup failed is checked on disk, by reading its
- * enrollment files once with `enrollmentAuthority`; if that read fails it stays
+ * authority once with `vaultAuthority`; if that read fails it stays
  * `unknown`.
  */
 async function enrollmentReport(
@@ -76,11 +74,11 @@ async function enrollmentReport(
     let outcome = recorded.get(host) ?? 'not-enrolled'
     if (outcome === 'unknown') {
       const { name, paths } = plugin.vault.hosts[host]
-      const authority = await enrollmentAuthority(
+      const authority = await vaultAuthority(
         hostEnrollmentPaths(paths),
         name,
       ).catch(() => 'unreadable' as const)
-      if (authority === 'vault') outcome = 'enrolled'
+      if (authority === 'vault' || authority === 'host') outcome = 'enrolled'
       else if (authority === 'local') outcome = 'not-enrolled'
     }
     report.push({ host, outcome })
@@ -94,6 +92,8 @@ export async function runSetup(
   io: SetupIO = {},
 ): Promise<SetupResult> {
   const options = parseSetupFlags(argv)
+  // Hosted sign-in belongs to Thalamus, never to a plugin's local setup.
+  if (hasVaultHost()) throw new Error(VAULT_HOST_CONNECT_REFUSAL)
   validatePlugin(plugin)
   const terminal = io.terminal ?? processTerminal()
   const detection = await detectHosts(plugin, io)

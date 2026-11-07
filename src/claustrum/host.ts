@@ -1,0 +1,126 @@
+import { ClaustrumCredentialError } from '@cortexkit/claustrum-client'
+import {
+  ClaustrumUnreachableError,
+  classifyVaultFailure,
+} from './availability.js'
+import type { ClaustrumScopedClient } from './custody.js'
+import type { InsulaUsageTransport } from './insula.js'
+
+export const VAULT_HOST_STATUS = 'Served by Thalamus'
+export const VAULT_HOST_CONNECT_REFUSAL = 'Served by Thalamus'
+
+/** The spawn marker, not a global installed by another plugin, selects authority. */
+export function hasVaultHost(): boolean {
+  return process.env.CORTEXKIT_VAULT_HOST === 'thalamus'
+}
+
+function hostError(error: unknown): unknown {
+  if (typeof error !== 'object' || error === null) return error
+  const value = error as {
+    code?: unknown
+    class?: unknown
+    action?: unknown
+    name?: unknown
+  }
+  if (
+    typeof value.code === 'string' &&
+    (value.class === 'transient' ||
+      value.class === 'permanent' ||
+      value.class === 'auth_required' ||
+      value.class === 'context_overflow') &&
+    (value.action === 'gone' ||
+      value.action === 'reauth' ||
+      value.action === 'retry' ||
+      value.action === 'reduce_and_retry')
+  )
+    return new ClaustrumCredentialError(value.code, value.class, value.action)
+  if (
+    value.name === 'ClaustrumUnreachableError' ||
+    (typeof value.code === 'string' &&
+      classifyVaultFailure(Object.assign(new Error(), { code: value.code })) ===
+        'unreachable')
+  )
+    return new ClaustrumUnreachableError()
+  return error
+}
+
+function call<T>(operation: () => T): T {
+  try {
+    return operation()
+  } catch (error) {
+    throw hostError(error)
+  }
+}
+
+async function request<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    throw hostError(error)
+  }
+}
+
+/** Normalize only the host boundary; native clients keep their strict error identity. */
+function wrapHostClient(client: ClaustrumScopedClient): ClaustrumScopedClient {
+  const watchScoped = client.watchScoped?.bind(client)
+  const reportUsageScoped = client.reportUsageScoped?.bind(client)
+  return {
+    listScoped: (...args) => request(() => client.listScoped(...args)),
+    getScoped: (...args) => request(() => client.getScoped(...args)),
+    reportAuthFailureScoped: (...args) =>
+      request(() => client.reportAuthFailureScoped(...args)),
+    close: () => call(() => client.close()),
+    ...(watchScoped && {
+      watchScoped: (...args: Parameters<typeof watchScoped>) => {
+        const watch = call(() => watchScoped(...args))
+        return {
+          stop: () => call(() => watch.stop()),
+          closed: request(async () => {
+            const end = await watch.closed
+            return end.kind === 'refused' || end.kind === 'transport_lost'
+              ? { ...end, error: hostError(end.error) }
+              : end
+          }),
+        }
+      },
+    }),
+    ...(reportUsageScoped && {
+      reportUsageScoped: (...args: Parameters<typeof reportUsageScoped>) =>
+        request(() => reportUsageScoped(...args)),
+    }),
+    ...(client.insula && {
+      insula: wrapInsula(client.insula),
+    }),
+  }
+}
+
+function wrapInsula(transport: InsulaUsageTransport): InsulaUsageTransport {
+  const watchUsage = transport.watchUsage?.bind(transport)
+  return {
+    connectionFile: transport.connectionFile,
+    getUsage: () => request(() => transport.getUsage()),
+    ...(watchUsage && {
+      watchUsage: (...args: Parameters<typeof watchUsage>) => {
+        const watch = call(() => watchUsage(...args))
+        return {
+          stop: () => call(() => watch.stop()),
+          closed: request(() => watch.closed),
+        }
+      },
+    }),
+  }
+}
+
+/** Read at connect time so a bridge installed after the auth plugin can recover. */
+export function connectVaultHost(pluginId?: string): ClaustrumScopedClient {
+  if (!hasVaultHost() || !pluginId) throw new ClaustrumUnreachableError()
+  try {
+    const accessor = (globalThis as Record<symbol, unknown>)[
+      Symbol.for('cortexkit.vault')
+    ]
+    if (typeof accessor !== 'function') throw new ClaustrumUnreachableError()
+    return wrapHostClient(accessor(pluginId))
+  } catch {
+    throw new ClaustrumUnreachableError()
+  }
+}

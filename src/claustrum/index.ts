@@ -77,12 +77,18 @@ export {
   readClaustrumEnrollmentToken,
   resetClaustrumEnrollmentState,
   TERMINAL_ENROLLMENT_CODES,
+  vaultAuthority,
 } from './enrollment.js'
 export {
   ClaustrumConsumerError,
   type ClaustrumConsumerFailureKind,
   type ClaustrumLogger,
 } from './errors.js'
+export {
+  connectVaultHost,
+  VAULT_HOST_CONNECT_REFUSAL,
+  VAULT_HOST_STATUS,
+} from './host.js'
 export {
   assertHostSlotMatchesMode,
   assertNotCustodyPlaceholder,

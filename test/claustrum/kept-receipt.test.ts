@@ -435,7 +435,8 @@ for (const failure of [
 ] as const) {
   test(`injected adapter handles ${failure} without confusing shutdown with outage`, async () => {
     const s = await scenario()
-    const connected = await s.options.connect()
+    const connected = await s.options.connect?.()
+    if (!connected) throw new Error('scenario must inject a connection')
     let connectFailure: Error | undefined
     const connect = async () => {
       if (connectFailure) throw connectFailure

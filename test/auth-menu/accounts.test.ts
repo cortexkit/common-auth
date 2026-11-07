@@ -6,6 +6,7 @@ import {
   runAccountMenu,
 } from '../../src/auth-menu/accounts.js'
 import type { LoginAccount, MenuLogin } from '../../src/auth-menu/login.js'
+import { VAULT_HOST_STATUS } from '../../src/claustrum/index.js'
 import { quotaCodec } from '../../src/quota/index.js'
 import { POOL_KEY } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
@@ -31,6 +32,38 @@ const LOCAL = {
   quotas: 4,
   deleteAll: 5,
 } as const
+
+test('hosted account menu shows Served by Thalamus and offers no local actions', async () => {
+  const previous = process.env.CORTEXKIT_VAULT_HOST
+  process.env.CORTEXKIT_VAULT_HOST = 'thalamus'
+  try {
+    const extra = {
+      id: 'plugin-action',
+      label: 'Plugin action',
+      run: async () => {},
+    }
+    const actions = await accountMenuActions({
+      title: 'Example accounts',
+      store: s.open(),
+      custody: () => false,
+      login: loginReturning({ credential: oauth('unused') }),
+      extraActions: [extra],
+    })
+    expect(actions.map((action) => action.id)).toEqual([
+      'list-accounts',
+      'toggle-account',
+      'check-quotas',
+      'plugin-action',
+    ])
+    const listing = menu(choose(0), { custody: () => false })
+    await listing.run()
+    expect(listing.fake.text()).toContain(VAULT_HOST_STATUS)
+    expect(VAULT_HOST_STATUS).toBe('Served by Thalamus')
+  } finally {
+    if (previous === undefined) delete process.env.CORTEXKIT_VAULT_HOST
+    else process.env.CORTEXKIT_VAULT_HOST = previous
+  }
+})
 
 async function seed(ids: readonly string[]) {
   const store = s.open()

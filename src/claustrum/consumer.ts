@@ -17,6 +17,7 @@ import {
 } from './custody.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
+import { connectVaultHost, hasVaultHost } from './host.js'
 import type { CustodyLease } from './hub.js'
 import {
   acquireInsulaQuotaSource,
@@ -59,7 +60,10 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   /** This host's enrollment token, written by setup. */
   tokenPath: string
   family: ClaustrumFamily
-  connect: () => Promise<ClaustrumScopedClient>
+  /** Enrollment-name prefix, required by the default host connection. */
+  pluginId?: string
+  /** Explicit adapters take precedence over the default host connection. */
+  connect?: () => Promise<ClaustrumScopedClient>
   /**
    * How long one `connect()` attempt may take before this consumer treats the
    * vault as unreachable (default 10 s). A connect that never settles would
@@ -72,6 +76,7 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
    * Whether the plugin currently takes its accounts from the vault (custody
    * mode) rather than from local logins. Checked before every discovery,
    * commit and dispatch; false closes the vault connection and refuses sends.
+   * Host authority always selects custody and does not call this callback.
    */
   isCustodyActive?: () => boolean | Promise<boolean>
   /** Ids of the plugin's local pool rows; no vault route id may equal one. */
@@ -309,6 +314,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   }
 
   async #active(): Promise<boolean> {
+    if (hasVaultHost()) return true
     return (await this.#options.isCustodyActive?.()) ?? true
   }
 
@@ -368,7 +374,11 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
   }): Promise<ClaustrumScopedCustody> {
     const setTimer = this.#options.setTimeoutImpl ?? setTimeout
     const clearTimer = this.#options.clearTimeoutImpl ?? clearTimeout
-    const pending = this.#options.connect().then((client) => {
+    const pending = (
+      this.#options.connect
+        ? this.#options.connect()
+        : Promise.resolve().then(() => connectVaultHost(this.#options.pluginId))
+    ).then((client) => {
       if (this.#shutdown.signal.aborted || attempt.timedOut) {
         client.close()
         if (!attempt.timedOut) this.#assertOpen()
@@ -649,7 +659,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     )
       return
     try {
-      await readClaustrumEnrollmentToken(this.#options.tokenPath)
+      if (!hasVaultHost())
+        await readClaustrumEnrollmentToken(this.#options.tokenPath)
       await this.#getCustody()
       await this.#insula?.source.refresh((this.#options.now ?? Date.now)())
     } catch {
@@ -673,7 +684,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     )
       return undefined
     try {
-      await readClaustrumEnrollmentToken(this.#options.tokenPath)
+      if (!hasVaultHost())
+        await readClaustrumEnrollmentToken(this.#options.tokenPath)
       return this.#normalizeInsulaQuota(receipt.assertedAccountIdentity)
     } catch {
       return undefined
@@ -693,7 +705,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     )
       return undefined
     try {
-      await readClaustrumEnrollmentToken(this.#options.tokenPath)
+      if (!hasVaultHost())
+        await readClaustrumEnrollmentToken(this.#options.tokenPath)
       const roster = pendingVaultQuota(
         this.#options.rosterPath,
         await readVaultRoster(this.#options.rosterPath),
@@ -713,7 +726,8 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     if (!options || this.#shutdown.signal.aborted || !(await this.#active()))
       return { miss: 'unreachable' }
     try {
-      await readClaustrumEnrollmentToken(this.#options.tokenPath)
+      if (!hasVaultHost())
+        await readClaustrumEnrollmentToken(this.#options.tokenPath)
       const roster = pendingVaultQuota(
         this.#options.rosterPath,
         await readVaultRoster(this.#options.rosterPath),

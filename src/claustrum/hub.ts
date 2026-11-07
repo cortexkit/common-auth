@@ -39,6 +39,7 @@ import {
 } from './custody.js'
 import { ensureClaustrumPrivateDirectory } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
+import { connectVaultHost, hasVaultHost } from './host.js'
 import {
   type AccountMapper,
   DEFAULT_ROUTE_PREFIX,
@@ -96,7 +97,10 @@ export interface ClaustrumDiscoveryHubOptions {
    * member for any row and is refused.
    */
   family: ClassifyingClaustrumFamily<string>
-  connect: () => Promise<ClaustrumScopedClient>
+  /** Enrollment-name prefix, required by the default host connection. */
+  pluginId?: string
+  /** Explicit adapters take precedence over the default host connection. */
+  connect?: () => Promise<ClaustrumScopedClient>
   /**
    * How long one `connect()` attempt may take before the hub treats the vault
    * as unreachable (default 10 s, as `ClaustrumConsumerOptions`). The hub's
@@ -110,6 +114,7 @@ export interface ClaustrumDiscoveryHubOptions {
    * state only, never from the vault: on every hub tick, and when a member
    * refreshes or authorizes. The first false read revokes every lease,
    * closes the connection and clears every member.
+   * Host authority always selects custody and does not call this callback.
    */
   isCustodyActive?: () => boolean | Promise<boolean>
   parseIdentity?: IdentityParser
@@ -681,7 +686,11 @@ export class ClaustrumDiscoveryHub {
     const connectTimeoutMs =
       this.#options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     let timer: ReturnType<typeof setTimeout> | undefined
-    const connect = this.#options.connect().then((client) => {
+    const connect = (
+      this.#options.connect
+        ? this.#options.connect()
+        : Promise.resolve().then(() => connectVaultHost(this.#options.pluginId))
+    ).then((client) => {
       // A connect resolves into its generation only while that generation
       // is current and still wanted; otherwise its client never serves.
       if (entry.timedOut) {
@@ -870,7 +879,8 @@ export class ClaustrumDiscoveryHub {
    * runs the inactive transition; nothing else does.
    */
   async #readAuthority(): Promise<boolean> {
-    const active = (await this.#options.isCustodyActive?.()) ?? true
+    const active =
+      hasVaultHost() || ((await this.#options.isCustodyActive?.()) ?? true)
     if (this.#shutdown.signal.aborted) return false
     const was = this.#active
     this.#active = active

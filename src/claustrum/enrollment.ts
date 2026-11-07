@@ -37,6 +37,7 @@ import {
   writePrivateAtomic,
 } from '../fs/private-files.js'
 import { ClaustrumConsumerError } from './errors.js'
+import { hasVaultHost } from './host.js'
 
 const ENROLLMENT_SCHEMA = 1
 const ENROLLMENT_FILE_MAX_BYTES = 16 * 1024
@@ -742,6 +743,15 @@ export async function enrollmentAuthority(
     return 'vault'
   }
   return 'local'
+}
+
+/** Host authority takes precedence without reading any plugin enrollment files. */
+export async function vaultAuthority(
+  paths: ClaustrumEnrollmentPaths,
+  proposedName: string,
+): Promise<'host' | 'vault' | 'local' | 'unreadable'> {
+  if (hasVaultHost()) return 'host'
+  return enrollmentAuthority(paths, proposedName)
 }
 
 /**
