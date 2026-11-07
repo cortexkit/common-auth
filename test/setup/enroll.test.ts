@@ -72,7 +72,7 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
 const unsupported = () =>
   new ClaustrumCredentialError('unknown_method', 'transient', 'retry')
 
-test('hosted setup and Connect refuse with Served by Thalamus before any enrollment', async () => {
+test('hosted setup and Connect explain why the host cannot enroll itself', async () => {
   const root = await profile()
   const previous = process.env.CORTEXKIT_VAULT_HOST
   process.env.CORTEXKIT_VAULT_HOST = 'thalamus'
@@ -92,7 +92,9 @@ test('hosted setup and Connect refuse with Served by Thalamus before any enrollm
       ['--no-claustrum', '--yes'],
     ]) {
       const error = await rejection(runSetup(setup, argv, io))
-      expect(error.message).toBe('Served by Thalamus')
+      expect(error.message).toBe(
+        "This host gets its vault accounts from Thalamus, so it can't connect to the vault itself.",
+      )
     }
     expect(connect).not.toHaveBeenCalled()
     expect(fence).not.toHaveBeenCalled()

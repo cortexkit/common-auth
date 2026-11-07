@@ -293,7 +293,8 @@ describe('Thalamus host vault', () => {
     expect(second.reportAuthFailureScoped).not.toHaveBeenCalled()
   })
 
-  test('explicit adapters still win and are not structurally normalized', async () => {
+  test('native adapters remain structurally strict outside host authority', async () => {
+    delete process.env.CORTEXKIT_VAULT_HOST
     const accessor = mock(() => client())
     globals[symbol] = accessor
     const native = client()
@@ -302,10 +303,64 @@ describe('Thalamus host vault', () => {
       throw failure
     })
     await expect(
-      custody({ client: native }).authorize(identity),
+      custody({
+        client: native,
+        readToken: async () => ({
+          token: '01'.repeat(32),
+          token_generation: 1,
+        }),
+      }).authorize(identity),
     ).rejects.toMatchObject({ kind: 'unavailable' })
+    await fs.writeFile(
+      join(directory, 'token.json'),
+      JSON.stringify({ token: '01'.repeat(32), token_generation: 1 }),
+      { mode: 0o600 },
+    )
     await consumer({ connect: async () => native }).refresh()
     expect(accessor).not.toHaveBeenCalled()
+  })
+
+  test('host authority ignores an explicit consumer connection', async () => {
+    const host = client()
+    const accessor = mock(() => host)
+    globals[symbol] = accessor
+    const native = client()
+    const connect = mock(async () => native)
+    const hosted = consumer({ connect })
+    const roster = await hosted.refresh()
+    const row = roster?.rows[0]
+    if (!row) throw new Error('host row missing')
+    expect((await hosted.authorize(row.routeId)).accessToken).toBe(
+      'host-access',
+    )
+    expect(connect).not.toHaveBeenCalled()
+    expect(native.listScoped).not.toHaveBeenCalled()
+    expect(native.getScoped).not.toHaveBeenCalled()
+    expect(host.getScoped).toHaveBeenCalledTimes(1)
+    expect(accessor).toHaveBeenCalledTimes(1)
+    expect(accessor).toHaveBeenCalledWith('openai-auth')
+  })
+
+  test('host authority refuses a native custody client', () => {
+    const accessor = mock(() => client())
+    globals[symbol] = accessor
+    const native = client()
+    expect(() => custody({ client: native })).toThrow(ClaustrumUnreachableError)
+    expect(native.listScoped).not.toHaveBeenCalled()
+    expect(native.getScoped).not.toHaveBeenCalled()
+    expect(accessor).not.toHaveBeenCalled()
+  })
+
+  test('host custody accepts the shared wrapped client without reconnecting', async () => {
+    const host = client()
+    const accessor = mock(() => host)
+    globals[symbol] = accessor
+    const wrapped = connectVaultHost('anthropic-auth')
+    const direct = custody({ client: wrapped, pluginId: 'anthropic-auth' })
+    expect((await direct.authorize(identity)).accessToken).toBe('host-access')
+    expect(accessor).toHaveBeenCalledTimes(1)
+    expect(accessor).toHaveBeenCalledWith('anthropic-auth')
+    expect(host.getScoped).toHaveBeenCalledTimes(1)
   })
 
   test('watch, usage reports and insula go through the host client', async () => {
@@ -411,11 +466,13 @@ describe('Thalamus host vault', () => {
     expect(readToken).not.toHaveBeenCalled()
   })
 
-  test('discovery hub serves a hosted member without an enrollment token', async () => {
+  test('host authority ignores an explicit hub connection', async () => {
     const host = client()
     const accessor = mock(() => host)
     globals[symbol] = accessor
     const local = mock(() => false)
+    const native = client()
+    const connect = mock(async () => native)
     const hub = new ClaustrumDiscoveryHub({
       stateDir: directory,
       hostGeneration: 'opencode2',
@@ -423,6 +480,7 @@ describe('Thalamus host vault', () => {
       members: ['openai'],
       tokenPath: join(directory, 'absent-token.json'),
       pluginId: 'claustrum-auth',
+      connect,
       family: {
         category: 'openai-native',
         refusalCodes: [],
@@ -441,6 +499,11 @@ describe('Thalamus host vault', () => {
     if (!row) throw new Error('host row missing')
     const receipt = await member.authorize(row.routeId)
     expect(receipt.accessToken).toBe('host-access')
+    expect(connect).not.toHaveBeenCalled()
+    expect(native.listScoped).not.toHaveBeenCalled()
+    expect(native.getScoped).not.toHaveBeenCalled()
+    expect(host.getScoped).toHaveBeenCalledTimes(1)
+    expect(accessor).toHaveBeenCalledTimes(1)
     expect(accessor).toHaveBeenCalledWith('claustrum-auth')
     expect(local).not.toHaveBeenCalled()
   })

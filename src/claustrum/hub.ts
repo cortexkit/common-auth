@@ -99,7 +99,7 @@ export interface ClaustrumDiscoveryHubOptions {
   family: ClassifyingClaustrumFamily<string>
   /** Enrollment-name prefix, required by the default host connection. */
   pluginId?: string
-  /** Explicit adapters take precedence over the default host connection. */
+  /** Used outside host authority; hosted connections always use the relay. */
   connect?: () => Promise<ClaustrumScopedClient>
   /**
    * How long one `connect()` attempt may take before the hub treats the vault
@@ -687,7 +687,7 @@ export class ClaustrumDiscoveryHub {
       this.#options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     let timer: ReturnType<typeof setTimeout> | undefined
     const connect = (
-      this.#options.connect
+      !hasVaultHost() && this.#options.connect
         ? this.#options.connect()
         : Promise.resolve().then(() => connectVaultHost(this.#options.pluginId))
     ).then((client) => {

@@ -13,7 +13,7 @@ import {
 } from './availability.js'
 import { readClaustrumEnrollmentToken } from './enrollment.js'
 import { ClaustrumConsumerError, type ClaustrumLogger } from './errors.js'
-import { connectVaultHost, hasVaultHost } from './host.js'
+import { connectVaultHost, hasVaultHost, isVaultHostClient } from './host.js'
 import { CUSTODY_PLACEHOLDER_PREFIX } from './host-slot.js'
 import type { InsulaUsageTransport } from './insula.js'
 import { drainShutdown, shutdownWarning } from './shutdown.js'
@@ -553,6 +553,7 @@ export class ClaustrumScopedCustody {
   #disposing?: Promise<void>
 
   constructor(options: {
+    /** While hosted, only a client returned by connectVaultHost is accepted. */
     client?: ClaustrumScopedClient
     /** Enrollment-name prefix, required when using the default host client. */
     pluginId?: string
@@ -573,6 +574,8 @@ export class ClaustrumScopedCustody {
     setTimeoutImpl?: typeof setTimeout
     clearTimeoutImpl?: typeof clearTimeout
   }) {
+    if (hasVaultHost() && options.client && !isVaultHostClient(options.client))
+      throw new ClaustrumUnreachableError()
     const tokenPath = options.tokenPath
     if (options.readToken) {
       this.#readToken = options.readToken

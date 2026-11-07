@@ -7,7 +7,15 @@ import type { ClaustrumScopedClient } from './custody.js'
 import type { InsulaUsageTransport } from './insula.js'
 
 export const VAULT_HOST_STATUS = 'Served by Thalamus'
-export const VAULT_HOST_CONNECT_REFUSAL = 'Served by Thalamus'
+export const VAULT_HOST_CONNECT_REFUSAL =
+  "This host gets its vault accounts from Thalamus, so it can't connect to the vault itself."
+
+// Object identity prevents a native client from carrying the host's empty token argument.
+const hostClients = new WeakSet<ClaustrumScopedClient>()
+
+export function isVaultHostClient(client: ClaustrumScopedClient): boolean {
+  return hostClients.has(client)
+}
 
 /** The spawn marker, not a global installed by another plugin, selects authority. */
 export function hasVaultHost(): boolean {
@@ -119,7 +127,9 @@ export function connectVaultHost(pluginId?: string): ClaustrumScopedClient {
       Symbol.for('cortexkit.vault')
     ]
     if (typeof accessor !== 'function') throw new ClaustrumUnreachableError()
-    return wrapHostClient(accessor(pluginId))
+    const client = wrapHostClient(accessor(pluginId))
+    hostClients.add(client)
+    return client
   } catch {
     throw new ClaustrumUnreachableError()
   }

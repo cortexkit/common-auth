@@ -26,14 +26,18 @@ For the default host connection supply the enrollment-name prefix:
 - `antigravity-auth`
 - `claustrum-auth`
 
-An explicit `connect` still wins. Plugins that supply their own native connection
-must omit it under host authority to use the relay; keep supplying it outside
-Thalamus. A missing plugin id makes the default connection unavailable.
+Under host authority the relay is the only vault transport, even when the plugin
+supplies an explicit `connect`. Plugins may leave their native `connect` in place:
+it is ignored while hosted and used normally outside Thalamus. A missing plugin
+id makes the hosted connection unavailable; it never falls back to native `connect`.
 The existing `tokenPath` remains the plugin's normal per-host path, but no token
 file is read under host authority.
 
 Direct `ClaustrumScopedCustody` callers may omit `client` and supply
-`pluginId?: string` for the same host default. An explicit client still wins.
+`pluginId?: string` for the same host default. Under host authority an explicit
+client is accepted only if `connectVaultHost` returned it; a native client is
+refused with `ClaustrumUnreachableError`, without opening another connection.
+Outside host authority explicit clients work as before.
 For callers that also need the client's insula transport, `/claustrum` exports
 `connectVaultHost(pluginId?: string): ClaustrumScopedClient`. Call it once per
 connection with the plugin id, then pass that same wrapped client to custody and
@@ -65,26 +69,32 @@ Host setup still installs it in OpenCode 2's provider auth slot and runs the
 plugin's vault login: without that slot, OpenCode 2 does not route requests
 through the plugin. A hosted vault login succeeds when the accessor is
 available, without starting an enrollment ceremony. Shared menus show
-**Served by Thalamus** and offer neither Connect nor Disconnect; setup refuses a
-new connection with the same text.
+**Served by Thalamus** and offer neither Connect nor Disconnect. Setup refuses a
+new connection with: “This host gets its vault accounts from Thalamus, so it can't
+connect to the vault itself.”
 
 The `/claustrum` constants `VAULT_HOST_STATUS: 'Served by Thalamus'` and
-`VAULT_HOST_CONNECT_REFUSAL: 'Served by Thalamus'` keep those words consistent.
+`VAULT_HOST_CONNECT_REFUSAL` (the full refusal sentence above) keep those words
+consistent.
 The shared account menu suppresses local account actions while hosted but keeps
 plugin extras unchanged. Each plugin owner must remove or disable its own
 Connect/Disconnect extras under `host`, and show `VAULT_HOST_STATUS`. Hosted
 setup refuses before detection, enrollment, registration or local sign-in.
 
 - **openai-auth:** pass `pluginId: 'openai-auth'` to its consumer; preserve reply
-  usage reports and insula through the host client.
-- **anthropic-auth:** pass `pluginId: 'anthropic-auth'` to its direct custody (or
-  use `connectVaultHost('anthropic-auth')` once per connection and share that
-  wrapped client between custody and `acquireInsulaQuotaSource`); keep assertion
-  checks and use that client's insula transport, not a separate native vault route.
+  usage reports and insula through the host client. Its native `connect` may stay.
+- **anthropic-auth:** while hosted, use `connectVaultHost('anthropic-auth')` once
+  per connection and share that wrapped client between direct custody and
+  `acquireInsulaQuotaSource`. Do not pass its native client to hosted custody.
+  Keep assertion checks and use that client's insula transport, not a separate
+  native vault route. A direct-custody adopter that does not need the client for
+  anything else may instead omit `client` and supply its `pluginId`.
 - **antigravity-auth:** pass `pluginId: 'antigravity-auth'` to its consumer; use
   the host insula transport rather than opening a separate daemon connection.
+  Its native `connect` may stay.
 - **claustrum-auth:** pass `pluginId: 'claustrum-auth'` to its discovery hub;
-  retain its classifier and per-host integration checks.
+  retain its classifier and per-host integration checks. Its native `connect`
+  may stay.
 
 Audit process-wide consumers keyed on the connection file: hosted processes no
 longer receive a connection file, so they must still construct/reuse the correct

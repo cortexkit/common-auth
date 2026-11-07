@@ -6,7 +6,10 @@ import {
   runAccountMenu,
 } from '../../src/auth-menu/accounts.js'
 import type { LoginAccount, MenuLogin } from '../../src/auth-menu/login.js'
-import { VAULT_HOST_STATUS } from '../../src/claustrum/index.js'
+import {
+  VAULT_HOST_CONNECT_REFUSAL,
+  VAULT_HOST_STATUS,
+} from '../../src/claustrum/index.js'
 import { quotaCodec } from '../../src/quota/index.js'
 import { POOL_KEY } from '../../src/store/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
@@ -58,6 +61,7 @@ test('hosted account menu shows Served by Thalamus and offers no local actions',
     const listing = menu(choose(0), { custody: () => false })
     await listing.run()
     expect(listing.fake.text()).toContain(VAULT_HOST_STATUS)
+    expect(listing.fake.text()).not.toContain(VAULT_HOST_CONNECT_REFUSAL)
     expect(VAULT_HOST_STATUS).toBe('Served by Thalamus')
   } finally {
     if (previous === undefined) delete process.env.CORTEXKIT_VAULT_HOST

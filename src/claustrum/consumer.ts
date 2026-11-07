@@ -62,7 +62,7 @@ export interface ClaustrumConsumerOptions<Q = QuotaObservation> {
   family: ClaustrumFamily
   /** Enrollment-name prefix, required by the default host connection. */
   pluginId?: string
-  /** Explicit adapters take precedence over the default host connection. */
+  /** Used outside host authority; hosted connections always use the relay. */
   connect?: () => Promise<ClaustrumScopedClient>
   /**
    * How long one `connect()` attempt may take before this consumer treats the
@@ -375,7 +375,7 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     const setTimer = this.#options.setTimeoutImpl ?? setTimeout
     const clearTimer = this.#options.clearTimeoutImpl ?? clearTimeout
     const pending = (
-      this.#options.connect
+      !hasVaultHost() && this.#options.connect
         ? this.#options.connect()
         : Promise.resolve().then(() => connectVaultHost(this.#options.pluginId))
     ).then((client) => {
