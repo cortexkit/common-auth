@@ -57,17 +57,16 @@ if ($request.action -eq 'grant') {
   else { [IO.File]::SetAccessControl($request.path, $acl) }
   exit
 }
-if ($request.action -eq 'owner-read-deny' -or $request.action -eq 'owner-read-restore') {
+if ($request.action -eq 'owner-read-deny') {
   $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
   # OWNER RIGHTS suppresses the owner's implicit READ_CONTROL grant, so native
-  # verification cannot inspect or repair the DACL. The explicit user allow
-  # still grants WRITE_DAC, allowing a fresh DACL to restore the fixture.
+  # verification cannot inspect or repair the DACL. SetAccessControl also needs
+  # READ_CONTROL, so it cannot restore this fixture despite explicit WRITE_DAC.
+  # The test removes the denied file instead of trying to replace its DACL.
   $acl = [Security.AccessControl.FileSecurity]::new()
   $acl.SetAccessRuleProtection($true, $false)
   $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', 'Allow'))
-  if ($request.action -eq 'owner-read-deny') {
-    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-3-4'), 'ReadPermissions', 'Deny'))
-  }
+  $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-3-4'), 'ReadPermissions', 'Deny'))
   [IO.File]::SetAccessControl($request.path, $acl)
   exit
 }

@@ -928,7 +928,6 @@ test('lease release refuses persistent code 5 on a wrong-ACL marker owner withou
   const markerPath = `${lockPath}.evicting`
   const ownerPath = join(markerPath, 'owner.json')
   let lease
-  let denied = false
   try {
     lease = await acquireRefreshFileLock({
       path,
@@ -938,8 +937,6 @@ test('lease release refuses persistent code 5 on a wrong-ACL marker owner withou
     assert.ok(lease)
     const lockBytes = await readPrivateText(lockPath)
     await createEvictionMarker(markerPath)
-    const ownerBytes = await readPrivateText(ownerPath)
-    denied = true
     await helper('inspect.ps1', {
       action: 'owner-read-deny',
       path: ownerPath,
@@ -958,24 +955,12 @@ test('lease release refuses persistent code 5 on a wrong-ACL marker owner withou
     assert.ok(performance.now() - started >= 6_000)
     assert.equal(await readPrivateText(lockPath), lockBytes)
     await access(markerPath)
-    await helper('inspect.ps1', {
-      action: 'owner-read-restore',
-      path: ownerPath,
-    }).done
-    denied = false
-    assert.equal(await readPrivateText(ownerPath), ownerBytes)
+    await access(ownerPath)
   } finally {
-    try {
-      if (denied)
-        await helper('inspect.ps1', {
-          action: 'owner-read-restore',
-          path: ownerPath,
-        }).done
-    } finally {
-      await rm(markerPath, { recursive: true, force: true })
-      await lease?.release()
-      await rm(root, { recursive: true, force: true })
-    }
+    await rm(markerPath, { recursive: true, force: true })
+    await lease?.release()
+    await assert.rejects(access(lockPath), { code: 'ENOENT' })
+    await rm(root, { recursive: true, force: true })
   }
 })
 

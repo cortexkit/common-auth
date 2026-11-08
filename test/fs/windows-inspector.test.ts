@@ -76,3 +76,23 @@ test('Windows vault job warms the inspector once before tests with bounded fresh
   expect(vault).toContain('}, timeout)')
   expect(vault).not.toContain('warm-inspector.mjs')
 })
+
+test('Windows denied marker fixture deletes the owner before checking its final release', async () => {
+  const writers = await readFile('test/windows/common-auth.mjs', 'utf8')
+  const start = writers.indexOf(
+    "test('lease release refuses persistent code 5 on a wrong-ACL marker owner without stale eviction'",
+  )
+  expect(start).toBeGreaterThanOrEqual(0)
+  const fixture = writers.slice(start, writers.indexOf('\ntest(', start + 1))
+  expect(fixture).not.toContain('owner-read-restore')
+  expect(fixture).toContain('await access(ownerPath)')
+  expect(inspector).not.toContain('owner-read-restore')
+  const cleanup = fixture.slice(fixture.lastIndexOf('} finally {'))
+  const steps = [
+    'await rm(markerPath, { recursive: true, force: true })',
+    'await lease?.release()',
+    "await assert.rejects(access(lockPath), { code: 'ENOENT' })",
+  ].map((step) => cleanup.indexOf(step))
+  expect(steps.every((index) => index >= 0)).toBe(true)
+  expect(steps).toEqual([...steps].sort((a, b) => a - b))
+})
