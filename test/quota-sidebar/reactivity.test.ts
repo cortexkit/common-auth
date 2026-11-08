@@ -13,6 +13,8 @@ for (const [phase, description] of [
         '--conditions=browser',
         '--preload',
         '@opentui/solid/runtime-plugin-support',
+        '--preload',
+        './test/sidebar-peer-preload.ts',
         'test/quota-sidebar/reactivity-render.tsx',
         phase,
       ],

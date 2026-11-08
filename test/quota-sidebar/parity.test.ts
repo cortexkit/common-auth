@@ -5,7 +5,7 @@ test('shared sidebar preserves frozen shared UTF-8 frames and spans', async () =
     [
       process.execPath,
       '--preload',
-      '@opentui/solid/preload',
+      './test/sidebar-peer-preload.ts',
       'test/quota-sidebar/parity-render.tsx',
     ],
     { stdout: 'pipe', stderr: 'pipe' },
@@ -26,6 +26,8 @@ test('shared sidebar composes groups and expanded slots and keeps collapse contr
       '--conditions=browser',
       '--preload',
       '@opentui/solid/runtime-plugin-support',
+      '--preload',
+      './test/sidebar-peer-preload.ts',
       'test/quota-sidebar/behavior-render.tsx',
     ],
     { stdout: 'pipe', stderr: 'pipe' },

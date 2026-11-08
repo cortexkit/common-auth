@@ -12,7 +12,7 @@ for (const check of [
       [
         process.execPath,
         '--preload',
-        '@opentui/solid/preload',
+        './test/sidebar-peer-preload.ts',
         'test/quota-sidebar/peer-checks-render.tsx',
         check,
       ],

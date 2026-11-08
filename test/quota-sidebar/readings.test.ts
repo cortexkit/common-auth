@@ -5,7 +5,7 @@ test('shared sidebar distinguishes no reading from exhausted quota', async () =>
     [
       process.execPath,
       '--preload',
-      '@opentui/solid/preload',
+      './test/sidebar-peer-preload.ts',
       'test/quota-sidebar/readings-render.tsx',
     ],
     { stdout: 'pipe', stderr: 'pipe' },

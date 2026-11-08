@@ -27,7 +27,7 @@ research/        spike reports behind the OpenCode 2 design
 - `setup/`: `command.ts` (`runSetup`), `flags.ts` (the one flag table help and parsing share), `detect.ts`, `register.ts`, `config-write.ts`, `enroll.ts`, `process-fence.ts`, `prompts.ts`, `types.ts` (`SetupPlugin`).
 - `commands/`: `menu.ts` (the menu model), `seam.ts` (payload projection and redaction), `builtins.ts` (Accounts, Quota, Routing, Limits), `pi.ts` (Pi renderer), `model.ts`.
 - `auth-menu/`: the terminal account menu (`menu.ts`, `accounts.ts`, `login.ts`, `doctor.ts`, `opencode-v1.ts`, terminal helpers).
-- `quota-sidebar/index.tsx`: the shared sidebar frame, shipped as source.
+- `quota-sidebar/index.tsx`: the quota adapter over `@cortexkit/opencode-sidebar`, shipped as source.
 - `tui/`, `tui-build/`, `tui-prefs/`, `sidebar-file/`: TUI loading, build, preferences and the sidebar state file.
 - `routing-accessor/`: `index.ts` (routing advice, reports, turn notes), `cache-policy.ts`, `handle.ts` (dependency-free accessor lookup).
 - `cachekeep/`: `manager.ts` (`CacheKeepManager`), `decision.ts` (`decideCacheKeep`), `window.ts`, `failure.ts`.

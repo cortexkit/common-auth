@@ -39,11 +39,18 @@ test('packed tui selector probes the exact id and imports only the selected abso
       types: './dist/quota-sidebar/index.d.ts',
       import: './src/quota-sidebar/index.tsx',
     })
+    expect(manifest.peerDependencies['@cortexkit/opencode-sidebar']).toBe(
+      '~0.1.0',
+    )
+    expect(
+      manifest.peerDependenciesMeta['@cortexkit/opencode-sidebar'],
+    ).toEqual({ optional: true })
     for (const target of Object.values(
       manifest.exports['./quota-sidebar'],
     ) as string[]) {
       const pending = [join(unpacked, 'package', target)]
       const visited = new Set<string>()
+      const bare = new Set<string>()
       while (pending.length > 0) {
         const path = pending.pop()!
         if (visited.has(path)) continue
@@ -51,7 +58,15 @@ test('packed tui selector probes the exact id and imports only the selected abso
         expect(existsSync(path)).toBe(true)
         const code = await readFile(path, 'utf8')
         for (const { specifier } of parseImports(code, path)) {
-          if (!specifier.startsWith('.')) continue
+          if (!specifier.startsWith('.')) {
+            bare.add(specifier)
+            expect([
+              '@cortexkit/opencode-sidebar',
+              '@opentui/solid',
+              'solid-js',
+            ]).toContain(specifier)
+            continue
+          }
           const dependency = resolve(dirname(path), specifier)
           pending.push(
             path.endsWith('.d.ts')
@@ -63,6 +78,7 @@ test('packed tui selector probes the exact id and imports only the selected abso
         }
       }
       expect(visited.size).toBeGreaterThan(1)
+      expect(bare.has('@cortexkit/opencode-sidebar')).toBe(true)
     }
     const selector = await import(
       pathToFileURL(join(unpacked, 'package', manifest.exports['./tui'].import))

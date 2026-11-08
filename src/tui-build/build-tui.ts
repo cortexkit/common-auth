@@ -83,32 +83,33 @@ export async function buildTui(
   const entry = resolve(entryFile)
   const destination = resolve(destinationDir)
   const roots = new Map<string, string>()
-  for (const item of options.inline ?? ['@cortexkit/common-auth']) {
-    if (typeof item !== 'string') roots.set(item.name, resolve(item.root))
-    else {
-      let directory = dirname(entry)
-      for (;;) {
-        const manifest = join(directory, 'package.json')
-        if (
-          existsSync(manifest) &&
-          JSON.parse(await readFile(manifest, 'utf8')).name === item
-        ) {
-          roots.set(item, realpathSync(directory))
-          break
-        }
-        const installed = join(directory, 'node_modules', item)
-        if (existsSync(join(installed, 'package.json'))) {
-          roots.set(item, realpathSync(installed))
-          break
-        }
-        const parent = dirname(directory)
-        if (parent === directory)
-          throw new Error(
-            `Cannot locate package root for ${item} from ${entry}`,
-          )
-        directory = parent
+  const packageRoot = async (name: string, from: string) => {
+    let directory = dirname(from)
+    for (;;) {
+      const manifest = join(directory, 'package.json')
+      if (
+        existsSync(manifest) &&
+        JSON.parse(await readFile(manifest, 'utf8')).name === name
+      ) {
+        return realpathSync(directory)
       }
+      const installed = join(directory, 'node_modules', name)
+      if (existsSync(join(installed, 'package.json'))) {
+        return realpathSync(installed)
+      }
+      const parent = dirname(directory)
+      if (parent === directory)
+        throw new Error(`Cannot locate package root for ${name} from ${from}`)
+      directory = parent
     }
+  }
+  for (const item of options.inline ?? ['@cortexkit/common-auth']) {
+    roots.set(
+      typeof item === 'string' ? item : item.name,
+      typeof item === 'string'
+        ? await packageRoot(item, entry)
+        : resolve(item.root),
+    )
   }
   const resolveExport = async (
     specifier: string,
@@ -175,14 +176,15 @@ export async function buildTui(
   // relative paths, and distinct prefixes for the two kinds. The guard in
   // `visit` turns the remaining risk, two keys sharing a truncated hash, into
   // an error instead of one copy silently overwriting another.
-  const namingRoots = [...roots]
-    .map(([name, root]) => ({
-      name,
-      root: existsSync(root) ? realpathSync(root) : root,
-    }))
-    .sort((a, b) => b.root.length - a.root.length)
+  const namingRoots = () =>
+    [...roots]
+      .map(([name, root]) => ({
+        name,
+        root: existsSync(root) ? realpathSync(root) : root,
+      }))
+      .sort((a, b) => b.root.length - a.root.length)
   const sharedKey = (source: string) => {
-    for (const { name, root } of namingRoots) {
+    for (const { name, root } of namingRoots()) {
       const path = relative(root, source)
       if (path && !path.startsWith(`..${sep}`) && !isAbsolute(path))
         return `package:${name}/${portable(path)}`
@@ -231,6 +233,10 @@ export async function buildTui(
     const replacements: { start: number; end: number; text: string }[] = []
     for (const reference of references) {
       let specifier = reference.specifier
+      // The frame ships TSX: leaving it external skips the host's Solid transform.
+      // Resolve only when reached so non-sidebar builds need no optional UI peer.
+      if (specifier === '@cortexkit/opencode-sidebar' && !roots.has(specifier))
+        roots.set(specifier, await packageRoot(specifier, source))
       const inline = [...roots].find(
         ([name]) => specifier === name || specifier.startsWith(`${name}/`),
       )

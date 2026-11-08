@@ -112,7 +112,7 @@ The command menu (`src/commands/`) is one model per plugin, rendered as an OpenC
 
 ## Sidebar and TUI
 
-`./quota-sidebar` is the sidebar frame all plugins render (Solid on OpenTUI). It ships as source (`files` in `package.json`), because each plugin compiles it with its own TUI against the host's runtime. `./tui-build` does that compile and binds Solid and OpenTUI to the host's module registry, so a plugin's TUI shares the host's one runtime. `./tui` loads the compiled or raw entry. `./sidebar-file` writes a plugin's sidebar state file under a lock and merges with writers that took over a lost lease. `./tui-prefs` reads and edits the JSONC preferences file in place, keeping comments.
+`./quota-sidebar` adapts projected quota to the shared `@cortexkit/opencode-sidebar` frame (Solid on OpenTUI), preserving the auth plugins' account views and slots. The adapter and frame ship as source, because each plugin compiles both with its own TUI against the host's runtime. `./tui-build` resolves and inlines the frame peer when reached, even with a custom inline list, and binds Solid and OpenTUI to the host's module registry so the plugin shares the host's one runtime. UI consumers install the optional frame peer for that build; `./quota` remains renderer-free. `./tui` loads the compiled or raw entry. `./sidebar-file` writes a plugin's sidebar state file under a lock and merges with writers that took over a lost lease. `./tui-prefs` reads and edits the JSONC preferences file in place, keeping comments.
 
 ## Files and locks
 

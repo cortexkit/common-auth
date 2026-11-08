@@ -6,7 +6,7 @@ for (const rule of ['2', '3', '6', '7', '8', '9', '10']) {
       [
         process.execPath,
         '--preload',
-        '@opentui/solid/preload',
+        './test/sidebar-peer-preload.ts',
         'test/quota-sidebar/rulings-render.tsx',
         rule,
       ],

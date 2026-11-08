@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildTui, loadSolidTransform } from '@cortexkit/common-auth/tui-build'
 import { parseImports } from '../../src/tui-build/walker.js'
 import { makeRepoScratchDir } from '../fixtures/scratch.js'
@@ -28,12 +28,12 @@ const sharedSources = [
 ]
 // A shared copy is named after the package it came from and its path inside
 // that package, never the checkout's absolute path.
-const sharedName = (path: string) =>
+const sharedName = (path: string, name = '@cortexkit/common-auth') =>
   `shared/${createHash('sha256')
     .update(
       path.startsWith('test/fixtures/inline-default/')
         ? `package:inline-default/${path.slice('test/fixtures/inline-default/'.length)}`
-        : `package:@cortexkit/common-auth/${path}`,
+        : `package:${name}/${path}`,
     )
     .digest('hex')
     .slice(0, 16)}-${path
@@ -71,7 +71,7 @@ test('linking emits the exact closure and compiles runtime JSX through the encod
           variant === 'raw' ? 'entry.tsx' : 'entry.js',
           'store-user.js',
           'selector.js',
-          ...sharedSources.map(sharedName),
+          ...sharedSources.map((path) => sharedName(path)),
         ]),
       )
       expect(existsSync(join(destination, 'unimported.ts'))).toBe(false)
@@ -235,12 +235,22 @@ test('quota-sidebar links once and renders through raw and runtime host entries'
         resolve('test/fixtures/tui/quota-sidebar.tsx'),
         variant,
         destination,
+        // Plugins supply their own inline list; the frame must still be included in the build.
+        { inline: ['@cortexkit/common-auth'] },
       )
       expect(
         result.sources.filter(
           (source) => source === resolve('src/quota-sidebar/index.tsx'),
         ),
       ).toHaveLength(1)
+      expect(
+        result.sources.filter(
+          (source) =>
+            source ===
+            fileURLToPath(import.meta.resolve('@cortexkit/opencode-sidebar')),
+        ),
+      ).toHaveLength(1)
+      expect(result.externals.has('@cortexkit/opencode-sidebar')).toBe(false)
       expect(new Set(result.sources).size).toBe(result.sources.length)
       expect(
         result.sources.some((source) =>
@@ -251,6 +261,7 @@ test('quota-sidebar links once and renders through raw and runtime host entries'
         if (name === result.selector) continue
         const code = await readFile(join(destination, name), 'utf8')
         expect(code).not.toContain('@cortexkit/common-auth')
+        expect(code).not.toContain('@cortexkit/opencode-sidebar')
         expect(code).not.toMatch(/\bimport\s*\(/)
         for (const { specifier } of parseImports(code, name)) {
           if (specifier.startsWith('.'))
@@ -264,7 +275,7 @@ test('quota-sidebar links once and renders through raw and runtime host entries'
       const frame = await readFile(
         join(
           destination,
-          sharedName('src/quota-sidebar/index.tsx').replace(
+          sharedName('src/index.tsx', '@cortexkit/opencode-sidebar').replace(
             /\.js$/,
             variant === 'raw' ? '.tsx' : '.js',
           ),
@@ -290,7 +301,10 @@ test('quota-sidebar links once and renders through raw and runtime host entries'
           '--preload',
           variant === 'runtime'
             ? '@opentui/solid/runtime-plugin-support'
-            : '@opentui/solid/preload',
+            : './test/sidebar-peer-preload.ts',
+          ...(variant === 'runtime'
+            ? ['--preload', './test/sidebar-peer-preload.ts']
+            : []),
           'test/quota-sidebar/linked-render.tsx',
           join(destination, 'selector.js'),
           join(root, 'raw/quota-sidebar.tsx'),

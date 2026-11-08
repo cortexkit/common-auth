@@ -12,14 +12,14 @@ const run = (args) => {
   if (result.status !== 0) throw new Error(`Bun ${args.join(' ')} exited ${result.status}`)
 }
 try {
-  // Isolate the authored frame from the newer compiler/loader toolchain.
+  // A scratch package prevents the checkout's newer OpenTUI versions from masking floor failures.
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   await writeFile(join(scratch, 'package.json'), JSON.stringify({
     name: pkg.name, type: 'module',
     exports: { './quota-sidebar': './src/quota-sidebar/index.tsx', './quota': './src/quota/index.ts' },
-    dependencies: { '@opentui/core': '0.4.5', '@opentui/solid': '0.4.5', 'solid-js': '1.9.12', typescript: pkg.devDependencies.typescript, '@types/bun': pkg.devDependencies['@types/bun'] },
+    dependencies: { '@cortexkit/opencode-sidebar': pkg.devDependencies['@cortexkit/opencode-sidebar'], '@opentui/core': '0.4.5', '@opentui/solid': '0.4.5', 'solid-js': '1.9.12', typescript: pkg.devDependencies.typescript, '@types/bun': pkg.devDependencies['@types/bun'] },
   }))
-  for (const path of ['src/quota', 'src/quota-sidebar', 'test/quota-sidebar']) {
+  for (const path of ['src/quota', 'src/quota-sidebar', 'test/quota-sidebar', 'test/sidebar-peer-preload.ts']) {
     await cp(join(root, path), join(scratch, path), { recursive: true })
   }
   await writeFile(join(scratch, 'tsconfig.json'), JSON.stringify({

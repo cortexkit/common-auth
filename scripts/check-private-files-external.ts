@@ -8,7 +8,7 @@ export async function checkPrivateFilesExternal(root = 'dist') {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name)
       if (entry.isDirectory()) await walk(path)
-      else if (entry.name.endsWith('.js')) {
+      else if (/\.jsx?$/.test(entry.name)) {
         files++
         const source = await readFile(path, 'utf8')
         if (
