@@ -22,7 +22,7 @@ import {
   hasVaultHost,
   vaultAuthority,
 } from '../../src/claustrum/index.js'
-import { inventoryRow, unknownGrants } from './helpers.js'
+import { deferred, inventoryRow, unknownGrants } from './helpers.js'
 
 const symbol = Symbol.for('cortexkit.vault')
 const globals = globalThis as Record<symbol, unknown>
@@ -236,6 +236,89 @@ describe('Thalamus host vault', () => {
     globals[symbol] = () => client()
     expect((await hosted.refresh())?.rows).toHaveLength(1)
   })
+
+  test.each([
+    ['missing', 'host-accessor-missing'],
+    ['throwing', 'host-accessor-failed'],
+    ['invalid-client', 'host-accessor-failed'],
+  ] as const)(
+    '%s accessor reason reaches consumer errors and request refusals',
+    async (mode, reason) => {
+      if (mode === 'throwing')
+        globals[symbol] = () => {
+          throw new Error('host secret')
+        }
+      if (mode === 'invalid-client') globals[symbol] = () => undefined
+      const failure = deferred<unknown>()
+      const hosted = consumer({
+        pollIntervalMs: 0,
+        onError: failure.resolve,
+      })
+      hosted.start()
+      const error = await failure.promise
+      expect(error).toBeInstanceOf(ClaustrumUnreachableError)
+      expect(error).toMatchObject({
+        reason,
+        kind: 'unavailable',
+        message: 'Claustrum scoped operation unavailable',
+      })
+      const dispatch = mock(async () => new Response('unexpected'))
+      await expect(
+        hosted.send('vault-route', dispatch, { site: 'model' }),
+      ).rejects.toMatchObject({
+        reason,
+        kind: 'unavailable',
+        message: 'Claustrum scoped operation unavailable',
+      })
+      expect(dispatch).not.toHaveBeenCalled()
+      expect(JSON.stringify(error)).not.toContain('host secret')
+    },
+  )
+
+  test.each(['marker-off', 'missing-plugin-id'] as const)(
+    '%s connection refusal has no host accessor reason',
+    async (mode) => {
+      if (mode === 'marker-off') delete process.env.CORTEXKIT_VAULT_HOST
+      const accessor = mock(() => client())
+      globals[symbol] = accessor
+      const error = await Promise.resolve()
+        .then(() =>
+          connectVaultHost(mode === 'marker-off' ? 'openai-auth' : undefined),
+        )
+        .catch((error: unknown) => error)
+      expect(error).toBeInstanceOf(ClaustrumUnreachableError)
+      expect((error as ClaustrumUnreachableError).reason).toBeUndefined()
+      expect(accessor).not.toHaveBeenCalled()
+    },
+  )
+
+  test.each([
+    ['host-accessor-missing', 'host-accessor-missing'],
+    ['host-accessor-failed', 'host-accessor-failed'],
+    ['host secret', undefined],
+  ] as const)(
+    'host error normalization preserves only a finite reason: %s',
+    async (reason, expected) => {
+      const host = client()
+      globals[symbol] = () => host
+      host.getScoped = mock(async () => {
+        throw {
+          name: 'ClaustrumUnreachableError',
+          reason,
+          message: 'host secret',
+        }
+      })
+      const error = await custody()
+        .authorize(identity)
+        .catch((error: unknown) => error)
+      expect(error).toBeInstanceOf(ClaustrumUnreachableError)
+      expect((error as ClaustrumUnreachableError).reason).toBe(expected)
+      expect((error as Error).message).toBe(
+        'Claustrum scoped operation unavailable',
+      )
+      expect(JSON.stringify(error)).not.toContain('host secret')
+    },
+  )
 
   test.each([
     { code: 'connection_closed' },

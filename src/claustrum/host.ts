@@ -29,6 +29,7 @@ function hostError(error: unknown): unknown {
     class?: unknown
     action?: unknown
     name?: unknown
+    reason?: unknown
   }
   if (
     typeof value.code === 'string' &&
@@ -48,7 +49,12 @@ function hostError(error: unknown): unknown {
       classifyVaultFailure(Object.assign(new Error(), { code: value.code })) ===
         'unreachable')
   )
-    return new ClaustrumUnreachableError()
+    return new ClaustrumUnreachableError(
+      value.reason === 'host-accessor-missing' ||
+        value.reason === 'host-accessor-failed'
+        ? value.reason
+        : undefined,
+    )
   return error
 }
 
@@ -126,11 +132,13 @@ export function connectVaultHost(pluginId?: string): ClaustrumScopedClient {
     const accessor = (globalThis as Record<symbol, unknown>)[
       Symbol.for('cortexkit.vault')
     ]
-    if (typeof accessor !== 'function') throw new ClaustrumUnreachableError()
-    const client = wrapHostClient(accessor(pluginId))
-    hostClients.add(client)
-    return client
+    if (typeof accessor === 'function') {
+      const client = wrapHostClient(accessor(pluginId))
+      hostClients.add(client)
+      return client
+    }
   } catch {
-    throw new ClaustrumUnreachableError()
+    throw new ClaustrumUnreachableError('host-accessor-failed')
   }
+  throw new ClaustrumUnreachableError('host-accessor-missing')
 }

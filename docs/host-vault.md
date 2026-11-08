@@ -54,6 +54,19 @@ same polling/no-report fallback when absent. Host error shapes are normalized
 only at this boundary: structured vault refusals become this package's
 `ClaustrumCredentialError` without the host message, and relay loss becomes
 `ClaustrumUnreachableError`. Native clients retain strict error identity.
+
+`ClaustrumUnreachableError` has an optional, non-secret `reason`:
+`host-accessor-missing` when the host accessor is not a function, or
+`host-accessor-failed` when reading or calling
+the accessor or wrapping its client throws. Other unreachable failures,
+including a connection without the host marker or plugin id, have no reason.
+The public message stays `Claustrum scoped operation unavailable`, the kind
+stays `unavailable`, and `classifyVaultFailure` still returns `unreachable`.
+A missing accessor at startup is expected to recover once the host bridge
+installs; it still refuses requests until then and never permits local mode.
+Plugins should log the reason alongside the fixed message to distinguish a
+bridge that has not installed yet from a failed host connection.
+
 Receipts retain their send-time enrollment argument for 401 reports. An
 unreachable vault still permits the last good receipt; a vault that answers with a
 refusal drops the cached receipt. Hosted receipts get the same expiry margins and

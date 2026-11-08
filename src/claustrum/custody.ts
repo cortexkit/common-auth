@@ -645,7 +645,11 @@ export class ClaustrumScopedCustody {
     this.#outageError =
       error instanceof ClaustrumCredentialError
         ? error
-        : new ClaustrumUnreachableError()
+        : new ClaustrumUnreachableError(
+            error instanceof ClaustrumUnreachableError
+              ? error.reason
+              : undefined,
+          )
     this.#logger.warn('serving kept vault receipt', { reason: 'unreachable' })
     this.#scheduleProbe()
   }
@@ -763,7 +767,9 @@ export class ClaustrumScopedCustody {
       // request params that include the enrollment token.
       if (error instanceof ClaustrumCredentialError) throw error
       if (classifyVaultFailure(error) === 'unreachable')
-        throw new ClaustrumUnreachableError()
+        throw new ClaustrumUnreachableError(
+          error instanceof ClaustrumUnreachableError ? error.reason : undefined,
+        )
       throw new ClaustrumConsumerError(
         'unavailable',
         'Claustrum scoped operation unavailable',

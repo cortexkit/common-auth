@@ -548,6 +548,26 @@ test('onDiscovery observes one shared promise per discovery and preserves reject
   await expect(discoveries[1]).rejects.toMatchObject({ kind: 'unavailable' })
 })
 
+test('native unreachable connects reach onError and refuse requests without a host reason', async () => {
+  const f = await fixture()
+  const failure = deferred<unknown>()
+  f.options.connect = async () => {
+    throw new ClaustrumUnreachableError()
+  }
+  f.options.onError = failure.resolve
+  f.consumer.start()
+  const error = await failure.promise
+  expect(error).toBeInstanceOf(ClaustrumUnreachableError)
+  expect(classifyVaultFailure(error)).toBe('unreachable')
+  expect((error as ClaustrumUnreachableError).reason).toBeUndefined()
+  const refusal = await f.consumer
+    .authorize('vault-route')
+    .catch((error: unknown) => error)
+  expect(refusal).toBeInstanceOf(ClaustrumUnreachableError)
+  expect((refusal as ClaustrumUnreachableError).reason).toBeUndefined()
+  expect(f.counts().lists).toBe(0)
+})
+
 test('onRoster fires only when the discovery view changes', async () => {
   const f = await fixture()
   let view = 'v1'

@@ -815,6 +815,34 @@ describe('scoped discovery', () => {
 })
 
 describe('scoped boundary failures', () => {
+  test.each(['host-accessor-missing', 'host-accessor-failed'] as const)(
+    'preserves %s when sanitizing unreachable requests and saved outages',
+    async (reason) => {
+      let now = 1_000
+      const { custody, client } = fixture({}, { now: () => now })
+      try {
+        await custody.authorize(identity)
+        client.getScoped = async () => {
+          throw new ClaustrumUnreachableError(reason)
+        }
+        client.listScoped = async () => {
+          throw new ClaustrumUnreachableError(reason)
+        }
+        await expect(custody.discover()).rejects.toMatchObject({ reason })
+        expect((await custody.authorize(identity)).fromKeptReceipt).toBe(true)
+        now = 1_000_000
+        await expect(custody.authorize(identity)).rejects.toMatchObject({
+          reason,
+        })
+        await expect(custody.authorize(identity)).rejects.toMatchObject({
+          reason,
+        })
+      } finally {
+        await custody.dispose()
+      }
+    },
+  )
+
   test('does not coalesce overlapping authorizations', async () => {
     const f = fixture()
     await Promise.all([

@@ -142,3 +142,20 @@ test('vault failure classification recognizes native connect failures but never 
   expect(classifyVaultFailure({ claustrumUnreachable: true })).toBe('answered')
   expect(classifyVaultFailure(undefined)).toBe('answered')
 })
+
+test.each(['host-accessor-missing', 'host-accessor-failed'] as const)(
+  'unreachable reason %s keeps the public message and failure class fixed',
+  (reason) => {
+    const error = new ClaustrumUnreachableError(reason)
+    expect(error.reason).toBe(reason)
+    expect(error.message).toBe('Claustrum scoped operation unavailable')
+    expect(error.kind).toBe('unavailable')
+    expect(classifyVaultFailure(error)).toBe('unreachable')
+  },
+)
+
+test('unreachable errors never retain arbitrary reason text', () => {
+  const error = Reflect.construct(ClaustrumUnreachableError, ['host secret'])
+  expect(error.reason).toBeUndefined()
+  expect(JSON.stringify(error)).not.toContain('host secret')
+})
