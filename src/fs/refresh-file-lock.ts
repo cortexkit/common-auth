@@ -11,6 +11,11 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
+  DisappearedLockRecordError,
+  isWindowsAccessDeniedRead,
+  readLockRecord,
+} from './lock-record.js'
+import {
   createPrivateBytes,
   createPrivateDirectoryExclusive,
   ensurePrivateDirectory,
@@ -322,15 +327,23 @@ export async function acquireRefreshFileLockWithClock(
   async function readOwner() {
     if (windowsPrivateFiles) {
       try {
-        return JSON.parse(await readPrivateText(lockPath, true))
+        return JSON.parse(
+          await readLockRecord(lockPath, () => readPrivateText(lockPath, true)),
+        )
       } catch (error) {
         if (
           (error as NodeJS.ErrnoException).code !== 'EISDIR' &&
           (error as PrivateFileError).reason !== 'wrong-kind'
         )
           throw error
-        await verifyPrivate(lockPath, 'directory', true)
-        return JSON.parse(await readPrivateText(legacyOwnerPath, true))
+        await readLockRecord(lockPath, () =>
+          verifyPrivate(lockPath, 'directory', true),
+        )
+        return JSON.parse(
+          await readLockRecord(legacyOwnerPath, () =>
+            readPrivateText(legacyOwnerPath, true),
+          ),
+        )
       }
     }
     try {
@@ -413,8 +426,12 @@ export async function acquireRefreshFileLockWithClock(
       if (options.onStep) await options.onStep('lease-contention-read-ready')
       try {
         if (code === 'EISDIR') {
-          await verifyPrivate(lockPath, 'directory', true)
-          await readPrivateText(legacyOwnerPath, true)
+          await readLockRecord(lockPath, () =>
+            verifyPrivate(lockPath, 'directory', true),
+          )
+          await readLockRecord(legacyOwnerPath, () =>
+            readPrivateText(legacyOwnerPath, true),
+          )
         } else await readOwner()
       } catch (readError) {
         // The holder can release after exclusive creation reports a collision.
@@ -476,6 +493,10 @@ export async function acquireRefreshFileLockWithClock(
     try {
       owner = await readOwner()
     } catch (error) {
+      // A delete-pending owner that disappeared is a create opportunity,
+      // never an ownerless legacy directory eligible for stale eviction.
+      if (error instanceof DisappearedLockRecordError)
+        return { status: 'missing' }
       if (
         windowsPrivateFiles &&
         (error as NodeJS.ErrnoException).code !== 'ENOENT'
@@ -539,7 +560,9 @@ export async function acquireRefreshFileLockWithClock(
   async function ownsEvictionMarker() {
     try {
       const owner = JSON.parse(
-        await readPrivateText(evictOwnerPath, windowsPrivateFiles),
+        await readLockRecord(evictOwnerPath, () =>
+          readPrivateText(evictOwnerPath, windowsPrivateFiles),
+        ),
       )
       return owner?.ownerId === evictOwnerId
     } catch (error) {
@@ -747,7 +770,9 @@ export async function acquireRefreshFileLockWithClock(
     }
     if (windowsPrivateFiles) {
       try {
-        await verifyPrivate(evictPath, 'directory', true)
+        await readLockRecord(evictPath, () =>
+          verifyPrivate(evictPath, 'directory', true),
+        )
       } catch (error) {
         // The marker's holder can remove it between the stat above and this
         // check. Absence means the marker is free, as when the stat finds
@@ -814,8 +839,12 @@ export async function acquireRefreshFileLockWithClock(
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         if (windowsPrivateFiles) {
           try {
-            await verifyPrivate(evictPath, 'directory', true)
-            await readPrivateText(evictOwnerPath, true)
+            await readLockRecord(evictPath, () =>
+              verifyPrivate(evictPath, 'directory', true),
+            )
+            await readLockRecord(evictOwnerPath, () =>
+              readPrivateText(evictOwnerPath, true),
+            )
           } catch (ownerError) {
             // A marker removed by its holder after the failed create is free:
             // report it as unavailable for now so the caller retries.
@@ -839,11 +868,17 @@ export async function acquireRefreshFileLockWithClock(
     try {
       await releaseEvictionMarker(deadline)
     } catch (error) {
-      // Cleanup sharing failures must not replace the lock's original
-      // sharing refusal when both removals exhaust the same deadline.
+      // Cleanup IO failures must not replace the original lock refusal when
+      // both operations use the same deadline.
       if (
-        isRetryableRemoval(actionError, lockPath) &&
-        isRetryableRemoval(error, evictPath)
+        (isRetryableRemoval(actionError, lockPath) ||
+          isWindowsAccessDeniedRead(actionError, [
+            lockPath,
+            legacyOwnerPath,
+            evictOwnerPath,
+          ])) &&
+        (isRetryableRemoval(error, evictPath) ||
+          isWindowsAccessDeniedRead(error, [evictOwnerPath]))
       )
         throw actionError
       throw error
@@ -863,7 +898,11 @@ export async function acquireRefreshFileLockWithClock(
       try {
         owner = await readOwner()
       } catch (error) {
-        if (windowsPrivateFiles) throw error
+        if (
+          windowsPrivateFiles &&
+          !(error instanceof DisappearedLockRecordError)
+        )
+          throw error
         return
       }
       if (owner?.ownerId !== ownerId) return
@@ -1107,6 +1146,7 @@ export async function acquireRefreshFileLockWithClock(
       const deadline = performance.now() + EVICT_TTL + 1_000
       let delayMs = 5
       let removalError: PrivateFileError | undefined
+      let changingReadError: PrivateFileError | undefined
       for (;;) {
         try {
           let removalConfirmed = false
@@ -1133,6 +1173,7 @@ export async function acquireRefreshFileLockWithClock(
             await removeLeaseObject(lockPath)
             removalConfirmed = true
           }, deadline)
+          changingReadError = undefined
           if (markerAcquired) {
             if (windowsPrivateFiles && !removalConfirmed)
               throw new PrivateFileError(lockPath, 'release-not-confirmed', {
@@ -1144,14 +1185,24 @@ export async function acquireRefreshFileLockWithClock(
           if (signal?.aborted) return
           await recoverStaleEvictionMarker(deadline)
         } catch (error) {
-          if (!isRetryableRemoval(error, lockPath)) {
+          const changingRead =
+            windowsPrivateFiles &&
+            isWindowsAccessDeniedRead(error, [
+              lockPath,
+              legacyOwnerPath,
+              evictPath,
+              evictOwnerPath,
+            ])
+          if (!isRetryableRemoval(error, lockPath) && !changingRead) {
             if (windowsPrivateFiles) throw error
             return
           }
-          // Like rename, a fenced delete can be refused by a reader's Windows
-          // handle without invalidating ownership. Drop the marker, back off,
-          // and re-confirm the owner under a new marker before trying again.
-          removalError ??= error
+          // Neither a refused delete nor an ambiguous owner read establishes
+          // loss or expiry. Back off under the existing release deadline and
+          // re-confirm ownership before any removal; keep the original error
+          // if the refusal persists.
+          if (changingRead) changingReadError ??= error as PrivateFileError
+          else removalError ??= error as PrivateFileError
         }
         const remainingMs = deadline - performance.now()
         if (remainingMs <= 0) break
@@ -1165,6 +1216,7 @@ export async function acquireRefreshFileLockWithClock(
       // lease to expire rather than risking removal of a successor's lock.
       if (windowsPrivateFiles)
         throw (
+          changingReadError ??
           removalError ??
           new PrivateFileError(lockPath, 'release-not-confirmed', {
             code: 'ETIMEDOUT',

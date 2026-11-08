@@ -20,12 +20,16 @@ async function probe(mode: string) {
   return JSON.parse(stdout)
 }
 
-test('changing lock reads retry only native sharing and delete-pending errors within the acquire deadline', async () => {
+test('changing lock reads recheck access-denied deletion races within the acquire deadline', async () => {
   expect(await probe('simulated')).toEqual({
-    transient: 8,
-    persistent: 2,
+    transient: 12,
+    persistent: 4,
     refused: 12,
   })
+})
+
+test('lease release retries access-denied marker reads until holder deletion is confirmed', async () => {
+  expect(await probe('deleting-marker')).toEqual({ deletionRaces: 2 })
 })
 
 for (const action of ['delete', 'rewrite']) {

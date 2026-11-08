@@ -11,6 +11,7 @@ import {
 } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as privateFilesApi from '@cortexkit/private-files'
 import { createOwnerOnly } from '@cortexkit/private-files'
 import { createDumper } from '../../dist/dump/index.js'
 import {
@@ -18,6 +19,7 @@ import {
   writeJsonAtomic as atomicWrite,
   PrivateFileError,
 } from '../../dist/fs/index.js'
+import * as privateFiles from '../../dist/fs/private-files.js'
 import {
   createPrivateBytes,
   createPrivateDirectoryExclusive,
@@ -31,6 +33,7 @@ import {
   writePortFile as writePort,
 } from '../../dist/rpc/port-file.js'
 import { createSidebarFile } from '../../dist/sidebar-file/index.js'
+import { deletingMarkerFixture } from '../fs/deleting-marker-fixture.mjs'
 import {
   ownChild,
   pending,
@@ -893,6 +896,86 @@ test('lease contender acquires a lock its holder releases mid-contention', {
     }
   } finally {
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('lease release rechecks access-denied owner reads while the marker holder deletes it', {
+  timeout,
+}, async () => {
+  const root = await privateRoot()
+  try {
+    for (const stage of ['read', 'verify']) {
+      await deletingMarkerFixture({
+        root,
+        api: privateFilesApi,
+        privateFiles,
+        acquireRefreshFileLock,
+        stage,
+      })
+    }
+  } finally {
+    privateFiles.setPrivateFilesBackendForTest()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('lease release refuses persistent code 5 on a wrong-ACL marker owner without stale eviction', {
+  timeout,
+}, async () => {
+  const root = await privateRoot()
+  const path = join(root, 'state.json')
+  const lockPath = `${path}.denied-marker.lock`
+  const markerPath = `${lockPath}.evicting`
+  const ownerPath = join(markerPath, 'owner.json')
+  let lease
+  let denied = false
+  try {
+    lease = await acquireRefreshFileLock({
+      path,
+      name: 'denied-marker',
+      ttlMs: 30_000,
+    })
+    assert.ok(lease)
+    const lockBytes = await readPrivateText(lockPath)
+    await createEvictionMarker(markerPath)
+    const ownerBytes = await readPrivateText(ownerPath)
+    denied = true
+    await helper('inspect.ps1', {
+      action: 'owner-read-deny',
+      path: ownerPath,
+    }).done
+    const old = new Date(Date.now() - 60_000)
+    await utimes(markerPath, old, old)
+    const started = performance.now()
+    await assert.rejects(lease.release(), (error) => {
+      assert.ok(error instanceof PrivateFileError)
+      assert.equal(error.path, ownerPath)
+      assert.equal(error.stage, 'verify')
+      assert.equal(error.reason, 'io-error')
+      assert.equal(error.win32Code, 5)
+      return true
+    })
+    assert.ok(performance.now() - started >= 6_000)
+    assert.equal(await readPrivateText(lockPath), lockBytes)
+    await access(markerPath)
+    await helper('inspect.ps1', {
+      action: 'owner-read-restore',
+      path: ownerPath,
+    }).done
+    denied = false
+    assert.equal(await readPrivateText(ownerPath), ownerBytes)
+  } finally {
+    try {
+      if (denied)
+        await helper('inspect.ps1', {
+          action: 'owner-read-restore',
+          path: ownerPath,
+        }).done
+    } finally {
+      await rm(markerPath, { recursive: true, force: true })
+      await lease?.release()
+      await rm(root, { recursive: true, force: true })
+    }
   }
 })
 

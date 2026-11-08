@@ -57,6 +57,20 @@ if ($request.action -eq 'grant') {
   else { [IO.File]::SetAccessControl($request.path, $acl) }
   exit
 }
+if ($request.action -eq 'owner-read-deny' -or $request.action -eq 'owner-read-restore') {
+  $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+  # OWNER RIGHTS suppresses the owner's implicit READ_CONTROL grant, so native
+  # verification cannot inspect or repair the DACL. The explicit user allow
+  # still grants WRITE_DAC, allowing a fresh DACL to restore the fixture.
+  $acl = [Security.AccessControl.FileSecurity]::new()
+  $acl.SetAccessRuleProtection($true, $false)
+  $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', 'Allow'))
+  if ($request.action -eq 'owner-read-deny') {
+    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-3-4'), 'ReadPermissions', 'Deny'))
+  }
+  [IO.File]::SetAccessControl($request.path, $acl)
+  exit
+}
 if ($request.action -eq 'users-modify' -or $request.action -eq 'users-read' -or $request.action -eq 'admin-legacy') {
   if ($request.action -eq 'users-modify' -or $request.action -eq 'users-read') {
     $acl = [Security.AccessControl.DirectorySecurity]::new($request.path, [Security.AccessControl.AccessControlSections]::All)

@@ -130,7 +130,10 @@ setPrivateFilesBackendForTest({
       (mode === 'vanishing-acquire' || mode === 'contention-refusal') &&
       contentionReadReady
     ) {
-      contentionReadReady = false
+      // Access denied models a persistent permission refusal, including a fresh
+      // recheck; a single refused open can also mean deletion in progress.
+      if (mode !== 'contention-refusal' || errno !== 'EACCES')
+        contentionReadReady = false
       if (mode === 'vanishing-acquire') {
         await originalRm(path)
         vanishedReads++

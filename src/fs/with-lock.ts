@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path'
+import { isWindowsAccessDeniedRead } from './lock-record.js'
 import {
   isWindowsSharingViolation,
   type PrivateFileError,
@@ -52,13 +53,14 @@ function isChangingLockRead(
   target: string,
   name: string,
 ): error is PrivateFileError {
-  if (
-    !isWindowsSharingViolation(error) ||
-    (error.stage !== 'read' && error.stage !== 'verify')
-  )
-    return false
   const path = resolve(lockPathFor(target, name))
-  return error.path === path || error.path === join(path, 'owner.json')
+  const paths = [path, join(path, 'owner.json')]
+  return (
+    (isWindowsSharingViolation(error) ||
+      isWindowsAccessDeniedRead(error, paths)) &&
+    (error.stage === 'read' || error.stage === 'verify') &&
+    paths.includes(error.path)
+  )
 }
 
 export async function withLock<T>(
@@ -67,10 +69,10 @@ export async function withLock<T>(
   fn: (lock: { assertOwned(): Promise<void> }) => Promise<T>,
 ): Promise<T> {
   const started = performance.now()
+  let changingReadError: PrivateFileError | undefined
   for (;;) {
     options.signal?.throwIfAborted()
     let lock: Awaited<ReturnType<typeof acquireRefreshFileLock>>
-    let changingReadError: PrivateFileError | undefined
     try {
       lock = await acquireRefreshFileLock({
         path: target,
@@ -82,12 +84,13 @@ export async function withLock<T>(
           ? { onRenewalTimer: options.onRenewalTimer }
           : {}),
       })
+      changingReadError = undefined
     } catch (error) {
       if (!isChangingLockRead(error, target, options.name)) throw error
-      // Sharing violations (32) and delete-pending opens (303) do not reveal
-      // ownership or expiry. Retry exclusive creation, never infer a stale lock.
+      // Ambiguous reads reveal neither ownership nor expiry. Retry exclusive
+      // creation within the same deadline, never infer a stale lock from IO.
       lock = null
-      changingReadError = error
+      changingReadError ??= error
     }
     if (lock) {
       try {

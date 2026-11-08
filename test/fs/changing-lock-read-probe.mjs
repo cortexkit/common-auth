@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { deletingMarkerFixture } from './deleting-marker-fixture.mjs'
 
 const mode = process.argv[2]
 // Keep the Windows branch and backend injection isolated from other suites.
-if (mode === 'simulated')
+if (mode === 'simulated' || mode === 'deleting-marker')
   Object.defineProperty(process, 'platform', { value: 'win32' })
 const api = await import('@cortexkit/private-files')
 const { PrivateFileError, setPrivateFilesBackendForTest } = await import(
@@ -28,7 +29,7 @@ const nativeError = (win32Code, reason = 'io-error') =>
   })
 
 try {
-  if (mode === 'simulated') await simulated()
+  if (mode === 'simulated' || mode === 'deleting-marker') await simulated()
   else await native()
 } finally {
   setPrivateFilesBackendForTest()
@@ -48,12 +49,30 @@ async function simulated() {
     },
     readOwnerOnly: async (path) => fs.readFile(path),
   }
+  if (mode === 'deleting-marker') {
+    const privateFiles = await import('../../src/fs/private-files.ts')
+    const { acquireRefreshFileLock } = await import(
+      '../../src/fs/refresh-file-lock.ts'
+    )
+    setPrivateFilesBackendForTest(base)
+    for (const stage of ['read', 'verify']) {
+      await deletingMarkerFixture({
+        root,
+        api: base,
+        privateFiles,
+        acquireRefreshFileLock,
+        stage,
+      })
+    }
+    console.log(JSON.stringify({ deletionRaces: 2 }))
+    return
+  }
   let transient = 0
   let persistent = 0
   let refused = 0
   for (const step of ['lease-contention-read-ready', 'lock-read-ready']) {
     for (const stage of ['read', 'verify']) {
-      for (const win32Code of [32, 303]) {
+      for (const win32Code of [32, 303, 5]) {
         await fs.writeFile(lockPath, heldBytes)
         let armed = false
         let failures = 0
@@ -99,20 +118,27 @@ async function simulated() {
       }
     }
   }
-  for (const win32Code of [32, 303]) {
+  for (const [win32Code, stage] of [
+    [32, 'read'],
+    [303, 'read'],
+    [5, 'read'],
+    [5, 'verify'],
+  ]) {
     // An unreadable expired owner must not be inferred stale and removed.
     const bytes = JSON.stringify({
       ownerId: 'holder',
       expiresAt: Date.now() - 1_000,
     })
     await fs.writeFile(lockPath, bytes)
-    const error = new PrivateFileError(lockPath, 'read', nativeError(win32Code))
+    const error = new PrivateFileError(lockPath, stage, nativeError(win32Code))
     let reads = 0
     const steps = []
     setPrivateFilesBackendForTest({
       ...base,
-      readOwnerOnly: async () => {
+      [stage === 'read' ? 'readOwnerOnly' : 'verifyPrivatePath']: async () => {
         reads++
+        if (win32Code === 5 && reads > 1)
+          throw new PrivateFileError(lockPath, stage, nativeError(win32Code))
         throw error
       },
     })
@@ -134,7 +160,7 @@ async function simulated() {
       ),
       (caught) => caught === error,
     )
-    assert.ok(reads > 1, 'persistent sharing errors must be retried')
+    assert.ok(reads > 1, 'persistent ambiguous reads must be retried')
     assert.ok(
       performance.now() - start >= 90,
       'retries must use the acquire deadline',
@@ -144,7 +170,6 @@ async function simulated() {
     persistent++
   }
   for (const [reason, win32Code, stage, path] of [
-    ['io-error', 5, 'read', lockPath],
     ['io-error', 1117, 'read', lockPath],
     ['io-error', undefined, 'read', lockPath],
     ['wrong-owner', 32, 'read', lockPath],
@@ -155,7 +180,8 @@ async function simulated() {
     ['io-error', 32, 'read', join(root, 'unrelated')],
     ['io-error', 32, 'read', join(`${lockPath}.evicting`, 'owner.json')],
     ['wrong-owner', 303, 'verify', lockPath],
-    ['io-error', 5, 'verify', lockPath],
+    ['io-error', 5, 'read', join(root, 'unrelated')],
+    ['io-error', 5, 'remove', lockPath],
   ]) {
     await fs.writeFile(lockPath, heldBytes)
     const error = new PrivateFileError(
