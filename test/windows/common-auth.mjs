@@ -18,6 +18,7 @@ import {
   acquireRefreshFileLock as acquireLease,
   writeJsonAtomic as atomicWrite,
   PrivateFileError,
+  withLock,
 } from '../../dist/fs/index.js'
 import * as privateFiles from '../../dist/fs/private-files.js'
 import {
