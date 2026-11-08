@@ -26,6 +26,29 @@ export function isWindowsAccessDeniedRead(
   )
 }
 
+/**
+ * An exclusive create at the lock or eviction-directory name can fail with
+ * ACCESS_DENIED (5) while a holder's delete of that name is still pending. No
+ * reread settles a create refusal, so callers retry only under their existing
+ * bound and never infer staleness from it. owner.json is deliberately not a
+ * candidate: a marker directory created exclusively a moment ago cannot hold a
+ * delete-pending old owner.json, so a 5 there is a real refusal and the caller
+ * removes the directory it just created.
+ */
+export function isWindowsAccessDeniedCreate(
+  error: unknown,
+  paths: readonly string[],
+  stage: 'create' | 'directory-create',
+): error is PrivateFileError {
+  return (
+    error instanceof PrivateFileError &&
+    error.reason === 'io-error' &&
+    error.win32Code === 5 &&
+    error.stage === stage &&
+    paths.some((path) => resolve(path) === error.path)
+  )
+}
+
 export async function readLockRecord<T>(
   path: string,
   read: () => Promise<T>,

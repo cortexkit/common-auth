@@ -1,8 +1,12 @@
 import { join, resolve } from 'node:path'
-import { isWindowsAccessDeniedRead } from './lock-record.js'
+import {
+  isWindowsAccessDeniedCreate,
+  isWindowsAccessDeniedRead,
+} from './lock-record.js'
 import {
   isWindowsSharingViolation,
   type PrivateFileError,
+  windowsPrivateFiles,
 } from './private-files.js'
 import { acquireRefreshFileLock } from './refresh-file-lock.js'
 
@@ -48,7 +52,7 @@ export interface LockOptions {
   >[0]['onRenewalTimer']
 }
 
-function isChangingLockRead(
+function isChangingLockRecord(
   error: unknown,
   target: string,
   name: string,
@@ -56,10 +60,17 @@ function isChangingLockRead(
   const path = resolve(lockPathFor(target, name))
   const paths = [path, join(path, 'owner.json')]
   return (
-    (isWindowsSharingViolation(error) ||
+    ((isWindowsSharingViolation(error) ||
       isWindowsAccessDeniedRead(error, paths)) &&
-    (error.stage === 'read' || error.stage === 'verify') &&
-    paths.includes(error.path)
+      (error.stage === 'read' || error.stage === 'verify') &&
+      paths.includes(error.path)) ||
+    (windowsPrivateFiles &&
+      (isWindowsAccessDeniedCreate(error, [path], 'create') ||
+        isWindowsAccessDeniedCreate(
+          error,
+          [`${path}.evicting`],
+          'directory-create',
+        )))
   )
 }
 
@@ -69,7 +80,7 @@ export async function withLock<T>(
   fn: (lock: { assertOwned(): Promise<void> }) => Promise<T>,
 ): Promise<T> {
   const started = performance.now()
-  let changingReadError: PrivateFileError | undefined
+  let changingRecordError: PrivateFileError | undefined
   for (;;) {
     options.signal?.throwIfAborted()
     let lock: Awaited<ReturnType<typeof acquireRefreshFileLock>>
@@ -84,13 +95,13 @@ export async function withLock<T>(
           ? { onRenewalTimer: options.onRenewalTimer }
           : {}),
       })
-      changingReadError = undefined
+      changingRecordError = undefined
     } catch (error) {
-      if (!isChangingLockRead(error, target, options.name)) throw error
-      // Ambiguous reads reveal neither ownership nor expiry. Retry exclusive
-      // creation within the same deadline, never infer a stale lock from IO.
+      if (!isChangingLockRecord(error, target, options.name)) throw error
+      // Ambiguous reads or creates reveal neither ownership nor expiry. Retry
+      // exclusive creation within the same deadline, never infer staleness from IO.
       lock = null
-      changingReadError ??= error
+      changingRecordError ??= error
     }
     if (lock) {
       try {
@@ -103,7 +114,7 @@ export async function withLock<T>(
     const remaining = options.timeoutMs - (performance.now() - started)
     if (remaining <= 0) {
       // Keep persistent native IO failures distinguishable from a live holder.
-      if (changingReadError) throw changingReadError
+      if (changingRecordError) throw changingRecordError
       throw new LockContentionError({
         target,
         name: options.name,

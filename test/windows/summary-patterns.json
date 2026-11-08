@@ -1,8 +1,8 @@
 {
   "node": {
     "required": [
-      "^(?:ℹ |# )tests 17[ \\t]*$",
-      "^(?:ℹ |# )pass 17[ \\t]*$",
+      "^(?:ℹ |# )tests 19[ \\t]*$",
+      "^(?:ℹ |# )pass 19[ \\t]*$",
       "^(?:ℹ |# )fail 0[ \\t]*$",
       "^(?:ℹ |# )skipped 0[ \\t]*$"
     ],
@@ -10,9 +10,9 @@
   },
   "bun": {
     "required": [
-      "^[ \\t]*17 pass[ \\t]*$",
+      "^[ \\t]*19 pass[ \\t]*$",
       "^[ \\t]*0 fail[ \\t]*$",
-      "^Ran 17 tests across 1 file\\.[^\\n]*$"
+      "^Ran 19 tests across 1 file\\.[^\\n]*$"
     ],
     "forbidden": ["^[ \\t]*[1-9][0-9]* skip(?:ped)?[ \\t]*$"]
   }

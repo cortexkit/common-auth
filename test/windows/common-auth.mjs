@@ -33,7 +33,10 @@ import {
   writePortFile as writePort,
 } from '../../dist/rpc/port-file.js'
 import { createSidebarFile } from '../../dist/sidebar-file/index.js'
-import { deletingMarkerFixture } from '../fs/deleting-marker-fixture.mjs'
+import {
+  deletingLockCreateFixture,
+  deletingMarkerFixture,
+} from '../fs/deleting-marker-fixture.mjs'
 import {
   ownChild,
   pending,
@@ -911,6 +914,44 @@ test('lease release rechecks access-denied owner reads while the marker holder d
         privateFiles,
         acquireRefreshFileLock,
         stage,
+      })
+    }
+  } finally {
+    privateFiles.setPrivateFilesBackendForTest()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('lease release retries access-denied marker creates while the holder deletes it', {
+  timeout,
+}, async () => {
+  const root = await privateRoot()
+  try {
+    await deletingMarkerFixture({
+      root,
+      api: privateFilesApi,
+      privateFiles,
+      acquireRefreshFileLock,
+      stage: 'directory-create',
+    })
+  } finally {
+    privateFiles.setPrivateFilesBackendForTest()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('acquisition retries access-denied lock creates while the holder releases', {
+  timeout,
+}, async () => {
+  const root = await privateRoot()
+  try {
+    for (const outer of [undefined, withLock]) {
+      await deletingLockCreateFixture({
+        root,
+        api: privateFilesApi,
+        privateFiles,
+        acquireRefreshFileLock,
+        withLock: outer,
       })
     }
   } finally {

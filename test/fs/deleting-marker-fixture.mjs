@@ -30,17 +30,23 @@ export async function deletingMarkerFixture({
     JSON.stringify({ ownerId: 'holder', createdAt: Date.now() }),
   )
   let failures = 0
-  const operation = stage === 'verify' ? 'verifyPrivatePath' : 'readOwnerOnly'
+  const operation =
+    stage === 'directory-create'
+      ? 'createOwnerOnly'
+      : stage === 'verify'
+        ? 'verifyPrivatePath'
+        : 'readOwnerOnly'
+  const refusedPath = stage === 'directory-create' ? markerPath : ownerPath
   privateFiles.setPrivateFilesBackendForTest({
     ...api,
     [operation]: async (path, ...args) => {
-      if (resolve(path) === ownerPath && failures < 4) {
+      if (resolve(path) === refusedPath && failures < 4) {
         failures++
-        // Two refused reads force release to use its existing backoff. The
-        // fourth refusal overlaps the holder deleting its directory; only
-        // the following ENOENT can establish that the owner is gone.
+        // Repeated refusals force release through its existing backoff. The
+        // fourth overlaps holder deletion; reads must then observe absence,
+        // while exclusive directory creation must wait until it can succeed.
         if (failures === 4) await rm(markerPath, { recursive: true })
-        throw new privateFiles.PrivateFileError(ownerPath, stage, {
+        throw new privateFiles.PrivateFileError(refusedPath, stage, {
           code: 'ERR_PRIVATE_FILES_SECURITY',
           reason: 'io-error',
           win32Code: 5,
@@ -58,5 +64,68 @@ export async function deletingMarkerFixture({
     privateFiles.setPrivateFilesBackendForTest(api)
     await rm(markerPath, { recursive: true, force: true })
     await lease.release()
+  }
+}
+
+export async function deletingLockCreateFixture({
+  root,
+  api,
+  privateFiles,
+  acquireRefreshFileLock,
+  withLock,
+}) {
+  const target = join(root, 'state.json')
+  const name = withLock ? 'deleting-lock-with-lock' : 'deleting-lock-direct'
+  const lockPath = `${target}.${name}.lock`
+  const holder = await acquireRefreshFileLock({
+    path: target,
+    name,
+    ttlMs: 30_000,
+  })
+  assert.ok(holder)
+  let failures = 0
+  const steps = []
+  // Exceed one direct acquire's attempt bound to exercise withLock's deadline.
+  const refusals = withLock ? 12 : 4
+  privateFiles.setPrivateFilesBackendForTest({
+    ...api,
+    createPrivateFile: async (path, ...args) => {
+      if (resolve(path) === lockPath && failures < refusals) {
+        failures++
+        if (failures === refusals) await holder.release()
+        throw new privateFiles.PrivateFileError(lockPath, 'create', {
+          code: 'ERR_PRIVATE_FILES_SECURITY',
+          reason: 'io-error',
+          win32Code: 5,
+        })
+      }
+      return api.createPrivateFile(path, ...args)
+    },
+  })
+  let contender
+  try {
+    const options = {
+      path: target,
+      name,
+      ttlMs: 30_000,
+      onStep: (step) => steps.push(step),
+    }
+    if (withLock) {
+      await withLock(target, { ...options, timeoutMs: 500 }, async (lock) => {
+        await lock.assertOwned()
+      })
+    } else {
+      contender = await acquireRefreshFileLock(options)
+      assert.ok(contender)
+      await contender.assertOwned()
+      await contender.release()
+    }
+    assert.equal(failures, refusals)
+    assert.ok(!steps.includes('stale-lock-observed'))
+    await assert.rejects(access(lockPath), { code: 'ENOENT' })
+  } finally {
+    privateFiles.setPrivateFilesBackendForTest(api)
+    await contender?.release()
+    await holder.release()
   }
 }
