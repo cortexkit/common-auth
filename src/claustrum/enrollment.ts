@@ -113,10 +113,23 @@ export function enrollmentName(plugin: string, host: string): string {
   return `${plugin}-${host}`
 }
 
+/** Match the vault's plain-text, code-point limit before proposing a display name. */
+export function validEnrollmentDisplayName(displayName: string): boolean {
+  const length = Array.from(displayName).length
+  return (
+    length >= 1 &&
+    length <= 40 &&
+    !/[\p{Cc}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\u200b-\u200d\u2060\ufeff]/u.test(
+      displayName,
+    )
+  )
+}
+
 export interface ClaustrumEnrollmentClient {
   enrollPropose(input: {
     name: string
     requestSecretHash: string
+    displayName?: string
   }): Promise<{ requestId: string }>
   enrollPoll(input: {
     requestId: string
@@ -817,6 +830,7 @@ export class ClaustrumEnrollmentManager {
   readonly #client: ClaustrumEnrollmentClient
   readonly #paths: ClaustrumEnrollmentPaths
   readonly #proposedName: string
+  readonly #displayName: string | undefined
   readonly #now: () => number
   readonly #mintSecret: () => string
   readonly #writeTokenFile: typeof writeEnrollmentTokenFile
@@ -826,15 +840,25 @@ export class ClaustrumEnrollmentManager {
     client: ClaustrumEnrollmentClient
     paths: ClaustrumEnrollmentPaths
     proposedName: string
+    displayName?: string
     now?: () => number
     mintSecret?: () => string
     writeTokenFile?: typeof writeEnrollmentTokenFile
     ancestorOptions?: EnrollmentAncestorOptions
   }) {
+    if (
+      options.displayName !== undefined &&
+      !validEnrollmentDisplayName(options.displayName)
+    )
+      throw new ClaustrumConsumerError(
+        'invalid-state',
+        'invalid Claustrum enrollment display name',
+      )
     this.#ancestorOptions = options.ancestorOptions ?? {}
     this.#client = options.client
     this.#paths = options.paths
     this.#proposedName = options.proposedName
+    this.#displayName = options.displayName
     this.#now = options.now ?? Date.now
     this.#mintSecret =
       options.mintSecret ?? (() => randomBytes(32).toString('hex'))
@@ -962,10 +986,30 @@ export class ClaustrumEnrollmentManager {
           const requestSecretHash = createHash('sha256')
             .update(Buffer.from(state.requestSecret, 'hex'))
             .digest('hex')
-          const proposed = await this.#client.enrollPropose({
+          const proposal = {
             name: state.proposedName,
             requestSecretHash,
-          })
+          }
+          let proposed: { requestId: string }
+          try {
+            proposed = await this.#client.enrollPropose({
+              ...proposal,
+              ...(this.#displayName !== undefined && {
+                displayName: this.#displayName,
+              }),
+            })
+          } catch (error) {
+            if (
+              this.#displayName === undefined ||
+              !(error instanceof ClaustrumCredentialError) ||
+              error.code !== 'invalid_params'
+            )
+              throw error
+            // Locally validated names can only be refused by vaults that do
+            // not support displayName. A refused proposal stores nothing, so
+            // retry once with the same hash and let normal handling decide.
+            proposed = await this.#client.enrollPropose(proposal)
+          }
           state = {
             ...state,
             requestId: proposed.requestId,

@@ -77,6 +77,7 @@ export {
   readClaustrumEnrollmentToken,
   resetClaustrumEnrollmentState,
   TERMINAL_ENROLLMENT_CODES,
+  validEnrollmentDisplayName,
   vaultAuthority,
 } from './enrollment.js'
 export {

@@ -23,6 +23,7 @@ import {
   writeEnrollmentTokenFile,
 } from '@cortexkit/claustrum-client'
 import {
+  ClaustrumConsumerError,
   type ClaustrumEnrollmentClient,
   ClaustrumEnrollmentManager,
   classifyEnrollmentError,
@@ -33,6 +34,7 @@ import {
   hostEnrollmentPaths,
   readClaustrumEnrollmentStatus,
   readClaustrumEnrollmentToken,
+  validEnrollmentDisplayName,
 } from '../../src/claustrum/index.ts'
 import {
   acquireRefreshFileLock,
@@ -790,6 +792,248 @@ describe('disconnectClaustrumEnrollment', () => {
 })
 
 describe('ClaustrumEnrollmentManager', () => {
+  test('display name validation rejects invalid names with a fixed programmer error', async () => {
+    const paths = await fixture()
+    const forbidden = [
+      '\u0000',
+      '\u001f',
+      '\u007f',
+      '\u0085',
+      '\u009f',
+      '\u061c',
+      '\u200e',
+      '\u200f',
+      '\u202a',
+      '\u202b',
+      '\u202c',
+      '\u202d',
+      '\u202e',
+      '\u2066',
+      '\u2067',
+      '\u2068',
+      '\u2069',
+      '\u200b',
+      '\u200c',
+      '\u200d',
+      '\u2060',
+      '\ufeff',
+    ]
+    for (const displayName of [
+      '',
+      'a'.repeat(41),
+      '😀'.repeat(41),
+      ...forbidden.map((character) => `Test${character}Auth`),
+    ]) {
+      expect(validEnrollmentDisplayName(displayName)).toBe(false)
+      let refusal: unknown
+      try {
+        manager(paths, client(), { displayName })
+      } catch (error) {
+        refusal = error
+      }
+      expect(refusal).toBeInstanceOf(ClaustrumConsumerError)
+      expect(refusal).toMatchObject({
+        kind: 'invalid-state',
+        message: 'invalid Claustrum enrollment display name',
+      })
+    }
+  })
+
+  test('display name validation accepts 40 code points including an emoji', async () => {
+    const paths = await fixture()
+    for (const displayName of ['A', `${'a'.repeat(39)}😀`, '😀'.repeat(40)]) {
+      expect(validEnrollmentDisplayName(displayName)).toBe(true)
+      expect(() => manager(paths, client(), { displayName })).not.toThrow()
+    }
+  })
+
+  test('display name is sent when set and is not persisted', async () => {
+    const paths = await fixture()
+    const proposals: Parameters<
+      ClaustrumEnrollmentClient['enrollPropose']
+    >[0][] = []
+    const instance = manager(
+      paths,
+      client({
+        enrollPropose: async (input) => {
+          proposals.push(input)
+          return { requestId: 'request-display' }
+        },
+      }),
+      { displayName: 'ChatGPT for OpenCode' },
+    )
+    await expect(instance.reconcile()).resolves.toEqual({
+      state: 'pending',
+      proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      requestId: 'request-display',
+    })
+    expect(proposals).toEqual([
+      {
+        name: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+        requestSecretHash:
+          '72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793',
+        displayName: 'ChatGPT for OpenCode',
+      },
+    ])
+    expect(await readFile(paths.statePath, 'utf8')).not.toContain('displayName')
+    expect(await readFile(paths.statePath, 'utf8')).not.toContain('ChatGPT')
+  })
+
+  test('display name key is absent when unset', async () => {
+    const paths = await fixture()
+    const proposals: Parameters<
+      ClaustrumEnrollmentClient['enrollPropose']
+    >[0][] = []
+    const instance = manager(
+      paths,
+      client({
+        enrollPropose: async (input) => {
+          proposals.push(input)
+          return { requestId: 'request-plain' }
+        },
+      }),
+    )
+    await instance.reconcile()
+    expect(proposals).toHaveLength(1)
+    expect(Object.hasOwn(proposals[0] ?? {}, 'displayName')).toBe(false)
+  })
+
+  test('older vault retries display name refusal once without the name and keeps the request pending', async () => {
+    const paths = await fixture()
+    const proposals: Parameters<
+      ClaustrumEnrollmentClient['enrollPropose']
+    >[0][] = []
+    const instance = manager(
+      paths,
+      client({
+        enrollPropose: async (input) => {
+          proposals.push(input)
+          if (Object.hasOwn(input, 'displayName'))
+            throw new ClaustrumCredentialError(
+              'invalid_params',
+              'permanent',
+              'gone',
+            )
+          return { requestId: 'request-older-vault' }
+        },
+      }),
+      { displayName: 'ChatGPT for OpenCode' },
+    )
+    await expect(instance.reconcile()).resolves.toEqual({
+      state: 'pending',
+      proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      requestId: 'request-older-vault',
+    })
+    expect(proposals).toHaveLength(2)
+    expect(proposals[0]?.displayName).toBe('ChatGPT for OpenCode')
+    expect(Object.hasOwn(proposals[1] ?? {}, 'displayName')).toBe(false)
+    expect(proposals[0]?.requestSecretHash).toBe(
+      '72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793',
+    )
+    expect(proposals[1]?.requestSecretHash).toBe(
+      proposals[0]?.requestSecretHash,
+    )
+    expect(proposals[1]?.name).toBe(CLAUSTRUM_OPENCODE_ENROLLMENT_NAME)
+    expect(JSON.parse(await readFile(paths.statePath, 'utf8'))).toMatchObject({
+      phase: 'pending',
+      requestId: 'request-older-vault',
+      requestSecret: secret,
+    })
+  })
+
+  test('invalid_params without a display name still blocks after one proposal', async () => {
+    const paths = await fixture()
+    let proposals = 0
+    const instance = manager(
+      paths,
+      client({
+        enrollPropose: async (input) => {
+          proposals++
+          expect(Object.hasOwn(input, 'displayName')).toBe(false)
+          throw new ClaustrumCredentialError(
+            'invalid_params',
+            'transient',
+            'retry',
+          )
+        },
+      }),
+    )
+    await expect(instance.reconcile()).resolves.toEqual({
+      state: 'blocked',
+      proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      code: 'invalid_params',
+    })
+    expect(proposals).toBe(1)
+    expect(await readFile(paths.statePath, 'utf8')).not.toContain(secret)
+  })
+
+  test('a second invalid_params after display name fallback blocks without a third proposal', async () => {
+    const paths = await fixture()
+    const proposals: Parameters<
+      ClaustrumEnrollmentClient['enrollPropose']
+    >[0][] = []
+    const instance = manager(
+      paths,
+      client({
+        enrollPropose: async (input) => {
+          proposals.push(input)
+          throw new ClaustrumCredentialError(
+            'invalid_params',
+            'transient',
+            'retry',
+          )
+        },
+      }),
+      { displayName: 'ChatGPT for OpenCode' },
+    )
+    await expect(instance.reconcile()).resolves.toEqual({
+      state: 'blocked',
+      proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+      code: 'invalid_params',
+    })
+    expect(proposals).toHaveLength(2)
+    expect(Object.hasOwn(proposals[1] ?? {}, 'displayName')).toBe(false)
+    expect(await readFile(paths.statePath, 'utf8')).not.toContain(secret)
+  })
+
+  test('display name fallback keeps existing retry and unsupported proposal handling', async () => {
+    for (const code of ['pending_queue_full', 'unknown_method'] as const) {
+      const paths = await fixture()
+      let proposals = 0
+      const instance = manager(
+        paths,
+        client({
+          enrollPropose: async () => {
+            proposals++
+            throw new ClaustrumCredentialError(
+              proposals === 1 ? 'invalid_params' : code,
+              'transient',
+              'retry',
+            )
+          },
+        }),
+        { displayName: 'ChatGPT for OpenCode' },
+      )
+      await expect(instance.reconcile()).resolves.toEqual(
+        code === 'pending_queue_full'
+          ? {
+              state: 'pending',
+              proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+              retryCode: code,
+            }
+          : {
+              state: 'unavailable',
+              proposedName: CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
+              code,
+            },
+      )
+      expect(proposals).toBe(2)
+      if (code === 'pending_queue_full')
+        expect(await readFile(paths.statePath, 'utf8')).toContain(secret)
+      else await expect(instance.status()).resolves.toEqual({ state: 'idle' })
+    }
+  })
+
   test('request-secret hash matches the vault decoded-byte enrollment vector', async () => {
     const fixedHash =
       '72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793'

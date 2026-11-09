@@ -99,6 +99,14 @@ plugin that supplies `migrate` sees exactly the output it did before.
 
 `vault.hosts[host].paths` is exactly the input to `/claustrum`'s
 `hostEnrollmentPaths`, with separate host identities and enrollment files.
+Each host can optionally supply `displayName` (also an option on
+`ClaustrumEnrollmentManager`, alongside `proposedName`) for the person-facing
+name proposed for approval and shown in the vault apps' Permissions page. It must
+be 1–40 Unicode code points of plain text, with no control characters (Cc),
+bidirectional controls or zero-width characters; invalid names throw rather than
+being shortened. `/claustrum` exports `validEnrollmentDisplayName` to share this
+validation. Older vaults are handled by one retry without the display name when
+the proposal is refused with `invalid_params`.
 Setup proves availability by finding `ck` on PATH and handshaking the supplied
 connection file within two seconds. Connect uses the existing enrollment manager,
 prints the `ck auth enroll approve` command, and polls for up to five minutes;

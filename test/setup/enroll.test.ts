@@ -106,6 +106,48 @@ test('hosted setup and Connect explain why the host cannot enroll itself', async
 })
 
 describe('setup enrollment wait', () => {
+  test('passes each host display name through to its enrollment proposal', async () => {
+    const root = await profile()
+    const setup = plugin(root)
+    setup.vault.hosts.opencode.displayName = 'ChatGPT for OpenCode'
+    setup.vault.hosts.pi.displayName = 'ChatGPT for Pi'
+    const proposals: Parameters<
+      ClaustrumEnrollmentConnection['enrollPropose']
+    >[0][] = []
+    for (const host of ['opencode', 'pi'] as const) {
+      await connectSetupHost(
+        setup,
+        host,
+        {
+          ...clock(),
+          connect: async () =>
+            vault({
+              async enrollPropose(input) {
+                proposals.push(input)
+                return { requestId: `request-${host}` }
+              },
+              async enrollPoll() {
+                return {
+                  status: 'approved',
+                  name: setup.vault.hosts[host].name,
+                  token: 'ab'.repeat(32),
+                  tokenGeneration: 1,
+                }
+              },
+            }),
+        },
+        terminal(),
+        async () => {},
+      )
+    }
+    expect(
+      proposals.map(({ name, displayName }) => ({ name, displayName })),
+    ).toEqual([
+      { name: 'test-auth-opencode', displayName: 'ChatGPT for OpenCode' },
+      { name: 'test-auth-pi', displayName: 'ChatGPT for Pi' },
+    ])
+  })
+
   test('a proposal refused with unknown_method stops after one attempt with the fixed message', async () => {
     const root = await profile()
     const time = clock()
