@@ -106,7 +106,10 @@ be 1–40 Unicode code points of plain text, with no control characters (Cc),
 bidirectional controls or zero-width characters; invalid names throw rather than
 being shortened. `/claustrum` exports `validEnrollmentDisplayName` to share this
 validation. Older vaults are handled by one retry without the display name when
-the proposal is refused with `invalid_params`.
+the proposal is refused with `invalid_params`. The name reaches the vault only
+through `@cortexkit/claustrum-client` 0.17.0 or newer: older clients send just the
+proposed name and request hash, silently dropping it, so a plugin that sets
+`displayName` needs `^0.17.0` in its own dependency range.
 Setup proves availability by finding `ck` on PATH and handshaking the supplied
 connection file within two seconds. Connect uses the existing enrollment manager,
 prints the `ck auth enroll approve` command, and polls for up to five minutes;
