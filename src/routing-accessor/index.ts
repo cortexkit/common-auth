@@ -69,6 +69,28 @@ interface RoutingReportIdentity {
   credentialId?: string
 }
 
+export type BillingRequestKind =
+  | 'primary'
+  | 'title'
+  | 'compaction'
+  | 'generate'
+  | 'keep_warm'
+  | 'prime'
+
+export type BillingOutcome = 'completed' | 'cut' | 'failed'
+
+/** Omit unread counts; zero represents a measured count, not a default. */
+export interface BillingUsage {
+  input?: number
+  output?: number
+  cacheRead?: number
+  cacheWrite?: number
+  cacheWrite5m?: number
+  cacheWrite1h?: number
+  reasoning?: number
+  reasoningIncludedInOutput?: boolean
+}
+
 export type ReportRoutingInput =
   | (RoutingReportIdentity &
       (
@@ -112,9 +134,62 @@ export type ReportRoutingInput =
         | 'unsupported_model'
         | 'not_oauth'
     }
+  | {
+      sessionId: string
+      kind: 'billing'
+      attemptId: string
+      requestKind: BillingRequestKind
+      credentialId: string
+      accountId?: string
+      provider: string
+      model: string
+      outcome: BillingOutcome
+      providerRequestId?: string
+      providerResponseId?: string
+      userMessageId?: string
+      status?: number
+      attempt?: number
+      chargeBasis?: 'subscription_included' | 'metered_api'
+      usage?: BillingUsage
+      usageByModel?: readonly { modelUsed: string; usage: BillingUsage }[]
+    }
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function billingUsage(
+  value: unknown,
+): Record<string, number | boolean> | undefined {
+  if (!isObject(value) || Array.isArray(value)) return
+  const usage: Record<string, number | boolean> = {}
+  for (const [inputKey, payloadKey] of [
+    ['input', 'input'],
+    ['output', 'output'],
+    ['cacheRead', 'cache_read'],
+    ['cacheWrite', 'cache_write'],
+    ['cacheWrite5m', 'cache_write_5m'],
+    ['cacheWrite1h', 'cache_write_1h'],
+    ['reasoning', 'reasoning'],
+  ] as const) {
+    const count = value[inputKey]
+    if (
+      typeof count === 'number' &&
+      Number.isSafeInteger(count) &&
+      count >= 0
+    ) {
+      usage[payloadKey] = count
+    }
+  }
+  const reasoningIncludedInOutput = value.reasoningIncludedInOutput
+  if (typeof reasoningIncludedInOutput === 'boolean') {
+    usage.reasoning_included_in_output = reasoningIncludedInOutput
+  }
+  return Object.keys(usage).length > 0 ? usage : undefined
 }
 
 /**
@@ -237,10 +312,10 @@ export async function askRouting<Candidate extends RoutingCandidate>(
 }
 
 /**
- * Report a vault request or turn-note event without waiting for routing. Only
- * contract fields are sent, and all accessor failures are ignored. Headers must
- * already be limited to rate-limit headers by the caller; values are not filtered
- * or redacted here.
+ * Report a vault request, billing result or turn-note event without waiting for
+ * routing. Only contract fields are sent, and all accessor failures are ignored.
+ * Headers must already be limited to rate-limit headers by the caller; values
+ * are not filtered or redacted here.
  */
 export function reportRouting(input: ReportRoutingInput): void {
   try {
@@ -251,6 +326,93 @@ export function reportRouting(input: ReportRoutingInput): void {
     let payload: unknown
     if ('kind' in input) {
       switch (input.kind) {
+        case 'billing': {
+          const {
+            attemptId,
+            requestKind,
+            credentialId,
+            provider,
+            model,
+            outcome,
+            accountId,
+            providerRequestId,
+            providerResponseId,
+            userMessageId,
+            status,
+            attempt,
+            chargeBasis,
+            usage: inputUsage,
+            usageByModel: inputUsageByModel,
+          } = input
+          if (
+            !isNonEmptyString(attemptId) ||
+            !isNonEmptyString(credentialId) ||
+            !isNonEmptyString(provider) ||
+            !isNonEmptyString(model) ||
+            (requestKind !== 'primary' &&
+              requestKind !== 'title' &&
+              requestKind !== 'compaction' &&
+              requestKind !== 'generate' &&
+              requestKind !== 'keep_warm' &&
+              requestKind !== 'prime') ||
+            (outcome !== 'completed' &&
+              outcome !== 'cut' &&
+              outcome !== 'failed')
+          )
+            return
+          const usage = billingUsage(inputUsage)
+          const usageByModel: Record<string, unknown>[] = []
+          if (Array.isArray(inputUsageByModel)) {
+            for (const entry of inputUsageByModel) {
+              if (!isObject(entry) || Array.isArray(entry)) continue
+              const modelUsed = entry.modelUsed
+              if (!isNonEmptyString(modelUsed)) continue
+              const modelUsage = billingUsage(entry.usage)
+              usageByModel.push({
+                model_used: modelUsed,
+                ...(modelUsage ? { usage: modelUsage } : {}),
+              })
+            }
+          }
+          payload = {
+            kind: 'billing',
+            attempt_id: attemptId,
+            request_kind: requestKind,
+            credential_id: credentialId,
+            provider,
+            model,
+            outcome,
+            ...(isNonEmptyString(accountId) ? { account_id: accountId } : {}),
+            ...(isNonEmptyString(providerRequestId)
+              ? { provider_request_id: providerRequestId }
+              : {}),
+            ...(isNonEmptyString(providerResponseId)
+              ? { provider_response_id: providerResponseId }
+              : {}),
+            ...(isNonEmptyString(userMessageId)
+              ? { user_message_id: userMessageId }
+              : {}),
+            ...(typeof status === 'number' &&
+            Number.isInteger(status) &&
+            status >= 0
+              ? { status }
+              : {}),
+            ...(typeof attempt === 'number' &&
+            Number.isInteger(attempt) &&
+            attempt >= 1
+              ? { attempt }
+              : {}),
+            ...(chargeBasis === 'subscription_included' ||
+            chargeBasis === 'metered_api'
+              ? { charge_basis: chargeBasis }
+              : {}),
+            ...(usage ? { usage } : {}),
+            ...(usageByModel.length > 0
+              ? { usage_by_model: usageByModel }
+              : {}),
+          }
+          break
+        }
         case 'turn_notes_supported': {
           const { model, supported } = input
           if (

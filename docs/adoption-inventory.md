@@ -1293,7 +1293,7 @@ No auth plugin adopts this client yet.
 
 Runtime exports: `askRouting`, `reportRouting`, `turnNotes`. Type exports:
 `RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`,
-`ReportRoutingInput`.
+`ReportRoutingInput`, `BillingUsage`, `BillingRequestKind`, `BillingOutcome`.
 
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
@@ -1301,6 +1301,7 @@ Runtime exports: `askRouting`, `reportRouting`, `turnNotes`. Type exports:
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools send nothing |
 | `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
 | `reportRouting(input)` (turn notes) | `{ sessionId, kind: 'turn_notes_supported', model: string, supported: boolean }` or `{ sessionId, kind: 'turn_note_skipped', after_tool_use_id: string, reason: 'anchor_missing' \| 'before_user_message' \| 'unsupported_model' \| 'not_oauth' }` | `void`; one fire-and-forget call per event, never batched | never throws; invalid payloads send nothing |
+| `reportRouting(input)` (billing) | `{ sessionId, kind: 'billing', attemptId, requestKind, credentialId, provider, model, outcome, accountId?, providerRequestId?, providerResponseId?, userMessageId?, status?, attempt?, chargeBasis?, usage?, usageByModel? }` | `void`; synchronous and fire-and-forget, never waits for the handle | never throws; invalid required fields send nothing, invalid optional members are omitted |
 
 `turnNotes` synchronously reads the handle's `turn_notes()` member as advisory
 input for request shaping. Nothing is persisted by this module. Plugins on routes
@@ -1317,6 +1318,37 @@ a session field or account identity in the payload. `model` and
 `after_tool_use_id` must be non-empty strings, `supported` must be a boolean, and
 the four skip reasons above form a closed set. Reporting once per session and
 model or anchor is the caller's responsibility; the accessor does not deduplicate.
+
+**Billing reports.** Callers send one `kind: 'billing'` report per physical model
+request, after the request ends (including a cut or failed request), not a start
+report or a report with a `final` member. The accessor does not deduplicate.
+The required input strings are `attemptId`, `credentialId` (the vault record id),
+`provider` and `model`. `requestKind` must be `primary`, `title`, `compaction`,
+`generate`, `keep_warm` or `prime`; `outcome` must be `completed`, `cut` or `failed`.
+An empty or missing required string or an invalid required enum sends nothing.
+
+The optional strings are `accountId`, `providerRequestId`, `providerResponseId`
+and `userMessageId`. `status` is a non-negative integer HTTP status; `attempt` is
+a positive integer (THALAMUS defaults it to 1 when omitted). `chargeBasis` is
+only `subscription_included` or `metered_api`. Invalid optional members are left
+out without dropping the report. Input names are camelCase; the handle receives
+only `kind`, `attempt_id`, `request_kind`, `credential_id`, `provider`, `model`,
+`outcome` and the valid optional `account_id`, `provider_request_id`,
+`provider_response_id`, `user_message_id`, `status`, `attempt`, `charge_basis`,
+`usage` and `usage_by_model`. The session id is used to find the handle, not sent
+in the payload. Unknown input members are never copied.
+
+`BillingUsage` accepts optional `input`, `output`, `cacheRead`, `cacheWrite`,
+`cacheWrite5m`, `cacheWrite1h` and `reasoning` counts, plus the optional boolean
+`reasoningIncludedInOutput`. Counts must be non-negative safe integers. The wire
+names are `input`, `output`, `cache_read`, `cache_write`, `cache_write_5m`,
+`cache_write_1h`, `reasoning` and `reasoning_included_in_output`. An unread or
+omitted count is **left out, never sent as 0**; an explicit zero is preserved as a
+real reading. Invalid counts are dropped, and `usage` is omitted when no valid
+members remain. `usageByModel` accepts `{ modelUsed, usage }` entries, sent as
+`usage_by_model: [{ model_used, usage }]` with the same usage filtering. Entries
+without a non-empty string `modelUsed` are dropped; a valid model entry can omit
+`usage` when no valid readings remain. An empty resulting list is omitted.
 
 The optional `holdWaitMaxS` input can use the cap computed by
 [`holdWaitMaxS` from `./limits`](#limits). The routing accessor does not import
@@ -1339,8 +1371,8 @@ with an unref'd timer. A hold is returned only when `retry_after_ms` is finite
 and non-negative. It is not capped here: the plugin must apply its own hold cap
 before waiting, and still performs its normal vault authorization before a send.
 
-**Reporting and privacy.** Reports send only `account_id`, optional
-`credential_id`, `outcome`, and either `headers` for `served` or `window` and
+**Routing-outcome reporting and privacy.** These reports send only `account_id`,
+optional `credential_id`, `outcome`, and either `headers` for `served` or `window` and
 optional `pool` and `resets_at` for `exhausted`. `resetsAt` is epoch milliseconds;
 `window` must be `5h` or `7d`. The THALAMUS bridge maps these to routing's
 `five_hour` and `seven_day`. `pool` names a scoped quota group, such as
@@ -1353,8 +1385,7 @@ or present but invalid pools are silently ignored, including for plain JavaScrip
 callers. No token, email, label or other input metadata is forwarded. Callers
 **must pass only rate-limit headers**, not the whole response headers: values are passed
 through unchanged, not filtered or redacted by this client. Credential health
-remains the vault's responsibility; this client exposes only served and
-exhausted reports.
+remains the vault's responsibility, separate from these routing outcomes.
 
 ### ./store
 
