@@ -1347,8 +1347,9 @@ omitted count is **left out, never sent as 0**; an explicit zero is preserved as
 real reading. Invalid counts are dropped, and `usage` is omitted when no valid
 members remain. `usageByModel` accepts `{ modelUsed, usage }` entries, sent as
 `usage_by_model: [{ model_used, usage }]` with the same usage filtering. Entries
-without a non-empty string `modelUsed` are dropped; a valid model entry can omit
-`usage` when no valid readings remain. An empty resulting list is omitted.
+without a non-empty string `modelUsed`, or without a valid reading in `usage`,
+are dropped, because THALAMUS rejects the whole report when an entry has no usage
+object. An empty resulting list is omitted.
 
 The optional `holdWaitMaxS` input can use the cap computed by
 [`holdWaitMaxS` from `./limits`](#limits). The routing accessor does not import

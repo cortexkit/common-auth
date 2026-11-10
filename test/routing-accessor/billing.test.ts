@@ -318,7 +318,6 @@ describe('billing reports', () => {
                 reasoning_included_in_output: false,
               },
             },
-            { model_used: 'no-readings' },
             { model_used: 'last', usage: { output: 2 } },
           ],
         },
@@ -334,6 +333,8 @@ describe('billing reports', () => {
       {},
       [],
       [null, {}, { modelUsed: '', usage: { input: 0 } }],
+      [{ modelUsed: 'no-readings', usage: { output: -1 } }],
+      [{ modelUsed: 'no-usage' }],
     ].map((value) => [value]),
   )(
     'omits usage_by_model when no valid model entries remain: %p',

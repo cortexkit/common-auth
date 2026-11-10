@@ -368,10 +368,10 @@ export function reportRouting(input: ReportRoutingInput): void {
               const modelUsed = entry.modelUsed
               if (!isNonEmptyString(modelUsed)) continue
               const modelUsage = billingUsage(entry.usage)
-              usageByModel.push({
-                model_used: modelUsed,
-                ...(modelUsage ? { usage: modelUsage } : {}),
-              })
+              // Thalamus rejects the whole report when an entry has no usage
+              // object, so an entry without a valid reading is dropped.
+              if (!modelUsage) continue
+              usageByModel.push({ model_used: modelUsed, usage: modelUsage })
             }
           }
           payload = {
