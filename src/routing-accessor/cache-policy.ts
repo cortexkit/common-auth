@@ -20,6 +20,21 @@ export interface SessionToolWait {
   since: number
 }
 
+export const CACHE_WARM_STOP_REASONS = [
+  'cost-cap',
+  'count-cap',
+  'outside-hours',
+  'session-ended',
+  'unsupported',
+] as const
+
+/** Billing rejects unknown stop reasons; omit them rather than guessing. */
+export function isCacheWarmStopReason(
+  value: unknown,
+): value is (typeof CACHE_WARM_STOP_REASONS)[number] {
+  return CACHE_WARM_STOP_REASONS.some((reason) => reason === value)
+}
+
 /**
  * The stop reasons the llm-runner contract defines today; any other string is
  * accepted too, for reasons that contract adds later.

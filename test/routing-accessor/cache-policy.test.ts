@@ -8,8 +8,10 @@ import {
   test,
 } from 'bun:test'
 import {
+  CACHE_WARM_STOP_REASONS,
   type CacheTouchInput,
   type CacheWarmStoppedInput,
+  isCacheWarmStopReason,
   reportCacheTouch,
   reportCacheWarmStopped,
   sessionCachePolicy,
@@ -313,6 +315,35 @@ describe('sessionToolWait', () => {
 })
 
 describe('cache reports', () => {
+  test('exports exactly the billing contract stop reasons and a narrow guard', () => {
+    expect(CACHE_WARM_STOP_REASONS).toEqual([
+      'cost-cap',
+      'count-cap',
+      'outside-hours',
+      'session-ended',
+      'unsupported',
+    ])
+    for (const reason of CACHE_WARM_STOP_REASONS) {
+      expect(isCacheWarmStopReason(reason)).toBe(true)
+    }
+    for (const reason of [
+      'idle',
+      'expired',
+      'evicted',
+      'account-changed',
+      'stopped',
+      'future-reason',
+      '',
+      undefined,
+      null,
+      1,
+      {},
+      [],
+    ]) {
+      expect(isCacheWarmStopReason(reason)).toBe(false)
+    }
+  })
+
   const touch: CacheTouchInput = {
     at: 1_800_000_000_000,
     ttlMs: 300_000,

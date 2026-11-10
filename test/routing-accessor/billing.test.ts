@@ -41,6 +41,195 @@ const minimalPayload = {
 }
 
 describe('billing reports', () => {
+  test('includes cache facts in the full billing report', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({
+      ...billing,
+      accountId: 'vault-account',
+      providerRequestId: 'request-id',
+      providerResponseId: 'response-id',
+      userMessageId: 'message-id',
+      status: 200,
+      attempt: 2,
+      chargeBasis: 'subscription_included',
+      usage: { input: 100, cacheWrite: 40 },
+      usageByModel: [{ modelUsed: 'resolved', usage: { output: 20 } }],
+      cache: {
+        implicit: true,
+        warming: { on: false, stopReason: 'count-cap' },
+      },
+    })
+    expect(report.mock.calls).toEqual([
+      [
+        {
+          ...minimalPayload,
+          account_id: 'vault-account',
+          provider_request_id: 'request-id',
+          provider_response_id: 'response-id',
+          user_message_id: 'message-id',
+          status: 200,
+          attempt: 2,
+          charge_basis: 'subscription_included',
+          usage: { input: 100, cache_write: 40 },
+          usage_by_model: [{ model_used: 'resolved', usage: { output: 20 } }],
+          cache: {
+            implicit: true,
+            warming: { on: false, stop_reason: 'count-cap' },
+          },
+        },
+      ],
+    ])
+  })
+
+  test.each([1, 300_000, Number.MAX_SAFE_INTEGER])(
+    'sends a positive safe cache lifetime: %p',
+    (ttlMs) => {
+      const report = mock((_payload: unknown) => {})
+      install(() => ({ report }))
+      reportRouting({ ...billing, cache: { ttlMs } })
+      expect(report.mock.calls).toEqual([
+        [{ ...minimalPayload, cache: { ttl_ms: ttlMs } }],
+      ])
+    },
+  )
+
+  test.each(
+    [
+      { ttlMs: 300_000, implicit: true },
+      { ttlMs: -1, implicit: true },
+      { ttlMs: 300_000, implicit: false },
+    ].map((value) => [value]),
+  )(
+    'drops conflicting cache lifetime fields but keeps warming: %p',
+    (cache) => {
+      const report = mock((_payload: unknown) => {})
+      install(() => ({ report }))
+      reportRouting({
+        ...billing,
+        cache: { ...cache, warming: { on: true } },
+      } as unknown as ReportRoutingInput)
+      expect(report.mock.calls).toEqual([
+        [{ ...minimalPayload, cache: { warming: { on: true } } }],
+      ])
+    },
+  )
+
+  test.each(
+    [
+      undefined,
+      null,
+      'not cache',
+      [],
+      {},
+      { implicit: false },
+      { implicit: 'true' },
+      ...[-1, 0, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '1'].map(
+        (ttlMs) => ({ ttlMs }),
+      ),
+      { warming: { on: 'false', stopReason: 'count-cap' } },
+      { warming: { stopReason: 'count-cap' } },
+      { extra: true },
+    ].map((value) => [value]),
+  )('omits cache when no valid facts remain: %p', (cache) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({ ...billing, cache } as unknown as ReportRoutingInput)
+    expect(report.mock.calls).toEqual([[minimalPayload]])
+  })
+
+  test.each(
+    [undefined, null, [], {}, 'not warming', { on: 0 }, { on: null }].map(
+      (value) => [value],
+    ),
+  )('drops malformed warming but preserves cache lifetime: %p', (warming) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({
+      ...billing,
+      cache: { ttlMs: 300_000, warming },
+    } as unknown as ReportRoutingInput)
+    expect(report.mock.calls).toEqual([
+      [{ ...minimalPayload, cache: { ttl_ms: 300_000 } }],
+    ])
+  })
+
+  test.each([
+    'cost-cap',
+    'count-cap',
+    'outside-hours',
+    'session-ended',
+    'unsupported',
+  ])('sends a contract cache stop reason: %s', (stopReason) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({ ...billing, cache: { warming: { on: false, stopReason } } })
+    expect(report.mock.calls).toEqual([
+      [
+        {
+          ...minimalPayload,
+          cache: { warming: { on: false, stop_reason: stopReason } },
+        },
+      ],
+    ])
+  })
+
+  test.each([
+    { on: true, stopReason: 'count-cap' },
+    ...[
+      'idle',
+      'expired',
+      'evicted',
+      'account-changed',
+      'stopped',
+      'future',
+      1,
+    ].map((stopReason) => ({ on: false, stopReason })),
+  ])(
+    'omits a stop reason that cannot describe billing warming: %p',
+    (warming) => {
+      const report = mock((_payload: unknown) => {})
+      install(() => ({ report }))
+      reportRouting({
+        ...billing,
+        cache: { warming },
+      } as unknown as ReportRoutingInput)
+      expect(report.mock.calls).toEqual([
+        [{ ...minimalPayload, cache: { warming: { on: warming.on } } }],
+      ])
+    },
+  )
+
+  test('never copies unknown cache or warming fields', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({
+      ...billing,
+      cache: {
+        implicit: true,
+        ttl_ms: 10,
+        extra: 'not forwarded',
+        warming: {
+          on: false,
+          stopReason: 'cost-cap',
+          stop_reason: 'not forwarded',
+          extra: 'not forwarded',
+        },
+      },
+    } as unknown as ReportRoutingInput)
+    expect(report.mock.calls).toEqual([
+      [
+        {
+          ...minimalPayload,
+          cache: {
+            implicit: true,
+            warming: { on: false, stop_reason: 'cost-cap' },
+          },
+        },
+      ],
+    ])
+  })
+
   test('sends the exact full snake_case payload through the session handle', () => {
     const report = mock((_payload: unknown) => {})
     const handle = { report }

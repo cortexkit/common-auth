@@ -337,6 +337,103 @@ describe('CacheKeepManager status', () => {
   })
 })
 
+describe('CacheKeepManager warming', () => {
+  test('reads armed state and remembers a count-cap stop until retracked', async () => {
+    const { mgr } = makeManager(clock, {}, { profile: () => ({ maxWarms: 1 }) })
+    expect(mgr.warming('unseen')).toEqual({ on: false })
+    mgr.track({ sessionKey: 'session', bodyText: body('test') })
+    expect(mgr.warming('session')).toEqual({ on: true })
+    clock.advance(DUE_MS)
+    await mgr.tick()
+    expect(mgr.warming('session')).toEqual({
+      on: false,
+      stopReason: 'count-cap',
+    })
+    mgr.track({ sessionKey: 'session', bodyText: body('again') })
+    expect(mgr.warming('session')).toEqual({ on: true })
+    mgr.remove('session')
+    expect(mgr.warming('session')).toEqual({
+      on: false,
+      stopReason: 'session-ended',
+    })
+  })
+
+  test('bounds remembered reasons to four times maxTargets, oldest drop first', () => {
+    const { mgr } = makeManager(clock, { maxTargets: 1 })
+    for (const sessionKey of ['a', 'b', 'c', 'd']) {
+      mgr.track({ sessionKey, bodyText: body(sessionKey) })
+      mgr.remove(sessionKey)
+    }
+    const stopped = { on: false, stopReason: 'session-ended' }
+    for (const sessionKey of ['a', 'b', 'c', 'd']) {
+      expect(mgr.warming(sessionKey)).toEqual(stopped)
+    }
+    // Observing a reason must not make it more recent than a later drop.
+    mgr.track({ sessionKey: 'e', bodyText: body('e') })
+    mgr.remove('e')
+    expect(mgr.warming('a')).toEqual({ on: false })
+    for (const sessionKey of ['b', 'c', 'd', 'e']) {
+      expect(mgr.warming(sessionKey)).toEqual(stopped)
+    }
+    mgr.track({ sessionKey: 'b', bodyText: body('again') })
+    expect(mgr.warming('b')).toEqual({ on: true })
+    mgr.stop()
+    expect(mgr.warming('b')).toEqual({ on: false, stopReason: 'stopped' })
+    expect(mgr.warming('c')).toEqual(stopped)
+  })
+
+  test('reads without consulting the clock, adapter, window, sustain or logger', () => {
+    let failReads = false
+    const checkRead = () => {
+      if (failReads) throw new Error('unexpected callback')
+    }
+    const { mgr } = makeManager(
+      clock,
+      {
+        now: () => {
+          checkRead()
+          return clock.now()
+        },
+        getWindow: () => {
+          checkRead()
+          return undefined
+        },
+        getSustain: () => {
+          checkRead()
+          return false
+        },
+        logger: { debug: checkRead, warn: checkRead },
+      },
+      {
+        plan: () => {
+          checkRead()
+          return undefined
+        },
+      },
+    )
+    mgr.track({ sessionKey: 'session', bodyText: body('test') })
+    failReads = true
+    expect(mgr.warming('session')).toEqual({ on: true })
+    expect(mgr.warming('unseen')).toEqual({ on: false })
+    failReads = false
+    mgr.stop()
+  })
+
+  test('tracking again frees a remembered-reason slot', () => {
+    const { mgr } = makeManager(clock, { maxTargets: 2 })
+    for (const sessionKey of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+      mgr.track({ sessionKey, bodyText: body(sessionKey) })
+      mgr.remove(sessionKey)
+    }
+    mgr.track({ sessionKey: 'b', bodyText: body('again') })
+    mgr.track({ sessionKey: 'i', bodyText: body('new') })
+    mgr.remove('i')
+    expect(mgr.warming('a')).toEqual({ on: false, stopReason: 'session-ended' })
+    expect(mgr.warming('b')).toEqual({ on: true })
+    mgr.stop()
+  })
+})
+
 describe('CacheKeepManager start/stop', () => {
   test('start sets running flag', () => {
     const { mgr } = makeManager(clock)

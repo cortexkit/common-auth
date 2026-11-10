@@ -1291,7 +1291,8 @@ turn notes for request shaping. Routing's account ids are vault account ids, not
 plugin route ids or local pool row ids. Local pool rows are unknown to routing.
 No auth plugin adopts this client yet.
 
-Runtime exports: `askRouting`, `reportRouting`, `turnNotes`. Type exports:
+Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
+`CACHE_WARM_STOP_REASONS`, `isCacheWarmStopReason`. Type exports:
 `RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`,
 `ReportRoutingInput`, `BillingUsage`, `BillingRequestKind`, `BillingOutcome`.
 
@@ -1301,7 +1302,7 @@ Runtime exports: `askRouting`, `reportRouting`, `turnNotes`. Type exports:
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools send nothing |
 | `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
 | `reportRouting(input)` (turn notes) | `{ sessionId, kind: 'turn_notes_supported', model: string, supported: boolean }` or `{ sessionId, kind: 'turn_note_skipped', after_tool_use_id: string, reason: 'anchor_missing' \| 'before_user_message' \| 'unsupported_model' \| 'not_oauth' }` | `void`; one fire-and-forget call per event, never batched | never throws; invalid payloads send nothing |
-| `reportRouting(input)` (billing) | `{ sessionId, kind: 'billing', attemptId, requestKind, credentialId, provider, model, outcome, accountId?, providerRequestId?, providerResponseId?, userMessageId?, status?, attempt?, chargeBasis?, usage?, usageByModel? }` | `void`; synchronous and fire-and-forget, never waits for the handle | never throws; invalid required fields send nothing, invalid optional members are omitted |
+| `reportRouting(input)` (billing) | `{ sessionId, kind: 'billing', attemptId, requestKind, credentialId, provider, model, outcome, accountId?, providerRequestId?, providerResponseId?, userMessageId?, status?, attempt?, chargeBasis?, usage?, usageByModel?, cache? }` | `void`; synchronous and fire-and-forget, never waits for the handle | never throws; invalid required fields send nothing, invalid optional members are omitted |
 
 `turnNotes` synchronously reads the handle's `turn_notes()` member as advisory
 input for request shaping. Nothing is persisted by this module. Plugins on routes
@@ -1335,7 +1336,7 @@ out without dropping the report. Input names are camelCase; the handle receives
 only `kind`, `attempt_id`, `request_kind`, `credential_id`, `provider`, `model`,
 `outcome` and the valid optional `account_id`, `provider_request_id`,
 `provider_response_id`, `user_message_id`, `status`, `attempt`, `charge_basis`,
-`usage` and `usage_by_model`. The session id is used to find the handle, not sent
+`usage`, `usage_by_model` and `cache`. The session id is used to find the handle, not sent
 in the payload. Unknown input members are never copied.
 
 `BillingUsage` accepts optional `input`, `output`, `cacheRead`, `cacheWrite`,
@@ -1350,6 +1351,25 @@ members remain. `usageByModel` accepts `{ modelUsed, usage }` entries, sent as
 without a non-empty string `modelUsed`, or without a valid reading in `usage`,
 are dropped, because THALAMUS rejects the whole report when an entry has no usage
 object. An empty resulting list is omitted.
+
+The optional `cache` input is `{ ttlMs?: number, implicit?: true,
+warming?: { on: boolean, stopReason?: CacheWarmStopReason } }`. It belongs on the
+same end-of-request billing report, not a second report. `ttlMs` is the provable
+lifetime of the cache entry this request wrote or refreshed, in positive safe
+integer milliseconds, sent as `ttl_ms`. Use `implicit: true` instead when the
+provider caches without a lifetime the client chose; `implicit: false` is never
+sent. If both lifetime members are supplied, neither is sent, but valid warming
+state is kept. Missing facts mean unknown, never a default.
+
+`warming` is sent only when `on` is a boolean. `stopReason` becomes `stop_reason`
+only when `on` is false and the reason is `cost-cap`, `count-cap`, `outside-hours`,
+`session-ended` or `unsupported`; an unknown reason or a reason with `on: true`
+is omitted without dropping `on`. `CACHE_WARM_STOP_REASONS` lists those five
+reasons, and `isCacheWarmStopReason(value)` guards them. `CacheWarmStopReason`
+still accepts future strings, and `reportCacheWarmStopped` still forwards any
+string unchanged; only billing has the closed reason set. No other cache or
+warming members are copied. An empty sanitized cache object is omitted, and
+billing reports without cache facts are unchanged.
 
 The optional `holdWaitMaxS` input can use the cap computed by
 [`holdWaitMaxS` from `./limits`](#limits). The routing accessor does not import
@@ -1511,6 +1531,18 @@ Keeps idle prompt caches warm: one target per session holding its latest request
 **Opt-in session plans.** `off` refuses capture and drops a target with `unsupported`. Other plans use `decideCacheKeep` and unref'd one-shot due timers rather than waiting for the legacy periodic timer or using its clock window. `hours`/`always` use the rule's 24-warm cap, and priced `auto` uses its cost cap; only unpriced `auto` retains legacy idle/profile warm bounds. Lifetime, target-count, byte and LRU bounds apply to every target. Real requests reset counts, costs and warm timestamps. `CacheKeepTargetStatus.mode` is present only for planned targets. `CacheKeepTrackResult` additionally permits `unsupported` and `session-ended` false-result reasons on the plan path; legacy callers never see them. See [per-session cache policy](session-cache-policy.md) for the rule and reporting contract.
 
 **It gets** `track({ sessionKey, bodyText, accountId?, isSubagent?, meta })` → `{ tracked: true } | { tracked: false, reason: 'body-exceeds-max-bytes' | 'outside-window' | 'unsupported' | 'session-ended' }` (arms the timer; the freshest body replaces the previous one and restarts its cache clock, idle clock and warm count), `remove(sessionKey)`, `start()`, `stop()` (aborts a warm in flight, whose result then changes nothing, and forgets every target), `tick()`, and `status()` (no bodies: per target the account, subagent flag, expiry, last real request, last warm, backoff, failures, warm count, TTL and bytes). `meta` is plugin data handed back to the adapter, such as replay headers. Also `normalizeCacheKeepWindow(value)` (a persisted `{ startHour, endHour }` block, or undefined) and `isWithinCacheKeepWindow(window, date)`.
+
+`warming(sessionKey)` is a synchronous, read-only, never-throwing lookup with no
+I/O or callbacks. It returns `{ on: true }` while the manager holds a target for
+the session (armed, not necessarily already warmed), otherwise `{ on: false,
+stopReason?: string }`. The last actual drop reason is remembered even if the
+target never warmed; an unseen session has no reason. At most `maxTargets × 4`
+drop reasons are retained, oldest drop first out; reads do not refresh their age.
+Tracking a session again clears its remembered reason. Plugins use
+`isCacheWarmStopReason` before including the reason in billing: internal reasons
+such as `idle`, `expired`, `evicted`, `account-changed` and `stopped` become
+`on: false` with no reason, because an unknown contract reason must be left out,
+not guessed. The lookup does not change scheduling or the off-path stop reports.
 
 **Bounds.** A target retires once its last confirmed cache lifetime ends (`cacheExpiresAt`: its capture plus its TTL, moved on by each successful warm), checked on every `track` and `tick` and again before each send, whatever the window, sustain or a pending retry say: replaying a history whose cache has expired rebuilds a cold cache instead of keeping a warm one alive, and with large histories that is a real cost, not a heartbeat (library decision, from anthropic-auth's native keeper). A failed warm still backs off, but a retry is sent only while the lifetime lasts; a backoff that runs past it means the target retires instead, which with the manager's defaults (`backoffMs` 10 minutes, `ttlMs` 5 minutes) is every failure. Explicit cold prewarming (sending a source body whose cache is not known to be live) is a separate operation the manager does not offer; a plugin that wants one sends it from its own code. The window gates capture and warming; targets captured inside it survive outside it until their lifetime ends, and warm when it reopens if they are still alive. A target idle past its bound (the profile's `maxIdleMs`, else `maxSubagentIdleMs` or `maxIdleWarmMs`) is pruned on every `track` and `tick`, including while it is backing off. `sustain` exempts main sessions from that idle pruning only: the lifetime, subagents, the window, the count and byte caps and warm caps still apply. The count and byte caps evict the target touched least recently, where a warm counts as a touch; an oversized body is refused without evicting anything. Library decision: byte caps count UTF-8 bytes.
 

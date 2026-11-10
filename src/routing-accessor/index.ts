@@ -4,6 +4,10 @@
  * persisted here; plugins on routes the runner does not serve get no turn notes.
  */
 
+import {
+  type CacheWarmStopReason,
+  isCacheWarmStopReason,
+} from './cache-policy.js'
 import { routingHandle } from './handle.js'
 
 export type {
@@ -17,6 +21,8 @@ export type {
   SessionToolWait,
 } from './cache-policy.js'
 export {
+  CACHE_WARM_STOP_REASONS,
+  isCacheWarmStopReason,
   reportCacheTouch,
   reportCacheWarmStopped,
   sessionCachePolicy,
@@ -152,6 +158,11 @@ export type ReportRoutingInput =
       chargeBasis?: 'subscription_included' | 'metered_api'
       usage?: BillingUsage
       usageByModel?: readonly { modelUsed: string; usage: BillingUsage }[]
+      cache?: {
+        ttlMs?: number
+        implicit?: true
+        warming?: { on: boolean; stopReason?: CacheWarmStopReason }
+      }
     }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -160,6 +171,32 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function billingCache(value: unknown): Record<string, unknown> | undefined {
+  if (!isObject(value) || Array.isArray(value)) return
+  const { ttlMs, implicit, warming } = value
+  const cache: Record<string, unknown> = {}
+  // Conflicting lifetime claims cannot prove what the request cached.
+  if (!(ttlMs !== undefined && implicit !== undefined)) {
+    if (typeof ttlMs === 'number' && Number.isSafeInteger(ttlMs) && ttlMs > 0) {
+      cache.ttl_ms = ttlMs
+    } else if (implicit === true) {
+      cache.implicit = true
+    }
+  }
+  if (isObject(warming) && !Array.isArray(warming)) {
+    const { on, stopReason } = warming
+    if (typeof on === 'boolean') {
+      cache.warming = {
+        on,
+        ...(!on && isCacheWarmStopReason(stopReason)
+          ? { stop_reason: stopReason }
+          : {}),
+      }
+    }
+  }
+  return Object.keys(cache).length > 0 ? cache : undefined
 }
 
 function billingUsage(
@@ -343,6 +380,7 @@ export function reportRouting(input: ReportRoutingInput): void {
             chargeBasis,
             usage: inputUsage,
             usageByModel: inputUsageByModel,
+            cache: inputCache,
           } = input
           if (
             !isNonEmptyString(attemptId) ||
@@ -361,6 +399,7 @@ export function reportRouting(input: ReportRoutingInput): void {
           )
             return
           const usage = billingUsage(inputUsage)
+          const cache = billingCache(inputCache)
           const usageByModel: Record<string, unknown>[] = []
           if (Array.isArray(inputUsageByModel)) {
             for (const entry of inputUsageByModel) {
@@ -410,6 +449,7 @@ export function reportRouting(input: ReportRoutingInput): void {
             ...(usageByModel.length > 0
               ? { usage_by_model: usageByModel }
               : {}),
+            ...(cache ? { cache } : {}),
           }
           break
         }

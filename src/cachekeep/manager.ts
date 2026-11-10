@@ -256,6 +256,7 @@ function positive(value: number | undefined, fallback: number): number {
  */
 export class CacheKeepManager<M = undefined> {
   private readonly targets = new Map<string, Target<M>>()
+  private readonly lastDropReasons = new Map<string, string>()
   private readonly adapter: CacheKeepAdapter<M>
   private readonly now: () => number
   private readonly log: CacheKeepLogger | undefined
@@ -409,6 +410,7 @@ export class CacheKeepManager<M = undefined> {
       warmCount: 0,
     }
     this.targets.set(sessionKey, target)
+    this.lastDropReasons.delete(sessionKey)
     this.totalBytes += bodyBytes
     this.log?.debug('cachekeep captured target', { sessionKey, accountId })
     this.start()
@@ -456,6 +458,23 @@ export class CacheKeepManager<M = undefined> {
       this.drop(sessionKey, 'stopped')
     this.totalBytes = 0
     this.log?.debug('cachekeep stopped')
+  }
+
+  /**
+   * Read whether a session is armed, without I/O or callbacks. Stop reasons
+   * include manager-internal values: plugins must filter them through
+   * isCacheWarmStopReason for billing, leaving unknown reasons out, not guessing.
+   */
+  warming(
+    sessionKey: string,
+  ): { on: true } | { on: false; stopReason?: string } {
+    try {
+      if (this.targets.has(sessionKey)) return { on: true }
+      const stopReason = this.lastDropReasons.get(sessionKey)
+      return { on: false, ...(stopReason !== undefined ? { stopReason } : {}) }
+    } catch {
+      return { on: false }
+    }
   }
 
   /** A snapshot without captured bodies, which can hold prompt content. */
@@ -991,6 +1010,15 @@ export class CacheKeepManager<M = undefined> {
     this.clearPlanTimer(target)
     this.totalBytes -= target.bodyBytes
     this.targets.delete(sessionKey)
+    if (reason !== null) {
+      this.lastDropReasons.delete(sessionKey)
+      this.lastDropReasons.set(sessionKey, reason)
+      while (this.lastDropReasons.size > this.maxTargets * 4) {
+        const oldest = this.lastDropReasons.keys().next()
+        if (oldest.done) break
+        this.lastDropReasons.delete(oldest.value)
+      }
+    }
     if (reason !== null && target.hasWarmed && this.adapter.onWarmStopped) {
       this.report(() =>
         this.adapter.onWarmStopped?.(sessionKey, { at: this.now(), reason }),
