@@ -6,12 +6,12 @@ type FileIdentity = Stats | 'absent'
 
 async function identity(
   path: string,
-  followSymlinks: boolean,
+  probe: typeof stat,
 ): Promise<FileIdentity | undefined> {
   try {
     // Match the reader: private readers reject links, while readFile follows
     // them and needs the target's identity, not the link's identity.
-    const metadata = await (followSymlinks ? stat(path) : lstat(path))
+    const metadata = await probe(path)
     return metadata.isFile() ? metadata : undefined
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT'
@@ -33,14 +33,22 @@ function sameIdentity(left: FileIdentity, right: FileIdentity): boolean {
 
 /** Process-local reads, capped at 64 path sets with one value per resolved set. */
 export class FileReadCache<T> {
-  readonly #followSymlinks: boolean
+  readonly #probe: typeof stat
   readonly #entries = new Map<
     string,
     { identities: FileIdentity[]; value: T }
   >()
 
-  constructor(options: { followSymlinks?: boolean } = {}) {
-    this.#followSymlinks = options.followSymlinks ?? false
+  constructor(
+    options: {
+      followSymlinks?: boolean
+      stat?: typeof stat
+      lstat?: typeof lstat
+    } = {},
+  ) {
+    this.#probe = options.followSymlinks
+      ? (options.stat ?? stat)
+      : (options.lstat ?? lstat)
   }
 
   async read(
@@ -51,7 +59,7 @@ export class FileReadCache<T> {
     const resolvedPaths = paths.map((path) => resolve(path))
     const key = JSON.stringify(resolvedPaths)
     const probed = await Promise.all(
-      resolvedPaths.map((path) => identity(path, this.#followSymlinks)),
+      resolvedPaths.map((path) => identity(path, this.#probe)),
     )
     const identities = probed.every((entry) => entry !== undefined)
       ? probed
