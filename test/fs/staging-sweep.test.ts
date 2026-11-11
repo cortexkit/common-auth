@@ -7,6 +7,7 @@ import {
   rm,
   symlink,
   unlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -53,6 +54,12 @@ async function plantRecord(file: string, expiresAt: number): Promise<string> {
     `${JSON.stringify({ ownerId: randomUUID(), expiresAt })}\n`,
     { mode: 0o600 },
   )
+  // A real leftover was last written when its writer died, about one lease
+  // before the expiry it records; the sweep skips recently written files.
+  if (expiresAt < Date.now()) {
+    const written = Math.max(0, expiresAt - options.ttlMs) / 1000
+    await utimes(file, written, written)
+  }
   return file
 }
 
@@ -79,6 +86,17 @@ describe('abandoned lease staging sweep', () => {
     expect(await stagingNames()).toEqual([])
     await lock.release()
     expect(await readdir(dir)).toEqual([])
+  })
+
+  it('keeps an expired record whose file was written within the margin', async () => {
+    // A writer whose clock runs far behind could record an old expiry in a
+    // file it is still about to publish; the file's own write time keeps it.
+    const file = await plantRecord(stagingPath(), Date.now() - DAY_MS)
+    const now = Date.now() / 1000
+    await utimes(file, now, now)
+    const lock = await acquireAndSweep()
+    expect(await stagingNames()).toEqual([file.slice(dir.length + 1)])
+    await lock.release()
   })
 
   it('keeps fresh, misnamed, unparseable and other-shaped files', async () => {

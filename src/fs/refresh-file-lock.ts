@@ -248,6 +248,9 @@ async function sweepAbandonedStaging(
   for (const name of candidates) {
     const path = join(directory, name)
     try {
+      // A file written within the margin belongs to a writer that may be
+      // alive, so don't even open it; the record's expiry still decides.
+      if (now() - (await lstat(path)).mtimeMs < marginMs) continue
       const staged = await readStagedOwner(path)
       if (!staged || !(staged.expiresAt < now() - marginMs)) continue
       if (hooks?.beforeUnlink) await hooks.beforeUnlink(path)
