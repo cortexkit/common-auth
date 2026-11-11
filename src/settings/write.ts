@@ -21,6 +21,13 @@ type StepHook = (
 
 let stepHook: StepHook | undefined
 
+const HARD_LINK_UNSUPPORTED = new Set([
+  'EPERM',
+  'ENOTSUP',
+  'EOPNOTSUPP',
+  'ENOSYS',
+])
+
 /** Internal test hook, deliberately absent from the package entry point. */
 export function setSettingsWriteStepHookForTest(hook?: StepHook): void {
   stepHook = hook
@@ -73,10 +80,21 @@ export async function writeSettings(
         // A hard link never replaces a file created since the locked read.
         await SettingsFs.link(temp, target)
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        const code = (error as NodeJS.ErrnoException).code ?? ''
+        if (code === 'EEXIST') {
           throw new SettingsRefusal(
             'settings-busy',
             `Settings file appeared before publication: ${target}`,
+            { cause: error },
+          )
+        }
+        // Some filesystems (FAT, exFAT, some network and user-space mounts) have no
+        // hard links. A non-atomic create could expose a half-written file, so
+        // refuse instead of falling back.
+        if (HARD_LINK_UNSUPPORTED.has(code)) {
+          throw new SettingsRefusal(
+            'settings-unavailable',
+            `Settings file cannot be created on this filesystem: ${target}`,
             { cause: error },
           )
         }

@@ -353,6 +353,28 @@ describe('settings staged writer', () => {
     expect(await fs.readdir(root)).toEqual([])
   })
 
+  test.each(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS'])(
+    'missing-file link %s on a filesystem without hard links refuses as unavailable',
+    async (code) => {
+      await fs.unlink(target)
+      const error = fault(code)
+      observeFs({ operation: 'link', error })
+      let caught: unknown
+      try {
+        await write({ existingMode: undefined })
+      } catch (failure) {
+        caught = failure
+      }
+      expect(caught).toBeInstanceOf(SettingsRefusal)
+      expect(caught).toMatchObject({
+        code: 'settings-unavailable',
+        cause: error,
+      })
+      expect(events.at(-1)).toBe('unlink')
+      expect(await fs.readdir(root)).toEqual([])
+    },
+  )
+
   test('exclusive-open failure does not delete a temp it did not create', async () => {
     const collision = fault('EEXIST')
     setSettingsFsForTest({
