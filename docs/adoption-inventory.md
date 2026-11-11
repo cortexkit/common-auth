@@ -892,6 +892,272 @@ Runtime export: `createSidebarFile<T>({ path, defaultValue, normalize, timeoutMs
 
 **Lock name (added in 0.8.0).** `lockName` (default `'sidebar-write'`, so openai-auth and anthropic-auth are unchanged) names the lock a write coordinates on, `<path>.<lockName>.lock`. It routes both lock acquisition and the ownership fence checked before the rename, so a takeover of the configured name between merge and rename refuses the write with `LockOwnershipError` and keeps the file. The option allows antigravity-auth to pass `lockName: 'sidebar'` and keep its existing writer's lock identity when it adopts the shared writer; that adoption is planned, not yet active. **Scope of the interop:** the library excludes another writer only while that writer holds a live lease of the same name in the same lock-file format (`wx`-created, `{ownerId, expiresAt}`), and with the same limit as every lease here (see ./fs): there is no guarantee once a holder stalls past its lease. Stale-lock reclamation, eviction markers and renewal shared with an older writer of a different implementation are not promised; that writer also checks ownership only before reading, so the library's before-rename fence is the stronger of the two during a mixed-version upgrade.
 
+### ./settings
+
+`@cortexkit/common-auth/settings` supplies shared JSONC settings files. All exports
+in this section are **since 0.45.0**. Plugins own their settings, defaults, path
+environment variable, legacy readers, mapping and version fence. Keep credentials,
+account rosters and runtime state in their existing stores, not in this file.
+
+| export | parameters | returns / refusals |
+| --- | --- | --- |
+| `defineSettings` | `{ plugin: string, settings: Record<string, SettingDeclaration> }` | A copied, deeply frozen `SettingsDefinition` with inferred value types. Throws `TypeError` for a bad name, default or descriptor/override combination described below. |
+| `boolean`, `string` | No arguments. | Frozen boolean or string `ValueDescriptor`. |
+| `integer`, `number` | `{ min?: number, max?: number }`, optional. | Frozen numeric descriptor. Bounds are inclusive. Values must be finite; `integer` also requires an integer. |
+| `oneOf` | A readonly array of strings. | Frozen descriptor accepting exactly those strings. `ValueOf` preserves their literal union. |
+| `list` | An item descriptor. | Descriptor for an array of those values. |
+| `object` | A record of field names to descriptors. | Descriptor for declared fields. Objects resolve field by field. |
+| `record` | A value descriptor. | Descriptor for arbitrary string keys with values of that type. Records and lists resolve as whole values, not merged entries. |
+| `settingsJsonSchema` | `definition: SettingsDefinition` | A deterministic JSON Schema object; see the schema check below. |
+
+`ValueDescriptor` is the descriptor union. `ValueOf<D>` is its inferred value type.
+List items and record values that are objects must contain all declared fields.
+Ordinary object settings may omit fields in a file; lower levels fill them in.
+
+**Declarations.** `SettingDeclaration` has these fields:
+
+| field | meaning |
+| --- | --- |
+| `value` | Required descriptor from the table above. |
+| `default` | Required value matching `value`. Object defaults must be complete, including nested objects, and contain no unknown fields. |
+| `hosts` | Required string: `'both'`, `'opencode'`, `'pi'` or descriptive text. Documentation only; it does not gate reads. |
+| `overrides.host` | Optional `true`. Allows `opencode` and `pi` keys in an override object. |
+| `overrides.model` | Optional `true`. Allows model-id keys. Matching uses the exact model id the plugin passes. Canonicalize ids in the plugin if needed. |
+| `project` | `'user-only'` by default, or `'allowed'`. Only the latter accepts project values. The plugin reviews which settings are safe to allow per project. |
+| `legacy` | Optional readonly array of `{ source: string, path: readonly string[] }`. Metadata only; the plugin still supplies the move's `map`. |
+
+A setting may allow both kinds of override. When `overrides` is present, a file
+may hold either a plain value or an override object. Its optional `default` key
+is allowed even with host-only overrides. `opencode` and `pi` are reserved host
+keys, never model ids; `default` is never a model id. With no `overrides`, a setting
+accepts only its declared value. Object and record settings cannot declare
+`overrides`, even an empty object, because their keys already belong to the value.
+
+Setting names must match `^[a-z][a-z0-9_]*$` and contain no whitespace.
+`schema_version` and `$schema` are reserved. A setting named `sidebar` must use an
+object descriptor. `defineSettings` checks these rules at declaration time, so
+bad declarations fail before a plugin handles requests.
+
+**Paths.** The path helpers read no environment themselves. The plugin passes
+`env: Readonly<Record<string, string | undefined>>`, `platform: NodeJS.Platform`
+and `homedir: string`.
+
+| export | parameters | returns / refusals |
+| --- | --- | --- |
+| `cortexkitConfigDir` | `{ env, platform, homedir }` | The shared folder from the rules below. Throws `SettingsRefusal` with `settings-unavailable` if no absolute config or home path is available. |
+| `settingsFilePath` | `{ plugin: string, override?: string, env, platform, homedir }` | An absolute `override`, unchanged, wins before folder resolution. Otherwise returns `<cortexkitConfigDir>/<plugin>.jsonc`; absent, empty or relative overrides are ignored. Folder failure has the same refusal as above. |
+| `isAbsoluteForPlatform` | `(path: string, platform: NodeJS.Platform)` | `boolean`. Non-Windows paths need a leading `/`. Windows accepts a rooted drive, a UNC server/share, or a verbatim/device prefix; a drive-relative `C:x` or root-only `\x` is not absolute. |
+
+The folder rule uses only absolute values:
+
+- Every OS: `XDG_CONFIG_HOME` wins, yielding `<XDG_CONFIG_HOME>/cortexkit`.
+- Linux and macOS: otherwise use `<HOME>/.config/cortexkit`. macOS does not use
+  `~/Library`. If `HOME` is unusable, use the injected absolute `homedir` instead.
+- Windows: otherwise use `<APPDATA>\cortexkit`, then
+  `<USERPROFILE>\AppData\Roaming\cortexkit`. If `USERPROFILE` is unusable, use
+  the injected absolute `homedir` for that last form. `HOME`, `LOCALAPPDATA`,
+  `HOMEDRIVE` and `HOMEPATH` do not choose the Windows base.
+- Empty or relative variables are ignored. No `CORTEXKIT_*` variable chooses it.
+
+**Opening and reading.** `openSettings(definition, options)` returns a
+`SettingsHandle` without reading the files. `OpenSettingsOptions` is:
+
+| option | meaning |
+| --- | --- |
+| `file` | Required user-file path, resolved to an absolute path when the handle opens. |
+| `log` | Required logger with `warn` and `info`. |
+| `separateInstall` | Required boolean, decided by the plugin. When true, disables shared-file reads and watching, and refuses updates with `settings-unavailable`. `get` returns declared defaults; it does not read legacy settings for the plugin. |
+| `createMissing` | Defaults to `false`. Allows `update` to create a missing folder/file; opening or reading never creates them. |
+| `lockTimeoutMs` | Write-lock timeout; defaults to 2,000 ms. |
+| `legacyProject` | Optional `(project: string) => LegacyProjectSource \| undefined`. A source is `{ path: string, read(text: string): unknown }`. Its reader returns an object keyed by setting name, not JSONC text. |
+
+| handle call | parameters | returns / refusals |
+| --- | --- | --- |
+| `read` | Optional `{ project?: string }`. | `Promise<void>`. Refreshes the user file and, when supplied, that project's file. Bad files become report entries, not content errors thrown to the caller. |
+| `get` | `(name, { host: string, model?: string, project?: string })`; the second argument is `GetOptions`. | `Promise<ValueOf<...>>` for the declared setting. Refreshes files first. An undeclared name throws `TypeError`. |
+| `report` | No arguments. | A copied `ReportEntry[]` for the user file and selected project sources read by this handle. |
+| `update` | `(edits: readonly SettingsEdit[], { host: string, model?: string })`. | `Promise<UpdateResult>`: `{ outcome: 'updated' \| 'unchanged' }`, or a refusal below. Writes only the user file. |
+| `watch` | `(onChange: () => void)`. | A disposer. Watches the user file through the shared preferences watcher (`./tui-prefs`), with polling recovery. It does not watch project files. Reads remain authoritative even if an event is missed. |
+
+Resolution is project file `<project>/.cortexkit/<plugin>.jsonc`, then user file,
+then declared default. The project level participates only when `project` is
+supplied and the setting declares `project: 'allowed'`. Inside one file, an allowed
+model override wins, then an allowed host override, then the override object's
+`default` key. A plain value supplies that file's value directly. Invalid or
+disallowed values are skipped before resolution. Objects fill fields recursively
+from lower files and the declaration default. Lists and records replace whole
+values. Returned values are copies, so mutating them cannot change later reads.
+
+Only a missing new project file triggers `legacyProject`. An unreadable or
+unparseable new project file does not. The legacy source follows the same project
+policy and reports user-only keys it skips. No project file or legacy source is
+written automatically.
+
+An unreadable or unparseable file keeps that file's last good snapshot. Without
+one, that level contributes no values. A missing file clears its snapshot and
+contributes no values; with no usable file values, the declaration defaults apply.
+Missing files are not errors. Linux and macOS use the file-identity cache.
+Windows reads the file on every `get` (and every `read`), because a quick same-size
+rewrite can retain the metadata used by the cache. Reads take no settings lock,
+but `get` awaits the read.
+
+`ReportEntry` is `{ file: { kind: 'user' | 'project' | 'legacy-project', path },
+keyPath: string[], reason: ReportReason, detail?: string }`. Each distinct
+`(file path, keyPath, reason)` is logged at warn once per process, across handles.
+The report remains available to show in the menu.
+
+| `ReportReason` | what was found |
+| --- | --- |
+| `unknown-key` | An undeclared setting or object field. |
+| `override-not-allowed` | A disallowed override key or override-shaped value. |
+| `user-only-in-project` | A project or legacy-project value for a user-only setting. |
+| `invalid-value` | A value that fails its descriptor. Invalid list/record contents skip that whole list/record; partial objects keep usable fields. |
+| `invalid-schema-version` | A present `schema_version` that is not an integer of at least 1. |
+| `newer-version-key-ignored` | An unknown setting or object field in a file with `schema_version > 1`. Known usable values still apply. |
+| `duplicate-key` | A duplicate key in the parsed file. Reads report it; writes refuse it. |
+| `unparseable` | The file cannot be parsed as a settings object. |
+| `unreadable` | The file could not be read, or the legacy reader threw. |
+
+The envelope starts at `schema_version: 1`; an absent version is read as 1.
+`$schema` is ignored by resolution and may point an editor at the plugin's schema.
+
+**Menu writes.** `SettingsEdit` is `{ setting: string, path?: readonly string[] }`
+plus either `{ value: unknown }` or `{ remove: true }`, never both. A `path` edits
+fields of an object or record setting from its root. It is not a list index or an
+override selector. Without `path`, the edit chooses the existing model override
+that decides for this context, else the existing host override, else `default` in
+an existing override object. A setting holding a plain value stays top-level.
+
+All edits are validated. Writes preserve unknown keys, key order and unrelated
+comments. Removal deletes only the selected member, its comma and its same-line
+trailing comment (including a block comment that starts there). Separate comment
+lines survive. Removing the last override also removes its empty setting wrapper.
+
+The writer locks `settings-write` on the file's real path, so symlink aliases
+serialize. `lockTimeoutMs` defaults to 2 s. It rereads and edits under that lock,
+then publishes a synced temporary file. Existing files are replaced by rename;
+new files are published by hard link so a file that appeared meanwhile is never
+overwritten. There is no unsafe fallback on filesystems without hard links.
+
+With `createMissing: true`, a new folder is requested as 0700 and a new file as
+0644. Existing file permission bits are kept on Linux and macOS; Windows uses
+the private-directory helper for folder creation. An empty file, or a missing
+file allowed by `createMissing`, starts from this template (`<plugin>` is the
+definition's name):
+
+```jsonc
+// <plugin> settings
+{
+  "schema_version": 1
+}
+```
+
+An unchanged edit returns `{ outcome: 'unchanged' }` without publishing a file,
+even when the file is missing. Otherwise it returns `{ outcome: 'updated' }`.
+`SettingsRefusal` extends `Error` with `name: 'SettingsRefusal'`, `code`, `message`
+and an optional cause. `SETTINGS_REFUSAL_CODES` is this frozen list;
+`SettingsRefusalCode` is its union:
+
+| code | refusal |
+| --- | --- |
+| `settings-unparseable` | The file is not parseable as an object, or has duplicate keys. Nothing is rewritten. |
+| `settings-newer-version` | The file has an integer `schema_version > 1`. Older code must not rewrite a newer file. |
+| `settings-invalid-value` | An undeclared setting, invalid field path or value, or an edit that leaves its value invalid. |
+| `settings-busy` | Lock contention or a changing lock record, a changed real-path target while locking, a file appearing before creation, or Windows refusing a rename as busy/denied. |
+| `settings-unavailable` | A separate install, unavailable folder/file, a missing file when `createMissing` is false, an unsafe/unavailable lock folder, or new-file publication on a filesystem without hard links. Also used by path resolution when no absolute base is available. |
+
+Other I/O or lock errors can still propagate. Do not treat every thrown error as
+a `SettingsRefusal`.
+
+**One-time move.** `moveSettingsOnce(options: MoveOptions)` returns
+`Promise<MoveResult>`. It never changes source bytes.
+
+| `MoveOptions` field | meaning |
+| --- | --- |
+| `definition`, `target`, `separateInstall` | The settings definition, destination path and plugin's separate-install decision. |
+| `sources` | `MoveSource[]` in precedence order. Each is `{ host: string, path: string, locks: PoolLockSpec[], read(text: string): unknown }`. Put OpenCode first when it should win. |
+| `map` | `(legacy: LegacySource[]) => MapResult \| Promise<MapResult>`. Each input has `{ host, path, present: true, value }` or `{ host, path, present: false }`. A missing source is not an error. |
+| `fence` | `() => boolean \| Promise<boolean>`. The plugin permits the move only when no incompatible older process is running. Checked before locking and again under the locks. |
+| `log` | Logger with `warn` and `info`. |
+
+`MapResult` is `{ entries: { source: number, setting: string, value: unknown }[],
+unmapped: { source: number, key: string, reason: string }[] }`. `source` indexes
+the input array. Entries must refer to present sources. Unknown settings and
+invalid mapped values join `unmapped` with `unknown-setting` or `invalid-value`.
+The plugin maps old keys and re-keys account settings using its live account
+records; it must not guess a replacement for an unmappable account.
+
+The move takes `settings-move` at the target, then each source's locks in the
+order given, including the order within each source. Duplicate path/name pairs
+are taken once. A lock whose folder is absent is skipped; if that folder appears
+before publication, the move returns `busy`. Supply the same lock order as the
+source writers, such as config `save` then state `save`.
+
+**The `map` callback runs under these locks.** It must not take `settings-move`
+or any `sources[].locks`, directly or through a store call: it would wait on
+itself. Read live account records without taking those locks.
+
+For each setting, the first mapped source's value is primary. If host overrides
+are allowed, differing values from the first `opencode` and `pi` entries become
+host overrides beside `default: primary`. With no such difference, the value is
+plain top-level. `differing` reports only differences the chosen plain/host values
+cannot preserve, such as conflicting entries for one host or values without an
+allowed host override. Each entry is `{ setting, values: { source, host, value }[] }`
+and is logged at info. A difference fully preserved by host overrides is not in
+`differing`.
+
+The move stages and syncs a 0644 temporary file, with a header naming source paths
+and the UTC move date. It publishes by hard link, never replacing an existing
+target. After publication it attempts a `<source>.MOVED_READPLEASE` note for each
+present source, without overwriting an existing note. The note names the target
+and warns that rollback loses later changes. Notes are best-effort and never read
+by the move. Source files remain byte-identical.
+
+`MoveResult` has `outcome`, `unmapped`, `differing`, `noteFailures`,
+`postPublishFailures` and optional `cause`:
+
+| `MoveOutcome` | when it happens |
+| --- | --- |
+| `moved` | The target was published. It remains `moved` if later cleanup, sync, note writing or lock release fails. |
+| `done-already` | The target already exists, either before locking or at the locked recheck. It is not parsed or replaced. |
+| `fence-closed` | The plugin's fence is false at either check. |
+| `aborted-target-appeared` | Hard-link publication finds a target created after the recheck. That file is kept. |
+| `busy` | Move/source lock contention or a changing lock record, or a skipped source-lock folder appearing during the move. |
+| `separate-install` | `separateInstall` is true; no move is attempted. |
+| `failed` | Another pre-publication failure, such as a source read/map error, invalid source index, unavailable lock folder or unsupported hard link. `cause` carries the error when available. |
+
+`noteFailures` contains `{ path, error }` for failed notes. `postPublishFailures`
+contains `{ step: 'temp-unlink' | 'directory-sync' | 'lock-release', error }`.
+These describe work after the target was published, not a reason to repeat or
+roll back the move. Directory sync is attempted on non-Windows systems.
+
+**Schema check.** Ship the result of `settingsJsonSchema(definition)` in the
+plugin package. It describes the envelope, descriptors and permitted overrides
+using JSON Schema draft 2020-12. Reject schema drift in a plugin test by parsing
+the shipped file and checking
+`expect(shippedSchema).toEqual(settingsJsonSchema(definition))`.
+
+**Adopting.**
+
+1. Declare settings and compute the path and `separateInstall` in plugin code.
+   A separate install keeps its legacy reader until the operator opts into the
+   shared file; common-auth does not make that decision or perform that read.
+   For the rollout, mark an install separate when a legacy store/settings path
+   override is set, or `OPENCODE_CONFIG_DIR` resolves to a non-default host folder,
+   while the new settings path variable is unset. Compare against the host's
+   default with `XDG_CONFIG_HOME` respected. This keeps deliberately isolated
+   servers and test homes from picking up the user's shared settings.
+2. At startup, run `moveSettingsOnce` with legacy sources, their writer locks,
+   mapping and version fence. Keep the move off the request path. Handle a closed
+   fence or failure with the plugin's retry/backoff and legacy-read policy.
+3. After the move decision, call `openSettings`. Use `get` with the host, model
+   and optional project for requests. Stop reading legacy user settings once the
+   shared target exists. Use `report` in menus and `watch` for menu/sidebar refresh.
+4. A menu calls `await handle.update(edits, { host, model })`. Catch
+   `SettingsRefusal` and show its `code` and `message`; do not claim the edit
+   succeeded. Handle other errors separately. Show skipped project keys from the
+   report, and keep project-file changes manual.
+
 ### ./tui-prefs
 
 Runtime exports: `readTuiPreferencesFile(file)` for raw parsed object; `readTuiPreferences<T>({ file, pluginKey, defaults, schema })`, where schema receives `(entry: unknown, defaults: T)` and returns T; `createTuiPreferenceWriter({ file, pluginKey, timeoutMs?, beforeCommit? })` returning `queueTuiPreferenceUpdate(path, value)` (path is readonly string/number segments); `watchTuiPreferences(file, onChange, { watchDirectory? }?)` returning a disposer. Plugin schema/defaults/order stay in the host. BeforeCommit is an internal test seam. Type exports: `PreferenceValue`, `TuiPreferencesReaderOptions`, `TuiPreferenceWriter`, `TuiPreferenceWriterOptions`, `TuiPreferencesWatchOptions`.
