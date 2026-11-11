@@ -26,7 +26,12 @@ let source: string
 let restoreSpies: (() => void)[]
 
 beforeEach(async () => {
-  root = await fs.mkdtemp(join(tmpdir(), 'settings-update-move-'))
+  // An update links to the file's real path and a move to the path it was
+  // given; use a real temp root (not Windows' 8.3 short or macOS's /var link)
+  // so both name the same spelling and the link calls compare exactly.
+  root = await fs.realpath(
+    await fs.mkdtemp(join(tmpdir(), 'settings-update-move-')),
+  )
   file = join(root, 'example.jsonc')
   source = join(root, 'legacy.json')
   await fs.writeFile(source, '{"x":7}\n')
