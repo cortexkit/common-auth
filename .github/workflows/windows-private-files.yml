@@ -164,6 +164,9 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
+          # The package test loads the built ./settings entry point.
+          bun run build
+          if ($LASTEXITCODE) { throw 'Build failed' }
           bun test ./test/settings
           if ($LASTEXITCODE) { throw 'Settings tests failed' }
   setup-npm-host:
