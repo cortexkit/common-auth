@@ -94,6 +94,14 @@ export function openSettings<
   const committedSequences = new Map<string, number>()
   const projectPath = (project: string): string =>
     resolve(join(project, '.cortexkit', `${definition.plugin}.jsonc`))
+  // Windows reads every time (below), so remember each file's last bytes to
+  // tell a changed file from an unchanged one, as the cache does elsewhere.
+  const windows = process.platform === 'win32'
+  const windowsSeen = new Map<string, string | symbol>()
+  const unreadFile = {
+    missing: Symbol('missing'),
+    unreadable: Symbol('unreadable'),
+  }
 
   async function load(
     file: ReportEntry['file'],
@@ -102,19 +110,28 @@ export function openSettings<
     const currentSequence = ++sequence
     const cache = file.kind === 'user' ? userCache : projectCache
     let loaded = false
+    const seen = (path: string, content: string | symbol): void => {
+      if (!windows) {
+        // The cache calls this reader only when the file changed.
+        loaded = true
+        return
+      }
+      loaded = windowsSeen.get(path) !== content
+      windowsSeen.set(path, content)
+    }
     const readFile = async ([path]: string[]): Promise<ReadOutcome> => {
-      loaded = true
       let text: string
       try {
         text = await SettingsFs.readFile(path as string, 'utf8')
       } catch (error) {
-        return {
-          status:
-            (error as NodeJS.ErrnoException).code === 'ENOENT'
-              ? 'missing'
-              : 'unreadable',
-        }
+        const status =
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? 'missing'
+            : 'unreadable'
+        seen(path as string, unreadFile[status])
+        return { status }
       }
+      seen(path as string, text)
       let parsed: SettingsParseResult
       if (reader) {
         let value: unknown
@@ -182,6 +199,7 @@ export function openSettings<
         const oldest = projects.keys().next().value
         if (oldest !== undefined) {
           projects.delete(oldest)
+          windowsSeen.delete(oldest)
           for (const [project, selected] of projectLevels) {
             if (selected === oldest) projectLevels.delete(project)
           }
