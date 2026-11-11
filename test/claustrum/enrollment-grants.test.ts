@@ -362,6 +362,53 @@ describe('enrollment requested grants', () => {
     expect(enrollment).toEqual(before)
   })
 
+  for (const phase of ['pending', 'approved'] as const) {
+    test(`${phase} enrollment ignores unknown or malformed stored grant metadata`, async () => {
+      const paths = await fixture()
+      const instance = manager(paths, {
+        async enrollPoll() {
+          return phase === 'pending'
+            ? { status: 'pending' }
+            : {
+                status: 'approved',
+                name: 'approved-name',
+                token: 'ab'.repeat(32),
+                tokenGeneration: 1,
+              }
+        },
+      })
+      await instance.reconcile()
+      const before = await instance.status()
+      expect(before.state).toBe(phase)
+      const state = JSON.parse(await readFile(paths.statePath, 'utf8'))
+      for (const metadata of [
+        {
+          requestedGrants: [
+            { selector: { category: 'openai-native' }, operation: 'sign' },
+          ],
+          requestedGrantsStatus: 'sent',
+        },
+        {
+          requestedGrants: [
+            { selector: { futureSelector: 'one' }, operation: 'read' },
+          ],
+          requestedGrantsStatus: 'sent',
+        },
+        { requestedGrants: 'unknown-list', requestedGrantsStatus: 'sent' },
+        { requestedGrants: [], requestedGrantsStatus: 'sent' },
+        { requestedGrants, requestedGrantsStatus: 'unknown-status' },
+        { requestedGrantsStatus: 'sent' },
+      ]) {
+        await writeFile(
+          paths.statePath,
+          JSON.stringify({ ...state, ...metadata }),
+          { mode: 0o600 },
+        )
+        expect(await instance.status()).toEqual(before)
+      }
+    })
+  }
+
   test('real client connect puts requested_grants on the enrollment wire', async () => {
     const paths = await fixture()
     const calls: { module: string; method: string; params: unknown }[] = []

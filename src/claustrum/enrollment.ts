@@ -403,6 +403,8 @@ function decodeEnrollmentState(value: unknown): EnrollmentState {
 function decodeGrantProposal(
   value: Record<string, unknown>,
 ): EnrollmentGrantProposal {
+  // Optional proposal metadata from a newer version must not invalidate an
+  // existing enrollment when a plugin is downgraded. Never infer access from it.
   if (
     (value.requestedGrants !== undefined &&
       !validEnrollmentRequestedGrants(value.requestedGrants)) ||
@@ -411,7 +413,7 @@ function decodeGrantProposal(
         (value.requestedGrantsStatus !== 'sent' &&
           value.requestedGrantsStatus !== 'dropped')))
   )
-    throw invalidState()
+    return {}
   return grantProposal(value as EnrollmentGrantProposal)
 }
 
