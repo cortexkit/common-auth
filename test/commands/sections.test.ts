@@ -341,6 +341,59 @@ describe('command menu sections', () => {
     expect((await m.s.config()).routing).toEqual({ mode: 'main-first' })
   })
 
+  it('a settings port replaces the store for Routing and Limits reads and writes', async () => {
+    await populate(m.store)
+    const before = await m.s.config()
+    let held: Record<string, unknown> = {
+      routing: { mode: 'sticky-balanced' },
+      killswitch: { enabled: true, accounts: { a: { primary: 7 } } },
+    }
+    const updates: string[] = []
+    const menu = m.menu({
+      settings: {
+        read: async () => structuredClone(held),
+        update: async (mutator) => {
+          const copy = structuredClone(held)
+          held = (await mutator(copy)) ?? copy
+          updates.push(JSON.stringify(held))
+        },
+      },
+    })
+    const n = notes()
+    const payload = await menu.open(n.invocation)
+    expect(section(payload, 'routing').lines[0]).toBe('Mode: Sticky balanced')
+    expect(section(payload, 'limits').lines).toEqual(['Killswitch on'])
+    expect(
+      await apply(menu, n.invocation, {
+        sectionId: 'routing',
+        actionId: 'mode',
+        values: { mode: 'ordered' },
+      }),
+    ).toMatchObject({ ok: true })
+    expect(
+      await apply(menu, n.invocation, {
+        sectionId: 'limits',
+        actionId: 'killswitch',
+        values: { enabled: false },
+      }),
+    ).toMatchObject({ ok: true })
+    expect(
+      await apply(menu, n.invocation, {
+        sectionId: 'limits',
+        itemId: 'a',
+        actionId: 'floors',
+        values: { primary: 12, secondary: null },
+      }),
+    ).toMatchObject({ ok: true })
+    expect(held).toEqual({
+      routing: { mode: 'ordered' },
+      killswitch: { enabled: false, accounts: { a: { primary: 12 } } },
+    })
+    expect(updates).toHaveLength(3)
+    // The store's own settings are neither read for display nor written.
+    expect(await m.s.config()).toEqual(before)
+  })
+
   it('limits toggles killswitch.enabled and writes per-account floors under killswitch.accounts', async () => {
     await populate(m.store)
     const menu = m.menu()

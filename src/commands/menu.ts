@@ -7,6 +7,7 @@ import { createLogger, type RedactionOptions } from '../logger/index.js'
 import type { PoolLockSpec, PoolStore } from '../store/index.js'
 import {
   type AccountsSectionOptions,
+  type BuiltinSettingsPort,
   builtinSections,
   type LimitsSectionOptions,
   type QuotaSectionOptions,
@@ -75,6 +76,11 @@ export interface CommandMenuOptions {
   replace?: Partial<Record<StoreSectionSlot, PluginSection>>
   /** The plugin's legacy locks, passed to every store write the menu makes. */
   extraLocks?: readonly PoolLockSpec[]
+  /**
+   * Where the Routing and Limits sections read and write their settings. Omit
+   * it to use the store's own settings, as before.
+   */
+  settings?: BuiltinSettingsPort
   accounts?: AccountsSectionOptions
   quota?: QuotaSectionOptions
   routing?: RoutingSectionOptions
@@ -278,6 +284,7 @@ export function createCommandMenu(options: CommandMenuOptions): CommandMenu {
             store,
             now,
             ...(options.extraLocks ? { extraLocks: options.extraLocks } : {}),
+            ...(options.settings ? { settings: options.settings } : {}),
             ...(options.accounts ? { accounts: options.accounts } : {}),
             ...(options.quota ? { quota: options.quota } : {}),
             ...(options.routing ? { routing: options.routing } : {}),

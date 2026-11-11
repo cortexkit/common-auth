@@ -1,5 +1,6 @@
 export type {
   AccountsSectionOptions,
+  BuiltinSettingsPort,
   LimitsSectionOptions,
   LoginOutcome,
   QuotaSectionOptions,

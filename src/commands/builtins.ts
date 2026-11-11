@@ -24,6 +24,7 @@ import type {
   PoolSettings,
   PoolStore,
   RemoveOptions,
+  SettingsMutator,
 } from '../store/index.js'
 import type {
   ActionDefinition,
@@ -143,9 +144,29 @@ export interface LimitsSectionOptions {
   labels?: readonly string[]
 }
 
+/**
+ * Where the Routing and Limits sections read and write the settings they show
+ * (`routing.mode`, `routing.maxSameAccountWait`, `killswitch.enabled`,
+ * `killswitch.accounts`). Without a port they use the account store's own
+ * settings through `readSettings` and `updateSettings`. A plugin that moved
+ * its settings to its own file (`./settings`) passes a port that translates
+ * this store-shaped view to that file.
+ */
+export interface BuiltinSettingsPort {
+  /** The current settings, in the store's settings shape. */
+  read(): Promise<PoolSettings>
+  /**
+   * Apply one menu change. `mutator` gets a private copy in the store's shape
+   * and edits it in place or returns the whole next object, as with
+   * `updateSettings`. A refusal is thrown and shown as the action's failure.
+   */
+  update(mutator: SettingsMutator): Promise<void>
+}
+
 export interface BuiltinOptions {
   store: PoolStore
   extraLocks?: readonly PoolLockSpec[]
+  settings?: BuiltinSettingsPort
   now: () => number
   accounts?: AccountsSectionOptions
   quota?: QuotaSectionOptions
@@ -231,15 +252,31 @@ interface Snapshot {
   vault?: VaultRoutingOrder
 }
 
+/** The plugin's settings port, or one over the account store's own settings. */
+function settingsPort(options: BuiltinOptions): BuiltinSettingsPort {
+  if (options.settings) return options.settings
+  const { store, extraLocks } = options
+  const locks = extraLocks ? { extraLocks } : {}
+  return {
+    async read() {
+      const read = await store.readSettings()
+      return read.status === 'error' ? {} : read.settings
+    },
+    async update(mutator) {
+      await store.updateSettings(mutator, locks)
+    },
+  }
+}
+
 async function snapshot(options: BuiltinOptions): Promise<Snapshot> {
   const { store } = options
   const load = await store.read()
-  const read = await store.readSettings()
+  const settings = await settingsPort(options).read()
   const vault = await options.routing?.vaultOrder?.()
   return {
     load,
     rows: distinctRows(load),
-    settings: read.status === 'error' ? {} : read.settings,
+    settings,
     ...(vault ? { vault } : {}),
   }
 }
@@ -602,6 +639,7 @@ function routingSection(
 ): ResolvedSection {
   const { store, extraLocks } = options
   const locks = extraLocks ? { extraLocks } : {}
+  const port = settingsPort(options)
   const choices: MenuChoice[] = [
     { value: 'ordered', label: 'Ordered (roster order)' },
     ...(options.routing?.orderedVariants ?? []),
@@ -642,10 +680,10 @@ function routingSection(
       ],
       run: async ({ values }) => {
         const mode = String(values.mode)
-        await store.updateSettings((settings) => {
+        await port.update((settings) => {
           settings.routing = { ...record(settings.routing), mode }
           return undefined
-        }, locks)
+        })
         return `Routing mode set to ${choices.find((choice) => choice.value === mode)?.label ?? mode}.`
       },
     },
@@ -711,13 +749,13 @@ function routingSection(
       run: async ({ values }) => {
         const value = String(values.maxSameAccountWait)
         const maxSameAccountWait = value === 'max' ? 'max' : Number(value)
-        await store.updateSettings((settings) => {
+        await port.update((settings) => {
           settings.routing = {
             ...record(settings.routing),
             maxSameAccountWait,
           }
           return undefined
-        }, locks)
+        })
         return `${waitLabel} set to ${waitName(value)}.`
       },
     })
@@ -764,8 +802,7 @@ function limitsSection(
   options: BuiltinOptions,
   snap: Snapshot,
 ): ResolvedSection {
-  const { store, extraLocks } = options
-  const locks = extraLocks ? { extraLocks } : {}
+  const port = settingsPort(options)
   const killswitch = record(snap.settings.killswitch)
   const enabled = killswitch.enabled === true
   const floors = record(killswitch.accounts)
@@ -803,7 +840,7 @@ function limitsSection(
             }),
           ),
           run: async ({ values }) => {
-            await store.updateSettings((settings) => {
+            await port.update((settings) => {
               const next = record(settings.killswitch)
               const accounts = record(next.accounts)
               const mine = record(accounts[row.id])
@@ -818,7 +855,7 @@ function limitsSection(
               else delete next.accounts
               settings.killswitch = next
               return undefined
-            }, locks)
+            })
             return `Floors updated for ${name}.`
           },
         },
@@ -849,13 +886,13 @@ function limitsSection(
           ],
           run: async ({ values }) => {
             const on = values.enabled === true
-            await store.updateSettings((settings) => {
+            await port.update((settings) => {
               settings.killswitch = {
                 ...record(settings.killswitch),
                 enabled: on,
               }
               return undefined
-            }, locks)
+            })
             return `Killswitch ${on ? 'on' : 'off'}.`
           },
         },

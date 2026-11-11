@@ -1150,13 +1150,21 @@ the shipped file and checking
 2. At startup, run `moveSettingsOnce` with legacy sources, their writer locks,
    mapping and version fence. Keep the move off the request path. Handle a closed
    fence or failure with the plugin's retry/backoff and legacy-read policy.
-3. After the move decision, call `openSettings`. Use `get` with the host, model
-   and optional project for requests. Stop reading legacy user settings once the
-   shared target exists. Use `report` in menus and `watch` for menu/sidebar refresh.
+3. After the move decision, call `openSettings`. Stop reading legacy user
+   settings once the shared target exists. Keep the request path off the file:
+   `get` reads it (on Windows on every call), so resolve the values a request
+   needs into memory at startup and again on `watch`, and let requests read that
+   copy. Use `report` in menus and `watch` for menu/sidebar refresh.
 4. A menu calls `await handle.update(edits, { host, model })`. Catch
    `SettingsRefusal` and show its `code` and `message`; do not claim the edit
    succeeded. Handle other errors separately. Show skipped project keys from the
    report, and keep project-file changes manual.
+5. The shared Routing and Limits sections of `./commands` write
+   `routing.mode`, `routing.maxSameAccountWait`, `killswitch.enabled` and
+   `killswitch.accounts` in the store's settings shape. Pass
+   `createCommandMenu({ settings })`, a `BuiltinSettingsPort` that maps that
+   view to your declared settings and calls `handle.update` with the host
+   context, so those sections write the new file.
 
 ### ./tui-prefs
 
@@ -1933,9 +1941,10 @@ Runtime exports: `createCommandMenu(options)`, `runPiCommandMenu(menu, ui, {sess
 - `status` is a short value drawn right-aligned beside the label (OpenCode `footer`); an item's `detail` and an action's `description` are the secondary text (OpenCode `description`).
 - Pi's `select` cannot put text between options, so `runPiCommandMenu` writes the lines, then each group header with its action-less rows (one line each, `label · status`), into the select title; the options are only the rows that do something, labelled `label · status`, and a closing `Back`. The header of a group whose rows are all selectable is therefore not shown on Pi, which is why Limits also keeps its `Killswitch off` line.
 
-**What a plugin supplies.** `createCommandMenu({command, title, store?, replace?, extraLocks?, accounts?, quota?, routing?, limits?, cache?, diagnostics?, extras?, logger?, redaction?, now?})`:
+**What a plugin supplies.** `createCommandMenu({command, title, store?, replace?, extraLocks?, settings?, accounts?, quota?, routing?, limits?, cache?, diagnostics?, extras?, logger?, redaction?, now?})`:
 
 - `store`: its `PoolStore`; `extraLocks`: its legacy locks, passed to every store write the menu makes. Required unless `replace` supplies all four store sections.
+- `settings` (since 0.45.0, optional): a `BuiltinSettingsPort` `{ read(): Promise<PoolSettings>, update(mutator: SettingsMutator): Promise<void> }`. The Routing and Limits sections then read and write their settings (`routing.mode`, `routing.maxSameAccountWait`, `killswitch.enabled`, `killswitch.accounts`) through it instead of `store.readSettings` and `store.updateSettings`. The view stays in the store's settings shape, so a plugin that moved to `./settings` translates it to and from its own settings in the port, with the host context its edits need. A refusal the port throws shows as the action's failure. Omitted: the store's own settings, as before.
 - `replace` (since 0.11.6): `{accounts?, quota?, routing?, limits?}`, each a `PluginSection` that takes the built-in section's place, keeping its slot id, slot and the fixed order. For a plugin whose accounts are not pool rows (a single host login, or rows it must not expose by id): it builds its own items, with ids of its choosing, and actions. Slots not replaced are still built from `store`. `createCommandMenu` throws when a built-in slot has no store, or when a replaced slot also gets its built-in options. Type export: `StoreSectionSlot`.
 - `accounts.login {label?, knobs?, run(values, invocation) → LoginOutcome}`: `{status:'ready', account}` adds now; `{status:'pending', message, completion}` shows `message` (the login URL or device code) and adds the account when `completion` resolves, reporting through the invocation that asked; `{status:'cancelled', message?}`. Without it, Accounts has no add action. `accounts.protect` is passed to `store.remove` (the plugin's reserved ids and pending-operation records). `accounts.describeIdentity(row)` chooses what is shown as the identity (defaults to the recorded identity).
 - `quota.check(ids, invocation)`: the plugin's "check now" poll; without it the menu calls `store.requestReading` for each id and awaits `store.pullsSettled()`. `quota.scope` picks the projection scope (default `all`).
