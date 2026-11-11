@@ -105,17 +105,46 @@ name proposed for approval and shown in the vault apps' Permissions page. It mus
 be 1–40 Unicode code points of plain text, with no control characters (Cc),
 bidirectional controls or zero-width characters; invalid names throw rather than
 being shortened. `/claustrum` exports `validEnrollmentDisplayName` to share this
-validation. Older vaults are handled by one retry without the display name when
-the proposal is refused with `invalid_params`. The name reaches the vault only
+validation. Older vaults are handled by one retry without both `displayName` and
+`requestedGrants` when the proposal is refused with `invalid_params`. The name reaches the vault only
 through `@cortexkit/claustrum-client` 0.17.0 or newer: older clients send just the
 proposed name and request hash, silently dropping it, so a plugin that sets
 `displayName` needs `^0.17.0` in its own dependency range.
+
+Each host can also supply `requestedGrants` (likewise an option on
+`ClaustrumEnrollmentManager`). For example, a plugin can request
+`[{ selector: { category: 'openai-native' }, operation: 'read' }]`; common-auth
+does not choose the plugin's category. The list must contain 1–4 entries, each
+with operation `read` or `list` and exactly one selector: `{ category: string }`
+or `{ exact: string }` for a credential id. Selector strings must be non-empty
+and not whitespace-only. Invalid lists throw locally before any proposal is
+sent; `/claustrum` exports `validEnrollmentRequestedGrants` for the same check.
+The list reaches the wire as `requested_grants` only with
+`@cortexkit/claustrum-client` 0.18.0 or newer. Older clients silently drop it,
+so a plugin that sets it needs `^0.18.0` in its own dependency range, even though
+common-auth retains its `>=0.6.2` peer floor. An older vault's `invalid_params`
+gets just one retry with neither optional field; the enrollment status records
+whether the grants were sent or dropped. The first pending proposal keeps its
+original list, including across restarts: changing the list requires a new
+enrollment, not a re-proposal of the pending one.
+
+Approval can omit the requested grants at the operator's choice. After saving
+the token, setup therefore calls `listScoped` once on the same connection. It
+reports the count of reachable logins for each requested selector and operation,
+and omits the grant command only for access that listing confirms. An empty
+listing says "Approved, but no logins are reachable yet" and prints one canonical
+`ck auth grant` command per unconfirmed grant, using the actual approved name.
+An older-vault fallback explicitly says the vault could not grant access with
+approval and prints the same commands. A failed listing reports access as
+unconfirmed, never as granted. These access results are also included in the
+per-host final lines and `setupEnrollment(error)` outcomes after a later failure.
+
 Setup proves availability by finding `ck` on PATH and handshaking the supplied
 connection file within two seconds. Connect uses the existing enrollment manager,
 prints the `ck auth enroll approve` command, and polls for up to five minutes;
-pending requests survive for a later rerun. Enrollment does not grant a
-provider's account permissions or switch its serving store: provider-specific
-grants, Pi auth-slot consent, migration-path overlap checks and exclusive
+pending requests survive for a later rerun. Requested grants can accompany
+approval, but enrollment does not switch the serving store: provider-specific
+grant choices, consent to use vault-backed logins in Pi, migration-path overlap checks and exclusive
 vault-mode policy remain in the callbacks. `signInLocal` must reject non-local
 custody before initiating login, as the existing plugins do. Callbacks are never
 called during a dry run.

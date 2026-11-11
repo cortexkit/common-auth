@@ -36,6 +36,7 @@ export type {
   ProcessFence,
   SetupCallbackContext,
   SetupDetection,
+  SetupEnrollmentAccess,
   SetupEnrollmentOutcome,
   SetupEnvironment,
   SetupFileSystem,

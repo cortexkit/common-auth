@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ClaustrumCredentialError } from '@cortexkit/claustrum-client'
+import {
+  ClaustrumCredentialError,
+  type ScopedInventoryRow,
+} from '@cortexkit/claustrum-client'
 import type { ClaustrumEnrollmentConnection } from '../../src/claustrum/index.js'
 import { VAULT_HOST_CONNECT_REFUSAL } from '../../src/claustrum/index.js'
 import {
@@ -106,6 +109,240 @@ test('hosted setup and Connect explain why the host cannot enroll itself', async
 })
 
 describe('setup enrollment wait', () => {
+  test('invalid requested grants on either setup host fail before connecting', async () => {
+    const root = await profile()
+    for (const host of ['opencode', 'pi'] as const) {
+      const setup = plugin(root)
+      setup.vault.hosts[host].requestedGrants = []
+      const connect = mock(async () => vault({}))
+      await expect(
+        runSetup(setup, ['--yes', '--claustrum'], { ...fakeIO(root), connect }),
+      ).rejects.toThrow('invalid Claustrum enrollment requested grants')
+      expect(connect).not.toHaveBeenCalled()
+    }
+  })
+
+  for (const outcome of [
+    'reachable',
+    'no-logins',
+    'older-vault',
+    'unconfirmed',
+  ] as const) {
+    test(`requested grants report ${outcome} in terminal and setupEnrollment outcomes`, async () => {
+      const root = await profile()
+      const setup = plugin(root)
+      const requestedGrants = [
+        { selector: { category: 'openai-native' }, operation: 'read' },
+        { selector: { exact: 'credential-1' }, operation: 'list' },
+      ] as const
+      setup.vault.hosts.opencode.requestedGrants = requestedGrants
+      setup.vault.hosts.opencode.displayName = 'Plugin for OpenCode'
+      const io = fakeIO(root)
+      io.env = { PATH: '/bin', OPENCODE_CONFIG_DIR: join(root, 'config') }
+      io.files.set('/bin/opencode', '')
+      io.files.set('/bin/ck', '')
+      io.files.set(setup.vault.connectionFile, '{}')
+      const term = terminal()
+      let listings = 0
+      const proposals: Parameters<
+        ClaustrumEnrollmentConnection['enrollPropose']
+      >[0][] = []
+      const row = (id: string, categories: string[]): ScopedInventoryRow => ({
+        id,
+        categories,
+        operations: ['read', 'list'],
+        credentialType: 'oauth',
+        serves: [],
+        providerIds: [],
+        state: 'ready',
+        recordVersion: 1,
+        createdAtMs: null,
+      })
+      io.connect = async () =>
+        vault({
+          async enrollPropose(input) {
+            proposals.push(input)
+            if (outcome === 'older-vault' && input.requestedGrants)
+              throw new ClaustrumCredentialError(
+                'invalid_params',
+                'permanent',
+                'gone',
+              )
+            return { requestId: 'request-1' }
+          },
+          async enrollPoll() {
+            return {
+              status: 'approved',
+              name: 'operator-renamed',
+              token: 'ab'.repeat(32),
+              tokenGeneration: 1,
+            }
+          },
+          async listScoped(token) {
+            listings++
+            expect(token).toBe('ab'.repeat(32))
+            expect(
+              JSON.parse(
+                await readFile(
+                  join(root, 'vault', 'opencode-enrollment.json'),
+                  'utf8',
+                ),
+              ).token,
+            ).toBe(token)
+            if (outcome === 'unconfirmed')
+              throw new Error(`listing failed with secret ${token}`)
+            return {
+              rows:
+                outcome === 'reachable'
+                  ? [
+                      row('credential-1', ['openai-native']),
+                      row('second', ['openai-native']),
+                      row('unrelated', ['other']),
+                    ]
+                  : [],
+              view: 'one',
+              grants: 2,
+              grantTuples: undefined,
+            }
+          },
+        })
+      const failure = new Error('registration stopped after enrollment')
+      setup.beforeRegister = async () => {
+        throw failure
+      }
+      const error = await rejection(
+        runSetup(setup, ['--yes', '--claustrum'], { ...io, terminal: term }),
+      )
+      expect(error).toBe(failure)
+      const access = setupEnrollment(error)?.[0]?.access
+      expect(access?.state).toBe(outcome)
+      expect(setupEnrollment(error)?.[0]).toMatchObject({
+        host: 'opencode',
+        outcome: 'enrolled',
+      })
+      expect(proposals[0]?.requestedGrants).toEqual(requestedGrants)
+      expect(proposals).toHaveLength(outcome === 'older-vault' ? 2 : 1)
+      expect(listings).toBe(outcome === 'older-vault' ? 0 : 1)
+      const output = term.lines.join('')
+      expect(output).not.toContain('ab'.repeat(32))
+      const commands = [
+        'ck auth grant --principal enrolled:operator-renamed --selector-kind category --selector openai-native --operation read',
+        'ck auth grant --principal enrolled:operator-renamed --selector-kind exact --selector credential-1 --operation list',
+      ]
+      if (outcome === 'reachable') {
+        expect(output).not.toContain('ck auth grant')
+        expect(output).toContain(
+          'Confirmed read access to the vault\'s "openai-native" accounts (2 reachable logins).',
+        )
+        expect(output).toContain(
+          'Confirmed list access to credential "credential-1" (1 reachable login).',
+        )
+        expect(access?.grants.map((entry) => entry.reachableLogins)).toEqual([
+          2, 1,
+        ])
+      } else {
+        expect(access?.grants.map((entry) => entry.grantCommand)).toEqual(
+          commands,
+        )
+        for (const command of commands) expect(output).toContain(command)
+        expect(output.indexOf(commands[0]!)).toBeLessThan(
+          output.indexOf(commands[1]!),
+        )
+        const message =
+          outcome === 'older-vault'
+            ? 'Approved. This vault is too old to grant access with the approval; run:'
+            : outcome === 'no-logins'
+              ? 'Approved, but no logins are reachable yet; run:'
+              : 'Approved, but access could not be confirmed; check ck auth status or run:'
+        expect(output).toContain(message)
+        expect(output).toContain(
+          `OpenCode: connected to the vault — ${message}`,
+        )
+        if (outcome === 'older-vault') {
+          expect(proposals[1]).not.toHaveProperty('displayName')
+          expect(proposals[1]).not.toHaveProperty('requestedGrants')
+          const resumed = terminal()
+          const resumedAccess = await connectSetupHost(
+            setup,
+            'opencode',
+            io,
+            resumed,
+            async () => {},
+          )
+          expect(resumedAccess?.state).toBe('older-vault')
+          expect(resumed.lines.join('')).toContain(message)
+          expect(listings).toBe(0)
+        }
+      }
+    })
+  }
+
+  test('requested grants are per host and require the requested operation to be reachable', async () => {
+    const root = await profile()
+    const setup = plugin(root)
+    setup.vault.hosts.opencode.requestedGrants = [
+      { selector: { category: 'native-one' }, operation: 'read' },
+    ]
+    setup.vault.hosts.pi.requestedGrants = [
+      { selector: { category: 'native-two' }, operation: 'list' },
+    ]
+    const proposals: unknown[] = []
+    for (const host of ['opencode', 'pi'] as const) {
+      const term = terminal()
+      const access = await connectSetupHost(
+        setup,
+        host,
+        {
+          ...clock(),
+          connect: async () =>
+            vault({
+              async enrollPropose(input) {
+                proposals.push(input.requestedGrants)
+                return { requestId: `request-${host}` }
+              },
+              async enrollPoll() {
+                return {
+                  status: 'approved',
+                  name: `approved-${host}`,
+                  token: 'ab'.repeat(32),
+                  tokenGeneration: 1,
+                }
+              },
+              async listScoped() {
+                return {
+                  rows: [
+                    {
+                      id: 'one',
+                      categories: ['native-one', 'native-two'],
+                      operations: ['list'],
+                      credentialType: 'oauth',
+                      serves: [],
+                      providerIds: [],
+                      state: 'ready',
+                      recordVersion: 1,
+                      createdAtMs: null,
+                    },
+                  ],
+                  view: 'one',
+                  grants: undefined,
+                  grantTuples: undefined,
+                }
+              },
+            }),
+        },
+        term,
+        async () => {},
+      )
+      expect(access?.state).toBe(
+        host === 'opencode' ? 'no-logins' : 'reachable',
+      )
+    }
+    expect(proposals).toEqual([
+      setup.vault.hosts.opencode.requestedGrants,
+      setup.vault.hosts.pi.requestedGrants,
+    ])
+  })
+
   test('passes each host display name through to its enrollment proposal', async () => {
     const root = await profile()
     const setup = plugin(root)

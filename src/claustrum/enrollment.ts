@@ -125,11 +125,66 @@ export function validEnrollmentDisplayName(displayName: string): boolean {
   )
 }
 
+export type ClaustrumRequestedGrant = {
+  selector:
+    | { category: string; exact?: never }
+    | { exact: string; category?: never }
+  operation: 'read' | 'list'
+}
+
+/** Reject malformed permissions before a compatibility retry can omit them. */
+export function validEnrollmentRequestedGrants(
+  grants: unknown,
+): grants is ReadonlyArray<ClaustrumRequestedGrant> {
+  return (
+    Array.isArray(grants) &&
+    grants.length >= 1 &&
+    grants.length <= 4 &&
+    Array.from(grants).every((grant) => {
+      if (
+        !isRecord(grant) ||
+        Object.keys(grant).length !== 2 ||
+        (grant.operation !== 'read' && grant.operation !== 'list') ||
+        !isRecord(grant.selector)
+      )
+        return false
+      const keys = Object.keys(grant.selector)
+      const key = keys[0]
+      return (
+        keys.length === 1 &&
+        (key === 'category' || key === 'exact') &&
+        typeof grant.selector[key] === 'string' &&
+        grant.selector[key].trim().length > 0
+      )
+    })
+  )
+}
+
+interface EnrollmentGrantProposal {
+  requestedGrants?: ReadonlyArray<ClaustrumRequestedGrant>
+  /** Sent is not proof of access: the operator can approve without grants. */
+  requestedGrantsStatus?: 'sent' | 'dropped'
+}
+
+function grantProposal(
+  state: EnrollmentGrantProposal,
+): EnrollmentGrantProposal {
+  return {
+    ...(state.requestedGrants !== undefined && {
+      requestedGrants: state.requestedGrants,
+    }),
+    ...(state.requestedGrantsStatus !== undefined && {
+      requestedGrantsStatus: state.requestedGrantsStatus,
+    }),
+  }
+}
+
 export interface ClaustrumEnrollmentClient {
   enrollPropose(input: {
     name: string
     requestSecretHash: string
     displayName?: string
+    requestedGrants?: ReadonlyArray<ClaustrumRequestedGrant>
   }): Promise<{ requestId: string }>
   enrollPoll(input: {
     requestId: string
@@ -140,6 +195,7 @@ export interface ClaustrumEnrollmentClient {
 export interface ClaustrumEnrollmentConnection
   extends ClaustrumEnrollmentClient {
   close(): void
+  listScoped?: ClaustrumWireClient['listScoped']
 }
 
 /**
@@ -153,7 +209,7 @@ export function connectClaustrumEnrollmentClient(
   return ClaustrumWireClient.connect(options)
 }
 
-interface PendingEnrollmentState {
+interface PendingEnrollmentState extends EnrollmentGrantProposal {
   version: 1
   phase: 'pending'
   proposedName: string
@@ -163,7 +219,7 @@ interface PendingEnrollmentState {
   updatedAt: number
 }
 
-interface ApprovedEnrollmentState {
+interface ApprovedEnrollmentState extends EnrollmentGrantProposal {
   version: 1
   phase: 'approved'
   proposedName: string
@@ -187,18 +243,18 @@ type EnrollmentState =
 
 export type ClaustrumEnrollmentStatus =
   | { state: 'idle' }
-  | {
+  | (EnrollmentGrantProposal & {
       state: 'pending'
       proposedName: string
       requestId?: string
       retryCode?: string
-    }
-  | {
+    })
+  | (EnrollmentGrantProposal & {
       state: 'approved'
       proposedName: string
       approvedName?: string
       tokenGeneration: number
-    }
+    })
   | { state: 'denied'; proposedName: string }
   | { state: 'blocked'; proposedName: string; code: string }
   | { state: 'unavailable'; proposedName: string; code: string }
@@ -277,6 +333,7 @@ function decodeEnrollmentState(value: unknown): EnrollmentState {
     throw invalidState()
   }
   if (value.phase === 'pending') {
+    const grants = decodeGrantProposal(value)
     if (
       !TOKEN_RE.test(String(value.requestSecret ?? '')) ||
       (value.requestId !== undefined &&
@@ -297,9 +354,11 @@ function decodeEnrollmentState(value: unknown): EnrollmentState {
       }),
       createdAt: value.createdAt,
       updatedAt: value.updatedAt,
+      ...grants,
     }
   }
   if (value.phase === 'approved') {
+    const grants = decodeGrantProposal(value)
     if (
       (value.approvedName !== undefined &&
         (typeof value.approvedName !== 'string' ||
@@ -318,6 +377,7 @@ function decodeEnrollmentState(value: unknown): EnrollmentState {
       }),
       tokenGeneration: value.tokenGeneration,
       updatedAt: value.updatedAt,
+      ...grants,
     }
   }
   if (value.phase === 'denied' || value.phase === 'blocked') {
@@ -338,6 +398,21 @@ function decodeEnrollmentState(value: unknown): EnrollmentState {
     }
   }
   throw invalidState()
+}
+
+function decodeGrantProposal(
+  value: Record<string, unknown>,
+): EnrollmentGrantProposal {
+  if (
+    (value.requestedGrants !== undefined &&
+      !validEnrollmentRequestedGrants(value.requestedGrants)) ||
+    (value.requestedGrantsStatus !== undefined &&
+      (value.requestedGrants === undefined ||
+        (value.requestedGrantsStatus !== 'sent' &&
+          value.requestedGrantsStatus !== 'dropped')))
+  )
+    throw invalidState()
+  return grantProposal(value as EnrollmentGrantProposal)
 }
 
 function decodeTokenFile(value: unknown): EnrollmentTokenFile {
@@ -695,6 +770,9 @@ async function readEnrollmentStatus(
             approvedName: state.approvedName,
           }),
         tokenGeneration: token.token_generation,
+        ...(state &&
+          (state.phase === 'approved' || state.phase === 'pending') &&
+          grantProposal(state)),
       },
     }
   }
@@ -793,6 +871,7 @@ function statusFromState(state: EnrollmentState): ClaustrumEnrollmentStatus {
       state: 'pending',
       proposedName: state.proposedName,
       ...(state.requestId !== undefined && { requestId: state.requestId }),
+      ...grantProposal(state),
     }
   }
   if (state.phase === 'approved') {
@@ -803,6 +882,7 @@ function statusFromState(state: EnrollmentState): ClaustrumEnrollmentStatus {
         approvedName: state.approvedName,
       }),
       tokenGeneration: state.tokenGeneration,
+      ...grantProposal(state),
     }
   }
   if (state.phase === 'denied')
@@ -831,6 +911,7 @@ export class ClaustrumEnrollmentManager {
   readonly #paths: ClaustrumEnrollmentPaths
   readonly #proposedName: string
   readonly #displayName: string | undefined
+  readonly #requestedGrants: ReadonlyArray<ClaustrumRequestedGrant> | undefined
   readonly #now: () => number
   readonly #mintSecret: () => string
   readonly #writeTokenFile: typeof writeEnrollmentTokenFile
@@ -841,6 +922,7 @@ export class ClaustrumEnrollmentManager {
     paths: ClaustrumEnrollmentPaths
     proposedName: string
     displayName?: string
+    requestedGrants?: ReadonlyArray<ClaustrumRequestedGrant>
     now?: () => number
     mintSecret?: () => string
     writeTokenFile?: typeof writeEnrollmentTokenFile
@@ -854,6 +936,18 @@ export class ClaustrumEnrollmentManager {
         'invalid-state',
         'invalid Claustrum enrollment display name',
       )
+    if (
+      options.requestedGrants !== undefined &&
+      !validEnrollmentRequestedGrants(options.requestedGrants)
+    )
+      throw new ClaustrumConsumerError(
+        'invalid-state',
+        'invalid Claustrum enrollment requested grants',
+      )
+    this.#requestedGrants = options.requestedGrants?.map((grant) => ({
+      selector: { ...grant.selector },
+      operation: grant.operation,
+    }))
     this.#ancestorOptions = options.ancestorOptions ?? {}
     this.#client = options.client
     this.#paths = options.paths
@@ -921,6 +1015,7 @@ export class ClaustrumEnrollmentManager {
             phase: 'approved',
             proposedName: state?.proposedName ?? this.#proposedName,
             tokenGeneration: token.token_generation,
+            ...(state && grantProposal(state)),
             updatedAt: this.#now(),
           }
           await writeStateAtomic(
@@ -938,6 +1033,7 @@ export class ClaustrumEnrollmentManager {
               approvedName: state.approvedName,
             }),
           tokenGeneration: token.token_generation,
+          ...(state.phase === 'approved' && grantProposal(state)),
         }
       }
       if (state?.phase === 'approved') {
@@ -965,6 +1061,9 @@ export class ClaustrumEnrollmentManager {
           requestSecret: this.#mintSecret(),
           createdAt: now,
           updatedAt: now,
+          ...(this.#requestedGrants !== undefined && {
+            requestedGrants: this.#requestedGrants,
+          }),
         }
         if (!TOKEN_RE.test(state.requestSecret))
           throw new ClaustrumConsumerError(
@@ -991,29 +1090,40 @@ export class ClaustrumEnrollmentManager {
             requestSecretHash,
           }
           let proposed: { requestId: string }
+          let requestedGrantsStatus = state.requestedGrantsStatus
           try {
             proposed = await this.#client.enrollPropose({
               ...proposal,
               ...(this.#displayName !== undefined && {
                 displayName: this.#displayName,
               }),
+              ...(state.requestedGrants !== undefined && {
+                requestedGrants: state.requestedGrants,
+              }),
             })
+            if (state.requestedGrants !== undefined)
+              requestedGrantsStatus = 'sent'
           } catch (error) {
             if (
-              this.#displayName === undefined ||
+              (this.#displayName === undefined &&
+                state.requestedGrants === undefined) ||
               !(error instanceof ClaustrumCredentialError) ||
               error.code !== 'invalid_params'
             )
               throw error
-            // Locally validated names can only be refused by vaults that do
-            // not support displayName. A refused proposal stores nothing, so
-            // retry once with the same hash and let normal handling decide.
+            // Both optional fields were validated locally. Older vaults reject
+            // either field without storing a proposal, so retry the plain shape once.
             proposed = await this.#client.enrollPropose(proposal)
+            if (state.requestedGrants !== undefined)
+              requestedGrantsStatus = 'dropped'
           }
           state = {
             ...state,
             requestId: proposed.requestId,
             updatedAt: this.#now(),
+            ...(requestedGrantsStatus !== undefined && {
+              requestedGrantsStatus,
+            }),
           }
           await writeStateAtomic(
             this.#paths.statePath,
@@ -1028,6 +1138,7 @@ export class ClaustrumEnrollmentManager {
               state: 'pending',
               proposedName: state.proposedName,
               retryCode: refusal.code,
+              ...grantProposal(state),
             }
           }
           // A vault without the ceremony cannot hold a request for this
@@ -1093,6 +1204,7 @@ export class ClaustrumEnrollmentManager {
           proposedName: state.proposedName,
           approvedName: outcome.name,
           tokenGeneration: outcome.tokenGeneration,
+          ...grantProposal(state),
           updatedAt: this.#now(),
         }
         await writeStateAtomic(
@@ -1110,6 +1222,7 @@ export class ClaustrumEnrollmentManager {
             proposedName: state.proposedName,
             requestId,
             retryCode: refusal.code,
+            ...grantProposal(state),
           }
         }
         return this.#block(state, refusal.code)

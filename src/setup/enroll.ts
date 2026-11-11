@@ -9,10 +9,19 @@ import {
 } from '../claustrum/enrollment.js'
 import { hasVaultHost, VAULT_HOST_CONNECT_REFUSAL } from '../claustrum/host.js'
 import {
+  confirmEnrollmentAccess,
+  enrollmentAccessLines,
+} from './enrollment-access.js'
+import {
   ProcessFenceViolationError,
   ProcessInspectionError,
 } from './process-fence.js'
-import type { SetupHost, SetupIO, SetupPlugin } from './types.js'
+import type {
+  SetupEnrollmentAccess,
+  SetupHost,
+  SetupIO,
+  SetupPlugin,
+} from './types.js'
 
 const ENROLLMENT_INCOMPLETE_MESSAGE =
   'Claustrum enrollment did not complete. Inspect and approve with ck, then rerun setup.'
@@ -88,9 +97,14 @@ export async function connectSetupHost(
   io: SetupIO,
   terminal: MenuTerminal,
   fence: () => Promise<void>,
-): Promise<void> {
+): Promise<SetupEnrollmentAccess | undefined> {
   if (hasVaultHost()) throw new Error(VAULT_HOST_CONNECT_REFUSAL)
-  const { name, displayName, paths: input } = plugin.vault.hosts[host]
+  const {
+    name,
+    displayName,
+    requestedGrants,
+    paths: input,
+  } = plugin.vault.hosts[host]
   const paths = hostEnrollmentPaths(input)
   await fence()
   const client = await (io.connect ?? connectClaustrumEnrollmentClient)({
@@ -108,6 +122,7 @@ export async function connectSetupHost(
     const manager = new ClaustrumEnrollmentManager({
       proposedName: name,
       displayName,
+      requestedGrants,
       paths,
       // Each tick of the wait below checks the fence once, just before
       // reconcile proposes or polls. Checking again inside every vault call
@@ -127,7 +142,16 @@ export async function connectSetupHost(
         terminal,
         `Already connected as ${initial.approvedName ?? initial.proposedName}.`,
       )
-      return
+      const access = await confirmEnrollmentAccess(
+        client,
+        initial,
+        paths.tokenPath,
+        requestedGrants,
+      )
+      if (access)
+        for (const line of enrollmentAccessLines(access))
+          printLine(terminal, line)
+      return access
     }
     printLine(terminal, `Asking the vault to connect ${name}…`)
     const deadline = now() + ENROLLMENT_WAIT_MS
@@ -139,7 +163,16 @@ export async function connectSetupHost(
       const status = await manager.reconcile()
       if (status.state === 'approved') {
         printLine(terminal, `Connected ${host} to Claustrum.`)
-        return
+        const access = await confirmEnrollmentAccess(
+          client,
+          status,
+          paths.tokenPath,
+          requestedGrants,
+        )
+        if (access)
+          for (const line of enrollmentAccessLines(access))
+            printLine(terminal, line)
+        return access
       }
       if (
         status.state === 'unavailable' &&

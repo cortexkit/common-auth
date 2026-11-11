@@ -4,12 +4,18 @@ import {
   printLine,
   processTerminal,
 } from '../auth-menu/terminal.js'
-import { hostEnrollmentPaths, vaultAuthority } from '../claustrum/enrollment.js'
+import {
+  hostEnrollmentPaths,
+  readClaustrumEnrollmentStatus,
+  validEnrollmentRequestedGrants,
+  vaultAuthority,
+} from '../claustrum/enrollment.js'
 import { hasVaultHost, VAULT_HOST_CONNECT_REFUSAL } from '../claustrum/host.js'
 import { recordSetupEnrollment, setupEnrollmentLine } from './command-error.js'
 import { defaultCommandRunner } from './command-runner.js'
 import { detectHosts } from './detect.js'
 import { connectSetupHost, HostNotEnrolledError } from './enroll.js'
+import { confirmEnrollmentAccess } from './enrollment-access.js'
 import { parseSetupFlags, UNAVAILABLE_HOST_MESSAGE } from './flags.js'
 import { setupPaths } from './paths.js'
 import {
@@ -27,6 +33,7 @@ import {
 import type {
   OpenCodeGeneration,
   SetupCallbackContext,
+  SetupEnrollmentAccess,
   SetupEnrollmentOutcome,
   SetupHost,
   SetupHostEnrollment,
@@ -54,6 +61,11 @@ function validatePlugin(plugin: SetupPlugin) {
       throw new Error(
         'Setup requires lowercase vault names containing only letters, digits and dashes.',
       )
+    if (
+      host.requestedGrants !== undefined &&
+      !validEnrollmentRequestedGrants(host.requestedGrants)
+    )
+      throw new Error('invalid Claustrum enrollment requested grants')
   }
 }
 
@@ -68,10 +80,12 @@ async function enrollmentReport(
   plugin: SetupPlugin,
   hosts: readonly SetupHost[],
   recorded: ReadonlyMap<SetupHost, SetupEnrollmentOutcome>,
+  recordedAccess: ReadonlyMap<SetupHost, SetupEnrollmentAccess>,
 ): Promise<SetupHostEnrollment[]> {
   const report: SetupHostEnrollment[] = []
   for (const host of hosts) {
     let outcome = recorded.get(host) ?? 'not-enrolled'
+    let access = recordedAccess.get(host)
     if (outcome === 'unknown') {
       const { name, paths } = plugin.vault.hosts[host]
       const authority = await vaultAuthority(
@@ -80,8 +94,21 @@ async function enrollmentReport(
       ).catch(() => 'unreadable' as const)
       if (authority === 'vault' || authority === 'host') outcome = 'enrolled'
       else if (authority === 'local') outcome = 'not-enrolled'
+      if (outcome === 'enrolled') {
+        const status = await readClaustrumEnrollmentStatus(
+          hostEnrollmentPaths(paths),
+          name,
+        ).catch(() => undefined)
+        if (status?.state === 'approved')
+          access = await confirmEnrollmentAccess(
+            {},
+            status,
+            hostEnrollmentPaths(paths).tokenPath,
+            plugin.vault.hosts[host].requestedGrants,
+          )
+      }
     }
-    report.push({ host, outcome })
+    report.push({ host, outcome, ...(access && { access }) })
   }
   return report
 }
@@ -309,6 +336,7 @@ export async function runSetup(
     // Each host's vault enrollment as it happens. A host the operator approved
     // stays enrolled if a later step fails, so a failure reports this record.
     const enrollment = new Map<SetupHost, SetupEnrollmentOutcome>()
+    const enrollmentAccess = new Map<SetupHost, SetupEnrollmentAccess>()
     try {
       for (const host of hosts) {
         await stopped()
@@ -317,7 +345,14 @@ export async function runSetup(
         if (useVault) {
           enrollment.set(host, 'unknown')
           try {
-            await connectSetupHost(plugin, host, io, terminal, stopped)
+            const access = await connectSetupHost(
+              plugin,
+              host,
+              io,
+              terminal,
+              stopped,
+            )
+            if (access) enrollmentAccess.set(host, access)
           } catch (error) {
             if (error instanceof HostNotEnrolledError)
               enrollment.set(host, 'not-enrolled')
@@ -342,7 +377,12 @@ export async function runSetup(
       // then rethrow the original value untouched. Reporting must never
       // replace the failure, so its own errors are ignored.
       try {
-        const report = await enrollmentReport(plugin, hosts, enrollment)
+        const report = await enrollmentReport(
+          plugin,
+          hosts,
+          enrollment,
+          enrollmentAccess,
+        )
         recordSetupEnrollment(error, report)
         for (const entry of report)
           printLine(terminal, setupEnrollmentLine(entry))

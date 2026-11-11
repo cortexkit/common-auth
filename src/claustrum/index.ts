@@ -64,6 +64,7 @@ export {
   type ClaustrumEnrollmentPaths,
   type ClaustrumEnrollmentResetResult,
   type ClaustrumEnrollmentStatus,
+  type ClaustrumRequestedGrant,
   classifyEnrollmentError,
   connectClaustrumEnrollmentClient,
   disconnectClaustrumEnrollment,
@@ -78,6 +79,7 @@ export {
   resetClaustrumEnrollmentState,
   TERMINAL_ENROLLMENT_CODES,
   validEnrollmentDisplayName,
+  validEnrollmentRequestedGrants,
   vaultAuthority,
 } from './enrollment.js'
 export {

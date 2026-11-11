@@ -1,5 +1,6 @@
 import { redact } from '../logger/redact.js'
 import { STDERR_TAIL_MAX_BYTES } from './command-runner.js'
+import { enrollmentAccessLines } from './enrollment-access.js'
 import type { SetupHostEnrollment } from './types.js'
 
 const PI_INSTALL_ERROR_MESSAGE =
@@ -62,8 +63,9 @@ const OUTCOME_TEXT = {
 export function setupEnrollmentLine({
   host,
   outcome,
+  access,
 }: SetupHostEnrollment): string {
-  return `${HOST_LABELS[host]}: ${OUTCOME_TEXT[outcome]}`
+  return `${HOST_LABELS[host]}: ${OUTCOME_TEXT[outcome]}${access ? ` — ${enrollmentAccessLines(access).join('\n')}` : ''}`
 }
 
 // Outcomes recorded against the value a failed `runSetup` threw. A WeakMap
