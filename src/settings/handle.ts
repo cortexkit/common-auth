@@ -2,9 +2,9 @@ import { join, resolve } from 'node:path'
 import { FileReadCache } from '../fs/file-read-cache.js'
 import type { ChannelLogger } from '../logger/engine.js'
 import type { SettingDeclaration, SettingsDefinition } from './define.js'
-import type { ValueOf } from './descriptors.js'
+import { isJsonObject, type ValueOf } from './descriptors.js'
 import { SettingsFs } from './fs.js'
-import { parseSettings } from './parse.js'
+import { parseSettings, type SettingsParseResult } from './parse.js'
 import { type GetOptions, resolveSetting } from './resolve.js'
 import {
   buildSettingsSnapshot,
@@ -23,7 +23,6 @@ export interface OpenSettingsOptions {
   readonly separateInstall: boolean
   readonly createMissing?: boolean
   readonly lockTimeoutMs?: number
-  // Older project settings are not read through this callback yet.
   readonly legacyProject?: (project: string) => LegacyProjectSource | undefined
 }
 
@@ -46,8 +45,25 @@ type ReadOutcome =
   | { status: 'unparseable' | 'unreadable' }
 
 interface FileState {
+  status: ReadOutcome['status']
   snapshot?: SettingsSnapshot
   entries: ReportEntry[]
+}
+
+const reportedKey = Symbol.for('cortexkit.common-auth.settings.reported.v1')
+
+function reportedEntries(): Set<string> {
+  let reported = Reflect.get(globalThis, reportedKey) as Set<string> | undefined
+  if (!reported) {
+    reported = new Set<string>()
+    Reflect.set(globalThis, reportedKey, reported)
+  }
+  return reported
+}
+
+/** Internal test hook; not part of the settings package exports. */
+export function resetSettingsReportedForTest(): void {
+  reportedEntries().clear()
 }
 
 export function openSettings<
@@ -68,13 +84,19 @@ export function openSettings<
   const projectCache = new FileReadCache<ReadOutcome>(cacheOptions)
   let user: FileState | undefined
   const projects = new Map<string, FileState>()
+  // A project's report and resolution use only the source selected by its read.
+  const projectLevels = new Map<string, string>()
+  const projectSequences = new Map<string, number>()
   let sequence = 0
   // Keep ordering metadata after eviction so an older in-flight read cannot win.
   const committedSequences = new Map<string, number>()
   const projectPath = (project: string): string =>
     resolve(join(project, '.cortexkit', `${definition.plugin}.jsonc`))
 
-  async function load(file: ReportEntry['file']): Promise<void> {
+  async function load(
+    file: ReportEntry['file'],
+    reader?: LegacyProjectSource['read'],
+  ): Promise<void> {
     const currentSequence = ++sequence
     const cache = file.kind === 'user' ? userCache : projectCache
     let loaded = false
@@ -91,7 +113,28 @@ export function openSettings<
               : 'unreadable',
         }
       }
-      const parsed = parseSettings(text)
+      let parsed: SettingsParseResult
+      if (reader) {
+        let value: unknown
+        try {
+          value = reader(text)
+        } catch {
+          return { status: 'unreadable' }
+        }
+        if (!isJsonObject(value)) return { status: 'unparseable' }
+        // Legacy readers return an object keyed by setting name, not JSONC text.
+        parsed = {
+          parseable: true,
+          text,
+          hasBom: false,
+          tree: undefined,
+          value,
+          duplicateKeyPaths: [],
+          hasDuplicates: false,
+        }
+      } else {
+        parsed = parseSettings(text)
+      }
       return parsed.parseable
         ? {
             status: 'snapshot',
@@ -121,7 +164,7 @@ export function openSettings<
         reason: outcome.status,
       })
     }
-    const state: FileState = { snapshot, entries }
+    const state: FileState = { status: outcome.status, snapshot, entries }
     if (file.kind === 'user') {
       user = state
     } else {
@@ -129,10 +172,50 @@ export function openSettings<
       if (loaded) projects.delete(file.path)
       if (!projects.has(file.path) && projects.size >= 64) {
         const oldest = projects.keys().next().value
-        if (oldest !== undefined) projects.delete(oldest)
+        if (oldest !== undefined) {
+          projects.delete(oldest)
+          for (const [project, selected] of projectLevels) {
+            if (selected === oldest) projectLevels.delete(project)
+          }
+        }
       }
       projects.set(file.path, state)
     }
+    const reported = reportedEntries()
+    for (const entry of entries) {
+      const identity = JSON.stringify([
+        entry.file.path,
+        entry.keyPath,
+        entry.reason,
+      ])
+      if (reported.has(identity)) continue
+      reported.add(identity)
+      options.log.warn(
+        `Settings ${entry.reason}: ${entry.file.path} (${entry.keyPath.join('.') || '<root>'})`,
+        structuredClone(entry),
+      )
+    }
+  }
+
+  async function readProject(project: string): Promise<void> {
+    const path = projectPath(project)
+    const currentSequence = ++sequence
+    await load({ kind: 'project', path })
+    if (currentSequence <= (projectSequences.get(path) ?? 0)) return
+    let selected = path
+    if (projects.get(path)?.status === 'missing') {
+      const source = options.legacyProject?.(project)
+      if (source) {
+        selected = resolve(source.path)
+        await load({ kind: 'legacy-project', path: selected }, (text) =>
+          source.read(text),
+        )
+      }
+    }
+    // A slow legacy reader must not replace a newer read's project-file choice.
+    if (currentSequence <= (projectSequences.get(path) ?? 0)) return
+    projectSequences.set(path, currentSequence)
+    projectLevels.set(path, selected)
   }
 
   const handle: SettingsHandle<S> = {
@@ -140,9 +223,7 @@ export function openSettings<
       if (options.separateInstall) return
       await Promise.all([
         load({ kind: 'user', path: userPath }),
-        ...(project === undefined
-          ? []
-          : [load({ kind: 'project', path: projectPath(project) })]),
+        ...(project === undefined ? [] : [readProject(project)]),
       ])
     },
     async get(name, getOptions) {
@@ -155,13 +236,17 @@ export function openSettings<
         project:
           getOptions.project === undefined
             ? undefined
-            : projects.get(projectPath(getOptions.project))?.snapshot,
+            : projects.get(
+                projectLevels.get(projectPath(getOptions.project)) ?? '',
+              )?.snapshot,
       })
     },
     report() {
       return structuredClone([
         ...(user?.entries ?? []),
-        ...Array.from(projects.values()).flatMap((state) => state.entries),
+        ...Array.from(new Set(projectLevels.values())).flatMap(
+          (path) => projects.get(path)?.entries ?? [],
+        ),
       ])
     },
   }
