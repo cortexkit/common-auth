@@ -4,6 +4,7 @@ import type { ChannelLogger } from '../logger/engine.js'
 import { watchSettings } from '../tui-prefs/watcher.js'
 import type { SettingDeclaration, SettingsDefinition } from './define.js'
 import { isJsonObject, type ValueOf } from './descriptors.js'
+import type { SettingsEdit, UpdateResult } from './edit.js'
 import { SettingsFs } from './fs.js'
 import { parseSettings, type SettingsParseResult } from './parse.js'
 import { type GetOptions, resolveSetting } from './resolve.js'
@@ -12,6 +13,7 @@ import {
   type ReportEntry,
   type SettingsSnapshot,
 } from './snapshot.js'
+import { updateSettings } from './update.js'
 
 export interface LegacyProjectSource {
   readonly path: string
@@ -38,6 +40,10 @@ export interface SettingsHandle<
     options: GetOptions,
   ): Promise<ValueOf<S[K]['value']>>
   report(): ReportEntry[]
+  update(
+    edits: readonly SettingsEdit[],
+    options: Pick<GetOptions, 'host' | 'model'>,
+  ): Promise<UpdateResult>
   watch(onChange: () => void): () => void
 }
 
@@ -274,6 +280,14 @@ export function openSettings<
           (path) => projects.get(path)?.entries ?? [],
         ),
       ])
+    },
+    update(edits, context) {
+      return updateSettings(
+        definition as SettingsDefinition,
+        { ...options, file: userPath },
+        edits,
+        context,
+      )
     },
     watch(onChange) {
       if (options.separateInstall) return () => {}
