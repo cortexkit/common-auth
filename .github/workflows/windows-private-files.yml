@@ -157,6 +157,15 @@ jobs:
         run: |
           bun test test/fs/windows-private-files.test.ts test/fs/changing-lock-read.test.ts
           if ($LASTEXITCODE) { throw 'Windows lock tests failed' }
+      # Settings use Windows rules for folder paths, rename and hard-link
+      # publication, and lock folder errors; some of these tests only run here.
+      - name: Settings tests on Windows
+        if: always()
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          bun test ./test/settings
+          if ($LASTEXITCODE) { throw 'Settings tests failed' }
   setup-npm-host:
     strategy:
       fail-fast: false
