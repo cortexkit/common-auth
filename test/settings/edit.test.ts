@@ -263,7 +263,11 @@ describe('settings edit destinations and order', () => {
         expected === undefined ? {} : { wait: expected },
       )
       if (expected === initial)
-        expect(result).toEqual({ outcome: 'unchanged', text: source })
+        expect(result).toEqual({
+          outcome: 'unchanged',
+          text: source,
+          hasBom: false,
+        })
     },
   )
 
@@ -290,7 +294,7 @@ describe('settings edit destinations and order', () => {
         { setting: 'x', remove: true },
         { setting: 'sidebar', path: ['collapsed'], remove: true },
       ]),
-    ).toEqual({ outcome: 'unchanged', text: source })
+    ).toEqual({ outcome: 'unchanged', text: source, hasBom: false })
   })
 })
 
@@ -418,19 +422,41 @@ describe('settings JSONC preservation', () => {
 })
 
 describe('settings equality and final resolution units', () => {
-  test.each(['{"x":1}', '{ "x" :  1e0 }', '\uFEFF{\r\n "x":1.0\r\n}'])(
+  test.each([
+    ['{"x":1}', '{"x":1}', false],
+    ['{ "x" :  1e0 }', '{ "x" :  1e0 }', false],
+    ['\uFEFF{\r\n "x":1.0\r\n}', '{\r\n "x":1.0\r\n}', true],
+  ] as const)(
     'a net-equal batch preserves original bytes in %s',
-    (source) => {
+    (source, text, hasBom) => {
       expect(
         update(source, [
           { setting: 'x', value: 2 },
           { setting: 'x', value: 1 },
         ]),
-      ).toEqual({ outcome: 'unchanged', text: source })
+      ).toEqual({ outcome: 'unchanged', text, hasBom })
       expect(update(source, [{ setting: 'x', value: 1 }])).toEqual({
         outcome: 'unchanged',
-        text: source,
+        text,
+        hasBom,
       })
+    },
+  )
+
+  test.each([
+    [1, 'unchanged', '{\n  "x": 1e0\n}'],
+    [2, 'updated', '{\n  "x": 2\n}'],
+  ] as const)(
+    'BOM handoff returns BOM-less text and hasBom for x=%i (%s)',
+    (next, outcome, text) => {
+      const result = update('\uFEFF{\n  "x": 1e0\n}', [
+        { setting: 'x', value: next },
+      ])
+      expect(result).toEqual({ outcome, text, hasBom: true })
+      expect(result.text.startsWith('\uFEFF')).toBe(false)
+      expect(`${result.hasBom ? '\uFEFF' : ''}${result.text}`).toBe(
+        `\uFEFF${text}`,
+      )
     },
   )
 
@@ -440,7 +466,11 @@ describe('settings equality and final resolution units', () => {
       { setting: 'wait', value: 3 },
       { setting: 'wait', value: 2 },
     ])
-    expect(result).toEqual({ outcome: 'unchanged', text: source })
+    expect(result).toEqual({
+      outcome: 'unchanged',
+      text: source,
+      hasBom: false,
+    })
     expect(update(source, [{ setting: 'wait', value: 1 }]).outcome).toBe(
       'updated',
     )

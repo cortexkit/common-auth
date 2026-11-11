@@ -219,13 +219,13 @@ function removeMember(
   return applyEdits(text, edits)
 }
 
-/** Pure JSONC edit engine; the writer owns locking, templates and durable I/O. */
+/** Pure JSONC edit engine; the writer restores the BOM and owns durable I/O. */
 export function applySettingsEdits(
   definition: SettingsDefinition,
   source: string,
   edits: readonly SettingsEdit[],
   context: EditContext,
-): UpdateResult & { text: string } {
+): UpdateResult & { text: string; hasBom: boolean } {
   // Validate the entire request before changing even the private working text.
   for (const edit of edits) {
     if (!Object.hasOwn(definition.settings, edit.setting)) invalid()
@@ -297,11 +297,12 @@ export function applySettingsEdits(
       invalid()
   }
   if (isDeepStrictEqual(start.value, working.value)) {
-    return { outcome: 'unchanged', text: source }
+    return { outcome: 'unchanged', text: start.text, hasBom: start.hasBom }
   }
   return {
     outcome: 'updated',
-    text: `${start.hasBom ? '\uFEFF' : ''}${working.text}`,
+    text: working.text,
+    hasBom: start.hasBom,
   }
 }
 
