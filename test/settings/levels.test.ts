@@ -20,6 +20,9 @@ import {
 } from '../../src/settings/handle.js'
 import type { ReportEntry } from '../../src/settings/snapshot.js'
 
+// Windows reads settings files every time.
+const cachedReads = process.platform !== 'win32'
+
 const definition = defineSettings({
   plugin: 'levels-test',
   settings: {
@@ -94,7 +97,7 @@ describe('settings levels', () => {
       legacyProject,
     })
     expect(await handle.get('wait', host)).toBe(2)
-    expect(paths).toEqual([file])
+    expect(paths).toEqual(cachedReads ? [file] : [])
     expect(handle.report()).toEqual([])
     expect(await handle.get('wait', { ...host, project })).toBe(3)
     expect(await handle.get('private_value', { ...host, project })).toBe(21)
@@ -149,19 +152,21 @@ describe('settings levels', () => {
       readFile: mock(readFile) as typeof readFile,
     })
     await handle.read({ project })
-    expect(calls.toSorted()).toEqual([file, projectFile, legacyFile].toSorted())
-    expect(SettingsFs.readFile).not.toHaveBeenCalled()
-    expect(reader).toHaveBeenCalledTimes(1)
+    expect(calls.toSorted()).toEqual(
+      cachedReads ? [file, projectFile, legacyFile].toSorted() : [],
+    )
+    expect(SettingsFs.readFile).toHaveBeenCalledTimes(cachedReads ? 0 : 3)
+    expect(reader).toHaveBeenCalledTimes(cachedReads ? 1 : 3)
     await put(legacyFile, '{ "old_wait": 8 }')
     expect(await handle.get('wait', { ...host, project })).toBe(8)
-    expect(reader).toHaveBeenCalledTimes(2)
+    expect(reader).toHaveBeenCalledTimes(cachedReads ? 2 : 4)
     await put(projectFile, '{}')
     legacyProject.mockClear()
     await handle.read({ project })
     expect(handle.report()).toEqual([])
     expect(await handle.get('wait', { ...host, project })).toBe(2)
     expect(legacyProject).not.toHaveBeenCalled()
-    expect(reader).toHaveBeenCalledTimes(2)
+    expect(reader).toHaveBeenCalledTimes(cachedReads ? 2 : 4)
   })
 
   test.each(['unparseable', 'unreadable'] as const)(
@@ -214,7 +219,7 @@ describe('settings levels', () => {
     })
     expect(await handle.get('wait', { ...host, project })).toBe(10)
     await handle.read({ project })
-    expect(reader).toHaveBeenCalledTimes(1)
+    expect(reader).toHaveBeenCalledTimes(cachedReads ? 1 : 2)
     expect(handle.report()).toEqual([
       entry('legacy-project', legacyFile, [], 'unreadable'),
     ])

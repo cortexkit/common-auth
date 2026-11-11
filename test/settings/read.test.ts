@@ -16,6 +16,7 @@ import {
   stat,
   symlink,
   unlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -24,6 +25,9 @@ import { defineSettings } from '../../src/settings/define.js'
 import { integer, oneOf } from '../../src/settings/descriptors.js'
 import { setSettingsFsForTest } from '../../src/settings/fs.js'
 import { openSettings } from '../../src/settings/handle.js'
+
+// Windows reads settings files every time.
+const cachedReads = process.platform !== 'win32'
 
 const definition = defineSettings({
   plugin: 'read-test',
@@ -101,10 +105,18 @@ describe('settings reads', () => {
       separateInstall: false,
     })
     await handle.read()
-    expect(fs.calls).toEqual({ stat: [file], lstat: [], read: [file] })
+    expect(fs.calls).toEqual({
+      stat: cachedReads ? [file] : [],
+      lstat: [],
+      read: [file],
+    })
     fs.reset()
     await handle.read()
-    expect(fs.calls).toEqual({ stat: [file], lstat: [], read: [] })
+    expect(fs.calls).toEqual({
+      stat: cachedReads ? [file] : [],
+      lstat: [],
+      read: cachedReads ? [] : [file],
+    })
     expect(handle.report()).toEqual([])
   })
 
@@ -121,7 +133,11 @@ describe('settings reads', () => {
     expect(await handle.get('x', getOptions)).toBe(2)
     fs.reset()
     expect(await handle.get('x', getOptions)).toBe(2)
-    expect(fs.calls).toEqual({ stat: [file], lstat: [], read: [] })
+    expect(fs.calls).toEqual({
+      stat: cachedReads ? [file] : [],
+      lstat: [],
+      read: cachedReads ? [] : [file],
+    })
     await put(target, '{ "x": 3 }')
     expect(await handle.get('x', getOptions)).toBe(3)
     expect(handle.report()).toEqual([])
@@ -138,7 +154,11 @@ describe('settings reads', () => {
     await handle.read()
     fs.reset()
     expect(await handle.get('x', getOptions)).toBe(1)
-    expect(fs.calls).toEqual({ stat: [file], lstat: [], read: [] })
+    expect(fs.calls).toEqual({
+      stat: cachedReads ? [file] : [],
+      lstat: [],
+      read: cachedReads ? [] : [file],
+    })
     expect(handle.report()).toEqual([
       {
         file: { kind: 'user', path: file },
@@ -162,8 +182,12 @@ describe('settings reads', () => {
     expect(await handle.get('x', { ...getOptions, project })).toBe(3)
     fs.reset()
     await handle.read({ project })
-    expect(fs.calls.stat.toSorted()).toEqual([file, path].toSorted())
-    expect(fs.calls.read).toEqual([])
+    expect(fs.calls.stat.toSorted()).toEqual(
+      cachedReads ? [file, path].toSorted() : [],
+    )
+    expect(fs.calls.read.toSorted()).toEqual(
+      cachedReads ? [] : [file, path].toSorted(),
+    )
     expect(fs.calls.lstat).toEqual([])
   })
 
@@ -195,9 +219,11 @@ describe('settings reads', () => {
     fs.reset()
     await handle.read({ project: first })
     expect(fs.calls.stat.toSorted()).toEqual(
-      [file, projectFile(first)].toSorted(),
+      cachedReads ? [file, projectFile(first)].toSorted() : [],
     )
-    expect(fs.calls.read).toEqual([projectFile(first)])
+    expect(fs.calls.read).toEqual(
+      cachedReads ? [projectFile(first)] : [file, projectFile(first)],
+    )
     expect(handle.report().map((entry) => entry.file.path)).toContain(
       projectFile(first),
     )
@@ -252,7 +278,7 @@ describe('settings reads', () => {
     })
     for (let attempt = 1; attempt <= 3; attempt++) {
       expect(await handle.get('x', getOptions)).toBe(1)
-      expect(calls).toEqual({ stat: attempt, read: attempt })
+      expect(calls).toEqual({ stat: cachedReads ? attempt : 0, read: attempt })
       expect(handle.report()).toEqual([
         {
           file: { kind: 'user', path: file },
@@ -375,6 +401,29 @@ describe('settings reads', () => {
     expectTypeOf(mode).toEqualTypeOf<Promise<'a' | 'b'>>()
     expect(await mode).toBe('b')
     await put(file, '{ "x": 3 }')
+    expect(await handle.get('x', getOptions)).toBe(3)
+  })
+
+  test('get observes a same-length in-place rewrite with restored timestamps', async () => {
+    await writeFile(file, '{ "x": 2 }')
+    // Whole-second timestamps can be restored exactly on every platform.
+    await utimes(file, 123, 123)
+    const before = await stat(file)
+    const handle = openSettings(definition, {
+      file,
+      log,
+      separateInstall: false,
+    })
+    expect(await handle.get('x', getOptions)).toBe(2)
+    await writeFile(file, '{ "x": 3 }')
+    await utimes(file, before.atime, before.mtime)
+    const after = await stat(file)
+    expect([after.dev, after.ino, after.size, after.mtimeMs]).toEqual([
+      before.dev,
+      before.ino,
+      before.size,
+      before.mtimeMs,
+    ])
     expect(await handle.get('x', getOptions)).toBe(3)
   })
 
