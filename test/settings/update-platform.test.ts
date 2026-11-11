@@ -207,12 +207,14 @@ describe('settings update platform contract', () => {
       const settings = handle({ createMissing })
       expect(await settings.get('x', context)).toBe(1)
       expect(reads).toBe(1)
-      expect(stats).toBeGreaterThanOrEqual(1)
+      // Windows reads settings directly, without the read cache's stat.
+      expect(stats).toBe(0)
       expect(await settings.update(edits, context)).toEqual({
         outcome: 'updated',
       })
       expect(reads).toBeGreaterThanOrEqual(2)
-      expect(stats).toBeGreaterThanOrEqual(2)
+      // The update stats the file once to keep its mode.
+      expect(stats).toBeGreaterThanOrEqual(1)
       expect(await settings.get('x', context)).toBe(2)
       expect(settings.report()).toEqual([])
       expect((await api.verifyOwnerOnly(file)).ok).toBe(false)
