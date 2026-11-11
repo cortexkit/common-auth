@@ -4,9 +4,11 @@ import { resolve } from 'node:path'
 
 type FileIdentity = Stats | 'absent'
 
+type Probe = (path: string) => Promise<Stats>
+
 async function identity(
   path: string,
-  probe: typeof stat,
+  probe: Probe,
 ): Promise<FileIdentity | undefined> {
   try {
     // Match the reader: private readers reject links, while readFile follows
@@ -33,7 +35,7 @@ function sameIdentity(left: FileIdentity, right: FileIdentity): boolean {
 
 /** Process-local reads, capped at 64 path sets with one value per resolved set. */
 export class FileReadCache<T> {
-  readonly #probe: typeof stat
+  readonly #probe: Probe
   readonly #entries = new Map<
     string,
     { identities: FileIdentity[]; value: T }
@@ -42,13 +44,15 @@ export class FileReadCache<T> {
   constructor(
     options: {
       followSymlinks?: boolean
-      stat?: typeof stat
-      lstat?: typeof lstat
+      stat?: Probe
+      lstat?: Probe
     } = {},
   ) {
+    // Look the probe up on every call, not once here: tests replace the
+    // node:fs/promises functions (and SettingsFs methods) after caches exist.
     this.#probe = options.followSymlinks
-      ? (options.stat ?? stat)
-      : (options.lstat ?? lstat)
+      ? (path) => (options.stat ?? stat)(path)
+      : (path) => (options.lstat ?? lstat)(path)
   }
 
   async read(

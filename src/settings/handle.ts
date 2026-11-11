@@ -60,8 +60,9 @@ export function openSettings<
   const userPath = resolve(options.file)
   const cacheOptions = {
     followSymlinks: true,
-    stat: SettingsFs.stat,
-    lstat: SettingsFs.lstat,
+    // Read SettingsFs at call time so setSettingsFsForTest reaches open handles.
+    stat: (path: string) => SettingsFs.stat(path),
+    lstat: (path: string) => SettingsFs.lstat(path),
   }
   const userCache = new FileReadCache<ReadOutcome>(cacheOptions)
   const projectCache = new FileReadCache<ReadOutcome>(cacheOptions)
