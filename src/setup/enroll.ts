@@ -103,6 +103,7 @@ export async function connectSetupHost(
     name,
     displayName,
     requestedGrants,
+    grantFallback,
     paths: input,
   } = plugin.vault.hosts[host]
   const paths = hostEnrollmentPaths(input)
@@ -149,7 +150,7 @@ export async function connectSetupHost(
         requestedGrants,
       )
       if (access)
-        for (const line of enrollmentAccessLines(access))
+        for (const line of enrollmentAccessLines(access, grantFallback))
           printLine(terminal, line)
       return access
     }
@@ -170,7 +171,7 @@ export async function connectSetupHost(
           requestedGrants,
         )
         if (access)
-          for (const line of enrollmentAccessLines(access))
+          for (const line of enrollmentAccessLines(access, grantFallback))
             printLine(terminal, line)
         return access
       }

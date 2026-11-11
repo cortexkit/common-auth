@@ -128,6 +128,19 @@ whether the grants were sent or dropped. The first pending proposal keeps its
 original list, including across restarts: changing the list requires a new
 enrollment, not a re-proposal of the pending one.
 
+Each host can set `grantFallback: 'plugin'` beside `requestedGrants` to own the
+fallback when grants were not sent with enrollment. The default, `'setup'`,
+keeps setup's access messages and grant commands. With `'plugin'`, setup
+suppresses that host's access output only when `requestedGrantsStatus` is
+`'dropped'` or absent (for enrollments made before 0.44.0); setup enrollment
+outcomes still record the access result and commands unchanged. Each access
+result includes optional `requestedGrantsStatus: 'sent' | 'dropped'`, absent for
+those older enrollments, while the access state remains unchanged. A
+plugin choosing `'plugin'` should run its fallback only when the status is
+`'dropped'` or absent, never when it is `'sent'`: sent grants reflect the
+operator's choice during approval, and setup prints all access states normally
+in that case.
+
 Approval can omit the requested grants at the operator's choice. After saving
 the token, setup therefore calls `listScoped` once on the same connection. It
 reports the count of reachable logins for each requested selector and operation,

@@ -122,13 +122,35 @@ describe('setup enrollment wait', () => {
     }
   })
 
-  for (const outcome of [
-    'reachable',
-    'no-logins',
-    'older-vault',
-    'unconfirmed',
-  ] as const) {
-    test(`requested grants report ${outcome} in terminal and setupEnrollment outcomes`, async () => {
+  test('invalid grant fallback on either setup host fails before connecting', async () => {
+    const root = await profile()
+    for (const host of ['opencode', 'pi'] as const) {
+      const setup = plugin(root)
+      Object.assign(setup.vault.hosts[host], { grantFallback: 'invalid' })
+      const connect = mock(async () => vault({}))
+      await expect(
+        runSetup(setup, ['--yes', '--claustrum'], { ...fakeIO(root), connect }),
+      ).rejects.toThrow('invalid Claustrum enrollment grant fallback')
+      expect(connect).not.toHaveBeenCalled()
+    }
+  })
+
+  const accessCases = ([undefined, 'setup', 'plugin'] as const).flatMap(
+    (grantFallback) => [
+      ...(
+        [
+          'reachable',
+          'partial',
+          'no-logins',
+          'older-vault',
+          'unconfirmed',
+        ] as const
+      ).map((outcome) => ({ grantFallback, outcome, legacyEnrollment: false })),
+      { grantFallback, outcome: 'no-logins' as const, legacyEnrollment: true },
+    ],
+  )
+  for (const { grantFallback, outcome, legacyEnrollment } of accessCases) {
+    test(`requested grants report ${outcome} with ${grantFallback ?? 'default'} fallback in terminal and setupEnrollment outcomes${legacyEnrollment ? ' for pre-0.44.0 enrollment' : ''}`, async () => {
       const root = await profile()
       const setup = plugin(root)
       const requestedGrants = [
@@ -136,6 +158,7 @@ describe('setup enrollment wait', () => {
         { selector: { exact: 'credential-1' }, operation: 'list' },
       ] as const
       setup.vault.hosts.opencode.requestedGrants = requestedGrants
+      setup.vault.hosts.opencode.grantFallback = grantFallback
       setup.vault.hosts.opencode.displayName = 'Plugin for OpenCode'
       const io = fakeIO(root)
       io.env = { PATH: '/bin', OPENCODE_CONFIG_DIR: join(root, 'config') }
@@ -199,13 +222,26 @@ describe('setup enrollment wait', () => {
                       row('second', ['openai-native']),
                       row('unrelated', ['other']),
                     ]
-                  : [],
+                  : outcome === 'partial'
+                    ? [row('second', ['openai-native'])]
+                    : [],
               view: 'one',
               grants: 2,
               grantTuples: undefined,
             }
           },
         })
+      if (legacyEnrollment) {
+        delete setup.vault.hosts.opencode.requestedGrants
+        await connectSetupHost(
+          setup,
+          'opencode',
+          io,
+          terminal(),
+          async () => {},
+        )
+        setup.vault.hosts.opencode.requestedGrants = requestedGrants
+      }
       const failure = new Error('registration stopped after enrollment')
       setup.beforeRegister = async () => {
         throw failure
@@ -216,11 +252,19 @@ describe('setup enrollment wait', () => {
       expect(error).toBe(failure)
       const access = setupEnrollment(error)?.[0]?.access
       expect(access?.state).toBe(outcome)
+      if (legacyEnrollment)
+        expect(access).not.toHaveProperty('requestedGrantsStatus')
+      else
+        expect(access?.requestedGrantsStatus).toBe(
+          outcome === 'older-vault' ? 'dropped' : 'sent',
+        )
       expect(setupEnrollment(error)?.[0]).toMatchObject({
         host: 'opencode',
         outcome: 'enrolled',
       })
-      expect(proposals[0]?.requestedGrants).toEqual(requestedGrants)
+      expect(proposals[0]?.requestedGrants).toEqual(
+        legacyEnrollment ? undefined : requestedGrants,
+      )
       expect(proposals).toHaveLength(outcome === 'older-vault' ? 2 : 1)
       expect(listings).toBe(outcome === 'older-vault' ? 0 : 1)
       const output = term.lines.join('')
@@ -240,13 +284,28 @@ describe('setup enrollment wait', () => {
         expect(access?.grants.map((entry) => entry.reachableLogins)).toEqual([
           2, 1,
         ])
+      } else if (outcome === 'partial') {
+        expect(access?.grants.map((entry) => entry.reachableLogins)).toEqual([
+          1, 0,
+        ])
+        expect(access?.grants.map((entry) => entry.grantCommand)).toEqual([
+          undefined,
+          commands[1],
+        ])
+        expect(output).toContain(
+          'Confirmed read access to the vault\'s "openai-native" accounts (1 reachable login).',
+        )
+        expect(output).not.toContain(commands[0]!)
+        expect(output).toContain(commands[1]!)
+        const message =
+          'Approved, but some requested access has no reachable logins yet; run:'
+        expect(output).toContain(message)
+        expect(output).toContain(
+          `OpenCode: connected to the vault — ${message}`,
+        )
       } else {
         expect(access?.grants.map((entry) => entry.grantCommand)).toEqual(
           commands,
-        )
-        for (const command of commands) expect(output).toContain(command)
-        expect(output.indexOf(commands[0]!)).toBeLessThan(
-          output.indexOf(commands[1]!),
         )
         const message =
           outcome === 'older-vault'
@@ -254,10 +313,25 @@ describe('setup enrollment wait', () => {
             : outcome === 'no-logins'
               ? 'Approved, but no logins are reachable yet; run:'
               : 'Approved, but access could not be confirmed; check ck auth status or run:'
-        expect(output).toContain(message)
-        expect(output).toContain(
-          `OpenCode: connected to the vault — ${message}`,
-        )
+        if (
+          grantFallback === 'plugin' &&
+          (outcome === 'older-vault' || legacyEnrollment)
+        ) {
+          expect(output).not.toContain('Approved.')
+          expect(output).not.toContain('Approved,')
+          expect(output).not.toContain('ck auth grant')
+          expect(output).toContain('OpenCode: connected to the vault')
+          expect(output).not.toContain('OpenCode: connected to the vault —')
+        } else {
+          for (const command of commands) expect(output).toContain(command)
+          expect(output.indexOf(commands[0]!)).toBeLessThan(
+            output.indexOf(commands[1]!),
+          )
+          expect(output).toContain(message)
+          expect(output).toContain(
+            `OpenCode: connected to the vault — ${message}`,
+          )
+        }
         if (outcome === 'older-vault') {
           expect(proposals[1]).not.toHaveProperty('displayName')
           expect(proposals[1]).not.toHaveProperty('requestedGrants')
@@ -269,8 +343,12 @@ describe('setup enrollment wait', () => {
             resumed,
             async () => {},
           )
-          expect(resumedAccess?.state).toBe('older-vault')
-          expect(resumed.lines.join('')).toContain(message)
+          expect(resumedAccess).toEqual(access)
+          const resumedOutput = resumed.lines.join('')
+          if (grantFallback === 'plugin') {
+            expect(resumedOutput).not.toContain('Approved.')
+            expect(resumedOutput).not.toContain('ck auth grant')
+          } else expect(resumedOutput).toContain(message)
           expect(listings).toBe(0)
         }
       }

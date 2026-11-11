@@ -66,6 +66,12 @@ function validatePlugin(plugin: SetupPlugin) {
       !validEnrollmentRequestedGrants(host.requestedGrants)
     )
       throw new Error('invalid Claustrum enrollment requested grants')
+    if (
+      host.grantFallback !== undefined &&
+      host.grantFallback !== 'setup' &&
+      host.grantFallback !== 'plugin'
+    )
+      throw new Error('invalid Claustrum enrollment grant fallback')
   }
 }
 
@@ -385,7 +391,13 @@ export async function runSetup(
         )
         recordSetupEnrollment(error, report)
         for (const entry of report)
-          printLine(terminal, setupEnrollmentLine(entry))
+          printLine(
+            terminal,
+            setupEnrollmentLine(
+              entry,
+              plugin.vault.hosts[entry.host].grantFallback,
+            ),
+          )
       } catch {}
       throw error
     }

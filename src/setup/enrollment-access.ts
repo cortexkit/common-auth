@@ -28,10 +28,16 @@ export async function confirmEnrollmentAccess(
       grantCommand: `ck auth grant --principal ${shellArgument(`enrolled:${status.approvedName}`)} --selector-kind ${grant.selector.exact === undefined ? 'category' : 'exact'} --selector ${shellArgument(grant.selector.exact ?? grant.selector.category)} --operation ${grant.operation}`,
     }),
   }))
+  const access = {
+    grants,
+    ...(status.requestedGrantsStatus !== undefined && {
+      requestedGrantsStatus: status.requestedGrantsStatus,
+    }),
+  }
   if (status.requestedGrantsStatus === 'dropped')
-    return { state: 'older-vault', grants }
+    return { ...access, state: 'older-vault' }
   try {
-    if (!client.listScoped) return { state: 'unconfirmed', grants }
+    if (!client.listScoped) return { ...access, state: 'unconfirmed' }
     const { token } = await readClaustrumEnrollmentToken(tokenPath)
     const inventory = await client.listScoped(token)
     const confirmed = grants.map((entry) => ({
@@ -45,6 +51,7 @@ export async function confirmEnrollmentAccess(
       ).length,
     }))
     return {
+      ...access,
       state: confirmed.every((entry) => entry.reachableLogins > 0)
         ? 'reachable'
         : confirmed.some((entry) => entry.reachableLogins > 0)
@@ -58,11 +65,16 @@ export async function confirmEnrollmentAccess(
     }
   } catch {
     // A listing failure cannot undo approval, and its error may contain secrets.
-    return { state: 'unconfirmed', grants }
+    return { ...access, state: 'unconfirmed' }
   }
 }
 
-export function enrollmentAccessLines(access: SetupEnrollmentAccess): string[] {
+export function enrollmentAccessLines(
+  access: SetupEnrollmentAccess,
+  grantFallback: 'setup' | 'plugin' = 'setup',
+): string[] {
+  if (grantFallback === 'plugin' && access.requestedGrantsStatus !== 'sent')
+    return []
   const lines: string[] = []
   const remedy = access.grants.some((entry) => entry.grantCommand)
     ? 'run:'

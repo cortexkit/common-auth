@@ -60,12 +60,12 @@ const OUTCOME_TEXT = {
 } as const
 
 /** The line setup prints for one host's outcome, e.g. `Pi: not connected`. */
-export function setupEnrollmentLine({
-  host,
-  outcome,
-  access,
-}: SetupHostEnrollment): string {
-  return `${HOST_LABELS[host]}: ${OUTCOME_TEXT[outcome]}${access ? ` — ${enrollmentAccessLines(access).join('\n')}` : ''}`
+export function setupEnrollmentLine(
+  { host, outcome, access }: SetupHostEnrollment,
+  grantFallback: 'setup' | 'plugin' = 'setup',
+): string {
+  const lines = access ? enrollmentAccessLines(access, grantFallback) : []
+  return `${HOST_LABELS[host]}: ${OUTCOME_TEXT[outcome]}${lines.length ? ` — ${lines.join('\n')}` : ''}`
 }
 
 // Outcomes recorded against the value a failed `runSetup` threw. A WeakMap
