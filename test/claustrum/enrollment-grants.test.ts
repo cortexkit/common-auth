@@ -17,6 +17,7 @@ import {
   validEnrollmentRequestedGrants,
 } from '../../src/claustrum/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
+import { clientSendsRequestedGrants } from './helpers.js'
 
 const { afterEach, test } = lifetimeHooks()
 const roots: string[] = []
@@ -409,64 +410,72 @@ describe('enrollment requested grants', () => {
     })
   }
 
-  test('real client connect puts requested_grants on the enrollment wire', async () => {
-    const paths = await fixture()
-    const calls: { module: string; method: string; params: unknown }[] = []
-    let closed = 0
-    const transport = {
-      async call(module: string, method: string, params: unknown) {
-        calls.push({ module, method, params })
-        return {
-          result:
-            method === 'auth.enroll_propose'
-              ? { request_id: 'wire-request' }
-              : { status: 'pending' },
-        }
-      },
-      close() {
-        closed++
-      },
-    }
-    const client = await ClaustrumClient.connect({
-      connectionFile: join(roots[roots.length - 1]!, 'unused-connection.json'),
-      identity: { project_root: '/test', harness: 'test', session: 'test' },
-      connector: async () =>
-        transport as unknown as Awaited<ReturnType<ClaustrumConnector>>,
-    })
-    try {
-      await manager(
-        paths,
-        {},
-        {
-          client,
-          requestedGrants,
-          displayName: 'Plugin for OpenCode',
+  // The claustrum-floor job reruns this file on claustrum-client 0.6.2, which
+  // has no requested_grants on its wire; the plain retry covers that client.
+  test.if(clientSendsRequestedGrants)(
+    'real client connect puts requested_grants on the enrollment wire',
+    async () => {
+      const paths = await fixture()
+      const calls: { module: string; method: string; params: unknown }[] = []
+      let closed = 0
+      const transport = {
+        async call(module: string, method: string, params: unknown) {
+          calls.push({ module, method, params })
+          return {
+            result:
+              method === 'auth.enroll_propose'
+                ? { request_id: 'wire-request' }
+                : { status: 'pending' },
+          }
         },
-      ).reconcile()
-      expect(calls).toEqual([
-        {
-          module: 'claustrum',
-          method: 'auth.enroll_propose',
-          params: {
-            proposed_name: 'test-auth-opencode',
-            request_secret_hash:
-              '72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793',
-            display_name: 'Plugin for OpenCode',
-            requested_grants: requestedGrants,
+        close() {
+          closed++
+        },
+      }
+      const client = await ClaustrumClient.connect({
+        connectionFile: join(
+          roots[roots.length - 1]!,
+          'unused-connection.json',
+        ),
+        identity: { project_root: '/test', harness: 'test', session: 'test' },
+        connector: async () =>
+          transport as unknown as Awaited<ReturnType<ClaustrumConnector>>,
+      })
+      try {
+        await manager(
+          paths,
+          {},
+          {
+            client,
+            requestedGrants,
+            displayName: 'Plugin for OpenCode',
           },
-        },
-        {
-          module: 'claustrum',
-          method: 'auth.enroll_poll',
-          params: {
-            request_id: 'wire-request',
-            request_secret: secret,
+        ).reconcile()
+        expect(calls).toEqual([
+          {
+            module: 'claustrum',
+            method: 'auth.enroll_propose',
+            params: {
+              proposed_name: 'test-auth-opencode',
+              request_secret_hash:
+                '72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793',
+              display_name: 'Plugin for OpenCode',
+              requested_grants: requestedGrants,
+            },
           },
-        },
-      ])
-    } finally {
-      client.close()
-    }
-    expect(closed).toBe(1)
-  })
+          {
+            module: 'claustrum',
+            method: 'auth.enroll_poll',
+            params: {
+              request_id: 'wire-request',
+              request_secret: secret,
+            },
+          },
+        ])
+      } finally {
+        client.close()
+      }
+      expect(closed).toBe(1)
+    },
+  )
 })

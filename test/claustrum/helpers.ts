@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -225,3 +226,32 @@ export async function until(
  * fallback tests run instead.
  */
 export const clientWatches = 'watchScoped' in ClaustrumClient.prototype
+
+function installedClientVersion(): string | undefined {
+  let directory = dirname(
+    fileURLToPath(import.meta.resolve('@cortexkit/claustrum-client')),
+  )
+  while (dirname(directory) !== directory) {
+    try {
+      const manifest = JSON.parse(
+        readFileSync(join(directory, 'package.json'), 'utf8'),
+      )
+      if (manifest.name === '@cortexkit/claustrum-client')
+        return manifest.version
+    } catch {}
+    directory = dirname(directory)
+  }
+  return undefined
+}
+
+/**
+ * Whether the installed claustrum-client puts `requested_grants` on the
+ * enrollment wire (0.18.0 and later). The floor job's 0.6.2 drops the field
+ * without an error, so the real-wire grant test only runs on 0.18.0 or newer.
+ */
+export const clientSendsRequestedGrants = (() => {
+  const [major = 0, minor = 0] = (installedClientVersion() ?? '0.0.0')
+    .split('.')
+    .map(Number)
+  return major > 0 || minor >= 18
+})()
