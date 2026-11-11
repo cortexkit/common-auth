@@ -585,7 +585,10 @@ describe('settings move', () => {
     expect([start, end]).toContain(
       forward.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? '',
     )
-    for (const source of sources) expect(forward).toContain(source.path)
+    // Paths are written as JSON strings, so a newline in a path can't end the
+    // comment; on Windows that doubles each backslash.
+    for (const source of sources)
+      expect(forward).toContain(`// ${JSON.stringify(source.path)}\n`)
     expect(Object.keys(await contents())).toEqual([
       'schema_version',
       'enabled',
@@ -701,7 +704,14 @@ describe('settings move', () => {
       await moveSettingsOnce(options({ sources: [legacy] })),
     ).toMatchObject({
       outcome: 'failed',
-      cause: { name: 'LockOwnershipError' },
+      // On Windows the lock's ownership check rethrows the private-file read
+      // error for the removed lock file instead of LockOwnershipError.
+      cause: {
+        name:
+          process.platform === 'win32'
+            ? 'PrivateFileError'
+            : 'LockOwnershipError',
+      },
     })
     expect(await exists(target)).toBe(false)
     expect(await fs.readdir(root)).toEqual([basename(legacy.path)])
