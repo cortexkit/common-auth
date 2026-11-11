@@ -14,6 +14,7 @@ import {
 import { dirname, join, resolve } from 'node:path'
 import * as timers from 'node:timers'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { fileURLToPath } from 'node:url'
 import { defineSettings } from '../../src/settings/define.js'
 import { integer } from '../../src/settings/descriptors.js'
 import { setSettingsFsForTest } from '../../src/settings/fs.js'
@@ -219,7 +220,7 @@ test('settings seed synchronously and use plain seam reads for later checks', as
 test('settings use plain default reads and seed even in the Windows branch', async () => {
   const bundle = await Bun.build({
     entrypoints: [
-      new URL('../../src/tui-prefs/watcher.ts', import.meta.url).pathname,
+      fileURLToPath(new URL('../../src/tui-prefs/watcher.ts', import.meta.url)),
     ],
     target: 'bun',
     define: { 'process.platform': '"win32"' },

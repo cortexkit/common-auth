@@ -102,7 +102,7 @@ export function openSettings<
     const currentSequence = ++sequence
     const cache = file.kind === 'user' ? userCache : projectCache
     let loaded = false
-    const outcome = await cache.read([file.path], async ([path]) => {
+    const readFile = async ([path]: string[]): Promise<ReadOutcome> => {
       loaded = true
       let text: string
       try {
@@ -147,7 +147,13 @@ export function openSettings<
             ),
           }
         : { status: 'unparseable' }
-    })
+    }
+    // On Windows a quick same-size rewrite can keep the size and timestamps
+    // the cache compares, so read the file every time instead of using the cache.
+    const outcome =
+      process.platform === 'win32'
+        ? await readFile([file.path])
+        : await cache.read([file.path], readFile)
     const key = JSON.stringify([file.kind, file.path])
     if (currentSequence <= (committedSequences.get(key) ?? 0)) return
     committedSequences.set(key, currentSequence)
