@@ -35,7 +35,9 @@ async function profile() {
 }
 
 /** A fake clock that each wait advances, so the overall bound runs instantly. */
-function clock(): Pick<SetupIO, 'now' | 'wait'> & { waits: number[] } {
+function clock(rate = 1): Required<Pick<SetupIO, 'now' | 'wait'>> & {
+  waits: number[]
+} {
   let time = 0
   const waits: number[] = []
   return {
@@ -43,7 +45,7 @@ function clock(): Pick<SetupIO, 'now' | 'wait'> & { waits: number[] } {
     now: () => time,
     async wait(ms) {
       waits.push(ms)
-      time += ms
+      time += ms * rate
     },
   }
 }
@@ -658,7 +660,10 @@ describe('setup enrollment wait', () => {
 
   test('a request still waiting for approval at the bound repeats the approve command', async () => {
     const root = await profile()
-    const time = clock()
+    // Sample the beginning, midpoint and deadline without repeating hundreds
+    // of identical pending-state disk reads. Requested pauses stay one second.
+    const rate = 150
+    const time = clock(rate)
     const term = terminal()
     let polls = 0
     const error = await rejection(
@@ -688,7 +693,9 @@ describe('setup enrollment wait', () => {
       'Waiting for approval. In another terminal, run:\n  ck auth enroll approve --request-id request-1 --name test-auth-opencode\n',
     )
     expect(time.waits.every((ms) => ms === 1000)).toBe(true)
-    expect(time.waits.reduce((sum, ms) => sum + ms, 0)).toBe(WAIT_MS)
+    expect(time.waits.reduce((sum, ms) => sum + ms * rate, 0)).toBe(WAIT_MS)
+    expect(time.now()).toBe(WAIT_MS)
+    expect(time.waits).toEqual([1000, 1000])
     expect(polls).toBe(time.waits.length + 1)
   })
 

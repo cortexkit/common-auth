@@ -35,12 +35,13 @@ const { acquireRefreshFileLock, setEvictionMarkerTestHooksForTest } =
 // the full six-second deadline without sleeping through it in every case.
 let elapsed = 0
 let sleeps = []
-const realSetTimeout = globalThis.setTimeout
 performance.now = () => elapsed
 globalThis.setTimeout = (callback, ms, ...args) => {
   sleeps.push(ms)
   elapsed += ms
-  return realSetTimeout(callback, 0, ...args)
+  // Retry time is virtual; scheduling hundreds of real timers only adds load
+  // sensitivity. A microtask still resumes each retry asynchronously.
+  queueMicrotask(() => callback(...args))
 }
 const root = await fs.mkdtemp(join(tmpdir(), 'releasing-lock-'))
 const mode = process.argv[2]

@@ -12,7 +12,8 @@ async function probe(
   const preload = join(dir, 'idle.cjs')
   const executable = join(dir, 'test-bun')
   // Keep real process creation and group cleanup, but replace only the busy-loop
-  // payload with idle workers so this regression test never generates CPU load.
+  // payload with shell sleepers. They need no Node startup or CPU load, and
+  // report readiness over IPC via the load-group leader instead of being polled.
   await writeFile(
     preload,
     `
@@ -20,9 +21,17 @@ async function probe(
     const real = cp.spawn;
     cp.spawn = function(file, args, options) {
       if (args?.[0] === '-e' && args[1] === 'for (;;) { Math.sqrt(Math.random()) }') {
-        args = ['-e', ${JSON.stringify("require('node:fs').appendFileSync(process.env.WORKER_MARKER, process.pid + '\\n'); setInterval(() => {}, 1000)")}];
+        const worker = real.call(this, 'sh', ['-c', 'echo $$ >> "$WORKER_MARKER"; echo ready; exec sleep 30'], {
+          ...options, stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        worker.stdout.once('data', () => process.send('worker-ready'));
+        return worker;
       }
-      return real.call(this, file, args, options);
+      const child = real.call(this, file, args, options);
+      if (options?.detached) child.on('message', (message) => {
+        if (message === 'worker-ready') console.log(message);
+      });
+      return child;
     };
   `,
   )
@@ -82,16 +91,13 @@ async function probe(
         child.kill('SIGKILL')
       })()
     }
-    if (!sent && (mode === 'SIGINT' || mode === 'SIGTERM')) {
+    if (
+      !sent &&
+      (mode === 'SIGINT' || mode === 'SIGTERM') &&
+      stdout.split('\n').filter((line) => line === 'worker-ready').length === 2
+    ) {
       sent = true
-      void (async () => {
-        for (let attempt = 0; attempt < 200; attempt++) {
-          const workers = await readFile(marker, 'utf8').catch(() => '')
-          if (workers.trim().split('\n').filter(Boolean).length === 2) break
-          await new Promise((resolve) => setTimeout(resolve, 10))
-        }
-        child.kill(mode)
-      })()
+      child.kill(mode)
     }
   })
   const deadline = setTimeout(() => child.kill('SIGKILL'), 4_000)
