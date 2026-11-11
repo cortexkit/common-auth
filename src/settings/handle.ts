@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path'
 import { FileReadCache } from '../fs/file-read-cache.js'
 import type { ChannelLogger } from '../logger/engine.js'
+import { watchSettings } from '../tui-prefs/watcher.js'
 import type { SettingDeclaration, SettingsDefinition } from './define.js'
 import { isJsonObject, type ValueOf } from './descriptors.js'
 import { SettingsFs } from './fs.js'
@@ -37,6 +38,7 @@ export interface SettingsHandle<
     options: GetOptions,
   ): Promise<ValueOf<S[K]['value']>>
   report(): ReportEntry[]
+  watch(onChange: () => void): () => void
 }
 
 type ReadOutcome =
@@ -248,6 +250,15 @@ export function openSettings<
           (path) => projects.get(path)?.entries ?? [],
         ),
       ])
+    },
+    watch(onChange) {
+      if (options.separateInstall) return () => {}
+      return watchSettings(userPath, onChange, {
+        fs: {
+          stat: (path) => SettingsFs.stat(path),
+          readFile: (path) => SettingsFs.readFile(path, 'utf8'),
+        },
+      })
     },
   }
   return handle

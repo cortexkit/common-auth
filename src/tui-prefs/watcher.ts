@@ -14,7 +14,8 @@ import {
   windowsPrivateFiles,
 } from '../fs/private-files.js'
 
-type Metadata = Pick<Stats, 'mtimeMs' | 'size' | 'ino' | 'dev'>
+type Metadata = Pick<Stats, 'mtimeMs' | 'size' | 'ino' | 'dev'> &
+  Partial<Pick<Stats, 'ctimeMs'>>
 
 export interface TuiPreferencesWatchOptions {
   /** Receives PrivateFileError instances for Windows access failures, never file contents. */
@@ -47,8 +48,10 @@ function canonicalPath(file: string): string {
   }
 }
 
-function identity(info: Metadata | null): string | null {
-  return info && `${info.dev}:${info.ino}:${info.mtimeMs}:${info.size}`
+function identity(info: Metadata | null, settings: boolean): string | null {
+  if (!info) return null
+  const value = `${info.dev}:${info.ino}:${info.mtimeMs}:${info.size}`
+  return settings ? `${value}:${info.ctimeMs}` : value
 }
 
 /**
@@ -64,21 +67,44 @@ export function watchTuiPreferences(
   onChange: () => void,
   options: TuiPreferencesWatchOptions = {},
 ): () => void {
+  return watchFile(file, onChange, options, false)
+}
+
+/** @internal Settings use ordinary reads and observe removal of the user path. */
+export function watchSettings(
+  file: string,
+  onChange: () => void,
+  options: TuiPreferencesWatchOptions = {},
+): () => void {
+  return watchFile(file, onChange, options, true)
+}
+
+function watchFile(
+  file: string,
+  onChange: () => void,
+  options: TuiPreferencesWatchOptions,
+  settings: boolean,
+): () => void {
   const globals = globalThis as unknown as Record<
     symbol,
     Map<string, SharedWatcher> | undefined
   >
-  const key = Symbol.for('cortexkit.common-auth.tui-prefs.watchers.v1')
+  const key = Symbol.for(
+    settings
+      ? 'cortexkit.common-auth.settings.watchers.v1'
+      : 'cortexkit.common-auth.tui-prefs.watchers.v1',
+  )
   const registry = globals[key] ?? new Map<string, SharedWatcher>()
   globals[key] = registry
-  const path = canonicalPath(file)
+  const path = settings ? resolve(file) : canonicalPath(file)
   const shared = registry.get(path)
   if (shared) return shared.subscribe(onChange)
 
   const name = basename(path)
-  const read = windowsPrivateFiles
-    ? (file: string) => readPrivateText(file)
-    : (options.fs?.readFile ?? ((file) => readFile(file, 'utf8')))
+  const read =
+    windowsPrivateFiles && !settings
+      ? (file: string) => readPrivateText(file)
+      : (options.fs?.readFile ?? ((file) => readFile(file, 'utf8')))
   const probe = options.fs?.stat ?? stat
   let timer: ReturnType<typeof setTimeout> | null = null
   let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -87,9 +113,12 @@ export function watchTuiPreferences(
   // Seed synchronously so an immediate write cannot be absorbed as the baseline.
   // The metadata is recorded only together with contents that were read, as in
   // the probe below: if the first read fails, the probe keeps trying.
-  if (!windowsPrivateFiles)
+  if (settings || !windowsPrivateFiles)
     try {
-      const metadata = identity((options.fs?.statSync ?? statSync)(path))
+      const metadata = identity(
+        (options.fs?.statSync ?? statSync)(path),
+        settings,
+      )
       lastSeen = (
         options.fs?.readFileSync ?? ((file) => readFileSync(file, 'utf8'))
       )(path)
@@ -99,17 +128,34 @@ export function watchTuiPreferences(
     }
   let disposed = false
   const subscribers = new Set<{ notify: () => void }>()
+  const notifySubscribers = () => {
+    for (const subscriber of [...subscribers]) {
+      if (!subscribers.has(subscriber)) continue
+      try {
+        subscriber.notify()
+      } catch {
+        // A broken subscriber must not prevent the others from observing a change.
+      }
+    }
+  }
   let checking = Promise.resolve()
   const checkForChange = (native: boolean) => {
     // Serialize native and poll checks so an older read cannot roll back state.
     checking = checking.then(async () => {
       if (disposed) return
-      const metadata = identity(await probe(path).catch(() => null))
+      const metadata = identity(await probe(path).catch(() => null), settings)
+      if (disposed) return
       if (!native && metadata === lastMetadata) return
       // A missing file has nothing to read; remember that so the probe stays
       // quiet until it reappears.
       if (metadata === null) {
+        const disappeared = lastMetadata !== null
         lastMetadata = null
+        if (settings && disappeared) {
+          // Dropping the bytes makes recreation observable even with the old text.
+          lastSeen = null
+          notifySubscribers()
+        }
         return
       }
       const text = await read(path).catch((error: unknown) => {
@@ -127,14 +173,7 @@ export function watchTuiPreferences(
       lastMetadata = metadata
       if (text === lastSeen) return
       lastSeen = text
-      for (const subscriber of [...subscribers]) {
-        if (!subscribers.has(subscriber)) continue
-        try {
-          subscriber.notify()
-        } catch {
-          // A broken subscriber must not prevent the others from observing a change.
-        }
-      }
+      notifySubscribers()
     })
     return checking
   }
