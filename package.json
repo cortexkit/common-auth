@@ -48,6 +48,10 @@
       "types": "./dist/tui-prefs/index.d.ts",
       "import": "./dist/tui-prefs/index.js"
     },
+    "./settings": {
+      "types": "./dist/settings/index.d.ts",
+      "import": "./dist/settings/index.js"
+    },
     "./tui-build": {
       "types": "./dist/tui-build/index.d.ts",
       "import": "./dist/tui-build/index.js"
