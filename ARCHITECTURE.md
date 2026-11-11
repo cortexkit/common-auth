@@ -1,6 +1,6 @@
 # Architecture
 
-common-auth is the library the CortexKit auth plugins share: openai-auth, anthropic-auth, antigravity-auth and claustrum-auth. It holds the parts every multi-account auth plugin needs and should not write four times: an account store, routing between accounts, limit tracking, Claustrum vault accounts, the OpenCode 2 hook installer, setup, the command menu, the quota sidebar, file locking and redaction.
+common-auth is the library the CortexKit auth plugins share: openai-auth, anthropic-auth, antigravity-auth and claustrum-auth. It holds the parts every multi-account auth plugin needs and should not write four times: an account store, plugin settings, routing between accounts, limit tracking, Claustrum vault accounts, the OpenCode 2 hook installer, setup, the command menu, the quota sidebar, file locking and redaction.
 
 It is published on npm as `@cortexkit/common-auth`. Each plugin takes it as a build-time devDependency and bundles it, so users never install it. Each feature is a separate subpath export (`./store`, `./claustrum`, `./opencode2`…), and a plugin adopts only the subpaths it uses. The library knows nothing about any one provider: the plugin supplies the provider's refresh and quota functions, its quota codec, its wording and its host wiring.
 
@@ -25,12 +25,15 @@ Paths below are relative to the repository root.
 - **Hosted mode:** Thalamus started the host and provides the vault connection. Selected only by `CORTEXKIT_VAULT_HOST=thalamus`.
 - **Placeholder:** a fixed non-secret value written into a host's own login slot so the host routes through the plugin. It's never a credential.
 - **Owned request:** on OpenCode 2, a request whose active connection is the plugin's placeholder. Other requests pass through untouched.
+- **Settings file, project file, override:** a plugin's settings live in a JSONC file of their own, one per user (the user file) and optionally one per project (the project file). An override is a per-host (`opencode`, `pi`) or per-model value inside one setting.
+- **Separate install:** a host the plugin runs under a non-default config folder; the plugin decides this and passes `separateInstall`. It reads only built-in defaults and makes no edits, so two installs never share or overwrite one settings file.
 
 ## Code map
 
 | Subpath | Where | Role |
 |---|---|---|
-| `./store` | `src/store/` | The account pool: rows, credentials, settings, refresh, quota writes, crash recovery. |
+| `./store` | `src/store/` | The account pool: rows, credentials, store-kept settings, refresh, quota writes, crash recovery. |
+| `./settings` | `src/settings/` | Declared plugin settings: user and project JSONC files, resolution, comment-preserving edits, the one-time move out of the old stores. |
 | `./quota` | `src/quota/` | Quota maps: merge, projection onto a request, codecs, the shared wording. |
 | `./routing` | `src/routing/` | Pure admission, ordered routing, sticky-balanced placement and pin breaks. |
 | `./limits`, `./limits/vault` | `src/limits/` | Limit signals, the marks registry, wait-or-switch decisions, fixed refusal wording. |
@@ -104,6 +107,17 @@ OpenCode 2 sends requests over its own drivers; a plugin can only edit them thro
 - **Ownership:** only owned requests are touched. A session that mixed owned and host-owned requests is tainted until dispose: the installer leaves its retries to the host.
 - **Retries:** `chooseAccount` is called once per attempt; a retry reuses that choice, and `dropChoice` releases a choice that went unused. Before output, a refused attempt may move to another account. After output, only `retrySameAccount` can continue, for a reply cut mid-read on the same account. A hold delays the retry, capped at `MAX_RETRY_HOLD_MS` (one hour plus jitter).
 
+## Plugin settings
+
+`./settings` gives each plugin one settings file of its own, apart from its account store. A plugin declares every setting once with `defineSettings` (`src/settings/define.ts`): its value type (`descriptors.ts`), a default, the hosts it applies to, whether it takes host or model overrides, and whether a project file may set it (`project: 'allowed'`; otherwise it is user-only). The declarations drive validation, resolution, edits and the JSON Schema `settingsJsonSchema` generates for editors (`schema.ts`).
+
+- **Where the files are** (`paths.ts`): the user file is `<config>/cortexkit/<plugin>.jsonc`, where `<config>` is `XDG_CONFIG_HOME`, else `APPDATA` on Windows, else `~/.config` (`%USERPROFILE%\AppData\Roaming` on Windows). Only absolute values count, as in the fleet's Rust path library. An absolute override path wins. The plugin passes in its environment, platform and home folder; the module reads none itself. A project file is `<project>/.cortexkit/<plugin>.jsonc`.
+- **Reading** (`handle.ts`, `snapshot.ts`, `resolve.ts`): `openSettings` returns a handle whose `get(name, {host, model, project})` reads the files and resolves the value. The project file is used only for a setting that allows it and only when a project is named; then the user file; then the default. Inside one file a model override beats a host override, which beats the setting's `default` key. Object settings resolve field by field, and every returned value is a copy. A file that can't be read or parsed keeps its last good values; a missing file means defaults. An older read never replaces a newer one, and at most 64 project files are kept. When a project has no new file, the plugin's `legacyProject` reader supplies its old one.
+- **Reports:** a bad file never fails a read. Unknown keys, disallowed overrides, user-only settings in a project file, invalid values, duplicate keys and unreadable files become `report()` entries, each logged once per process. A file with a newer `schema_version` is still read; keys this version doesn't know are reported and ignored.
+- **Edits** (`update.ts`, `edit.ts`, `write.ts`): `update` edits the user file only. It locks the file's real path (`settings-write`, 2 s wait), so two paths to one file serialize, and checks the path still leads there under the lock. It refuses a file that doesn't parse, one with duplicate keys (jsonc-parser reads the last copy but edits the first), and one with a newer `schema_version`. An edit gives a plain value, which lands where the file now decides that host and model: an existing model or host override, else the setting's `default` key, else the setting itself. Edits keep comments, and a removal deletes only the setting, its comma and a comment on the same line. The writer stages and syncs a temp file and keeps an existing file's mode; it renames over an existing file, and publishes a new one with a hard link, so it never replaces a file created after the locked read. A filesystem without hard links refuses with `settings-unavailable` rather than risk a half-written file. New folders are created owner-only and new files 0644, since settings hold no secret. Every refusal is a `SettingsRefusal` with one of five codes (`refusal.ts`).
+- **Watching:** `watch` follows the user file with a native watcher and a 1 s poll, shared per process, and fires on deletion and recreation too (`src/tui-prefs/watcher.ts`).
+- **The one-time move** (`move.ts`): `moveSettingsOnce` moves settings out of a plugin's old stores into its new user file, once. It stops if the install is separate, the file exists or the plugin's `fence` says no. It takes the `settings-move` lock and then each source store's locks in the order the plugin lists them, checks both conditions again, reads every source, and lets the plugin's `map` turn them into settings. A value that differs between hosts becomes a host override where the setting allows one, and every disagreement is reported. The file is published with a hard link, so a file another process created meanwhile wins (`aborted-target-appeared`). The move never changes a source; it leaves a `<source>.MOVED_READPLEASE` note beside each, so a rollback to an older plugin still reads the old files.
+
 ## Setup and menus
 
 `runSetup` (`src/setup/command.ts`) is the `setup` command every plugin ships. It detects OpenCode and Pi, registers the plugin in the host's config, signs in locally or enrolls with the vault, and runs the plugin's hooks (`SetupPlugin` in `src/setup/types.ts`). It refuses to change a host while that host is running (`process-fence.ts`), waits at most 5 minutes for vault approval, and never writes an OpenCode 2 credential record or OpenCode 1 `auth.json`. A locally registered plugin is left as it is.
@@ -120,9 +134,9 @@ The command menu (`src/commands/`) is one model per plugin, rendered as an OpenC
 
 - **Atomic writes** (`atomic-write.ts`): write a temp file created with mode 0600, then rename, with optional file and folder sync.
 - **`withLock`** (`with-lock.ts`): a bounded lock beside its target (`<target>.<name>.lock`). On Windows, transient sharing and delete-pending errors while reading a lock are retried within the deadline.
-- **Leases** (`refresh-file-lock.ts`): a renewable cross-process lease with an owner record. The record is staged and linked into place, so a crash never leaves an ownerless lease; filesystems without hard links fall back to create-then-write. Stale leases are removed only after re-reading that the record is unchanged, through a short-lived eviction marker. Leases use wall time only.
+- **Leases** (`refresh-file-lock.ts`): a renewable cross-process lease with an owner record. The record is staged and linked into place, so a crash never leaves an ownerless lease; filesystems without hard links fall back to create-then-write. Stale leases are removed only after re-reading that the record is unchanged, through a short-lived eviction marker. Leases use wall time only. A process killed mid-write can leave a staging file (`<lock>.<uuid>.tmp`); the first time a process takes a given lock, a background sweep removes such files whose record expired longer ago than one lease or 10 minutes, whichever is longer.
 - **Windows owner-only files** (`private-files.ts`): on Windows, files are created through `@cortexkit/private-files`. If its native addon can't load, every operation fails closed with `ERR_PRIVATE_FILES_UNAVAILABLE` and writes nothing; there is no fallback to POSIX permission bits.
-- **Read cache** (`file-read-cache.ts`): reuses a parsed file while its stat identity is unchanged. The roster and enrollment readers use it only off Windows, because a stat identity doesn't show a changed Windows owner or ACL, and those checks must run on every read.
+- **Read cache** (`file-read-cache.ts`): reuses a parsed file while its stat identity is unchanged. The roster and enrollment readers use it only off Windows, because a stat identity doesn't show a changed Windows owner or access-control list, and those checks must run on every read. Settings also read Windows files every time, because a quick rewrite of the same size can keep the timestamps the cache compares.
 
 ## Load-bearing invariants
 
@@ -142,7 +156,8 @@ The command menu (`src/commands/`) is one model per plugin, rendered as an OpenC
 - **Vault unreachable:** kept receipts serve until expiry; then the plugin refuses locally.
 - **Insula missing or stale:** the miss class decides whether the plugin polls the provider itself.
 - **Limits registry can't load:** tracking stops for that store; requests are served.
-- **Crash mid-write:** torn rows complete forward; staged lease records never publish half-written.
+- **Crash mid-write:** torn rows complete forward; staged lease records and settings files never publish half-written.
+- **Settings file unreadable or malformed:** reads keep the last good values and report the problem; edits refuse and change nothing.
 - **Disposal:** background work gets 2 s, then shutdown continues with a warning.
 
 ## Development

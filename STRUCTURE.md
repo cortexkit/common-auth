@@ -18,7 +18,8 @@ research/        spike reports behind the OpenCode 2 design
 
 ## `src/`
 
-- `store/`: `pool.ts` opens the store; `rows.ts`, `mutate.ts`, `publication.ts` write rows; `refresh.ts`, `refresh-lock.ts` refresh credentials under locks; `pull.ts`, `quota-writer.ts` fetch and commit quota; `torn.ts`, `identity.ts`, `attribution.ts` keep writes crash-safe and fenced; `settings.ts` holds plugin settings; `schema.ts` names the stored keys; `limits-namespace.ts` stores limit marks with the pool.
+- `store/`: `pool.ts` opens the store; `rows.ts`, `mutate.ts`, `publication.ts` write rows; `refresh.ts`, `refresh-lock.ts` refresh credentials under locks; `pull.ts`, `quota-writer.ts` fetch and commit quota; `torn.ts`, `identity.ts`, `attribution.ts` keep writes crash-safe and fenced; `settings.ts` holds the settings kept in the store's config file; `schema.ts` names the stored keys; `limits-namespace.ts` stores limit marks with the pool.
+- `settings/`: declarations (`define.ts`, `descriptors.ts`), file locations (`paths.ts`), reading (`parse.ts`, `snapshot.ts`, `resolve.ts`, `handle.ts` with `openSettings`), edits (`edit.ts`, `update.ts`, `write.ts`, `lock-errors.ts`), the one-time move (`move.ts`), `schema.ts`, `refusal.ts`, and `fs.ts`, the file seam tests replace.
 - `quota/`: `merge.ts`, `projection.ts`, `map.ts`, `codec.ts`, `pending.ts`, `commit-interval.ts`, and `format.ts`, the one quota wording.
 - `routing/`: `admission.ts`, `ordered.ts`, `sticky.ts`, `pins.ts`.
 - `limits/`: signals (`signal.ts`, `header-classifier.ts`, `families.ts`, `reset.ts`), the registry (`registry.ts`, `persistence.ts`, `pool-adapter.ts`, `vault-adapter.ts`, `envelope*.ts`, `merge-laws.ts`), decisions (`decide.ts`, `presets.ts`, `axes.ts`, `hold.ts`, `routing-hold.ts`), host helpers (`pi-wait.ts`, `terminal.ts`), and `wording.ts`.
@@ -42,6 +43,7 @@ research/        spike reports behind the OpenCode 2 design
 - **A vault behaviour:** `src/claustrum/`. Classify any new client error code in `availability.ts`; unclassified codes fail closed.
 - **A file write:** through `src/fs/` (`writeJsonAtomic`, `withLock`, leases), never a bare `writeFile`, so Windows owner-only handling applies.
 - **A setup flag:** `src/setup/flags.ts`, so help and parsing can't disagree.
+- **A plugin setting:** declared in the plugin's own `defineSettings` call. common-auth changes only for a new value type (`src/settings/descriptors.ts`, with its schema in `schema.ts`).
 - **A test:** `test/<subpath>/*.test.ts`. A test that spawns a child passes `env` explicitly, since a child spawned without it gets the environment the test process started with.
 
 ## Conventions
