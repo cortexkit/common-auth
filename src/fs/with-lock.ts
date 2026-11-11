@@ -52,7 +52,7 @@ export interface LockOptions {
   >[0]['onRenewalTimer']
 }
 
-function isChangingLockRecord(
+export function isChangingLockRecord(
   error: unknown,
   target: string,
   name: string,
