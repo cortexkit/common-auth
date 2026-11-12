@@ -1,12 +1,24 @@
 import { beforeEach, describe, expect } from 'bun:test'
 import { existsSync, rmSync } from 'node:fs'
-import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 import { LockOwnershipError } from '../../src/fs/index.js'
 import {
   acquireRefreshFileLockWithClock as acquireRawRefreshFileLock,
   setEvictionMarkerTestHooksForTest,
 } from '../../src/fs/refresh-file-lock.js'
+import {
+  createCaptureSink,
+  initLogger,
+  resetLoggerForTest,
+} from '../../src/logger/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observed } from '../fixtures/observed.js'
 import { phaseClock } from '../fixtures/phase-clock.js'
@@ -518,6 +530,40 @@ describe('acquireRefreshFileLock', () => {
     await successor?.release()
   })
 
+  it('retries release when its eviction marker is stolen before lease removal', async () => {
+    const path = join(dir, 'release-stolen-marker.json')
+    const name = 'release-stolen-marker'
+    const lockPath = `${path}.${name}.lock`
+    const markerPath = `${lockPath}.evicting`
+    let ownerConfirmations = 0
+    const lock = await acquireRefreshFileLock({
+      name,
+      path,
+      ttlMs: 30_000,
+      onStep: async (step) => {
+        if (step !== 'release-owner-confirmed') return
+        ownerConfirmations += 1
+        if (ownerConfirmations !== 1) return
+        // Stale-marker recovery can rename a live holder's marker after its
+        // lease owner check, even though the lease itself still belongs to it.
+        await rename(markerPath, `${markerPath}.displaced`)
+      },
+    })
+    expect(lock).not.toBeNull()
+
+    await lock!.release()
+
+    expect(existsSync(lockPath)).toBe(false)
+    expect(ownerConfirmations).toBe(2)
+    const successor = await acquireRefreshFileLock({
+      name,
+      path,
+      ttlMs: 30_000,
+    })
+    expect(successor).not.toBeNull()
+    await successor!.release()
+  })
+
   it('does not let a stalled release remove a successor that stole its marker', async () => {
     const path = join(dir, 'release-race.json')
     const name = 'release-race'
@@ -903,13 +949,27 @@ describe('acquireRefreshFileLock', () => {
     await utimes(markerPath, future, future)
 
     try {
+      resetLoggerForTest()
+      const capture = createCaptureSink()
+      initLogger({ captureSink: capture.sink })
       const started = performance.now()
       await lock!.release()
       const elapsed = performance.now() - started
       expect(elapsed).toBeGreaterThanOrEqual(6_000)
       expect((await readLockOwner(lockPath)).ownerId).toBe(lock!.ownerId)
       expect(existsSync(markerPath)).toBe(true)
+      expect(
+        capture.records.filter((record) => record.channel === 'fs'),
+      ).toEqual([
+        {
+          channel: 'fs',
+          level: 'warn',
+          message: 'File lock release deadline expired',
+          data: { lockPath },
+        },
+      ])
     } finally {
+      resetLoggerForTest()
       await rm(markerPath, { recursive: true, force: true })
       await lock!.release()
     }

@@ -13,6 +13,7 @@ import {
   unlink,
 } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
+import { createLogger } from '../logger/index.js'
 import {
   DisappearedLockRecordError,
   isWindowsAccessDeniedCreate,
@@ -1375,16 +1376,16 @@ export async function acquireRefreshFileLockWithClock(
             removalConfirmed = true
           }, deadline)
           changingRecordError = undefined
-          if (markerAcquired) {
-            if (windowsPrivateFiles && !removalConfirmed)
-              throw new PrivateFileError(lockPath, 'release-not-confirmed', {
-                code: 'EIO',
-              })
-            releaseConfirmed = removalConfirmed
+          // Acquiring the marker does not confirm removal: stale-marker
+          // recovery can take it away after the lease owner was checked.
+          if (markerAcquired && removalConfirmed) {
+            releaseConfirmed = true
             return
           }
-          if (signal?.aborted) return
-          await recoverStaleEvictionMarker(deadline)
+          if (!markerAcquired) {
+            if (signal?.aborted) return
+            await recoverStaleEvictionMarker(deadline)
+          }
         } catch (error) {
           const changingRecord =
             windowsPrivateFiles &&
@@ -1424,6 +1425,9 @@ export async function acquireRefreshFileLockWithClock(
             code: 'ETIMEDOUT',
           })
         )
+      createLogger('fs').warn('File lock release deadline expired', {
+        lockPath,
+      })
     },
   }
 }
