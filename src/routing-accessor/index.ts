@@ -58,6 +58,8 @@ export interface AskRoutingInput<
    * routing's default cap in force.
    */
   holdWaitMaxS?: number
+  /** Plugin sticky choice's vault credential id; an eligible-account hint, not a pin. */
+  warmCredentialId?: string
 }
 
 export interface RoutingHold {
@@ -447,6 +449,17 @@ export async function askRouting<Candidate extends RoutingCandidate>(
       request.hold_wait_max_s = Math.max(0, Math.floor(cap))
     }
     if (input.refusals === true) request.refusals = true
+    const warmCredentialId = input.warmCredentialId
+    if (
+      isNonEmptyString(warmCredentialId) &&
+      warmCredentialId.length <= 256 &&
+      !/\p{Cc}/u.test(warmCredentialId) &&
+      input.candidates.some(
+        (candidate) => candidate.credentialId === warmCredentialId,
+      )
+    ) {
+      request.warm_credential = warmCredentialId
+    }
     const pending: unknown = accountFor.call(handle, request, { deadlineMs })
     if (!isObject(pending) || typeof pending.then !== 'function')
       return undefined
