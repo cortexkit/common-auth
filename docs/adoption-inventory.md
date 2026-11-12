@@ -1717,10 +1717,14 @@ before waiting, and still performs its normal vault authorization before a send.
 `credential_id` is required for `credential_refused` and optional for the other
 outcomes. Send `credential_refused` only for a provider's typed refusal that
 condemns an API key until topped up (such as an exhausted prepaid balance), never
-for 401, 403 or short rate limits. `providerCode` must be the provider's own code
-from its structured error, never message text or a bare status. It must match
+for 401, 403 or short rate limits. `providerCode` is what the provider actually
+sent: its own code from the structured error (OpenRouter's `openrouter_credits`),
+or, when the body carries none, `http_<status>` for a status the provider documents
+with a single balance meaning (DeepSeek's `http_402`). Never message text, and
+never a status with several meanings such as 403 or 429. It must match
 `^[a-z0-9._-]{1,64}$`; an invalid code or a missing or empty `credentialId` silently
-drops the report. Routing parks the refused API key until it is topped up.
+drops the report. Routing parks the refused key for at most an hour, then sends it
+one test request.
 `resetsAt` is epoch milliseconds;
 `window` must be `5h` or `7d`. The THALAMUS bridge maps these to routing's
 `five_hour` and `seven_day`. `pool` names a scoped quota group, such as

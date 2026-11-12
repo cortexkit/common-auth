@@ -132,8 +132,12 @@ export type ReportRoutingInput =
             outcome: 'credential_refused'
             credentialId: string
             /**
-             * The provider's own code from its structured error, never message
-             * text or a bare status. Must match `^[a-z0-9._-]{1,64}$`.
+             * What the provider actually sent: its own code from the structured
+             * error (OpenRouter's `openrouter_credits`). When the body carries
+             * no code, `http_<status>`, but only for a status the provider
+             * documents with a single balance meaning (DeepSeek's `http_402`).
+             * Never message text, and never a status with several meanings such
+             * as 403 or 429. Must match `^[a-z0-9._-]{1,64}$`.
              */
             providerCode: string
           }
