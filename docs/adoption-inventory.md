@@ -1606,14 +1606,15 @@ Pure functions; every input is per call and nothing is persisted. Rate-limit mar
 ### ./routing-accessor
 
 Optional process-global THALAMUS routing for **vault mode only**, plus advisory
-turn notes for request shaping. Routing's account ids are vault account ids, not
-plugin route ids or local pool row ids. Local pool rows are unknown to routing.
-No auth plugin adopts this client yet.
+turn notes for request shaping and plugin wait reports. Routing's account ids are
+vault account ids, not plugin route ids or local pool row ids. Local pool rows are
+unknown to routing. No auth plugin adopts this client yet.
 
 Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
-`CACHE_WARM_STOP_REASONS`, `isCacheWarmStopReason`. Type exports:
+`CACHE_WARM_STOP_REASONS`, `isCacheWarmStopReason`, `PLUGIN_WAIT_REASONS`. Type exports:
 `RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`, `RoutingRefusal`,
-`ReportRoutingInput`, `BillingUsage`, `BillingRequestKind`, `BillingOutcome`.
+`ReportRoutingInput`, `BillingUsage`, `BillingRequestKind`, `BillingOutcome`,
+`PluginWaitReason`.
 
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
@@ -1622,6 +1623,26 @@ Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
 | `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
 | `reportRouting(input)` (turn notes) | `{ sessionId, kind: 'turn_notes_supported', model: string, supported: boolean }` or `{ sessionId, kind: 'turn_note_skipped', after_tool_use_id: string, reason: 'anchor_missing' \| 'before_user_message' \| 'unsupported_model' \| 'not_oauth' }` | `void`; one fire-and-forget call per event, never batched | never throws; invalid payloads send nothing |
 | `reportRouting(input)` (billing) | `{ sessionId, kind: 'billing', attemptId, requestKind, credentialId, provider, model, outcome, accountId?, providerRequestId?, providerResponseId?, userMessageId?, status?, attempt?, chargeBasis?, usage?, usageByModel?, cache? }` | `void`; synchronous and fire-and-forget, never waits for the handle | never throws; invalid required fields send nothing, invalid optional members are omitted |
+| `reportRouting(input)` (wait) | `{ sessionId, kind: 'wait', phase, waitId, reason: PluginWaitReason, nextMs?, attempt?, message?, outcome? }` | `void`; fire-and-forget through the session handle's `report({ kind: 'wait', phase, wait_id, reason, next_ms?, attempt?, message?, outcome? })`, with no session or account fields on the wire | never throws; invalid required fields send nothing, invalid optional members are dropped, and `outcome` is dropped on `start`; missing or throwing accessors are ignored |
+
+**Plugin wait reports.** `sessionId` must be a non-empty string, `phase` must be
+`start` or `end`, and `waitId` must match `^[A-Za-z0-9._:-]{1,64}$`.
+`PluginWaitReason` and the readonly `PLUGIN_WAIT_REASONS` array define the closed
+set `account_limit`, `account_free`, `rate_limited`, `server_busy`, `quota_reading`,
+`routing_hold`; add new reasons here and in the routing contract together. An
+invalid or missing required field sends nothing. Optional fields are copied only
+when valid: `nextMs` is a positive safe integer giving the absolute epoch-millisecond
+time of the next attempt, `attempt` is an integer of at least 1, and `message` is a
+string of 1–160 characters with no C0, DEL or C1 control characters. Invalid
+messages are dropped, never trimmed. `outcome` is `resumed`, `cancelled` or
+`abandoned` and is copied only on `end`. No other input fields are forwarded.
+
+Plugins report only waits planned to last 2 s or more and report `end` when they
+see the wait end. The runner also clears an open wait at the next account question,
+served or billing report, stored reply, or run end, so a plugin that cannot see
+the end (OpenCode 2, where the host owns the retry delay) may skip `end`. Starting
+a new `waitId` replaces the open wait. `message` must be one of the plugin's fixed
+texts, never provider text, an account label or an id.
 
 `turnNotes` synchronously reads the handle's `turn_notes()` member as advisory
 input for request shaping. Nothing is persisted by this module. Plugins on routes

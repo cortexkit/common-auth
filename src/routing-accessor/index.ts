@@ -1,7 +1,8 @@
 /**
- * Optional THALAMUS routing for vault mode and advisory turn notes for request
- * shaping. Account ids are vault account ids, not local pool rows. Nothing is
- * persisted here; plugins on routes the runner does not serve get no turn notes.
+ * Optional THALAMUS routing for vault mode, plugin wait reports and advisory turn
+ * notes for request shaping. Account ids are vault account ids, not local pool
+ * rows. Nothing is persisted here; plugins on routes the runner does not serve
+ * get no turn notes.
  */
 
 import {
@@ -112,6 +113,18 @@ export interface BillingUsage {
   reasoningIncludedInOutput?: boolean
 }
 
+/** Keep this closed list aligned with the routing contract when adding a reason. */
+export const PLUGIN_WAIT_REASONS = [
+  'account_limit',
+  'account_free',
+  'rate_limited',
+  'server_busy',
+  'quota_reading',
+  'routing_hold',
+] as const
+
+export type PluginWaitReason = (typeof PLUGIN_WAIT_REASONS)[number]
+
 export type ReportRoutingInput =
   | (RoutingReportIdentity &
       (
@@ -172,6 +185,19 @@ export type ReportRoutingInput =
         | 'before_user_message'
         | 'unsupported_model'
         | 'not_oauth'
+    }
+  | {
+      sessionId: string
+      kind: 'wait'
+      phase: 'start' | 'end'
+      waitId: string
+      reason: PluginWaitReason
+      /** Absolute epoch-millisecond time of the next attempt. */
+      nextMs?: number
+      attempt?: number
+      /** Fixed plugin text, never provider text, an account label or an id. */
+      message?: string
+      outcome?: 'resumed' | 'cancelled' | 'abandoned'
     }
   | {
       sessionId: string
@@ -438,20 +464,63 @@ export async function askRouting<Candidate extends RoutingCandidate>(
 }
 
 /**
- * Report a vault request, billing result or turn-note event without waiting for
- * routing. Only contract fields are sent, and all accessor failures are ignored.
- * Headers must already be limited to rate-limit headers by the caller; values
- * are not filtered or redacted here.
+ * Report a vault request, billing result, plugin wait or turn-note event without
+ * waiting for routing. Only contract fields are sent, and all accessor failures
+ * are ignored. Headers must already be limited to rate-limit headers by the
+ * caller; values are not filtered or redacted here.
  */
 export function reportRouting(input: ReportRoutingInput): void {
   try {
-    const handle = routingHandle(input.sessionId)
+    const sessionId = input.sessionId
+    const handle = routingHandle(sessionId)
     if (!handle) return
     const report = handle.report
     if (typeof report !== 'function') return
     let payload: unknown
     if ('kind' in input) {
       switch (input.kind) {
+        case 'wait': {
+          const { phase, waitId, reason, nextMs, attempt, message, outcome } =
+            input
+          if (
+            !isNonEmptyString(sessionId) ||
+            (phase !== 'start' && phase !== 'end') ||
+            !isNonEmptyString(waitId) ||
+            waitId.length > 64 ||
+            /[^A-Za-z0-9._:-]/.test(waitId) ||
+            !PLUGIN_WAIT_REASONS.includes(reason)
+          )
+            return
+          payload = {
+            kind: 'wait',
+            phase,
+            wait_id: waitId,
+            reason,
+            ...(typeof nextMs === 'number' &&
+            Number.isSafeInteger(nextMs) &&
+            nextMs > 0
+              ? { next_ms: nextMs }
+              : {}),
+            ...(typeof attempt === 'number' &&
+            Number.isInteger(attempt) &&
+            attempt >= 1
+              ? { attempt }
+              : {}),
+            ...(typeof message === 'string' &&
+            message.length >= 1 &&
+            message.length <= 160 &&
+            !/\p{Cc}/u.test(message)
+              ? { message }
+              : {}),
+            ...(phase === 'end' &&
+            (outcome === 'resumed' ||
+              outcome === 'cancelled' ||
+              outcome === 'abandoned')
+              ? { outcome }
+              : {}),
+          }
+          break
+        }
         case 'billing': {
           const {
             attemptId,
