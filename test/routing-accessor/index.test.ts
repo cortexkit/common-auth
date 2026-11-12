@@ -1,7 +1,18 @@
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import {
+  afterEach,
+  describe,
+  expect,
+  expectTypeOf,
+  mock,
+  spyOn,
+  test,
+} from 'bun:test'
+import {
+  type AskRoutingInput,
   askRouting,
   type ReportRoutingInput,
+  type RoutingRefusal,
+  type RoutingSelection,
   reportRouting,
 } from '../../src/routing-accessor/index.js'
 
@@ -95,6 +106,203 @@ afterEach(() => {
 })
 
 describe('askRouting', () => {
+  test('keeps existing caller types narrow and infers opted-in refusal types', async () => {
+    answerWith({ account_id: candidate.accountId })
+    const existingInput: AskRoutingInput<typeof candidate> = input
+    const existing = await askRouting(existingInput)
+    expectTypeOf(existing).toEqualTypeOf<
+      RoutingSelection<typeof candidate> | undefined
+    >()
+    const explicitFalse = await askRouting({ ...input, refusals: false })
+    expectTypeOf(explicitFalse).toEqualTypeOf<
+      RoutingSelection<typeof candidate> | undefined
+    >()
+    const optedIn = await askRouting({ ...input, refusals: true })
+    expectTypeOf(optedIn).toEqualTypeOf<
+      RoutingSelection<typeof candidate> | RoutingRefusal | undefined
+    >()
+    const booleanInput: AskRoutingInput<typeof candidate, boolean> = {
+      ...input,
+      refusals: true,
+    }
+    const dynamic = await askRouting(booleanInput)
+    expectTypeOf(dynamic).toEqualTypeOf<
+      RoutingSelection<typeof candidate> | RoutingRefusal | undefined
+    >()
+    const optedInInput: AskRoutingInput<typeof candidate, true> = {
+      ...input,
+      refusals: true,
+    }
+    const typedOptedIn = await askRouting(optedInInput)
+    expectTypeOf(typedOptedIn).toEqualTypeOf<
+      RoutingSelection<typeof candidate> | RoutingRefusal | undefined
+    >()
+    expect(existing).toEqual({ candidate })
+  })
+
+  test.each([undefined, false, true])(
+    'sends refusals only for an explicit true flag: %p',
+    async (refusals) => {
+      const accountFor = mock(() => Promise.resolve(null))
+      install(() => ({ accountFor }))
+      await askRouting({ ...input, refusals, holdWaitMaxS: 12.9 })
+      expect(accountFor).toHaveBeenCalledWith(
+        {
+          provider: 'anthropic',
+          modelId: 'claude-sonnet',
+          hold_wait_max_s: 12,
+          ...(refusals === true ? { refusals: true } : {}),
+        },
+        { deadlineMs: 1500 },
+      )
+    },
+  )
+
+  test.each([
+    'account_limit_exhausted',
+    'account_selection_refused',
+    'account_selection_final',
+  ])('returns an opted-in routing refusal: %s', async (code) => {
+    answerWith({ refused: { code } })
+    expect(await askRouting({ ...input, refusals: true })).toEqual({
+      refused: { code },
+    })
+  })
+
+  test.each([
+    undefined,
+    null,
+    false,
+    42,
+    'account_limit_exhausted',
+    [],
+    {},
+    { code: null },
+    { code: 1 },
+    { code: 'unknown_refusal' },
+  ])('ignores an unreadable refusal: %p', async (refused) => {
+    answerWith({ refused })
+    expect(await askRouting({ ...input, refusals: true })).toBeUndefined()
+  })
+
+  test.each([
+    ['routing_code', 'routingCode', 'quota.daily-1_exhausted'],
+    ['routing_code', 'routingCode', 'a'.repeat(64)],
+    ['retry_after_secs', 'retryAfterSecs', 0],
+    ['retry_after_secs', 'retryAfterSecs', 1.5],
+    ['resets_at_ms', 'resetsAtMs', 1],
+    ['resets_at_ms', 'resetsAtMs', Number.MAX_SAFE_INTEGER],
+  ] as const)(
+    'copies a valid refusal member %s to %s: %p',
+    async (wire, local, value) => {
+      answerWith({
+        refused: {
+          code: 'account_limit_exhausted',
+          [wire]: value,
+          ignored: 'not copied',
+        },
+      })
+      expect(await askRouting({ ...input, refusals: true })).toEqual({
+        refused: { code: 'account_limit_exhausted', [local]: value },
+      })
+    },
+  )
+
+  const invalidOptionalMembers = [
+    ...[
+      undefined,
+      null,
+      1,
+      '',
+      'UPPER',
+      'with space',
+      'slash/code',
+      'trailing\n',
+      'a'.repeat(65),
+    ].map((value) => ({ wire: 'routing_code' as const, value })),
+    ...[undefined, null, '1', -1, NaN, Infinity, -Infinity].map((value) => ({
+      wire: 'retry_after_secs' as const,
+      value,
+    })),
+    ...[
+      undefined,
+      null,
+      '1',
+      0,
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      -Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+    ].map((value) => ({ wire: 'resets_at_ms' as const, value })),
+  ]
+  test.each(invalidOptionalMembers)(
+    'drops an invalid optional refusal member without losing the refusal: %p',
+    async ({ wire, value }) => {
+      answerWith({
+        refused: {
+          code: 'account_selection_refused',
+          routing_code: 'quota.daily',
+          retry_after_secs: 2.5,
+          resets_at_ms: 1234,
+          [wire]: value,
+        },
+      })
+      const validMembers: Record<string, unknown> = {
+        routingCode: 'quota.daily',
+        retryAfterSecs: 2.5,
+        resetsAtMs: 1234,
+      }
+      const localName = {
+        routing_code: 'routingCode',
+        retry_after_secs: 'retryAfterSecs',
+        resets_at_ms: 'resetsAtMs',
+      }
+      delete validMembers[localName[wire]]
+      expect(await askRouting({ ...input, refusals: true })).toEqual({
+        refused: { code: 'account_selection_refused', ...validMembers },
+      })
+    },
+  )
+
+  test.each([undefined, false])(
+    'ignores a refusal without opting in: %p',
+    async (refusals) => {
+      answerWith({ refused: { code: 'account_selection_final' } })
+      expect(await askRouting({ ...input, refusals })).toBeUndefined()
+    },
+  )
+
+  test('preserves candidate selection, metadata, holds and eligibility with refusals enabled', async () => {
+    answerWith({ account_id: candidate.accountId })
+    const selected = await askRouting({ ...input, refusals: true })
+    expect(selected).toEqual({ candidate })
+    if (!selected || !('candidate' in selected)) {
+      throw new Error('expected a candidate selection')
+    }
+    expect(selected.candidate).toBe(candidate)
+    expectTypeOf(selected.candidate).toEqualTypeOf<typeof candidate>()
+    expect(selected.candidate.route.kind).toBe('oauth')
+    answerWith({
+      account_id: candidate.accountId,
+      credential_id: candidate.credentialId,
+      hold: { retry_after_ms: 2000 },
+    })
+    expect(await askRouting({ ...input, refusals: true })).toEqual({
+      candidate,
+      hold: { retry_after_ms: 2000 },
+    })
+    expect(
+      await askRouting({ ...input, candidates: [], refusals: true }),
+    ).toBeUndefined()
+    answerWith({
+      account_id: candidate.accountId,
+      credential_id: 'wrong-credential',
+    })
+    expect(await askRouting({ ...input, refusals: true })).toBeUndefined()
+  })
+
   test('falls back when the accessor is absent, not a function, or has no handle', async () => {
     Reflect.deleteProperty(globalThis, symbol)
     expect(await askRouting(input)).toBeUndefined()
@@ -242,12 +450,12 @@ describe('askRouting', () => {
   })
 
   test.each([
-    [undefined, 500],
+    [undefined, 1500],
     [25, 25],
     [0, 1],
     [-10, 1],
     [4000, 2000],
-    [NaN, 500],
+    [NaN, 1500],
     [Infinity, 2000],
     [-Infinity, 1],
   ])('passes the bounded deadline %p as %p', async (deadlineMs, expected) => {
@@ -283,7 +491,7 @@ describe('askRouting', () => {
         modelId: 'claude-sonnet',
         hold_wait_max_s: expected,
       },
-      { deadlineMs: 500 },
+      { deadlineMs: 1500 },
     )
   })
 
@@ -297,39 +505,42 @@ describe('askRouting', () => {
       await askRouting({ ...input, holdWaitMaxS: cap })
       expect(accountFor).toHaveBeenCalledWith(
         { provider: 'anthropic', modelId: 'claude-sonnet' },
-        { deadlineMs: 500 },
+        { deadlineMs: 1500 },
       )
     },
   )
 
-  test('times out a never-settling accountFor using an unref timer', async () => {
-    let expire: (() => void) | undefined
-    const unref = mock(() => {})
-    const timer = { unref } as unknown as ReturnType<typeof setTimeout>
-    const setTimer = spyOn(globalThis, 'setTimeout').mockImplementation(((
-      callback: () => void,
-    ) => {
-      expire = callback as () => void
-      return timer
-    }) as typeof setTimeout)
-    const clearTimer = spyOn(globalThis, 'clearTimeout').mockImplementation(
-      () => {},
-    )
-    install(() => ({ accountFor: () => new Promise(() => {}) }))
-    const pending = askRouting({ ...input, deadlineMs: 7 })
-    let settled = false
-    void pending.then(() => {
-      settled = true
-    })
-    await Promise.resolve()
-    expect(settled).toBe(false)
-    expect(setTimer).toHaveBeenCalledWith(expect.any(Function), 7)
-    expect(unref).toHaveBeenCalledTimes(1)
-    expect(expire).toBeDefined()
-    expire?.()
-    expect(await pending).toBeUndefined()
-    expect(clearTimer).toHaveBeenCalledWith(timer)
-  })
+  test.each([false, true])(
+    'times out a never-settling accountFor using an unref timer with refusals = %p',
+    async (refusals) => {
+      let expire: (() => void) | undefined
+      const unref = mock(() => {})
+      const timer = { unref } as unknown as ReturnType<typeof setTimeout>
+      const setTimer = spyOn(globalThis, 'setTimeout').mockImplementation(((
+        callback: () => void,
+      ) => {
+        expire = callback as () => void
+        return timer
+      }) as typeof setTimeout)
+      const clearTimer = spyOn(globalThis, 'clearTimeout').mockImplementation(
+        () => {},
+      )
+      install(() => ({ accountFor: () => new Promise(() => {}) }))
+      const pending = askRouting({ ...input, deadlineMs: 7, refusals })
+      let settled = false
+      void pending.then(() => {
+        settled = true
+      })
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      expect(setTimer).toHaveBeenCalledWith(expect.any(Function), 7)
+      expect(unref).toHaveBeenCalledTimes(1)
+      expect(expire).toBeDefined()
+      expire?.()
+      expect(await pending).toBeUndefined()
+      expect(clearTimer).toHaveBeenCalledWith(timer)
+    },
+  )
 
   test('finds an accessor registered after module load and observes replacements', async () => {
     Reflect.deleteProperty(globalThis, symbol)

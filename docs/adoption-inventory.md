@@ -1612,12 +1612,12 @@ No auth plugin adopts this client yet.
 
 Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
 `CACHE_WARM_STOP_REASONS`, `isCacheWarmStopReason`. Type exports:
-`RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`,
+`RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`, `RoutingRefusal`,
 `ReportRoutingInput`, `BillingUsage`, `BillingRequestKind`, `BillingOutcome`.
 
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
-| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS? }` | `Promise<{ candidate, hold?: { retry_after_ms } } \| undefined>`; `candidate` is the original eligible input object with its inferred type | never throws or rejects |
+| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS?, refusals? }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | never throws or rejects |
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` or `{ sessionId, accountId, credentialId, outcome: 'credential_refused', providerCode: string }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools, or invalid credential-refusal codes or credential ids, send nothing |
 | `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
 | `reportRouting(input)` (turn notes) | `{ sessionId, kind: 'turn_notes_supported', model: string, supported: boolean }` or `{ sessionId, kind: 'turn_note_skipped', after_tool_use_id: string, reason: 'anchor_missing' \| 'before_user_message' \| 'unsupported_model' \| 'not_oauth' }` | `void`; one fire-and-forget call per event, never batched | never throws; invalid payloads send nothing |
@@ -1702,11 +1702,38 @@ session, malformed answer or accessor failure yields `undefined`: the plugin
 keeps its own choice. `candidates` must already exclude routes refused by the
 vault, blocked by the killswitch or ineligible under other plugin rules. The
 answer must name a candidate's `accountId`; if it names a credential too, that must match the
-same candidate's `credentialId`. Only provider, model id, deadline and an optional `hold_wait_max_s` cap are sent
-with the selection request, never candidate metadata or credentials.
+same candidate's `credentialId`. Only provider, model id, deadline, an optional
+`hold_wait_max_s` cap and an opted-in `refusals: true` are sent with the selection
+request, never candidate metadata or credentials. The `refusals` member is omitted
+unless the caller passes exactly `true`.
 
-**Deadlines and holds.** `deadlineMs` defaults to 500, clamps to 1–2000 ms, and
-uses 500 for `NaN`. The same bound is sent to the accessor and enforced locally
+**Opt-in refusals.** With `refusals: true`, a routing answer of
+`{ refused: { code, routing_code?, retry_after_secs?, resets_at_ms? } }` returns
+`{ refused: { code, routingCode?, retryAfterSecs?, resetsAtMs? } }`. The code must
+be exactly `account_limit_exhausted`, `account_selection_refused` or
+`account_selection_final`. A missing or unknown code or a non-object `refused`
+yields `undefined`, as does any refusal when the caller has not opted in.
+Optional members are copied only when valid: `routing_code` must match
+`^[a-z0-9._-]{1,64}$`, `retry_after_secs` must be finite and non-negative, and
+`resets_at_ms` must be a positive safe integer. An invalid optional member is
+dropped without losing the refusal.
+
+A plugin receiving a refusal sends nothing: no own choice, no other account and
+no retry inside the request. It fails the request with a fixed local error, not
+message text from routing. The runner, rather than the plugin, uses the refusal's
+`retryAfterSecs` / `resetsAtMs` timing advice to continue the turn.
+A missing handle, timeout, thrown or rejected call or unreadable answer
+still means the plugin keeps its own choice, even with refusals enabled. A
+routing outage must not stop requests. Existing callers keep the selection-only
+return type; explicitly typed opt-in inputs use `AskRoutingInput<Candidate, true>`
+(or `boolean` for a dynamic flag), while its second type parameter defaults to
+`false` for existing typed inputs.
+
+**Deadlines and holds.** `deadlineMs` defaults to 1500, clamps to 1–2000 ms, and
+uses 1500 for `NaN`. Routing's normal admission tail is under a second outside
+host starvation; the default sits above that tail so ordinary latency does not
+make the plugin skip routing and pick for itself.
+The same bound is sent to the accessor and enforced locally
 with an unref'd timer. A hold is returned only when `retry_after_ms` is finite
 and non-negative. It is not capped here: the plugin must apply its own hold cap
 before waiting, and still performs its normal vault authorization before a send.

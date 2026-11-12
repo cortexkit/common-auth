@@ -202,7 +202,7 @@ describe('holdWaitMaxS', () => {
         modelId: 'claude-sonnet',
         hold_wait_max_s: 420,
       },
-      { deadlineMs: 500 },
+      { deadlineMs: 1500 },
     )
   })
 })

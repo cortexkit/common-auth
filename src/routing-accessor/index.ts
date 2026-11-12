@@ -38,14 +38,17 @@ export interface RoutingCandidate {
 
 export interface AskRoutingInput<
   Candidate extends RoutingCandidate = RoutingCandidate,
+  Refusals extends boolean = false,
 > {
   sessionId: string
   provider: string
   modelId: string
   /** Only routes already eligible under the plugin's vault and killswitch rules. */
   candidates: readonly Candidate[]
-  /** Defaults to 500 ms, clamped to 1–2000 ms. */
+  /** Defaults to 1500 ms, above routing's normal tail; clamped to 1–2000 ms. */
   deadlineMs?: number
+  /** Opt in to refusals, which stop the request instead of using a local choice. */
+  refusals?: Refusals
   /**
    * Longest same-account hold, in seconds, that routing may advise. The
    * holdWaitMaxS helper from `./limits` caps it by the setting and the current
@@ -67,6 +70,18 @@ export interface RoutingSelection<
   /** The original eligible candidate, including any plugin-specific metadata. */
   candidate: Candidate
   hold?: RoutingHold
+}
+
+export type RoutingRefusal = {
+  refused: {
+    code:
+      | 'account_limit_exhausted'
+      | 'account_selection_refused'
+      | 'account_selection_final'
+    routingCode?: string
+    retryAfterSecs?: number
+    resetsAtMs?: number
+  }
 }
 
 interface RoutingReportIdentity {
@@ -323,23 +338,71 @@ function selectionFor<Candidate extends RoutingCandidate>(
   return { candidate }
 }
 
+function refusalFor(value: unknown): RoutingRefusal | undefined {
+  if (!isObject(value)) return undefined
+  const code = value.code
+  if (
+    code !== 'account_limit_exhausted' &&
+    code !== 'account_selection_refused' &&
+    code !== 'account_selection_final'
+  ) {
+    return undefined
+  }
+  const refused: RoutingRefusal['refused'] = { code }
+  const routingCode = value.routing_code
+  if (
+    typeof routingCode === 'string' &&
+    /^[a-z0-9._-]{1,64}$/.test(routingCode)
+  ) {
+    refused.routingCode = routingCode
+  }
+  const retryAfterSecs = value.retry_after_secs
+  if (
+    typeof retryAfterSecs === 'number' &&
+    Number.isFinite(retryAfterSecs) &&
+    retryAfterSecs >= 0
+  ) {
+    refused.retryAfterSecs = retryAfterSecs
+  }
+  const resetsAtMs = value.resets_at_ms
+  if (
+    typeof resetsAtMs === 'number' &&
+    Number.isSafeInteger(resetsAtMs) &&
+    resetsAtMs > 0
+  ) {
+    refused.resetsAtMs = resetsAtMs
+  }
+  return { refused }
+}
+
 /**
  * Ask routing for an eligible vault route. Any failure or unfamiliar answer
- * yields undefined so the plugin can keep its own choice. This does not admit
- * routes: callers must exclude vault refusals and killswitch-blocked accounts.
+ * yields undefined so the plugin can keep its own choice. Opted-in routing
+ * refusals instead stop the request. This does not admit routes: callers must
+ * exclude vault refusals and killswitch-blocked accounts.
  */
+export function askRouting<
+  Candidate extends RoutingCandidate,
+  Refusals extends boolean = false,
+>(
+  input: AskRoutingInput<Candidate, Refusals>,
+): Promise<
+  | RoutingSelection<Candidate>
+  | (Refusals extends true ? RoutingRefusal : never)
+  | undefined
+>
 export async function askRouting<Candidate extends RoutingCandidate>(
-  input: AskRoutingInput<Candidate>,
-): Promise<RoutingSelection<Candidate> | undefined> {
+  input: AskRoutingInput<Candidate, boolean>,
+): Promise<RoutingSelection<Candidate> | RoutingRefusal | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const handle = routingHandle(input.sessionId)
     if (!handle) return undefined
     const accountFor = handle.accountFor
     if (typeof accountFor !== 'function') return undefined
-    const requested = input.deadlineMs ?? 500
+    const requested = input.deadlineMs ?? 1500
     const deadlineMs = Number.isNaN(requested)
-      ? 500
+      ? 1500
       : Math.min(2000, Math.max(1, requested))
     const expired = new Promise<undefined>((resolve) => {
       timer = setTimeout(() => resolve(undefined), deadlineMs)
@@ -353,10 +416,14 @@ export async function askRouting<Candidate extends RoutingCandidate>(
     if (typeof cap === 'number' && Number.isFinite(cap)) {
       request.hold_wait_max_s = Math.max(0, Math.floor(cap))
     }
+    if (input.refusals === true) request.refusals = true
     const pending: unknown = accountFor.call(handle, request, { deadlineMs })
     if (!isObject(pending) || typeof pending.then !== 'function')
       return undefined
     const answer: unknown = await Promise.race([pending, expired])
+    if (input.refusals === true && isObject(answer) && 'refused' in answer) {
+      return refusalFor(answer.refused)
+    }
     return selectionFor(answer, input.candidates)
   } catch {
     // The process-global bridge is optional and must not break authentication.
