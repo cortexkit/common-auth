@@ -43,7 +43,7 @@ Paths below are relative to the repository root.
 | `./setup` | `src/setup/` | The shared `setup` command: host detection, registration, vault enrollment. |
 | `./commands`, `./auth-menu` | `src/commands/`, `src/auth-menu/` | The one slash-command menu model and its renderers; the terminal account menu. |
 | `./quota-sidebar`, `./tui`, `./tui-build`, `./tui-prefs`, `./sidebar-file` | same names | The shared sidebar frame, TUI loading and build, TUI preferences, the sidebar state file. |
-| `./routing-accessor` | `src/routing-accessor/` | Optional Thalamus routing advice, cache policy and turn notes. |
+| `./routing-accessor` | `src/routing-accessor/` | Optional Thalamus routing advice and refusals, plugin reports (results, billing, waits), cache policy and turn notes. |
 | `./cachekeep` | `src/cachekeep/` | The keep-warm scheduler and the cache-policy decision. |
 | `./fs` | `src/fs/` | Atomic writes, file locks and leases, Windows owner-only files, a read cache. |
 | `./logger`, `./redaction`, `./dump`, `./rpc` | same names | Logging, credential redaction, request dumps, the loopback RPC. |
@@ -74,6 +74,13 @@ A quota map holds readings keyed by (scope, label). Merging applies an observati
 - **Ordered** (`ordered.ts`): admitted rows in a fixed order, moving to the next only on the caller's retry statuses. `main-first` and `fallback-first` are aliases that move the former main row to the front or back.
 - **Sticky-balanced** (`sticky.ts`, `pins.ts`): a new session is placed by quota pressure weighed against how fast each account's windows can sustain spending, counting the bytes of sessions placed just before it. A pin breaks only when its row is confirmed unable to serve. The library persists no pin; the caller keeps pins and passes them in.
 
+## Thalamus routing accessor
+
+`src/routing-accessor/` talks to the handle Thalamus installs at `globalThis[Symbol.for('cortexkit.routing')]`, looked up on every call, so a host started outside Thalamus sees none of it. Nothing here throws or blocks a request on routing.
+
+- **Asking** (`askRouting`): the plugin passes the session, provider, model and its candidate accounts, and gets back one of those candidates, or `undefined` when there is no handle, no answer within the deadline (1.5 s by default, clamped to 1 ms–2 s), a failed call or an unreadable answer. On `undefined` the plugin keeps its own choice. A caller that passes `refusals: true` can also get `{refused}`, and then sends nothing. An optional `warmCredentialId`, sent only when it names one of the candidates, tells routing which account the session already sits on, so routing's first pick doesn't move it off a warm prompt cache.
+- **Reporting** (`reportRouting`): fire-and-forget reports of a served reply, an exhausted 5-hour or 7-day window, a refused API-key credential, a billing record, turn-note events (whether a plugin could place a note Thalamus asked to add after a tool result), and a plugin's own waits (`kind: 'wait'`, start and end, with one of six reason names). Each kind checks its fields and sends nothing when a required one is invalid. It drops an invalid optional field and keeps the rest.
+
 ## Limits
 
 `src/limits/` records why an account can't serve and decides what a request does about it.
@@ -91,8 +98,8 @@ A quota map holds readings keyed by (scope, label). Merging applies an observati
 
 - **Enrollment** (`enrollment.ts`): only setup surfaces enroll; the request path never does. Setup proposes `<plugin>-<host>`, an operator approves it with `ck auth enroll approve` (CortexKit's command line), and setup polls. The token is written owner-only in the plugin's vault folder. `vaultAuthority` answers `host`, `vault`, `local` or `unreadable` and is read per operation, never cached at load. Anything but `local` is exclusive vault mode.
 - **Consumer** (`consumer.ts`): one host's view of one provider's vault accounts. It turns vault records into routes, asks the vault for a receipt on every send, and reports a 401 against the exact record version that send used. Metadata reads are shared and coalesced; credential reads never are.
-- **Custody and kept receipts** (`custody.ts`, `availability.ts`): the custody holds the last receipt per account in memory only. When the vault is unreachable, sends reuse it while it has more than a minute left (`KEPT_RECEIPT_MARGIN_MS`); API keys without expiry stay usable. An explicit vault refusal, the account leaving the roster, a disconnect, or a 401 on the kept token drops it at once. Only demonstrated transport failures count as unreachable; unknown error codes fail closed.
-- **Hub** (`hub.ts`): one vault connection, one watch and one list per process for every provider a plugin serves; each provider keeps its own consumer and roster file. Processes don't elect a leader. Each lists for itself and commits through the per-path discovery lease and roster write lock, and a commit never replaces a view another process committed after this hub listed.
+- **Custody and kept receipts** (`custody.ts`, `availability.ts`): the custody holds the last receipt per account in memory only. When the vault is unreachable, sends reuse it while it has more than a minute left (`KEPT_RECEIPT_MARGIN_MS`); API keys without expiry stay usable. An explicit vault refusal, the account leaving the roster, a disconnect, or a 401 on the kept token drops it at once. Only demonstrated transport failures count as unreachable; unknown error codes fail closed. With no usable kept receipt, a request that finds the vault unreachable early in an outage (within 60 s of the first failure, cold starts included) retries for up to 10 s. That covers a host and vault restarting together. Concurrent requests share one recovery read per account. Once one such wait has run out, later cold reads in the same outage fail at once, so a host that tries several accounts pays the wait only once.
+- **Hub** (`hub.ts`): one vault connection, one watch and one list per process for every provider a plugin serves; each provider keeps its own consumer and roster file. Processes don't elect a leader. Each lists for itself and commits through the per-path discovery lease and roster write lock, and a commit never replaces a view another process committed after this hub listed. When vault mode goes off and on, a new list waits for the previous generation's per-provider roster commits to settle before reading its base files, so a late write from the old generation can't pass for another process's newer view.
 - **Roster** (`roster.ts`, `interlock.ts`, `quota-writer.ts`): the roster file holds routes, quota, order and declines, no token. A decline follows the provider account, so relabelling or re-adding an account doesn't lift it. Quota readings for one roster file go into one per-process queue, and one writer commits them, so consumers of the same file don't compete for its lock.
 - **Watches, insula and usage** (`watch.ts`, `insula.ts`, `usage.ts`): with a watch open, the host re-reads only on a change notice and polls slowly as a safety net; without one it polls as before. Insula readings are matched by vault account id, and a miss is classified (cold, stale, upstream failed, credential, unreachable, absent) so a plugin polls the provider itself only when insula can't help. Reply quota is reported back to the vault for insula.
 - **Hosted mode** (`host.ts`): with exactly `CORTEXKIT_VAULT_HOST=thalamus`, the authority is `host`. The consumer connects only through the client Thalamus installs at `globalThis[Symbol.for('cortexkit.vault')]`, looked up per connection, and refuses a direct client. No enrollment token is read.
@@ -153,7 +160,7 @@ The command menu (`src/commands/`) is one model per plugin, rendered as an OpenC
 ## Failure handling
 
 - **Lock contention:** bounded waits; a write that can't get its lock refuses with `lock-contention`, a background write retries.
-- **Vault unreachable:** kept receipts serve until expiry; then the plugin refuses locally.
+- **Vault unreachable:** kept receipts serve until expiry; then the plugin refuses locally. With no kept receipt, an early outage gets one bounded wait of up to 10 s before the refusal.
 - **Insula missing or stale:** the miss class decides whether the plugin polls the provider itself.
 - **Limits registry can't load:** tracking stops for that store; requests are served.
 - **Crash mid-write:** torn rows complete forward; staged lease records and settings files never publish half-written.
