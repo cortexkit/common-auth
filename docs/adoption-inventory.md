@@ -1726,8 +1726,11 @@ entry.
 `globalThis[Symbol.for('cortexkit.routing')]` at call time, so a bridge installed
 after the auth plugin is found without reloading. A missing accessor, unserved
 session, malformed answer or accessor failure yields `undefined`: the plugin
-keeps its own choice. `candidates` must already exclude routes refused by the
-vault, blocked by the killswitch or ineligible under other plugin rules. The
+keeps its own choice. `candidates` never include a route the vault refused. A
+plugin may also leave out routes its user's own eligibility rules exclude (a
+per-model account list, for example). Each plugin decides whether its quota
+floors (a minimum share of a quota window an account must keep) also filter
+candidates; routing keeps its own reserve of each window. The
 answer must name a candidate's `accountId`; if it names a credential too, that must match the
 same candidate's `credentialId`. Only provider, model id, deadline, an optional
 `hold_wait_max_s` cap and an opted-in `refusals: true` are sent with the selection
