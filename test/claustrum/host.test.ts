@@ -22,7 +22,13 @@ import {
   hasVaultHost,
   vaultAuthority,
 } from '../../src/claustrum/index.js'
-import { deferred, inventoryRow, unknownGrants } from './helpers.js'
+import {
+  deferred,
+  exhaustReceiptWait,
+  fakeTimers,
+  inventoryRow,
+  unknownGrants,
+} from './helpers.js'
 
 const symbol = Symbol.for('cortexkit.vault')
 const globals = globalThis as Record<symbol, unknown>
@@ -299,6 +305,7 @@ describe('Thalamus host vault', () => {
   ] as const)(
     'host error normalization preserves only a finite reason: %s',
     async (reason, expected) => {
+      const timers = fakeTimers()
       const host = client()
       globals[symbol] = () => host
       host.getScoped = mock(async () => {
@@ -308,9 +315,10 @@ describe('Thalamus host vault', () => {
           message: 'host secret',
         }
       })
-      const error = await custody()
-        .authorize(identity)
-        .catch((error: unknown) => error)
+      const error = await exhaustReceiptWait(
+        custody(timers).authorize(identity),
+        timers,
+      ).catch((error: unknown) => error)
       expect(error).toBeInstanceOf(ClaustrumUnreachableError)
       expect((error as ClaustrumUnreachableError).reason).toBe(expected)
       expect((error as Error).message).toBe(
@@ -337,9 +345,10 @@ describe('Thalamus host vault', () => {
   })
 
   test('plain out-of-share refusal becomes ClaustrumCredentialError and drops the kept receipt', async () => {
+    const timers = fakeTimers()
     const host = client()
     globals[symbol] = () => host
-    const direct = custody()
+    const direct = custody(timers)
     await direct.authorize(identity)
     host.getScoped = mock(async () => {
       throw {
@@ -362,12 +371,16 @@ describe('Thalamus host vault', () => {
       action: 'gone',
     })
     expect((refusal as Error).message).not.toContain('host secret')
+    expect(timers.pending()).toEqual([])
+    expect(direct.keptReceiptState()).toEqual({ active: false, since: null })
     host.getScoped = mock(async () => {
       throw { code: 'connection_closed' }
     })
-    await expect(direct.authorize(identity)).rejects.toBeInstanceOf(
-      ClaustrumUnreachableError,
-    )
+    // Only the later transport failure waits: the refusal already discarded
+    // the kept receipt and must not have entered recovery itself.
+    await expect(
+      exhaustReceiptWait(direct.authorize(identity), timers),
+    ).rejects.toBeInstanceOf(ClaustrumUnreachableError)
   })
 
   test('401 reports use the client that served the receipt', async () => {
