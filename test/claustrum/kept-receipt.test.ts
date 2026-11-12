@@ -17,6 +17,8 @@ import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import {
   captureLogger,
   cleanupDirs,
+  exhaustReceiptWait,
+  fakeTimers,
   family,
   tempDir,
   writeToken,
@@ -61,7 +63,9 @@ async function scenario(apiKey = false) {
   }
   const daemon = await start()
   const logs = captureLogger()
+  const timers = fakeTimers()
   const options: ClaustrumConsumerOptions = {
+    ...timers,
     rosterPath: join(dir, 'vault-roster.json'),
     tokenPath: await writeToken(dir),
     family: { ...family, apiKeys: true },
@@ -114,6 +118,14 @@ async function scenario(apiKey = false) {
     send,
     sends,
     warm,
+    afterWait<T>(pending: Promise<T>): Promise<T> {
+      // Receipt-drop assertions still require refusal after the bounded wait
+      // for an unreachable vault with no kept receipt. Local errors and vault
+      // refusals that receive a response must still reject immediately.
+      return exhaustReceiptWait(pending, timers, (ms) => {
+        now += ms
+      })
+    },
     advance: (ms: number) => {
       now += ms
     },
@@ -192,7 +204,9 @@ for (const code of refusals) {
     s.record.refuse = code
     await expect(s.send()).rejects.toMatchObject({ code })
     s.record.refuse = 'unavailable'
-    await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+    await expect(s.afterWait(s.send())).rejects.toMatchObject({
+      code: 'unavailable',
+    })
     expect(s.consumer.keptReceiptState()).toEqual({
       active: false,
       since: null,
@@ -207,9 +221,13 @@ test('kept OAuth receipt is bounded by expiry with a sixty second margin', async
   s.advance(HOUR - 60_001)
   await s.send()
   s.advance(1)
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
   s.advance(60_001)
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
   expect(s.consumer.keptReceiptState()).toEqual({ active: false, since: null })
 })
 
@@ -249,7 +267,9 @@ for (const change of [
     // Restoring an earlier roster must not restore the token discarded when the route changed.
     await writeFile(s.options.rosterPath, original)
     s.record.refuse = 'unavailable'
-    await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+    await expect(s.afterWait(s.send())).rejects.toMatchObject({
+      code: 'unavailable',
+    })
   })
 }
 
@@ -261,7 +281,9 @@ test('kept receipt is dropped by a successful discovery removing the account', a
   s.daemon.credentials[ID] = s.record
   await s.consumer.refresh()
   s.record.refuse = 'unavailable'
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
 })
 
 test('kept receipt is dropped immediately on local decline', async () => {
@@ -270,7 +292,9 @@ test('kept receipt is dropped immediately on local decline', async () => {
   await s.consumer.decline(s.route)
   await s.consumer.accept(s.route)
   s.record.refuse = 'unavailable'
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
 })
 
 test('kept receipt is dropped on disconnect even without a discovery poll', async () => {
@@ -280,7 +304,9 @@ test('kept receipt is dropped on disconnect even without a discovery poll', asyn
   await expect(s.send()).rejects.toMatchObject({ kind: 'not-active' })
   s.setActive(true)
   s.record.refuse = 'unavailable'
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
 })
 
 test('kept receipt is dropped when enrollment token disappears', async () => {
@@ -290,7 +316,9 @@ test('kept receipt is dropped when enrollment token disappears', async () => {
   await expect(s.send()).rejects.toBeDefined()
   await writeToken(s.dir)
   s.record.refuse = 'unavailable'
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
 })
 
 test('kept receipt is dropped when served identity changes', async () => {
@@ -299,7 +327,9 @@ test('kept receipt is dropped when served identity changes', async () => {
   s.record.served_account_id = 'another-account'
   await expect(s.send()).rejects.toMatchObject({ kind: 'identity-changed' })
   s.record.refuse = 'unavailable'
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
 })
 
 test('kept 401 stops the account without retry or report until a fresh vault serve', async () => {
@@ -325,7 +355,9 @@ test('kept 401 stops the account without retry or report until a fresh vault ser
     message: 'scoped 401 not reported',
     data: { routeId: s.route, reason: 'kept-receipt' },
   })
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
   delete s.record.refuse
   await s.consumer.refresh()
   await s.send()
@@ -385,7 +417,7 @@ for (const report of ['reported', 'report fails'] as const) {
       s.record.refuse = 'unavailable'
     } else await s.daemon.stop()
     const before = s.sends.length
-    await expect(s.send()).rejects.toBeDefined()
+    await expect(s.afterWait(s.send())).rejects.toBeDefined()
     expect(s.sends.length).toBe(before)
     expect(s.consumer.keptReceiptState().active).toBe(false)
   })
@@ -399,7 +431,9 @@ test('kept receipt never reaches logs or the state directory and is not shared w
   const peer = hooks.lifetime.manage(new ClaustrumConsumer(s.options))
   await peer.refresh()
   await expect(
-    peer.send(s.route, async () => new Response('wrong'), { site: 'model' }),
+    s.afterWait(
+      peer.send(s.route, async () => new Response('wrong'), { site: 'model' }),
+    ),
   ).rejects.toMatchObject({ code: 'unavailable' })
   expect(JSON.stringify(s.consumer.keptReceiptState())).not.toContain(SECRET)
   expect(JSON.stringify(s.sends)).not.toContain(SECRET)
@@ -425,7 +459,9 @@ test('kept receipt discarded by another process decline cannot return after acce
   await expect(s.send()).rejects.toMatchObject({ kind: 'route-declined' })
   await s.consumer.accept(s.route)
   s.record.refuse = 'unavailable'
-  await expect(s.send()).rejects.toMatchObject({ code: 'unavailable' })
+  await expect(s.afterWait(s.send())).rejects.toMatchObject({
+    code: 'unavailable',
+  })
 })
 
 for (const failure of [
@@ -456,6 +492,8 @@ for (const failure of [
         tokenPath: s.options.tokenPath,
         now: s.now,
         logger: s.logs.logger,
+        setTimeoutImpl: s.options.setTimeoutImpl,
+        clearTimeoutImpl: s.options.clearTimeoutImpl,
       }),
     )
     const identity = {
@@ -483,7 +521,9 @@ for (const failure of [
         kind: 'unavailable',
       })
       connectFailure = new ClaustrumUnreachableError()
-      await expect(custody.authorize(identity)).rejects.toMatchObject({
+      await expect(
+        s.afterWait(custody.authorize(identity)),
+      ).rejects.toMatchObject({
         kind: 'unavailable',
       })
     }

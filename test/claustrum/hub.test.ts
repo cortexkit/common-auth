@@ -55,6 +55,7 @@ import {
   captureLogger,
   cleanupDirs,
   deferred,
+  exhaustReceiptWait,
   fakeTimers,
   family,
   inventoryRow,
@@ -2843,9 +2844,9 @@ test('hub faults: transport loss is one outage for every member, and the first a
   expect(probes()).toEqual([2_000])
   const kept = await alpha.authorize(f.route(alpha, 'alpha'))
   expect(kept.fromKeptReceipt).toBe(true)
-  await expect(beta.authorize(f.route(beta, 'beta'))).rejects.toBeInstanceOf(
-    ClaustrumUnreachableError,
-  )
+  await expect(
+    exhaustReceiptWait(beta.authorize(f.route(beta, 'beta')), f.timers),
+  ).rejects.toBeInstanceOf(ClaustrumUnreachableError)
   expect(probes()).toHaveLength(1)
   // The vault answers again: the one probe ends the outage for everyone.
   f.vault.listFails = undefined
@@ -2865,7 +2866,8 @@ test('hub faults: transport loss is one outage for every member, and the first a
 })
 
 test('hub faults: a confirming refusal drops every kept receipt and reaches each member once, with no inactive transition', async () => {
-  const f = await hubFixture({ watch: true })
+  // Keep the receipt wait's deadline exact while the test fires fake timers.
+  const f = await hubFixture({ watch: true, hub: { now: () => 1_000_000 } })
   const [alpha, beta, gamma] = f.members()
   if (!alpha || !beta || !gamma) throw new Error('missing member')
   await startWatching(f)
@@ -2894,12 +2896,12 @@ test('hub faults: a confirming refusal drops every kept receipt and reaches each
   // Every kept receipt is gone: an unreachable vault now serves nothing.
   f.vault.listFails = undefined
   f.vault.getFails = offline
-  await expect(alpha.authorize(f.route(alpha, 'alpha'))).rejects.toBeInstanceOf(
-    ClaustrumUnreachableError,
-  )
-  await expect(beta.authorize(f.route(beta, 'beta'))).rejects.toBeInstanceOf(
-    ClaustrumUnreachableError,
-  )
+  await expect(
+    exhaustReceiptWait(alpha.authorize(f.route(alpha, 'alpha')), f.timers),
+  ).rejects.toBeInstanceOf(ClaustrumUnreachableError)
+  await expect(
+    exhaustReceiptWait(beta.authorize(f.route(beta, 'beta')), f.timers),
+  ).rejects.toBeInstanceOf(ClaustrumUnreachableError)
 })
 
 test('hub faults: a private-files error on a roster lock counts as the same refusal as a lost lock', async () => {

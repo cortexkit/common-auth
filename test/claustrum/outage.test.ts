@@ -14,6 +14,7 @@ import {
   captureLogger,
   cleanupDirs,
   clientWatches,
+  exhaustReceiptWait,
   fakeTimers,
   family,
   tempDir,
@@ -216,7 +217,9 @@ test('outage send probe honors grant refusal within one second despite idle back
   s.setGet(async () => {
     throw Object.assign(new Error('offline'), { code: 'ECONNREFUSED' })
   })
-  await expect(s.custody.authorize(identity)).rejects.toMatchObject({
+  await expect(
+    exhaustReceiptWait(s.custody.authorize(identity), s.timers),
+  ).rejects.toMatchObject({
     kind: 'unavailable',
   })
 })
@@ -330,7 +333,7 @@ for (const recovered of [true, false]) {
       ).toBeUndefined()
       expect(s.calls.gets).toBe(3)
     } else {
-      await expect(fresh).rejects.toBe(failure)
+      await expect(exhaustReceiptWait(fresh, s.timers)).rejects.toBe(failure)
       expect(s.calls.gets).toBe(2)
       expect(s.timers.pending()).toEqual([2_000])
       s.setList(async () => {
@@ -499,7 +502,9 @@ test('outage probe refusal drops receipts and ends transport fallback', async ()
   await flush()
   expect(s.timers.pending()).toEqual([])
   s.daemon.outage = true
-  await expect(s.custody.authorize(identity)).rejects.toMatchObject({
+  await expect(
+    exhaustReceiptWait(s.custody.authorize(identity), s.timers),
+  ).rejects.toMatchObject({
     code: 'transport_error',
   })
   expect(s.calls.gets).toBe(3)

@@ -113,6 +113,36 @@ function unauthorized() {
   return new Response(null, { status: 401 })
 }
 
+test('send waits for a cold unreachable vault before dispatching', async () => {
+  const f = await fixture()
+  const timers = fakeTimers()
+  const consumer = managedConsumer({ ...f.options, ...timers })
+  const roster = await consumer.refresh()
+  const get = f.client.getScoped
+  let attempts = 0
+  f.client.getScoped = async (input) => {
+    if (++attempts === 1) throw new ClaustrumUnreachableError()
+    return get(input)
+  }
+  let dispatched = 0
+  const pending = consumer.send(
+    f.route(roster, 'oauth:test'),
+    async (receipt) => {
+      dispatched++
+      expect(receipt.accessToken).toBe('vault-test-access')
+      return new Response('ok')
+    },
+    { site: 'model' },
+  )
+  await until(() => timers.pending().includes(250), 'receipt retry backoff')
+  expect(dispatched).toBe(0)
+  timers.fire(250)
+  expect((await pending).status).toBe(200)
+  expect(attempts).toBe(2)
+  expect(dispatched).toBe(1)
+  expect(timers.pending()).toEqual([])
+})
+
 test('real vault rows retain derived types through the roster and consumer authorization', async () => {
   const f = await fixture()
   f.rows.splice(0, f.rows.length, realApiKeyRow(), realOAuthRow())

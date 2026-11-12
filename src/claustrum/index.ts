@@ -49,6 +49,8 @@ export {
   SERVING_MARGIN_MS,
   type SkippedVaultReason,
   type SkippedVaultRecord,
+  VAULT_RECEIPT_WAIT_MS,
+  VAULT_YOUNG_OUTAGE_MS,
   type VaultCredential,
   type VaultCredentialType,
   type VaultGrantReach,

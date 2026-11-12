@@ -17,6 +17,7 @@ import type {
 import {
   captureLogger,
   deferred,
+  exhaustReceiptWait,
   fakeTimers,
   family,
   inventoryRow,
@@ -170,7 +171,9 @@ describe('scoped custody client replacement', () => {
       await first.custody.reportFailure(kept, 401, 'direct')
       expect(first.reports).toEqual([])
       expect(next.reports).toEqual([])
-      await expect(first.custody.authorize(identity)).rejects.toThrow()
+      await expect(
+        exhaustReceiptWait(first.custody.authorize(identity), timers),
+      ).rejects.toThrow()
     } finally {
       await first.custody.dispose()
     }

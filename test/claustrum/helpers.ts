@@ -207,6 +207,32 @@ export function fakeTimers() {
   }
 }
 
+/** Finish a no-receipt rejection without paying the request wait in real time. */
+export async function exhaustReceiptWait<T>(
+  pending: Promise<T>,
+  timers: Pick<ReturnType<typeof fakeTimers>, 'pending' | 'fire'>,
+  advance?: (ms: number) => void,
+): Promise<T> {
+  let settled = false
+  void pending.then(
+    () => {
+      settled = true
+    },
+    () => {
+      settled = true
+    },
+  )
+  await until(
+    () => settled || timers.pending().includes(10_000),
+    'cold receipt wait',
+  )
+  if (!settled) {
+    advance?.(10_000)
+    timers.fire(10_000)
+  }
+  return pending
+}
+
 /** Waits for real socket traffic with the mock daemon to land. */
 export async function until(
   predicate: () => boolean,
