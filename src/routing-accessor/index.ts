@@ -378,8 +378,12 @@ function refusalFor(value: unknown): RoutingRefusal | undefined {
 /**
  * Ask routing for an eligible vault route. Any failure or unfamiliar answer
  * yields undefined so the plugin can keep its own choice. Opted-in routing
- * refusals instead stop the request. This does not admit routes: callers must
- * exclude vault refusals and killswitch-blocked accounts.
+ * refusals instead stop the request. This does not admit routes. Callers pass
+ * only accounts that may serve: not ones the vault refused, and not ones a rule
+ * the user set rules out (an enabled killswitch floor, a per-model account
+ * list). Routing's pick among those candidates is final. Don't reject it under
+ * a local floor, and don't add floors of the plugin's own that duplicate
+ * routing's reserves.
  */
 export function askRouting<
   Candidate extends RoutingCandidate,
