@@ -439,6 +439,105 @@ describe('reportRouting', () => {
     ])
   })
 
+  test('sends only contract fields for a credential refusal', () => {
+    const report = mock((_payload: unknown) => {})
+    const handle = { report }
+    const routing = mock((_sessionId: string) => handle)
+    install(routing)
+    expect(
+      reportRouting({
+        ...served,
+        outcome: 'credential_refused',
+        providerCode: 'prepaid_balance_exhausted',
+        token: 'must not be sent',
+        email: 'must not be sent',
+        label: 'must not be sent',
+        status: 402,
+        message: 'must not be sent',
+      } as ReportRoutingInput),
+    ).toBeUndefined()
+    expect(report.mock.calls).toEqual([
+      [
+        {
+          account_id: 'vault-account',
+          credential_id: 'vault-credential',
+          outcome: 'credential_refused',
+          provider_code: 'prepaid_balance_exhausted',
+        },
+      ],
+    ])
+    expect(report.mock.contexts).toEqual([handle])
+    expect(routing.mock.calls).toEqual([['session']])
+  })
+
+  test.each(['a', 'a'.repeat(64), 'balance.v1-exhausted_0'])(
+    'sends a credential refusal provider code %j unchanged',
+    (providerCode) => {
+      const report = mock((_payload: unknown) => {})
+      install(() => ({ report }))
+      reportRouting({
+        ...served,
+        outcome: 'credential_refused',
+        providerCode,
+      })
+      expect(report.mock.calls).toEqual([
+        [
+          {
+            account_id: 'vault-account',
+            credential_id: 'vault-credential',
+            outcome: 'credential_refused',
+            provider_code: providerCode,
+          },
+        ],
+      ])
+    },
+  )
+
+  test.each([
+    'bad:code',
+    'a'.repeat(65),
+    'Prepaid_balance_exhausted',
+    'balance exhausted',
+    '',
+    undefined,
+    null,
+    402,
+    false,
+    {},
+  ])(
+    'sends nothing for an invalid credential refusal provider code %j',
+    (providerCode) => {
+      const report = mock((_payload: unknown) => {})
+      install(() => ({ report }))
+      expect(
+        reportRouting({
+          ...served,
+          outcome: 'credential_refused',
+          providerCode,
+        } as unknown as ReportRoutingInput),
+      ).toBeUndefined()
+      expect(report).not.toHaveBeenCalled()
+    },
+  )
+
+  test.each([undefined, '', null, 0])(
+    'sends nothing for a credential refusal with a missing or invalid credential id %j',
+    (credentialId) => {
+      const report = mock((_payload: unknown) => {})
+      install(() => ({ report }))
+      expect(
+        reportRouting({
+          sessionId: 'session',
+          accountId: candidate.accountId,
+          ...(credentialId !== undefined ? { credentialId } : {}),
+          outcome: 'credential_refused',
+          providerCode: 'prepaid_balance_exhausted',
+        } as unknown as ReportRoutingInput),
+      ).toBeUndefined()
+      expect(report).not.toHaveBeenCalled()
+    },
+  )
+
   test('sends only contract fields for served and pool exhausted outcomes', () => {
     const report = mock((_payload: unknown) => {})
     const handle = { report }
@@ -482,6 +581,12 @@ describe('reportRouting', () => {
     ])
     expect(report.mock.contexts).toEqual([handle, handle])
     expect(routing.mock.calls).toEqual([['session'], ['session']])
+    expect(
+      report.mock.calls.map(([payload]) => JSON.stringify(payload)),
+    ).toEqual([
+      '{"account_id":"vault-account","credential_id":"vault-credential","outcome":"served","headers":{"anthropic-ratelimit-requests-remaining":"9"}}',
+      '{"account_id":"vault-account","credential_id":"vault-credential","outcome":"exhausted","window":"7d","pool":"non-gemini","resets_at":1800000000000}',
+    ])
   })
 
   test('treats an explicitly undefined pool as whole-account exhaustion', () => {
@@ -525,6 +630,10 @@ describe('reportRouting', () => {
     expect(sent).toEqual([
       { account_id: 'vault-account', outcome: 'served', headers },
       { account_id: 'vault-account', outcome: 'exhausted', window: '5h' },
+    ])
+    expect(sent.map((payload) => JSON.stringify(payload))).toEqual([
+      '{"account_id":"vault-account","outcome":"served","headers":{"x-ratelimit-reset":" 001.500 ","x-ratelimit-remaining":"0"}}',
+      '{"account_id":"vault-account","outcome":"exhausted","window":"5h"}',
     ])
     expect((sent[0] as { headers: unknown }).headers).toBe(headers)
   })

@@ -123,6 +123,20 @@ export type ReportRoutingInput =
             /** Optional reset time in epoch milliseconds. */
             resetsAt?: number
           }
+        | {
+            /**
+             * A provider's typed refusal that condemns the API key until it is
+             * topped up, such as an exhausted prepaid balance. Never use for
+             * 401, 403 or short rate limits.
+             */
+            outcome: 'credential_refused'
+            credentialId: string
+            /**
+             * The provider's own code from its structured error, never message
+             * text or a bare status. Must match `^[a-z0-9._-]{1,64}$`.
+             */
+            providerCode: string
+          }
       ))
   | {
       sessionId: string
@@ -517,6 +531,21 @@ export function reportRouting(input: ReportRoutingInput): void {
             ...(input.resetsAt !== undefined
               ? { resets_at: input.resetsAt }
               : {}),
+          }
+          break
+        }
+        case 'credential_refused': {
+          const { credentialId, providerCode } = input
+          if (
+            !isNonEmptyString(credentialId) ||
+            typeof providerCode !== 'string' ||
+            !/^[a-z0-9._-]{1,64}$/.test(providerCode)
+          )
+            return
+          payload = {
+            ...identity,
+            outcome: 'credential_refused',
+            provider_code: providerCode,
           }
           break
         }

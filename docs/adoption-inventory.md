@@ -1618,7 +1618,7 @@ Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
 | `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS? }` | `Promise<{ candidate, hold?: { retry_after_ms } } \| undefined>`; `candidate` is the original eligible input object with its inferred type | never throws or rejects |
-| `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools send nothing |
+| `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` or `{ sessionId, accountId, credentialId, outcome: 'credential_refused', providerCode: string }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools, or invalid credential-refusal codes or credential ids, send nothing |
 | `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
 | `reportRouting(input)` (turn notes) | `{ sessionId, kind: 'turn_notes_supported', model: string, supported: boolean }` or `{ sessionId, kind: 'turn_note_skipped', after_tool_use_id: string, reason: 'anchor_missing' \| 'before_user_message' \| 'unsupported_model' \| 'not_oauth' }` | `void`; one fire-and-forget call per event, never batched | never throws; invalid payloads send nothing |
 | `reportRouting(input)` (billing) | `{ sessionId, kind: 'billing', attemptId, requestKind, credentialId, provider, model, outcome, accountId?, providerRequestId?, providerResponseId?, userMessageId?, status?, attempt?, chargeBasis?, usage?, usageByModel?, cache? }` | `void`; synchronous and fire-and-forget, never waits for the handle | never throws; invalid required fields send nothing, invalid optional members are omitted |
@@ -1712,8 +1712,16 @@ and non-negative. It is not capped here: the plugin must apply its own hold cap
 before waiting, and still performs its normal vault authorization before a send.
 
 **Routing-outcome reporting and privacy.** These reports send only `account_id`,
-optional `credential_id`, `outcome`, and either `headers` for `served` or `window` and
-optional `pool` and `resets_at` for `exhausted`. `resetsAt` is epoch milliseconds;
+`outcome`, and either `headers` for `served`, `window` and optional `pool` and
+`resets_at` for `exhausted`, or `provider_code` for `credential_refused`.
+`credential_id` is required for `credential_refused` and optional for the other
+outcomes. Send `credential_refused` only for a provider's typed refusal that
+condemns an API key until topped up (such as an exhausted prepaid balance), never
+for 401, 403 or short rate limits. `providerCode` must be the provider's own code
+from its structured error, never message text or a bare status. It must match
+`^[a-z0-9._-]{1,64}$`; an invalid code or a missing or empty `credentialId` silently
+drops the report. Routing parks the refused API key until it is topped up.
+`resetsAt` is epoch milliseconds;
 `window` must be `5h` or `7d`. The THALAMUS bridge maps these to routing's
 `five_hour` and `seven_day`. `pool` names a scoped quota group, such as
 Antigravity's `3p` or `gemini`: omitting it or passing `undefined` blocks the whole
@@ -1724,8 +1732,9 @@ example, `Fable` to `fable`). The accessor never rewrites names. Invalid windows
 or present but invalid pools are silently ignored, including for plain JavaScript
 callers. No token, email, label or other input metadata is forwarded. Callers
 **must pass only rate-limit headers**, not the whole response headers: values are passed
-through unchanged, not filtered or redacted by this client. Credential health
-remains the vault's responsibility, separate from these routing outcomes.
+through unchanged, not filtered or redacted by this client. Credential
+authorization remains the vault's responsibility, separate from these routing
+outcomes.
 
 ### ./store
 
