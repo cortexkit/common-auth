@@ -154,6 +154,30 @@ test('cold receipt wait preserves the unreachable error at the ten second bound'
   expect(s.calls).toHaveLength(calls)
 })
 
+test('after one wait runs out, another account in the same outage fails at once', async () => {
+  const s = scenario()
+  const other = {
+    credentialId: 'oauth:test:home',
+    credentialType: 'oauth' as const,
+    accountIdentity: 'home',
+  }
+  const first = observed(s.custody.authorize(identity))
+  await s.advance(VAULT_RECEIPT_WAIT_MS)
+  expect(first()?.error).toBe(s.unavailable)
+  const second = observed(s.custody.authorize(other))
+  await s.advance(0)
+  expect(second()?.error).toBe(s.unavailable)
+  // A vault answer ends the outage, so the next outage earns a wait again.
+  s.setGet(async () => s.answer())
+  await s.custody.authorize(identity)
+  s.setGet(async () => {
+    throw s.unavailable
+  })
+  const third = observed(s.custody.authorize(other))
+  await s.advance(VAULT_RECEIPT_WAIT_MS - 1)
+  expect(third()).toBeUndefined()
+})
+
 test('cold receipt wait stops immediately on a vault refusal', async () => {
   const s = scenario()
   const refusal = new ClaustrumCredentialError(

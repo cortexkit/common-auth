@@ -551,6 +551,7 @@ export class ClaustrumScopedCustody {
   readonly #clearTimeout: typeof clearTimeout
   #outage = false
   #outageSince = 0
+  #outageWaitSpent = false
   #outageError: unknown = new ClaustrumUnreachableError()
   readonly #receiptWaits = new Map<string, ReceiptWait>()
   #probeTimer?: ReturnType<typeof setTimeout>
@@ -657,6 +658,7 @@ export class ClaustrumScopedCustody {
     if (this.#closed || this.#outage) return
     this.#outage = true
     this.#outageSince = this.#now()
+    this.#outageWaitSpent = false
     this.#outageError =
       error instanceof ClaustrumCredentialError
         ? error
@@ -1083,9 +1085,13 @@ export class ClaustrumScopedCustody {
     // Measure from the first unreachable observation, even at cold start.
     // Otherwise a process that never connected would charge every request 10 s
     // for an arbitrarily long outage. Any vault answer starts a new window.
+    // Once one wait has run out in this outage, the outage has outlasted the
+    // bound: later cold reads fail at once. Without that, a host that tries its
+    // accounts in turn would pay the full wait once per account.
     const remaining = VAULT_RECEIPT_WAIT_MS - (this.#now() - startedAt)
     if (
       remaining <= 0 ||
+      this.#outageWaitSpent ||
       this.#now() - this.#outageSince >= VAULT_YOUNG_OUTAGE_MS
     )
       throw error
@@ -1132,7 +1138,10 @@ export class ClaustrumScopedCustody {
       const attempt = await Promise.race([
         shared.pending,
         new Promise<never>((_resolve, reject) => {
-          timer = this.#setTimeout(() => reject(shared.error), remaining)
+          timer = this.#setTimeout(() => {
+            if (this.#outage) this.#outageWaitSpent = true
+            reject(shared.error)
+          }, remaining)
           timer.unref?.()
           if (signal) {
             abort = () => reject(signal.reason)
