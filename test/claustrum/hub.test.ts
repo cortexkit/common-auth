@@ -3,6 +3,7 @@
 // test here runs in one process against a fake vault client.
 import { expect, spyOn } from 'bun:test'
 import { channel } from 'node:diagnostics_channel'
+import * as fsPromises from 'node:fs/promises'
 import {
   chmod,
   mkdir,
@@ -1783,29 +1784,65 @@ test('hub generations: off then on publishes nothing of the old generation fan-o
   if (!alpha || !beta) throw new Error('missing member')
   await alpha.refresh()
   const lock = await holdWriteLock(f.hub.rosterPath('alpha'))
-  f.vault.view = 'v2'
-  const old = alpha.refresh()
-  await until(() => f.vault.lists === 2, 'the old generation list')
-  f.setActive(false)
-  await expect(beta.authorize(f.route(beta, 'beta'))).rejects.toMatchObject({
-    kind: 'not-active',
-  })
-  // On again: generation 2 connects and lists, held at its list.
-  f.setActive(true)
-  const gate = deferred<void>()
-  hooks.lifetime.unpark(() => gate.resolve())
-  f.vault.listGate = gate.promise
-  f.vault.view = 'v3'
-  const current = f.hub.refresh()
-  await until(() => f.vault.lists === 3, 'the new generation list')
-  // The old fan-out now finishes during generation 2.
-  await lock.release()
-  expect(await old).toBeUndefined()
-  expect((await readVaultRoster(f.hub.rosterPath('alpha')))?.view).toBe('v1')
-  expect(alpha.snapshot()).toBeUndefined()
-  gate.resolve()
-  f.vault.listGate = undefined
-  await current
+  // Beta's old commit passes its last generation check and is then held at
+  // the rename that publishes its file, as a slow rename is when vault mode
+  // goes off right after that check. Its v2 must not outlive the new
+  // generation's v3.
+  const betaPath = f.hub.rosterPath('beta')
+  const renaming = deferred<void>()
+  const renamed = deferred<void>()
+  hooks.lifetime.unpark(() => renamed.resolve())
+  const rename = fsPromises.rename
+  let held = false
+  const renames = spyOn(fsPromises, 'rename').mockImplementation(
+    async (from, to) => {
+      if (held || to !== betaPath) return rename(from, to)
+      held = true
+      renaming.resolve()
+      await renamed.promise
+      return rename(from, to)
+    },
+  )
+  try {
+    f.vault.view = 'v2'
+    const old = alpha.refresh()
+    await until(() => f.vault.lists === 2, 'the old generation list')
+    await renaming.promise
+    f.setActive(false)
+    await expect(beta.authorize(f.route(beta, 'beta'))).rejects.toMatchObject({
+      kind: 'not-active',
+    })
+    // On again: generation 2 connects and lists, held at its list.
+    f.setActive(true)
+    const gate = deferred<void>()
+    hooks.lifetime.unpark(() => gate.resolve())
+    f.vault.listGate = gate.promise
+    f.vault.view = 'v3'
+    const current = f.hub.refresh()
+    // Beta's held rename lands once generation 2 has read the files it lists
+    // over and listed, or once it waits for the old fan-out to settle first.
+    await until(
+      () =>
+        f.vault.lists === 3 ||
+        f.trace.events.some((event) =>
+          event.endsWith('claustrum earlier fan-out drain begin'),
+        ),
+      'generation 2 listing or draining',
+    )
+    renamed.resolve()
+    await until(() => f.vault.lists === 3, 'the new generation list')
+    // The old fan-out now finishes during generation 2.
+    await lock.release()
+    expect(await old).toBeUndefined()
+    expect((await readVaultRoster(f.hub.rosterPath('alpha')))?.view).toBe('v1')
+    expect(alpha.snapshot()).toBeUndefined()
+    gate.resolve()
+    f.vault.listGate = undefined
+    await current
+  } finally {
+    renamed.resolve()
+    renames.mockRestore()
+  }
   for (const provider of MEMBERS)
     expect((await readVaultRoster(f.hub.rosterPath(provider)))?.view).toBe('v3')
   expect(f.rosters.alpha.map((roster) => roster.view)).toEqual(['v1', 'v3'])
