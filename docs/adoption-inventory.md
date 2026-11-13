@@ -1045,9 +1045,12 @@ comments. Removal deletes only the selected member, its comma and its same-line
 trailing comment (including a block comment that starts there). Separate comment
 lines survive. Removing the last override also removes its empty setting wrapper.
 
-The writer locks `settings-write` on the file's real path, so symlink aliases
-serialize. `lockTimeoutMs` defaults to 2 s. It rereads and edits under that lock,
-then publishes a synced temporary file. Existing files are replaced by rename;
+The writer locks `settings-write` on the file's canonical target, so symlink aliases
+serialize. It resolves folders with `realpath` and follows file symlinks with
+`readlink`, avoiding file `realpath` races during atomic replacement. Dangling
+links and symlink loops refuse as unavailable. `lockTimeoutMs` defaults to 2 s.
+It rereads and edits under that lock, then publishes a synced temporary file.
+Existing files are replaced by rename;
 new files are published by hard link so a file that appeared meanwhile is never
 overwritten. There is no unsafe fallback on filesystems without hard links.
 

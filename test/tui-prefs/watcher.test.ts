@@ -1,6 +1,6 @@
 import { beforeEach, expect, spyOn } from 'bun:test'
 import { EventEmitter } from 'node:events'
-import { readFileSync, type watch, writeFileSync } from 'node:fs'
+import { readFileSync, realpathSync, type watch, writeFileSync } from 'node:fs'
 import {
   readFile,
   rename,
@@ -9,14 +9,17 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import * as timers from 'node:timers'
 import { setTimeout as sleep } from 'node:timers/promises'
 import {
   createTuiPreferenceWriter,
   watchTuiPreferences,
 } from '../../src/tui-prefs/index.js'
-import type { TuiPreferencesWatchOptions } from '../../src/tui-prefs/watcher.js'
+import {
+  setTuiPreferencesPathFsForTest,
+  type TuiPreferencesWatchOptions,
+} from '../../src/tui-prefs/watcher.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { observedState } from '../fixtures/observed.js'
 import { makeTempDir } from '../fixtures/scratch.js'
@@ -35,6 +38,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) dispose()
+  setTuiPreferencesPathFsForTest()
   await rm(dir, { recursive: true, force: true })
 })
 function start(watchDirectory?: typeof watch) {
@@ -213,6 +217,51 @@ function nativeSeam() {
     closes: () => closes,
   }
 }
+
+test('a deleted realpath result cannot redirect the preferences watcher', async () => {
+  await writeFile(file, '{}')
+  const canonical =
+    process.platform === 'win32'
+      ? resolve(file)
+      : join(realpathSync(dir), basename(file))
+  const realpaths: string[] = []
+  setTuiPreferencesPathFsForTest({
+    realpathSync: ((path: string) => {
+      realpaths.push(path)
+      if (path === file || path === canonical) return `${canonical} (deleted)`
+      return realpathSync(path)
+    }) as typeof realpathSync,
+  })
+  const reads: string[] = []
+  const native = nativeSeam()
+  disposers.push(
+    watchTuiPreferences(file, () => fired++, {
+      watchDirectory: native.watchDirectory,
+      fs: {
+        readFileSync: (path) => {
+          reads.push(path)
+          return readFileSync(path, 'utf8')
+        },
+        readFile: (path) => {
+          reads.push(path)
+          return readFile(path, 'utf8')
+        },
+      },
+    }),
+  )
+  const temp = `${file}.tmp`
+  await writeFile(temp, '{"collapsed":true}')
+  await rename(temp, file)
+  native.emit()
+  await sleep(300)
+  expect(fired).toBe(1)
+  expect(reads).toEqual(
+    process.platform === 'win32' ? [] : [canonical, canonical],
+  )
+  expect(realpaths).toEqual(
+    process.platform === 'win32' ? [] : [dirname(resolve(file))],
+  )
+})
 
 test('bundled subscribers share one native watcher and one probe until last disposal', async () => {
   await writeFile(file, '{}')

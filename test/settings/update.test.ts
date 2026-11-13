@@ -224,7 +224,7 @@ describe('settings update', () => {
   )
 
   test.each(['EACCES', 'EIO'])(
-    'a fallback lstat %s refuses with its cause',
+    'an entry lstat %s refuses with its cause',
     async (code) => {
       const cause = fault(code)
       setSettingsFsForTest({
@@ -270,12 +270,50 @@ describe('settings update', () => {
         outcome: 'updated',
       })
       expect(lock.mock.calls[0]?.[0]).toBe(canonical)
-      expect(lstat).toHaveBeenCalledTimes(1)
-      expect(lstat).toHaveBeenCalledWith(file)
-      expect(paths).toEqual(
-        failedResolution === 1 ? [file, alias, file] : [file, file, alias],
-      )
+      expect(lstat).toHaveBeenCalledTimes(2)
+      expect(lstat).toHaveBeenCalledWith(canonical)
+      expect(paths).toEqual([alias, alias])
+      expect(resolutions).toBe(0)
       expect(await contents(canonical)).toEqual({ x: 2 })
+    },
+  )
+
+  test.each(['before lock', 'under lock', 'both resolutions'])(
+    'ignores deleted realpath results at %s',
+    async (phase) => {
+      await fs.writeFile(file, '{"x":1}')
+      const canonical = join(await fs.realpath(root), basename(file))
+      const lock = spyOn(locks, 'withLock')
+      restoreSpies.push(() => lock.mockRestore())
+      const paths: unknown[] = []
+      let resolutions = 0
+      setSettingsFsForTest({
+        realpath: realpathOverride(async (path) => {
+          paths.push(path)
+          if (path === file || path === canonical) {
+            resolutions++
+            if (
+              phase === 'both resolutions' ||
+              resolutions === (phase === 'before lock' ? 1 : 2)
+            )
+              return `${canonical} (deleted)`
+          }
+          return fs.realpath(path)
+        }),
+      })
+      expect(
+        await handle({ createMissing: true }).update(edit, context),
+      ).toEqual({
+        outcome: 'updated',
+      })
+      expect(await contents(canonical)).toEqual({ x: 2 })
+      expect(await fs.readdir(root)).toEqual([basename(file)])
+      await expect(fs.lstat(`${canonical} (deleted)`)).rejects.toMatchObject({
+        code: 'ENOENT',
+      })
+      expect(lock.mock.calls[0]?.[0]).toBe(canonical)
+      expect(paths).not.toContain(file)
+      expect(paths).not.toContain(canonical)
     },
   )
 
@@ -460,19 +498,19 @@ describe('settings update', () => {
     expect(await contents(target)).toEqual({ x: 2 })
   })
 
-  test('a dangling link refuses with the realpath cause and creates no target', async () => {
+  test('a dangling link refuses with the lstat cause and creates no target', async () => {
     const target = join(root, 'absent.jsonc')
     await fs.symlink(target, file, 'file')
     let cause: unknown
     setSettingsFsForTest({
-      realpath: realpathOverride(async (path) => {
+      lstat: (async (path) => {
         try {
-          return await fs.realpath(path)
+          return await fs.lstat(path)
         } catch (error) {
           cause = error
           throw error
         }
-      }),
+      }) as typeof fs.lstat,
     })
     const refusal = await refuses(
       handle({ createMissing: true }).update(edit, context),
@@ -499,6 +537,59 @@ describe('settings update', () => {
     )
   })
 
+  test.each([1, 2])(
+    'a relative %i-hop link chain writes its target',
+    async (hops) => {
+      const parent = join(root, 'actual')
+      const alias = join(root, 'alias')
+      await fs.mkdir(parent)
+      await fs.symlink(parent, alias, 'dir')
+      const target = join(parent, 'target.jsonc')
+      const next = join(parent, 'next.jsonc')
+      await fs.writeFile(target, '{"x":1}')
+      file = join(alias, 'link.jsonc')
+      await fs.symlink(hops === 1 ? 'target.jsonc' : 'next.jsonc', file, 'file')
+      if (hops === 2) await fs.symlink('target.jsonc', next, 'file')
+      const paths: unknown[] = []
+      setSettingsFsForTest({
+        realpath: realpathOverride(async (path) => {
+          paths.push(path)
+          return fs.realpath(path)
+        }),
+      })
+      expect(await handle().update(edit, context)).toEqual({
+        outcome: 'updated',
+      })
+      expect(await contents(target)).toEqual({ x: 2 })
+      expect(await fs.readlink(file)).toBe(
+        hops === 1 ? 'target.jsonc' : 'next.jsonc',
+      )
+      if (hops === 2) expect(await fs.readlink(next)).toBe('target.jsonc')
+      const canonicalParent = await fs.realpath(parent)
+      expect(paths).toEqual([
+        alias,
+        ...Array(hops).fill(canonicalParent),
+        alias,
+        ...Array(hops).fill(canonicalParent),
+      ])
+    },
+  )
+
+  test('a readlink error refuses with its cause and leaves the link intact', async () => {
+    const target = join(root, 'actual.jsonc')
+    await fs.writeFile(target, '{"x":1}')
+    await fs.symlink(target, file, 'file')
+    const cause = fault('EACCES')
+    setSettingsFsForTest({
+      readlink: async () => {
+        throw cause
+      },
+    })
+    await refuses(handle().update(edit, context), 'settings-unavailable', cause)
+    expect(await fs.readlink(file)).toBe(target)
+    expect(await contents(target)).toEqual({ x: 1 })
+  })
+
   test('a retargeted link under the lock refuses busy and leaves both targets untouched', async () => {
     const first = join(root, 'first.jsonc')
     const second = join(root, 'second.jsonc')
@@ -507,13 +598,13 @@ describe('settings update', () => {
     await fs.symlink(first, file, 'file')
     let resolutions = 0
     setSettingsFsForTest({
-      realpath: realpathOverride(async (path) => {
-        if (path === file && ++resolutions === 2) {
+      readlink: (async (path) => {
+        if (++resolutions === 2) {
           await fs.unlink(file)
           await fs.symlink(second, file, 'file')
         }
-        return fs.realpath(path)
-      }),
+        return fs.readlink(path)
+      }) as typeof fs.readlink,
     })
     await refuses(handle().update(edit, context), 'settings-busy')
     expect(await fs.readFile(first, 'utf8')).toBe('{"x":1}')

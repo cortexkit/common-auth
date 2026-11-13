@@ -1,4 +1,5 @@
-import { basename, dirname, join } from 'node:path'
+import { dirname } from 'node:path'
+import { canonicalFilePath } from '../fs/canonical-file-path.js'
 import { ensurePrivateDirectory } from '../fs/private-files.js'
 import { withLock } from '../fs/with-lock.js'
 import type { SettingsDefinition } from './define.js'
@@ -45,25 +46,9 @@ function unavailable(file: string, cause: unknown): never {
 
 async function writeTarget(file: string): Promise<string> {
   try {
-    return await SettingsFs.realpath(file)
+    return await canonicalFilePath(file, SettingsFs)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
-      unavailable(file, error)
-    let isSymlink = false
-    try {
-      isSymlink = (await SettingsFs.lstat(file)).isSymbolicLink()
-    } catch (lstatError) {
-      if ((lstatError as NodeJS.ErrnoException).code !== 'ENOENT')
-        unavailable(file, lstatError)
-    }
-    // Only a symlink whose realpath is missing is a dangling entry.
-    if (isSymlink) unavailable(file, error)
-    // Bun 1.4 can fail realpath for regular files during a concurrent atomic replace.
-    try {
-      return join(await SettingsFs.realpath(dirname(file)), basename(file))
-    } catch (parentError) {
-      unavailable(file, parentError)
-    }
+    unavailable(file, error)
   }
 }
 

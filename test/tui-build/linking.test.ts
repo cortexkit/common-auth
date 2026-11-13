@@ -16,6 +16,7 @@ const sharedSources = [
   'dist/fs/index.js',
   'dist/fs/private-files.js',
   'dist/fs/atomic-write.js',
+  'dist/fs/canonical-file-path.js',
   'dist/fs/lock-constants.js',
   'dist/fs/lock-record.js',
   'dist/fs/with-lock.js',
