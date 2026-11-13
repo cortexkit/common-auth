@@ -2,10 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import * as syncFs from 'node:fs'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
-import {
-  canonicalFilePath,
-  canonicalFilePathSync,
-} from '../../src/fs/canonical-file-path.js'
+// Through the public ./fs entry, which other plugins import.
+import { canonicalFilePath, canonicalFilePathSync } from '../../src/fs/index.js'
 import { makeTempDir } from '../fixtures/scratch.js'
 
 let root: string

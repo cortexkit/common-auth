@@ -9,7 +9,15 @@ type FilePathSyncFs = Pick<
 >
 const maxSymlinkHops = 40
 
-/** Resolve file aliases without realpath on an atomically replaced file. */
+/**
+ * Canonical path of a file that other processes may replace by write-and-rename.
+ *
+ * On Linux, Bun's realpath on such a file can answer "<file> (deleted)" (Bun
+ * 1.3) or ENOENT (Bun 1.4) during the rename. So this resolves the folder with
+ * realpath and appends the name, then follows a file symlink one readlink hop at
+ * a time, at most 40 hops. A missing file resolves to its would-be path; a
+ * dangling link or a loop throws. Pass `node:fs/promises` (or a test double).
+ */
 export async function canonicalFilePath(
   file: string,
   fs: FilePathFs,
@@ -32,7 +40,7 @@ export async function canonicalFilePath(
   }
 }
 
-/** Synchronous counterpart for watcher registration before the first write. */
+/** Synchronous counterpart of canonicalFilePath; pass `node:fs`. */
 export function canonicalFilePathSync(
   file: string,
   fs: FilePathSyncFs,

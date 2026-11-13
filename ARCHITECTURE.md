@@ -45,7 +45,7 @@ Paths below are relative to the repository root.
 | `./quota-sidebar`, `./tui`, `./tui-build`, `./tui-prefs`, `./sidebar-file` | same names | The shared sidebar frame, TUI loading and build, TUI preferences, the sidebar state file. |
 | `./routing-accessor` | `src/routing-accessor/` | Optional Thalamus routing advice and refusals, plugin reports (results, billing, waits), cache policy and turn notes. |
 | `./cachekeep` | `src/cachekeep/` | The keep-warm scheduler and the cache-policy decision. |
-| `./fs` | `src/fs/` | Atomic writes, file locks and leases, Windows owner-only files, a read cache. |
+| `./fs` | `src/fs/` | Atomic writes, file locks and leases, Windows owner-only files, a read cache, and the canonical path of a file other processes replace (`canonicalFilePath`). |
 | `./logger`, `./redaction`, `./dump`, `./rpc` | same names | Logging, credential redaction, request dumps, the loopback RPC. |
 
 `docs/adoption-inventory.md` lists every export and its parameters for adopting plugins; `docs/host-vault.md` and `docs/session-cache-policy.md` describe two opt-in contracts. `STRUCTURE.md` has the file map.
