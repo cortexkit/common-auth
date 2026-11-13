@@ -9,6 +9,7 @@ import {
   type ClaustrumScopedClient,
   ClaustrumScopedCustody,
   ClaustrumUnreachableError,
+  classifyVaultFailure,
   connectClaustrumScopedClient,
   declineVaultRoute,
   mutateVaultRoster,
@@ -304,9 +305,17 @@ test('kept receipt is dropped on disconnect even without a discovery poll', asyn
   await expect(s.send()).rejects.toMatchObject({ kind: 'not-active' })
   s.setActive(true)
   s.record.refuse = 'unavailable'
-  await expect(s.afterWait(s.send())).rejects.toMatchObject({
-    code: 'unavailable',
-  })
+  const served = s.sends.length
+  // The disconnect closed the custody, so this send reconnects. Whether that
+  // reconnect has landed decides which unreachable error arrives: the vault's
+  // own `unavailable` refusal, or a transport loss. Either way the kept
+  // receipt must not serve.
+  const error = await s.afterWait(s.send()).then(
+    () => undefined,
+    (failure: unknown) => failure,
+  )
+  expect(classifyVaultFailure(error)).toBe('unreachable')
+  expect(s.sends.length).toBe(served)
 })
 
 test('kept receipt is dropped when enrollment token disappears', async () => {
