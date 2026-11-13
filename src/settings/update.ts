@@ -2,6 +2,7 @@ import { basename, dirname, join } from 'node:path'
 import { ensurePrivateDirectory } from '../fs/private-files.js'
 import { withLock } from '../fs/with-lock.js'
 import type { SettingsDefinition } from './define.js'
+import { deepFreeze } from './descriptors.js'
 import {
   applySettingsEdits,
   type SettingsEdit,
@@ -14,6 +15,18 @@ import { parseSettings } from './parse.js'
 import { SettingsRefusal } from './refusal.js'
 import type { GetOptions } from './resolve.js'
 import { writeSettings } from './write.js'
+
+export type SettingsCurrent =
+  | { readonly status: 'missing' }
+  | {
+      readonly status: 'ready'
+      readonly document: Readonly<Record<string, unknown>>
+    }
+
+/** Compute edits synchronously from an immutable copy read under the write lock. */
+export type SettingsUpdatePlan = (
+  current: SettingsCurrent,
+) => readonly SettingsEdit[]
 
 const SETTINGS_WRITE_LOCK = Object.freeze({
   name: 'settings-write',
@@ -56,7 +69,7 @@ async function writeTarget(file: string): Promise<string> {
 export async function updateSettings(
   definition: SettingsDefinition,
   options: OpenSettingsOptions,
-  edits: readonly SettingsEdit[],
+  edits: readonly SettingsEdit[] | SettingsUpdatePlan,
   context: Pick<GetOptions, 'host' | 'model'>,
 ): Promise<UpdateResult> {
   if (options.separateInstall) {
@@ -127,6 +140,30 @@ export async function updateSettings(
               'settings-newer-version',
               'Settings were written by a newer version',
             )
+          }
+          if (typeof edits === 'function') {
+            const planned = edits(
+              deepFreeze<SettingsCurrent>(
+                missing
+                  ? { status: 'missing' }
+                  : {
+                      status: 'ready',
+                      document: structuredClone(parsed.value),
+                    },
+              ),
+            )
+            if (
+              planned !== null &&
+              (typeof planned === 'object' || typeof planned === 'function') &&
+              'then' in planned &&
+              typeof planned.then === 'function'
+            ) {
+              throw new SettingsRefusal(
+                'settings-invalid-value',
+                'Settings update plans must be synchronous',
+              )
+            }
+            edits = planned
           }
           if (!parsed.tree) {
             source = `${parsed.hasBom ? '\uFEFF' : ''}// ${definition.plugin} settings\n{\n  "schema_version": 1\n}\n`

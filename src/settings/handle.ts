@@ -13,7 +13,7 @@ import {
   type ReportEntry,
   type SettingsSnapshot,
 } from './snapshot.js'
-import { updateSettings } from './update.js'
+import { type SettingsUpdatePlan, updateSettings } from './update.js'
 
 export interface LegacyProjectSource {
   readonly path: string
@@ -41,7 +41,7 @@ export interface SettingsHandle<
   ): Promise<ValueOf<S[K]['value']>>
   report(): ReportEntry[]
   update(
-    edits: readonly SettingsEdit[],
+    edits: readonly SettingsEdit[] | SettingsUpdatePlan,
     options: Pick<GetOptions, 'host' | 'model'>,
   ): Promise<UpdateResult>
   watch(onChange: () => void): () => void

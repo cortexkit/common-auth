@@ -976,7 +976,7 @@ The folder rule uses only absolute values:
 | `read` | Optional `{ project?: string }`. | `Promise<void>`. Refreshes the user file and, when supplied, that project's file. Bad files become report entries, not content errors thrown to the caller. |
 | `get` | `(name, { host: string, model?: string, project?: string })`; the second argument is `GetOptions`. | `Promise<ValueOf<...>>` for the declared setting. Refreshes files first. An undeclared name throws `TypeError`. |
 | `report` | No arguments. | A copied `ReportEntry[]` for the user file and selected project sources read by this handle. |
-| `update` | `(edits: readonly SettingsEdit[], { host: string, model?: string })`. | `Promise<UpdateResult>`: `{ outcome: 'updated' \| 'unchanged' }`, or a refusal below. Writes only the user file. |
+| `update` | `(edits: readonly SettingsEdit[] \| SettingsUpdatePlan, { host: string, model?: string })`. | `Promise<UpdateResult>`: `{ outcome: 'updated' \| 'unchanged' }`, or a refusal below. Writes only the user file. |
 | `watch` | `(onChange: () => void)`. | A disposer. Watches the user file through the shared preferences watcher (`./tui-prefs`), with polling recovery. It does not watch project files. Reads remain authoritative even if an event is missed. |
 
 Resolution is project file `<project>/.cortexkit/<plugin>.jsonc`, then user file,
@@ -1027,6 +1027,15 @@ fields of an object or record setting from its root. It is not a list index or a
 override selector. Without `path`, the edit chooses the existing model override
 that decides for this context, else the existing host override, else `default` in
 an existing override object. A setting holding a plain value stays top-level.
+
+Use `update(plan, options)` for whole-list settings or to restore protection values
+(such as killswitches and account floors saved in plugin memory) only when the
+file is missing: `SettingsUpdatePlan` computes edits once under
+the write lock from `SettingsCurrent`, either `{ status: 'missing' }` (only with
+`createMissing: true`) or `{ status: 'ready', document }`, a deeply frozen plain
+copy of the parsed document (an empty file gives `{}`). The plan must be
+synchronous and pure; a thenable result refuses with `settings-invalid-value`,
+and a thrown value propagates unchanged without writing.
 
 All edits are validated. Writes preserve unknown keys, key order and unrelated
 comments. Removal deletes only the selected member, its comma and its same-line
