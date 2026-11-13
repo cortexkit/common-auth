@@ -241,6 +241,44 @@ describe('settings update', () => {
     },
   )
 
+  test.each([1, 2])(
+    'a regular file realpath ENOENT on resolution %i uses its canonical parent',
+    async (failedResolution) => {
+      const parent = join(root, 'actual')
+      const alias = join(root, 'alias')
+      await fs.mkdir(parent)
+      await fs.symlink(parent, alias, 'dir')
+      file = join(alias, 'example.jsonc')
+      await fs.writeFile(file, '{"x":1}')
+      const canonical = join(await fs.realpath(root), 'actual', 'example.jsonc')
+      const paths: unknown[] = []
+      let resolutions = 0
+      const lock = spyOn(locks, 'withLock')
+      restoreSpies.push(() => lock.mockRestore())
+      setSettingsFsForTest({
+        realpath: realpathOverride(async (path) => {
+          paths.push(path)
+          if (path === file && ++resolutions === failedResolution)
+            throw fault('ENOENT')
+          return fs.realpath(path)
+        }),
+      })
+      const lstat = spyOn(SettingsFs, 'lstat')
+      restoreSpies.push(() => lstat.mockRestore())
+      expect((await fs.lstat(file)).isFile()).toBe(true)
+      expect(await handle().update(edit, context)).toEqual({
+        outcome: 'updated',
+      })
+      expect(lock.mock.calls[0]?.[0]).toBe(canonical)
+      expect(lstat).toHaveBeenCalledTimes(1)
+      expect(lstat).toHaveBeenCalledWith(file)
+      expect(paths).toEqual(
+        failedResolution === 1 ? [file, alias, file] : [file, file, alias],
+      )
+      expect(await contents(canonical)).toEqual({ x: 2 })
+    },
+  )
+
   test('a missing target uses its real parent and parent-resolution errors keep their cause', async () => {
     const cause = fault('EACCES')
     setSettingsFsForTest({
