@@ -61,12 +61,12 @@ describe.each(['async', 'sync'])('%s canonical file paths', (mode) => {
     expect(await fs.readdir(root)).toEqual(['link'])
   })
 
-  test('file symlink loops have a bounded traversal', async () => {
+  test('file symlink loops have a bounded traversal and refuse as ELOOP', async () => {
     const first = join(root, 'first')
     await fs.symlink('second', first, 'file')
     await fs.symlink('first', join(root, 'second'), 'file')
     await expect(
       Promise.resolve().then(() => canonical(first)),
-    ).rejects.toThrow('Too many file symlink hops')
+    ).rejects.toMatchObject({ code: 'ELOOP', path: first })
   })
 })

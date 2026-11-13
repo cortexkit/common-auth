@@ -9,6 +9,14 @@ type FilePathSyncFs = Pick<
 >
 const maxSymlinkHops = 40
 
+// Same shape as Node's realpath ELOOP, so callers that branch on `code` keep working.
+function symlinkLoop(file: string): NodeJS.ErrnoException {
+  return Object.assign(
+    new Error(`ELOOP: too many symbolic links encountered, realpath '${file}'`),
+    { code: 'ELOOP', syscall: 'realpath', path: file },
+  )
+}
+
 /**
  * Canonical path of a file that other processes may replace by write-and-rename.
  *
@@ -35,7 +43,7 @@ export async function canonicalFilePath(
       throw error
     }
     if (!isSymlink) return target
-    if (hops >= maxSymlinkHops) throw new Error('Too many file symlink hops')
+    if (hops >= maxSymlinkHops) throw symlinkLoop(file)
     target = resolve(dirname(target), await fs.readlink(target))
   }
 }
@@ -57,7 +65,7 @@ export function canonicalFilePathSync(
       throw error
     }
     if (!isSymlink) return target
-    if (hops >= maxSymlinkHops) throw new Error('Too many file symlink hops')
+    if (hops >= maxSymlinkHops) throw symlinkLoop(file)
     target = resolve(dirname(target), fs.readlinkSync(target))
   }
 }
