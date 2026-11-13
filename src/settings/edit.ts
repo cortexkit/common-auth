@@ -18,6 +18,7 @@ import { SettingsRefusal } from './refusal.js'
 export type SettingsEdit = {
   setting: string
   path?: readonly string[]
+  level?: 'default' | 'opencode' | 'pi'
 } & ({ value: unknown; remove?: never } | { remove: true; value?: never })
 
 export interface UpdateResult {
@@ -84,7 +85,13 @@ function destination(
   setting: string,
   value: unknown,
   { host, model }: EditContext,
+  level?: SettingsEdit['level'],
 ): string[] {
+  if (level !== undefined) {
+    return level === 'default' && !isJsonObject(value)
+      ? [setting]
+      : [setting, level]
+  }
   if (declaration.overrides !== undefined && isJsonObject(value)) {
     if (
       declaration.overrides.model &&
@@ -130,6 +137,25 @@ function checkPath(parsed: ParsedSettings, path: string[]): void {
       parsed.tree && findNodeAtLocation(parsed.tree, path.slice(0, length))
     if (node && node.type !== 'object') invalid()
   }
+}
+
+function preservePlainDefault(
+  parsed: ParsedSettings,
+  setting: string,
+): ParsedSettings {
+  const node = parsed.tree && findNodeAtLocation(parsed.tree, [setting])
+  if (!node) invalid()
+  // Keep the original value text so comments inside a list survive promotion.
+  const value = parsed.text.slice(node.offset, node.offset + node.length)
+  return parseForEdit(
+    applyEdits(parsed.text, [
+      {
+        offset: node.offset,
+        length: node.length,
+        content: `{ "default": ${value} }`,
+      },
+    ]),
+  )
 }
 
 /** Remove only the member's own tokens; intervening comment lines belong to neither neighbor. */
@@ -230,6 +256,17 @@ export function applySettingsEdits(
   for (const edit of edits) {
     if (!Object.hasOwn(definition.settings, edit.setting)) invalid()
     const declaration = definition.settings[edit.setting] as SettingDeclaration
+    if (edit.level !== undefined) {
+      if (edit.path !== undefined) invalid()
+      if (edit.level === 'default') {
+        if (declaration.overrides === undefined) invalid()
+      } else if (
+        (edit.level !== 'opencode' && edit.level !== 'pi') ||
+        !declaration.overrides?.host
+      ) {
+        invalid()
+      }
+    }
     if (
       edit.path !== undefined &&
       declaration.value.kind !== 'object' &&
@@ -246,6 +283,22 @@ export function applySettingsEdits(
   const units: ResolutionUnit[] = []
   for (const edit of edits) {
     const declaration = definition.settings[edit.setting] as SettingDeclaration
+    if (
+      edit.level !== undefined &&
+      edit.level !== 'default' &&
+      !isJsonObject(working.value[edit.setting])
+    ) {
+      if (edit.remove === true) continue
+      if (Object.hasOwn(working.value, edit.setting)) {
+        working = preservePlainDefault(working, edit.setting)
+      }
+      // Earlier root edits now refer to the override's default, if it exists.
+      for (const unit of units) {
+        if (unit.path.length === 1 && unit.path[0] === edit.setting) {
+          unit.path.push('default')
+        }
+      }
+    }
     const base =
       edit.path !== undefined
         ? [edit.setting]
@@ -254,6 +307,7 @@ export function applySettingsEdits(
             edit.setting,
             working.value[edit.setting],
             context,
+            edit.level,
           )
     const path = [...base, ...(edit.path ?? [])]
     checkPath(working, path)

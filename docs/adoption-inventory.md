@@ -1021,10 +1021,10 @@ The report remains available to show in the menu.
 The envelope starts at `schema_version: 1`; an absent version is read as 1.
 `$schema` is ignored by resolution and may point an editor at the plugin's schema.
 
-**Menu writes.** `SettingsEdit` is `{ setting: string, path?: readonly string[] }`
+**Menu writes.** `SettingsEdit` is `{ setting: string, path?: readonly string[], level?: 'default' | 'opencode' | 'pi' }`
 plus either `{ value: unknown }` or `{ remove: true }`, never both. A `path` edits
 fields of an object or record setting from its root. It is not a list index or an
-override selector. Without `path`, the edit chooses the existing model override
+override selector. Without `path` or `level`, the edit chooses the existing model override
 that decides for this context, else the existing host override, else `default` in
 an existing override object. A setting holding a plain value stays top-level.
 
@@ -1036,6 +1036,9 @@ the write lock from `SettingsCurrent`, either `{ status: 'missing' }` (only with
 copy of the parsed document (an empty file gives `{}`). The plan must be
 synchronous and pure; a thenable result refuses with `settings-invalid-value`,
 and a thrown value propagates unchanged without writing.
+Use an edit's explicit `level` to restore distinct default and host protection
+values rather than choosing the current-context destination; it requires declared
+overrides (host overrides for a host level) and cannot be combined with `path`.
 
 All edits are validated. Writes preserve unknown keys, key order and unrelated
 comments. Removal deletes only the selected member, its comma and its same-line

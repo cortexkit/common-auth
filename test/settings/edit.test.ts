@@ -99,6 +99,7 @@ describe('settings edit validation', () => {
       {
         setting: string
         path?: readonly string[]
+        level?: 'default' | 'opencode' | 'pi'
       } & ({ value: unknown; remove?: never } | { remove: true; value?: never })
     >()
     expectTypeOf<UpdateResult>().toEqualTypeOf<{
