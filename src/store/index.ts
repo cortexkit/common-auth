@@ -98,4 +98,4 @@ export type {
   UpdateSettingsOptions,
   UpdateSettingsResult,
 } from './settings.js'
-export { POOL_OWNED_KEYS } from './settings.js'
+export { POOL_OWNED_KEYS, readPoolSettingsAt } from './settings.js'

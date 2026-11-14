@@ -1,11 +1,20 @@
 import { beforeEach, describe, expect, spyOn } from 'bun:test'
 import * as fs from 'node:fs/promises'
-import { rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
+import {
+  readdir,
+  rename,
+  stat,
+  unlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import {
   type LockEvent,
   POOL_KEY,
   POOL_OWNED_KEYS,
   type PoolSettings,
+  readPoolSettingsAt,
 } from '../../src/store/index.js'
 import { loadAccounts } from '../fixtures/legacy-openai-auth/accounts.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
@@ -135,6 +144,34 @@ describe('readSettings', () => {
       status: 'pending-migration',
       settings: { logging: { level: 'debug' } },
     })
+  })
+})
+
+describe('readPoolSettingsAt', () => {
+  it('reads the settings at an exact path as a store does, creating nothing', async () => {
+    await populate()
+    const folder = dirname(s.configPath)
+    const before = (await readdir(folder)).sort()
+    expect(await readPoolSettingsAt(s.configPath)).toEqual(
+      await s.open().readSettings(),
+    )
+    expect(await readPoolSettingsAt(s.configPath)).toEqual({
+      status: 'ready',
+      settings: { main: { type: 'opencode' }, logging: { level: 'info' } },
+    })
+    // Only the named file is read: another file in the folder is never consulted.
+    const other = join(folder, 'other-config.json')
+    await writeFile(other, JSON.stringify({ logging: { level: 'warn' } }))
+    expect(await readPoolSettingsAt(other)).toEqual({
+      status: 'ready',
+      settings: { logging: { level: 'warn' } },
+    })
+    await unlink(other)
+    expect(await readPoolSettingsAt(join(folder, 'missing.json'))).toEqual({
+      status: 'ready',
+      settings: {},
+    })
+    expect((await readdir(folder)).sort()).toEqual(before)
   })
 })
 
