@@ -1600,4 +1600,11 @@ describe('earliest-pool-engine conformance (maxSameAccountWait: 0)', () => {
       }
     },
   )
+  test('a newer dated reading clears covered marks, while a success still does not', () => {
+    // antigravity-auth #69: the plugin removes a pool's marks when a newer dated
+    // reading shows quota, so the preset declares it. Success-only clearing
+    // stays off, because Antigravity refuses before sending.
+    expect(earliestPoolEngine.readingClearsCoveredScopes).toBe('on')
+    expect(earliestPoolEngine.successClearsCoveredScopes).toBe('off')
+  })
 })

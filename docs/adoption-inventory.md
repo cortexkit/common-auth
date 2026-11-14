@@ -1343,6 +1343,25 @@ signal with `toOpenCode2LimitSignal`, rather than replacing that host type.
 | `window-router` | openai-auth | disabled; baseline terminal metadata |
 | `status-vault-order` | claustrum-auth | disabled; baseline terminal metadata |
 
+**Antigravity long resets and readings.** `earliestPoolEngine` sets
+`readingClearsCoveredScopes: 'on'`, and antigravity-auth applies two rules with it.
+
+- **Long resets need a reading.** A `QUOTA_EXHAUSTED` reset longer than the
+  failure ladder's longest step stands only when a dated quota reading for that
+  model's pool shows 0% remaining. Otherwise the plugin stores the ordinary
+  ladder mark. Google can state a multi-day reset for one oversized request
+  while the pool still has quota, and that reset would otherwise block small
+  requests too.
+- **A newer reading clears.** A dated reading above 0% that is newer than a mark
+  removes that pool's marks, under the mark's own lock. A mark written after the
+  reading stays. In vault mode, a reading insula still serves after its last
+  provider check failed counts by its own `checkedAt`, never by when it was
+  served. A newer 0% reading only lengthens an existing mark and never creates
+  one.
+
+The axis is descriptive: the plugin implements both rules, and no shared
+function reads it yet.
+
 **Confirmed payment balance.** `statusVaultOrder` consumes a plugin-supplied
 `payment-balance` signal, never a bare 402 or a provider body. It marks and
 advances in vault order, defaulting to five minutes rather than the rate-limit

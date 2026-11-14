@@ -110,7 +110,7 @@ export const confirmedAffinity: LimitAxes = immutable<LimitAxes>({
 export const earliestPoolEngine: LimitAxes = immutable<LimitAxes>({
   evidence: 'typed',
   markers: hosts(ANTIGRAVITY_FAILURE_LADDER),
-  readingClearsCoveredScopes: 'off',
+  readingClearsCoveredScopes: 'on',
   successClearsCoveredScopes: 'off',
   unknown: hosts(reselect),
   shortLimit: {
