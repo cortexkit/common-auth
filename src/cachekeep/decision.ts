@@ -8,6 +8,12 @@ export type CacheKeepDecisionInput = {
   /** All times and the cache lifetime are in milliseconds. */
   now: number
   ttlMs: number
+  /**
+   * How long before expiry the warm falls due, so a slow or failed send still
+   * has time for retries before the cache lapses. Capped at half the lifetime.
+   * Default 30 s, which leaves room for a single send.
+   */
+  leadMs?: number
   lastRealRequestAt: number
   lastWarmAt?: number
   /** The caller resets the count and costs on every real request. */
@@ -58,6 +64,7 @@ export function decideCacheKeep(
     mode,
     now,
     ttlMs,
+    leadMs = 30_000,
     lastRealRequestAt,
     lastWarmAt,
     warmsSinceLastRealRequest,
@@ -85,7 +92,9 @@ export function decideCacheKeep(
 
   const last = Math.max(lastRealRequestAt, lastWarmAt ?? lastRealRequestAt)
   const expiresAt = last + ttlMs
-  const due = expiresAt - Math.min(30_000, ttlMs / 2)
+  const lead =
+    Number.isFinite(leadMs) && leadMs > 0 ? Math.min(leadMs, ttlMs / 2) : 30_000
+  const due = expiresAt - lead
   const at = Math.max(now, due)
   // Replaying inside the expiry margin risks paying for a cold cache rewrite.
   if (at >= expiresAt - Math.min(5_000, ttlMs / 10)) {

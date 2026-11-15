@@ -114,6 +114,13 @@ export interface CacheKeepManagerOptions<M> {
   ttlMs?: number
   /** Warm this long before the cache expires. Default one tick plus 15 s. */
   leadMs?: number
+  /**
+   * How long before expiry a planned warm (a session with a cache plan) falls
+   * due, capped at half the cache lifetime. Default 30 s, which leaves room
+   * for only one send. Set it longer, for example 5 minutes, when a slow send
+   * needs room for retries before the cache lapses.
+   */
+  planLeadMs?: number
   /** Idle bound for main sessions, from their last real request. Default 1 h. */
   maxIdleWarmMs?: number
   /** Idle bound for subagent sessions. Default 30 minutes. */
@@ -262,6 +269,7 @@ export class CacheKeepManager<M = undefined> {
   private readonly log: CacheKeepLogger | undefined
   private readonly ttlMs: number
   private readonly leadMs: number
+  private readonly planLeadMs: number | undefined
   private readonly maxIdleWarmMs: number
   private readonly maxSubagentIdleMs: number
   private readonly tickIntervalMs: number
@@ -294,6 +302,7 @@ export class CacheKeepManager<M = undefined> {
     // One tick of slack so a target that becomes due between ticks is still
     // warmed before its cache expires.
     this.leadMs = positive(options.leadMs, this.tickIntervalMs + 15_000)
+    this.planLeadMs = options.planLeadMs
     this.maxIdleWarmMs = positive(
       options.maxIdleWarmMs,
       DEFAULT_MAX_IDLE_WARM_MS,
@@ -649,6 +658,9 @@ export class CacheKeepManager<M = undefined> {
               : { mode: plan.mode }),
             now: this.now(),
             ttlMs: target.ttlMs,
+            ...(this.planLeadMs !== undefined
+              ? { leadMs: this.planLeadMs }
+              : {}),
             lastRealRequestAt: target.lastRealRequestAt,
             lastWarmAt: target.lastWarmedAt,
             warmsSinceLastRealRequest: target.warmCount,

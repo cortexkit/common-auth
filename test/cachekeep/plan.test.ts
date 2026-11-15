@@ -1,7 +1,7 @@
 import { describe, expect, mock } from 'bun:test'
 import type { CacheKeepPlan } from '../../src/cachekeep/index.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
-import { body, DUE_MS, fakeNow, makeManager } from './helpers.js'
+import { body, DUE_MS, fakeNow, makeManager, TTL_MS } from './helpers.js'
 
 const hooks = lifetimeHooks()
 const { test } = hooks
@@ -89,6 +89,36 @@ describe('CacheKeepManager session plans', () => {
     clock.advance(DUE_MS - DUE)
     await mgr.tick()
     expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  test('planLeadMs gives a planned warm room to retry a timed-out send', async () => {
+    let attempts = 0
+    const { mgr, send, clock, advance } = harness(
+      { planLeadMs: 120_000 },
+      {
+        plan: () => ({ mode: 'always' }),
+        send: async () => {
+          if (++attempts === 1)
+            throw new DOMException('send timed out', 'TimeoutError')
+          return new Response('{}')
+        },
+      },
+    )
+    const start = clock.now()
+    track()
+    await advance(180_000 - 1)
+    expect(send).not.toHaveBeenCalled()
+    await advance(1)
+    expect(send).toHaveBeenCalledTimes(1)
+    await advance(20_000)
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(clock.now()).toBeLessThan(start + TTL_MS)
+    expect(mgr.status().targets[0]?.lastWarmedAt).toBe(start + 200_000)
+    expect(mgr.status().targets[0]?.failures).toBe(0)
+
+    function track() {
+      mgr.track({ sessionKey: 'session', bodyText: body('session') })
+    }
   })
 
   test('off refuses capture, drops an existing target and only reports if warmed', async () => {

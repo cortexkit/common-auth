@@ -90,6 +90,25 @@ describe('decideCacheKeep', () => {
     expect(decideCacheKeep({ ...base, now: 600_000 })).toEqual(stop('cost-cap'))
   })
 
+  test('a caller lead moves the due time earlier, capped at half the lifetime', () => {
+    expect(
+      decideCacheKeep({ ...base, ttlMs: 3_600_000, leadMs: 300_000, now: 0 }),
+    ).toEqual({ action: 'wait', until: 3_300_000 })
+    expect(decideCacheKeep({ ...base, leadMs: 300_000, now: 0 })).toEqual({
+      action: 'wait',
+      until: 150_000,
+    })
+    // The safety margin is unchanged: a late timer still warms until it.
+    expect(decideCacheKeep({ ...base, leadMs: 300_000, now: 294_999 })).toEqual(
+      { action: 'warm', at: 294_999 },
+    )
+    for (const leadMs of [0, -1, Number.NaN])
+      expect(decideCacheKeep({ ...base, leadMs, now: 0 })).toEqual({
+        action: 'wait',
+        until: 270_000,
+      })
+  })
+
   test('short TTLs use half-TTL lead and one-tenth-TTL safety margin', () => {
     expect(decideCacheKeep({ ...base, ttlMs: 10_000, now: 0 })).toEqual({
       action: 'wait',
