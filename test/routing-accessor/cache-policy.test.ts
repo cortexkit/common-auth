@@ -319,6 +319,7 @@ describe('cache reports', () => {
     expect(CACHE_WARM_STOP_REASONS).toEqual([
       'cost-cap',
       'count-cap',
+      'deadline-missed',
       'outside-hours',
       'session-ended',
       'unsupported',

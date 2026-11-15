@@ -85,9 +85,15 @@ describe('decideCacheKeep', () => {
       action: 'warm',
       at: 294_999,
     })
-    expect(decideCacheKeep({ ...base, now: 295_000 })).toEqual(stop('cost-cap'))
-    expect(decideCacheKeep({ ...base, now: 300_000 })).toEqual(stop('cost-cap'))
-    expect(decideCacheKeep({ ...base, now: 600_000 })).toEqual(stop('cost-cap'))
+    expect(decideCacheKeep({ ...base, now: 295_000 })).toEqual(
+      stop('deadline-missed'),
+    )
+    expect(decideCacheKeep({ ...base, now: 300_000 })).toEqual(
+      stop('deadline-missed'),
+    )
+    expect(decideCacheKeep({ ...base, now: 600_000 })).toEqual(
+      stop('deadline-missed'),
+    )
   })
 
   test('a caller lead moves the due time earlier, capped at half the lifetime', () => {
@@ -119,8 +125,12 @@ describe('decideCacheKeep', () => {
       at: 8_999,
     })
     expect(decideCacheKeep({ ...base, ttlMs: 10_000, now: 9_000 })).toEqual(
-      stop('cost-cap'),
+      stop('deadline-missed'),
     )
+    // An unusable lead falls back to 30 s, still capped at half the lifetime.
+    expect(
+      decideCacheKeep({ ...base, ttlMs: 10_000, leadMs: Number.NaN, now: 0 }),
+    ).toEqual({ action: 'wait', until: 5_000 })
   })
 
   test.each(['always', 'hours'] as const)(
@@ -225,7 +235,7 @@ describe('decideCacheKeep', () => {
     ).toEqual({ action: 'warm', at: 270_000 })
     expect(
       decideCacheKeep({ ...base, mode: 'auto', ...prices, now: 295_000 }),
-    ).toEqual(stop('cost-cap'))
+    ).toEqual(stop('deadline-missed'))
   })
 
   test.each([0, -1, NaN, Infinity])(

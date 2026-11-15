@@ -75,12 +75,13 @@ times and the lifetime are milliseconds. It returns:
 - `{ action: 'stop', reason }`: retire the warm plan until a later real request
   establishes new state.
 
-The next due time is `last + ttlMs - min(30_000, ttlMs / 2)`, where `last` is the
-later of the real request and the last warm. This is 4m30s for a five-minute
-cache, or 59m30s for a one-hour cache. A delayed timer may still warm, but not
-at or inside the final `min(5_000, ttlMs / 10)` before expiry. That cache is
-considered lost: the rule stops with **`cost-cap`**, rather than replaying into a
-potentially cold cache. For implicit caches, supply the plugin's own estimated
+The next due time is `last + ttlMs - min(leadMs, ttlMs / 2)`, where `last` is the
+later of the real request and the last warm, and `leadMs` defaults to 30 s. This
+is 4m30s for a five-minute cache, or 59m30s for a one-hour cache. A longer
+`leadMs` (the manager's `planLeadMs`) leaves room for retries. A delayed timer
+may still warm, but not at or inside the final `min(5_000, ttlMs / 10)` before
+expiry. That cache is considered lost: the rule stops with
+**`deadline-missed`**, rather than replaying into a potentially cold cache. For implicit caches, supply the plugin's own estimated
 lifetime.
 
 `hours` checks both the due time and the actual send time in its explicit zone;
@@ -134,8 +135,9 @@ The manager calls these without awaiting them and reports stops only for targets
 that have actually warmed. Besides the stop reasons `decideCacheKeep` returns, it reports
 `session-ended` (the plan or the session went away), `evicted` (dropped to make
 room under the target or byte caps), `stopped` (the manager was stopped),
-`account-changed` (the session now routes to another account), `expired`, and
-`idle`. Real requests reset count, costs and warm timestamps,
+`account-changed` (the session now routes to another account), `expired` (an
+unplanned target whose cache lapsed), `deadline-missed` (a planned target whose
+cache lapsed before its warm completed), and `idle`. Real requests reset count, costs and warm timestamps,
 but do not erase the fact that a target warmed earlier in its life.
 
 ## Report after handing the reply to the host
@@ -157,9 +159,11 @@ reportCacheWarmStopped(sessionId, {
 
 Touches become exactly `{ kind: 'cache_touch', at, ttl_ms, source }`, with the
 lifetime actually applied by the provider. Stops become exactly
-`{ kind: 'cache_warm_stopped', at, reason }`. Known stop reasons are `cost-cap`,
-`count-cap`, `outside-hours`, `session-ended`, and `unsupported`, the reasons
-the llm-runner contract defines; any other string is also accepted, for reasons
+`{ kind: 'cache_warm_stopped', at, reason }`. Known stop reasons are `cost-cap` (only
+`auto`'s cost cap), `count-cap`, `deadline-missed` (a due warm could not complete
+before the cache expired, a timing failure), `outside-hours`, `session-ended`, and
+`unsupported`, the reasons the llm-runner contract defines (since llm-runner
+0.8.56 for `deadline-missed`); any other string is also accepted, for reasons
 it adds later. Report stops only after the session has
 actually warmed. Both helpers are synchronous fire-and-forget, absorb all bridge
 failures, and never retry. The bridge itself retains and resends the newest

@@ -1742,10 +1742,10 @@ sent. If both lifetime members are supplied, neither is sent, but valid warming
 state is kept. Missing facts mean unknown, never a default.
 
 `warming` is sent only when `on` is a boolean. `stopReason` becomes `stop_reason`
-only when `on` is false and the reason is `cost-cap`, `count-cap`, `outside-hours`,
-`session-ended` or `unsupported`; an unknown reason or a reason with `on: true`
-is omitted without dropping `on`. `CACHE_WARM_STOP_REASONS` lists those five
-reasons, and `isCacheWarmStopReason(value)` guards them. `CacheWarmStopReason`
+only when `on` is false and the reason is `cost-cap`, `count-cap`,
+`deadline-missed` (since 0.51.0), `outside-hours`, `session-ended` or
+`unsupported`; an unknown reason or a reason with `on: true` is omitted without
+dropping `on`. `CACHE_WARM_STOP_REASONS` lists those six reasons, and `isCacheWarmStopReason(value)` guards them. `CacheWarmStopReason`
 still accepts future strings, and `reportCacheWarmStopped` still forwards any
 string unchanged; only billing has the closed reason set. No other cache or
 warming members are copied. An empty sanitized cache object is omitted, and

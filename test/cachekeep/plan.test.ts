@@ -121,6 +121,27 @@ describe('CacheKeepManager session plans', () => {
     }
   })
 
+  test('a planned target whose cache lapsed before its warm reports deadline-missed', async () => {
+    let attempts = 0
+    const { mgr, send, onWarmStopped, advance } = harness(
+      {},
+      {
+        plan: () => ({ mode: 'always' }),
+        // The second warm fails without a fast retry, so the cache lapses.
+        send: async () =>
+          new Response('{}', { status: ++attempts === 1 ? 200 : 400 }),
+      },
+    )
+    mgr.track({ sessionKey: 'session', bodyText: body('session') })
+    await advance(2 * DUE)
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(mgr.status().tracked).toBe(1)
+    await advance(30 * 60_000)
+    expect(mgr.status().tracked).toBe(0)
+    expect(onWarmStopped).toHaveBeenCalledTimes(1)
+    expect(onWarmStopped.mock.calls[0]?.[1].reason).toBe('deadline-missed')
+  })
+
   test('off refuses capture, drops an existing target and only reports if warmed', async () => {
     let plan: CacheKeepPlan = { mode: 'off' }
     const { mgr, send, track, warm, onWarmStopped, clock } = harness(

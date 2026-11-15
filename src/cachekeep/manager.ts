@@ -581,7 +581,7 @@ export class CacheKeepManager<M = undefined> {
       cacheExpiresAt: target.cacheExpiresAt,
       failures: target.failures,
     })
-    this.drop(sessionKey, target.plan ? 'cost-cap' : 'expired')
+    this.drop(sessionKey, target.plan ? 'deadline-missed' : 'expired')
     return true
   }
 

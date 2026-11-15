@@ -92,13 +92,16 @@ export function decideCacheKeep(
 
   const last = Math.max(lastRealRequestAt, lastWarmAt ?? lastRealRequestAt)
   const expiresAt = last + ttlMs
-  const lead =
-    Number.isFinite(leadMs) && leadMs > 0 ? Math.min(leadMs, ttlMs / 2) : 30_000
+  const lead = Math.min(
+    Number.isFinite(leadMs) && leadMs > 0 ? leadMs : 30_000,
+    ttlMs / 2,
+  )
   const due = expiresAt - lead
   const at = Math.max(now, due)
-  // Replaying inside the expiry margin risks paying for a cold cache rewrite.
+  // Replaying inside the expiry margin risks paying for a cold cache rewrite,
+  // so a warm that can no longer start in time stops as a missed deadline.
   if (at >= expiresAt - Math.min(5_000, ttlMs / 10)) {
-    return { action: 'stop', reason: 'cost-cap' }
+    return { action: 'stop', reason: 'deadline-missed' }
   }
   if (
     mode === 'hours' &&

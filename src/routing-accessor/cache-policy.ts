@@ -23,6 +23,7 @@ export interface SessionToolWait {
 export const CACHE_WARM_STOP_REASONS = [
   'cost-cap',
   'count-cap',
+  'deadline-missed',
   'outside-hours',
   'session-ended',
   'unsupported',
@@ -42,6 +43,7 @@ export function isCacheWarmStopReason(
 export type CacheWarmStopReason =
   | 'cost-cap'
   | 'count-cap'
+  | 'deadline-missed'
   | 'outside-hours'
   | 'session-ended'
   | 'unsupported'

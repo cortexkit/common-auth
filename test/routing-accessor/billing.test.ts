@@ -157,6 +157,7 @@ describe('billing reports', () => {
   test.each([
     'cost-cap',
     'count-cap',
+    'deadline-missed',
     'outside-hours',
     'session-ended',
     'unsupported',
