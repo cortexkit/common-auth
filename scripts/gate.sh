@@ -118,6 +118,7 @@ run typecheck bun run typecheck
 run format bun run format:check
 run lint bun run lint
 run private-tracking private_tracking
+run source-size node scripts/check-source-size.mjs
 run dist-imports bun test test/fs/private-files-external.test.ts \
   test/setup/bundle.test.ts test/redaction/subpath.test.ts \
   test/rpc/client-subpath.test.ts test/tui-build/linking.test.ts
