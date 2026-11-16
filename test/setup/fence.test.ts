@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   assertHostsStopped,
   type CommandRunner,
-  createProcessFence,
-  listSetupProcesses,
+  createProcessFence as createSystemProcessFence,
+  listSetupProcesses as listSystemSetupProcesses,
   ProcessFenceViolationError,
   ProcessInspectionError,
   type ProcessInspectionStep,
@@ -13,6 +13,38 @@ import {
 // hold one of them; production would then leave that row out as itself. So
 // every fence here is told the running process has a PID no row can have.
 const NO_SELF = -1
+const POWERSHELL =
+  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+const TASKLIST = 'C:\\Windows\\System32\\tasklist.exe'
+
+// Keep process-parsing fixtures independent of the machine's installed pwsh
+// and native architecture. Program selection has its own injected-env tests.
+function createProcessFence(
+  runner: CommandRunner,
+  options: Parameters<typeof createSystemProcessFence>[1] = {},
+) {
+  const fence = createSystemProcessFence(runner, {
+    isFile: () => false,
+    ...options,
+  })
+  const preview = fence.previewRunningHosts
+  if (!preview) throw new Error('The setup fence must support previews.')
+  return {
+    listRunningHosts: (env = {}) => fence.listRunningHosts(env),
+    previewRunningHosts: (env = {}) => preview(env),
+  }
+}
+
+function listSetupProcesses(
+  runner: CommandRunner,
+  options: Parameters<typeof listSystemSetupProcesses>[1] = {},
+) {
+  return listSystemSetupProcesses(runner, {
+    env: {},
+    isFile: () => false,
+    ...options,
+  })
+}
 
 /** The fence's CIM answer, as its PowerShell query prints it. */
 function cimAnswer(processes: unknown[]): string {
@@ -37,7 +69,7 @@ describe('setup process fence', () => {
       const runner: CommandRunner = {
         async run(file, _args, options) {
           calls.push(file)
-          expect(file).toBe('powershell.exe')
+          expect(file).toBe(POWERSHELL)
           const timedOut = durationMs > (options?.timeoutMs ?? 15_000)
           return {
             exitCode: timedOut ? 1 : 0,
@@ -86,7 +118,7 @@ describe('setup process fence', () => {
         }
       }
       // A fence is one CIM query: no tasklist pass before it.
-      expect(calls).toEqual(['powershell.exe'])
+      expect(calls).toEqual([POWERSHELL])
     }
   })
 
@@ -96,7 +128,7 @@ describe('setup process fence', () => {
         const observations: ProcessInspectionStep[] = []
         const runner = {
           async run(file: string) {
-            if (step === 'CIM' && file === 'tasklist.exe')
+            if (step === 'CIM' && file === TASKLIST)
               return {
                 exitCode: 0,
                 stdout: '"node.exe","111","Console","1","30 K"\n',
@@ -145,7 +177,7 @@ describe('setup process fence', () => {
     for (const throws of [false, true]) {
       const runner = {
         async run(file: string) {
-          if (file === 'tasklist.exe')
+          if (file === TASKLIST)
             return {
               exitCode: 0,
               stdout: '"bun.exe","111","Console","1","30 K"\n',
@@ -183,7 +215,7 @@ describe('setup process fence', () => {
   test('Windows idle PID zero and current runtime process are valid listing rows', async () => {
     const runner = {
       async run(file: string) {
-        expect(file).toBe('tasklist.exe')
+        expect(file).toBe(TASKLIST)
         return {
           exitCode: 0,
           stdout: `"System Idle Process","0","Services","0","8 K"\r\n"node.exe","${process.pid}","Console","1","30,000 K"\r\n`,
@@ -201,7 +233,7 @@ describe('setup process fence', () => {
       await createProcessFence(
         {
           async run(file) {
-            expect(file).toBe('powershell.exe')
+            expect(file).toBe(POWERSHELL)
             return {
               exitCode: 0,
               stdout: cimAnswer([
@@ -219,7 +251,7 @@ describe('setup process fence', () => {
   test('Windows inspects Node and Bun command lines for host entry scripts', async () => {
     const runner = {
       async run(file: string, args: readonly string[]) {
-        expect(file).toBe('powershell.exe')
+        expect(file).toBe(POWERSHELL)
         expect(args.slice(0, 3)).toEqual([
           '-NoProfile',
           '-NonInteractive',
@@ -287,7 +319,7 @@ describe('setup process fence', () => {
       { selfPid: NO_SELF, platform: 'win32' },
     )
     const preview = await fence.previewRunningHosts?.()
-    expect(files).toEqual(['tasklist.exe'])
+    expect(files).toEqual([TASKLIST])
     expect(preview).toEqual({
       hosts: [{ pid: 113, command: 'opencode.exe' }],
       uncheckedRuntimes: 2,
@@ -314,7 +346,7 @@ describe('setup process fence', () => {
     ]) {
       const runner = {
         async run(file: string) {
-          expect(file).toBe('powershell.exe')
+          expect(file).toBe(POWERSHELL)
           return result
         },
       }
@@ -330,7 +362,7 @@ describe('setup process fence', () => {
   test('a runtime exiting between the tasklist and CIM snapshots of a full listing is not a running host', async () => {
     const runner = {
       async run(file: string) {
-        return file === 'tasklist.exe'
+        return file === TASKLIST
           ? {
               exitCode: 0,
               stdout: '"node.exe","111","Console","1","30 K"\n',
@@ -398,7 +430,7 @@ describe('setup process fence', () => {
     const fence = createProcessFence(
       {
         async run(file, args) {
-          expect(file).toBe('tasklist.exe')
+          expect(file).toBe(TASKLIST)
           expect(args).toEqual(['/fo', 'csv', '/nh'])
           return {
             exitCode: 0,
@@ -520,7 +552,7 @@ function windowsTable(
   const calls = { tasklist: 0, powershell: 0 }
   const runner: CommandRunner = {
     async run(file, args, options) {
-      if (file === 'tasklist.exe') {
+      if (file === TASKLIST) {
         calls.tasklist++
         return {
           exitCode: 0,
@@ -530,7 +562,7 @@ function windowsTable(
           stderr: '',
         }
       }
-      expect(file).toBe('powershell.exe')
+      expect(file).toBe(POWERSHELL)
       expect(options?.timeoutMs).toBe(45_000)
       calls.powershell++
       const prefixes = [

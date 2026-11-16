@@ -206,12 +206,30 @@ chooses vault or local sign-in, runs `beforeRegister(host, mode)`, registers,
 migrates (when the plugin supplies `migrate`), and prints a next step. The process check runs again between side
 effects and before atomic config publication. Failed/malformed process inspection refuses on
 a real run; a dry run only reports active hosts or inspection failure and proceeds
-with its no-mutation plan. Windows uses `tasklist /FO CSV /NH` and accepts its idle
-PID 0 row, with PowerShell CIM command-line inspection for other Node/Bun processes
-so npm Pi/OpenCode entry scripts are recognized as hosts. The exported
+with its no-mutation plan. On Windows, each real fence uses one PowerShell
+`Get-CimInstance Win32_Process` query for host and runtime images, recognizing npm
+Pi/OpenCode entry scripts from Node/Bun command lines. A missing completion marker,
+malformed row or unreadable runtime command line fails closed. The full process
+listing uses `tasklist /FO CSV /NH` (accepting its idle PID 0 row), then a CIM
+command-line query for other Node/Bun processes; a dry-run preview uses only
+tasklist. Both CIM queries prefer `<ProgramFiles>\PowerShell\7\pwsh.exe` when it
+is a regular file, else use
+`<SystemRoot>\System32\WindowsPowerShell\v1.0\powershell.exe`. Tasklist runs from
+`<SystemRoot>\System32\tasklist.exe`. All paths are absolute: no PATH or
+current-directory program search. The fence takes `SystemRoot` (else `windir`,
+else `C:\Windows`) and `ProgramFiles` (else `C:\Program Files`) from its supplied
+environment, or the process environment if none is supplied.
+
+CIM gets 45 seconds for pwsh on any architecture and for Windows PowerShell 5.1
+on x64. Only 5.1 on ARM64 gets 90 seconds, based on measured 22–44 second process
+queries. `PROCESSOR_ARCHITEW6432` takes precedence over `PROCESSOR_ARCHITECTURE`
+to recognize native ARM64 even under an emulated runtime. Setup prints a warning
+before every slow ARM fallback check and recommends installing PowerShell 7.
+CIM inspection records and `ProcessInspectionError` include `program` (`pwsh` or
+`powershell`); the existing refusal text is unchanged. The exported
 `listSetupProcesses` returns the unfiltered snapshot (including the current
 process) for inspection tests; callers must not print its command-line arguments.
-process diagnostics retain only recognized executable names, not arguments.
+Process diagnostics retain only recognized executable names, not arguments.
 
 Flags: `--yes`, `--dry-run`, `--claustrum`, `--no-claustrum`, `--login`,
 `--opencode=1|2|both`, `--host=opencode|pi`, and `--enroll-only`.

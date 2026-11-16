@@ -65,6 +65,44 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
 }
 
 describe('setup flow', () => {
+  test('Windows ARM slow-check progress reaches the terminal before every fallback inspection', async () => {
+    const message =
+      'Checking that OpenCode and Pi are not running. Without PowerShell 7 this can take up to a minute on Windows ARM; installing PowerShell 7 makes it fast.'
+    for (const pwsh of [false, true]) {
+      const io = fakeIO('win32')
+      io.fence = undefined
+      io.env = { ...io.env, PROCESSOR_ARCHITECTURE: 'ARM64' }
+      io.folders.add('C:\\Users\\test\\.config\\opencode')
+      if (pwsh) io.files.set('C:\\Program Files\\PowerShell\\7\\pwsh.exe', '')
+      const term = terminal()
+      const beforeInspections: number[] = []
+      io.runner = {
+        async run() {
+          beforeInspections.push(
+            term.lines.filter((line) => line.trim() === message).length,
+          )
+          return {
+            exitCode: 0,
+            stdout: '{"complete":true,"processes":[]}',
+            stderr: '',
+          }
+        },
+      }
+      const p = plugin()
+      const stop = new Error('stop before sign-in')
+      p.beforeSignIn = async () => {
+        throw stop
+      }
+      await expect(
+        runSetup(p, ['--yes', '--no-claustrum'], { ...io, terminal: term }),
+      ).rejects.toBe(stop)
+      expect(beforeInspections).toEqual(pwsh ? [0, 0] : [1, 2])
+      expect(term.lines.filter((line) => line.trim() === message)).toHaveLength(
+        pwsh ? 0 : 2,
+      )
+    }
+  })
+
   test('host flag selects only the requested host with every OpenCode generation', async () => {
     for (const generation of ['1', '2', 'both']) {
       const io = fakeIO()

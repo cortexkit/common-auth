@@ -1,3 +1,5 @@
+import { statSync } from 'node:fs'
+import { win32 } from 'node:path'
 import { defaultCommandRunner } from './command-runner.js'
 import type {
   CommandResult,
@@ -6,10 +8,28 @@ import type {
   SetupEnvironment,
 } from './types.js'
 
-// A cold PowerShell/WMI query took 13.8 s on Windows Server 2022; warm queries
-// took less than 0.5 s. This is the product's one-shot latency budget, not a test
-// deadline: 45 s is about three times the worst measured cold start.
 const WINDOWS_CIM_TIMEOUT_MS = 45_000
+// Native Windows PowerShell 5.1 on ARM took 22–44 s per process query, with
+// one cold CIM timeout at 45.8 s; pwsh took less than a second. See
+// .cortexkit/internal-docs/investigations/windows-arm-process-fence/report.md.
+// Allow about twice the measured worst case only for 5.1 on ARM. If it needs
+// more than 90 s, investigate before raising this budget again.
+const WINDOWS_ARM_POWERSHELL_TIMEOUT_MS = 90_000
+
+function isFile(file: string): boolean {
+  try {
+    return statSync(file).isFile()
+  } catch {
+    return false
+  }
+}
+
+// Windows environment names are case-insensitive, including in injected envs.
+function windowsEnv(env: SetupEnvironment, name: string): string | undefined {
+  return Object.entries(env).find(
+    ([key]) => key.toUpperCase() === name.toUpperCase(),
+  )?.[1]
+}
 
 const HOSTS = new Set(['opencode', 'litecode', 'opencode2', 'pi'])
 const RUNTIMES = new Set(['node', 'bun'])
@@ -109,6 +129,8 @@ function hostName(command: string): string | null {
 
 export interface ProcessInspectionStep {
   step: 'tasklist' | 'CIM' | 'ps'
+  /** The selected CIM interpreter; absent for tasklist and ps. */
+  program?: 'pwsh' | 'powershell'
   exitCode: number | null
   signal: NodeJS.Signals | null
   timedOut: boolean
@@ -121,6 +143,7 @@ export class ProcessInspectionError
 {
   readonly code = 'process-inspection-failed'
   readonly step: ProcessInspectionStep['step']
+  readonly program?: ProcessInspectionStep['program']
   readonly exitCode: number | null
   readonly signal: NodeJS.Signals | null
   readonly timedOut: boolean
@@ -129,6 +152,7 @@ export class ProcessInspectionError
     super('Process inspection failed; setup cannot prove hosts are stopped.')
     this.name = 'ProcessInspectionError'
     this.step = details.step
+    this.program = details.program
     this.exitCode = details.exitCode
     this.signal = details.signal
     this.timedOut = details.timedOut
@@ -171,6 +195,10 @@ export async function listSetupProcesses(
   options: {
     platform?: string
     env?: SetupEnvironment
+    /** Tests can replace the regular-file check for the fixed pwsh location. */
+    isFile?: (file: string) => boolean
+    /** Reports before each slow Windows ARM PowerShell 5.1 check. */
+    onProgress?: (line: string) => void
     onStep?: (details: ProcessInspectionStep) => void
     /** False skips the Windows PowerShell query for Node and Bun command lines. */
     inspectRuntimes?: boolean
@@ -190,6 +218,15 @@ export async function listSetupProcesses(
   } = {},
 ): Promise<Array<{ pid: number; command: string }>> {
   const windows = (options.platform ?? process.platform) === 'win32'
+  const env = options.env ?? process.env
+  const system32 = windows
+    ? win32.resolve(
+        windowsEnv(env, 'SystemRoot') ??
+          windowsEnv(env, 'windir') ??
+          'C:\\Windows',
+        'System32',
+      )
+    : ''
   const selfPid = options.selfPid ?? process.pid
   let inspection: ProcessInspectionStep = {
     step: windows ? 'tasklist' : 'ps',
@@ -203,10 +240,12 @@ export async function listSetupProcesses(
     file: string,
     args: readonly string[],
     timeoutMs?: number,
+    program?: ProcessInspectionStep['program'],
   ): Promise<CommandResult> => {
     const started = performance.now()
     inspection = {
       step,
+      ...(program && { program }),
       exitCode: null,
       signal: null,
       timedOut: false,
@@ -219,6 +258,7 @@ export async function listSetupProcesses(
       })
       inspection = {
         step,
+        ...(program && { program }),
         exitCode: result.exitCode,
         signal: result.signal ?? null,
         timedOut: result.timedOut ?? false,
@@ -231,14 +271,47 @@ export async function listSetupProcesses(
       options.onStep?.({ ...inspection })
     }
   }
+  const inspectCim = (args: readonly string[]): Promise<CommandResult> => {
+    const pwsh = win32.resolve(
+      windowsEnv(env, 'ProgramFiles') ?? 'C:\\Program Files',
+      'PowerShell',
+      '7',
+      'pwsh.exe',
+    )
+    const program = (options.isFile ?? isFile)(pwsh) ? 'pwsh' : 'powershell'
+    const arm64 =
+      (
+        windowsEnv(env, 'PROCESSOR_ARCHITEW6432') ??
+        windowsEnv(env, 'PROCESSOR_ARCHITECTURE')
+      )?.toUpperCase() === 'ARM64'
+    const slow = program === 'powershell' && arm64
+    if (slow)
+      options.onProgress?.(
+        'Checking that OpenCode and Pi are not running. Without PowerShell 7 this can take up to a minute on Windows ARM; installing PowerShell 7 makes it fast.',
+      )
+    return inspect(
+      'CIM',
+      program === 'pwsh'
+        ? pwsh
+        : win32.resolve(
+            system32,
+            'WindowsPowerShell',
+            'v1.0',
+            'powershell.exe',
+          ),
+      args,
+      slow ? WINDOWS_ARM_POWERSHELL_TIMEOUT_MS : WINDOWS_CIM_TIMEOUT_MS,
+      program,
+    )
+  }
   try {
     if (windows && options.hostImagesOnly) {
-      const details = await inspect(
-        'CIM',
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_FENCE_QUERY],
-        WINDOWS_CIM_TIMEOUT_MS,
-      )
+      const details = await inspectCim([
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        WINDOWS_FENCE_QUERY,
+      ])
       if (details.exitCode !== 0) throw new ProcessInspectionError(inspection)
       // An empty or truncated answer fails to parse or lacks `complete`, so a
       // query that silently printed nothing is never read as "no hosts".
@@ -281,7 +354,7 @@ export async function listSetupProcesses(
     }
     const result = await inspect(
       windows ? 'tasklist' : 'ps',
-      windows ? 'tasklist.exe' : 'ps',
+      windows ? win32.resolve(system32, 'tasklist.exe') : 'ps',
       windows ? ['/fo', 'csv', '/nh'] : ['-eo', 'pid,command'],
     )
     if (result.exitCode !== 0) throw new ProcessInspectionError(inspection)
@@ -316,17 +389,12 @@ export async function listSetupProcesses(
         entry.pid !== selfPid && /^(?:node|bun)\.exe$/i.test(entry.command),
     )
     if (windows && runtimes.length && options.inspectRuntimes !== false) {
-      const details = await inspect(
-        'CIM',
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter \"Name = 'node.exe' OR Name = 'bun.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
-        ],
-        WINDOWS_CIM_TIMEOUT_MS,
-      )
+      const details = await inspectCim([
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter \"Name = 'node.exe' OR Name = 'bun.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
+      ])
       if (details.exitCode !== 0) throw new ProcessInspectionError(inspection)
       const value: unknown = JSON.parse(details.stdout || 'null')
       const rows: unknown[] =
@@ -360,7 +428,12 @@ export async function listSetupProcesses(
 
 export function createProcessFence(
   runner: CommandRunner = defaultCommandRunner,
-  options: { platform?: string; selfPid?: number } = {},
+  options: {
+    platform?: string
+    selfPid?: number
+    isFile?: (file: string) => boolean
+    onProgress?: (line: string) => void
+  } = {},
 ): ProcessFence {
   const selfPid = options.selfPid ?? process.pid
   const isHost = (entry: { pid: number; command: string }) =>

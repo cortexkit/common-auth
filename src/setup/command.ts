@@ -203,7 +203,11 @@ export async function runSetup(
   const { env, platform } = setupPaths(io)
   const fence =
     io.fence ??
-    createProcessFence(io.runner ?? defaultCommandRunner, { platform })
+    createProcessFence(io.runner ?? defaultCommandRunner, {
+      platform,
+      isFile: io.fs?.isFile.bind(io.fs),
+      onProgress: (line) => printLine(terminal, line),
+    })
   const stopped = async () => {
     try {
       await assertHostsStopped(fence, env)
