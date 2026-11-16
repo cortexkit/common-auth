@@ -24,6 +24,7 @@ import {
   ProcessFenceViolationError,
   ProcessInspectionError,
 } from './process-fence.js'
+import { SetupProcessGuard } from './process-guard.js'
 import { selectSetupHosts } from './prompts.js'
 import {
   planOpenCodeRegistration,
@@ -217,6 +218,7 @@ export async function runSetup(
       throw error
     }
   }
+  const guard = new SetupProcessGuard(stopped, io.now)
   printLine(terminal, 'Checking that OpenCode and Pi are not running…')
   if (options.dryRun) {
     try {
@@ -247,7 +249,10 @@ export async function runSetup(
       if (error instanceof ProcessInspectionError)
         printLine(terminal, error.refusalText)
     }
-  } else await stopped()
+  } else {
+    // Refuse before asking questions; the first write can reuse this check.
+    await guard.check()
+  }
   if (
     (options.claustrum || options.enrollOnly) &&
     !detection.claustrum.available
@@ -266,13 +271,15 @@ export async function runSetup(
   ) {
     // Not `confirm`: it reads Escape and Ctrl-C as "No", and "No" here means
     // a local sign-in. Cancelling must stop setup before anything changes.
-    const choice = await select<boolean>(
-      terminal,
-      [
-        { label: 'No', value: false },
-        { label: 'Yes', value: true },
-      ],
-      { message: 'Connect these hosts to the Claustrum vault?' },
+    const choice = await guard.step(() =>
+      select<boolean>(
+        terminal,
+        [
+          { label: 'No', value: false },
+          { label: 'Yes', value: true },
+        ],
+        { message: 'Connect these hosts to the Claustrum vault?' },
+      ),
     )
     if (choice === null) {
       printLine(terminal, 'Setup cancelled. Nothing was changed.')
@@ -349,9 +356,11 @@ export async function runSetup(
     const enrollmentAccess = new Map<SetupHost, SetupEnrollmentAccess>()
     try {
       for (const host of hosts) {
-        await stopped()
-        await plugin.beforeSignIn?.(host, context)
-        await stopped()
+        if (plugin.beforeSignIn) {
+          // The callback can change credentials or wait for consent.
+          await guard.check({ reuse: true })
+          await guard.step(() => plugin.beforeSignIn?.(host, context))
+        }
         if (useVault) {
           enrollment.set(host, 'unknown')
           try {
@@ -360,7 +369,7 @@ export async function runSetup(
               host,
               io,
               terminal,
-              stopped,
+              guard,
             )
             if (access) enrollmentAccess.set(host, access)
           } catch (error) {
@@ -369,15 +378,30 @@ export async function runSetup(
             throw error
           }
           enrollment.set(host, 'enrolled')
-        } else await plugin.signInLocal(host, context)
-        await stopped()
+        } else {
+          // Local sign-in can write credentials and wait for a browser.
+          await guard.check({ reuse: true })
+          await guard.step(() => plugin.signInLocal(host, context))
+        }
         if (options.enrollOnly) continue
-        await plugin.beforeRegister?.(host, mode, context)
-        await stopped()
-        if (host === 'opencode') await registerOpenCode(writes, stopped)
-        else await registerPi(plugin, detection.pi.executable as string, io)
-        await stopped()
-        await plugin.migrate?.(host, context)
+        if (plugin.beforeRegister) {
+          // Registration callbacks may write provider-specific files.
+          await guard.check({ reuse: true })
+          await guard.step(() => plugin.beforeRegister?.(host, mode, context))
+        }
+        if (host === 'opencode') await registerOpenCode(writes, guard)
+        else {
+          // Pi's CLI writes its plugin registration.
+          await guard.check({ reuse: true })
+          await guard.step(() =>
+            registerPi(plugin, detection.pi.executable as string, io),
+          )
+        }
+        if (plugin.migrate) {
+          // Migration is a plugin callback and may write host credentials.
+          await guard.check({ reuse: true })
+          await guard.step(() => plugin.migrate?.(host, context))
+        }
       }
     } catch (error) {
       // Before any enrollment began nothing is connected: nothing to report.

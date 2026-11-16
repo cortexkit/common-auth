@@ -16,6 +16,7 @@ import {
   ProcessFenceViolationError,
   ProcessInspectionError,
 } from './process-fence.js'
+import { SetupProcessGuard } from './process-guard.js'
 import type {
   SetupEnrollmentAccess,
   SetupHost,
@@ -96,7 +97,7 @@ export async function connectSetupHost(
   host: SetupHost,
   io: SetupIO,
   terminal: MenuTerminal,
-  fence: () => Promise<void>,
+  fence: (() => Promise<void>) | SetupProcessGuard,
 ): Promise<SetupEnrollmentAccess | undefined> {
   if (hasVaultHost()) throw new Error(VAULT_HOST_CONNECT_REFUSAL)
   const {
@@ -107,7 +108,10 @@ export async function connectSetupHost(
     paths: input,
   } = plugin.vault.hosts[host]
   const paths = hostEnrollmentPaths(input)
-  await fence()
+  const guard =
+    typeof fence === 'function' ? new SetupProcessGuard(fence, io.now) : fence
+  // Fail before connecting; an uninterrupted caller inspection is sufficient.
+  await guard.check({ reuse: true })
   const client = await (io.connect ?? connectClaustrumEnrollmentClient)({
     connectionFile: plugin.vault.connectionFile,
     handshakeTimeoutMs: 2000,
@@ -132,11 +136,10 @@ export async function connectSetupHost(
       client,
       writeTokenFile: async (path, file) => {
         // Writing the token is what connects the host: check once more.
-        await fence()
-        await writeEnrollmentTokenFile(path, file)
+        await guard.check()
+        await guard.step(() => writeEnrollmentTokenFile(path, file))
       },
     })
-    await fence()
     const initial = await manager.status()
     if (initial.state === 'approved') {
       printLine(
@@ -161,7 +164,9 @@ export async function connectSetupHost(
     let reportedCode: string | undefined
     let failedProposals = 0
     for (;;) {
-      const status = await manager.reconcile()
+      // Reconcile may create or update the host's enrollment state.
+      await guard.check({ reuse: true })
+      const status = await guard.step(() => manager.reconcile())
       if (status.state === 'approved') {
         printLine(terminal, `Connected ${host} to Claustrum.`)
         const access = await confirmEnrollmentAccess(
@@ -228,8 +233,9 @@ export async function connectSetupHost(
       }
       const remaining = deadline - now()
       if (remaining <= 0) break
-      await wait(Math.min(pause, remaining))
-      await fence()
+      await guard.step(() => wait(Math.min(pause, remaining)))
+      // Approval waits allow a host to start before the next reconcile.
+      await guard.check()
     }
     if (printedRequest)
       throw new HostNotEnrolledError(

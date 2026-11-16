@@ -365,10 +365,13 @@ describe('setup registration', () => {
           env: { OPENCODE_CONFIG_DIR: root },
         }),
         async () => {
-          if (++calls === 2) throw new Error('host started')
+          calls++
+          if ((await readdir(root)).some((name) => name.endsWith('.tmp')))
+            throw new Error('host started')
         },
       ),
     ).rejects.toThrow('host started')
+    expect(calls).toBe(1)
     expect(await readdir(root)).toEqual([])
   })
 })

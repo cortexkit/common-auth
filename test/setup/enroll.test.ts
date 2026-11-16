@@ -729,9 +729,9 @@ describe('setup enrollment wait', () => {
         fences++
       },
     )
-    // One before connecting, then one per tick: the first tick also proposes.
-    expect(fencesAtPoll).toEqual([2, 3, 4, 5, 6, 7])
+    // The entry check also guards the first tick; later ticks follow a wait.
+    expect(fencesAtPoll).toEqual([1, 2, 3, 4, 5, 6])
     // Writing the approved token checks once more.
-    expect(fences).toBe(8)
+    expect(fences).toBe(7)
   })
 })

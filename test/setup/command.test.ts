@@ -96,9 +96,9 @@ describe('setup flow', () => {
       await expect(
         runSetup(p, ['--yes', '--no-claustrum'], { ...io, terminal: term }),
       ).rejects.toBe(stop)
-      expect(beforeInspections).toEqual(pwsh ? [0, 0] : [1, 2])
+      expect(beforeInspections).toEqual(pwsh ? [0] : [1])
       expect(term.lines.filter((line) => line.trim() === message)).toHaveLength(
-        pwsh ? 0 : 2,
+        pwsh ? 0 : 1,
       )
     }
   })
@@ -1089,7 +1089,6 @@ describe('setup flow', () => {
           token: 'a'.repeat(64),
           token_generation: 1,
         })
-      if (before === 'junk') await writeFile(tokenPath, 'junk', { mode: 0o600 })
       // OpenCode starts while setup waits for approval, so the fence stops
       // setup in the middle of the enrollment.
       let running = false
@@ -1103,19 +1102,25 @@ describe('setup flow', () => {
       io.connect = async () => {
         // The first connection is detection's availability check; the second
         // one starts the enrollment.
-        if (++connections === 2 && before !== 'none') running = true
+        if (++connections === 2 && before === 'token') running = true
         return {
           close() {},
           async enrollPropose() {
             return { requestId: 'request-1' }
           },
           async enrollPoll() {
-            running = true
+            if (before !== 'junk') running = true
             return { status: 'pending' }
           },
         }
       }
-      io.wait = async () => {}
+      io.wait = async () => {
+        if (before === 'junk') {
+          // The token becomes unreadable while approval is pending, not during status.
+          await writeFile(tokenPath, 'junk', { mode: 0o600 })
+          running = true
+        }
+      }
       const term = terminal()
       const error = await rejection(
         runSetup(p, ['--yes', '--claustrum'], { ...io, terminal: term }),

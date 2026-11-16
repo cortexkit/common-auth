@@ -1,3 +1,5 @@
+import { rename } from 'node:fs/promises'
+import { setTimeout as delay } from 'node:timers/promises'
 import { domainToUnicode } from 'node:url'
 import {
   applyEdits,
@@ -14,6 +16,7 @@ import { defaultCommandRunner, runResolvedCommand } from './command-runner.js'
 import { writeHostConfigAtomic } from './config-write.js'
 import { defaultSetupFileSystem } from './detect.js'
 import { setupPaths } from './paths.js'
+import { SetupProcessGuard } from './process-guard.js'
 import type { OpenCodeGeneration, SetupIO, SetupPlugin } from './types.js'
 
 export interface PlannedWrite {
@@ -251,13 +254,21 @@ export function planOpenCodeRegistration(
 
 export async function registerOpenCode(
   writes: readonly PlannedWrite[],
-  beforeWrite?: () => Promise<void>,
+  beforeWrite?: (() => Promise<void>) | SetupProcessGuard,
 ): Promise<void> {
+  const guard =
+    typeof beforeWrite === 'function'
+      ? new SetupProcessGuard(beforeWrite)
+      : beforeWrite
   for (const write of writes) {
     if (!write.changed) continue
-    await beforeWrite?.()
     await writeHostConfigAtomic(write.path, write.content, {
-      beforeRename: beforeWrite,
+      // Only the rename publishes host-readable config; recheck on every retry.
+      beforeRename: guard ? () => guard.check({ reuse: true }) : undefined,
+      rename: guard
+        ? (from, to) => guard.step(() => rename(from, to))
+        : undefined,
+      wait: guard ? (ms) => guard.step(() => delay(ms)) : undefined,
     })
   }
 }
