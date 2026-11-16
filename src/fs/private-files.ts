@@ -35,7 +35,9 @@ export const PRIVATE_FILES_UNAVAILABLE_REASON = 'native-addon-unavailable'
 
 function privateFilesUnavailable(cause: unknown): Error {
   return Object.assign(
-    new Error('Windows private-files native addon is unavailable', { cause }),
+    new Error('Windows private-files native addon could not be loaded', {
+      cause,
+    }),
     {
       code: 'ERR_PRIVATE_FILES_UNAVAILABLE',
       reason: PRIVATE_FILES_UNAVAILABLE_REASON,

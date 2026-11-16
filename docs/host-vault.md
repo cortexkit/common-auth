@@ -60,7 +60,7 @@ only at this boundary: structured vault refusals become this package's
 `host-accessor-failed` when reading or calling
 the accessor or wrapping its client throws. Other unreachable failures,
 including a connection without the host marker or plugin id, have no reason.
-The public message stays `Claustrum scoped operation unavailable`, the kind
+The public message stays `Claustrum vault could not be reached`, the kind
 stays `unavailable`, and `classifyVaultFailure` still returns `unreachable`.
 A missing accessor at startup is expected to recover once the host bridge
 installs; it still refuses requests until then and never permits local mode.

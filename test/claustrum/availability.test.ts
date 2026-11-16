@@ -10,6 +10,7 @@ import {
   classifyVaultFailure,
   VAULT_FAILURE_CLASSES,
 } from '../../src/claustrum/index.ts'
+import { hasUnsafeWording } from '../../src/limits/wording.ts'
 
 const unreachable = [
   'ECONNREFUSED',
@@ -148,7 +149,9 @@ test.each(['host-accessor-missing', 'host-accessor-failed'] as const)(
   (reason) => {
     const error = new ClaustrumUnreachableError(reason)
     expect(error.reason).toBe(reason)
-    expect(error.message).toBe('Claustrum scoped operation unavailable')
+    expect(error.message).toBe('Claustrum vault could not be reached')
+    // OpenCode 1 retries plain errors whose text matches its retry rules.
+    expect(hasUnsafeWording(error.message)).toBe(false)
     expect(error.kind).toBe('unavailable')
     expect(classifyVaultFailure(error)).toBe('unreachable')
   },

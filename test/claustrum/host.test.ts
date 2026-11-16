@@ -266,7 +266,7 @@ describe('Thalamus host vault', () => {
       expect(error).toMatchObject({
         reason,
         kind: 'unavailable',
-        message: 'Claustrum scoped operation unavailable',
+        message: 'Claustrum vault could not be reached',
       })
       const dispatch = mock(async () => new Response('unexpected'))
       await expect(
@@ -274,7 +274,7 @@ describe('Thalamus host vault', () => {
       ).rejects.toMatchObject({
         reason,
         kind: 'unavailable',
-        message: 'Claustrum scoped operation unavailable',
+        message: 'Claustrum vault could not be reached',
       })
       expect(dispatch).not.toHaveBeenCalled()
       expect(JSON.stringify(error)).not.toContain('host secret')
@@ -322,7 +322,7 @@ describe('Thalamus host vault', () => {
       expect(error).toBeInstanceOf(ClaustrumUnreachableError)
       expect((error as ClaustrumUnreachableError).reason).toBe(expected)
       expect((error as Error).message).toBe(
-        'Claustrum scoped operation unavailable',
+        'Claustrum vault could not be reached',
       )
       expect(JSON.stringify(error)).not.toContain('host secret')
     },

@@ -789,7 +789,7 @@ export class ClaustrumScopedCustody {
         )
       throw new ClaustrumConsumerError(
         'unavailable',
-        'Claustrum scoped operation unavailable',
+        'Claustrum scoped operation failed',
       )
     } finally {
       removeAbortListener?.()

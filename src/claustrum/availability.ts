@@ -103,7 +103,7 @@ export class ClaustrumUnreachableError extends ClaustrumConsumerError {
   readonly reason?: 'host-accessor-missing' | 'host-accessor-failed'
 
   constructor(reason?: ClaustrumUnreachableError['reason']) {
-    super('unavailable', 'Claustrum scoped operation unavailable')
+    super('unavailable', 'Claustrum vault could not be reached')
     this.name = 'ClaustrumUnreachableError'
     if (reason === 'host-accessor-missing' || reason === 'host-accessor-failed')
       this.reason = reason

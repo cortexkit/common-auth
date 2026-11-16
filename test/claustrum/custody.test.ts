@@ -866,7 +866,7 @@ describe('scoped boundary failures', () => {
       throw new Error('authorization unexpectedly succeeded')
     } catch (error) {
       expect(String(error)).toBe(
-        'ClaustrumConsumerError: Claustrum scoped operation unavailable',
+        'ClaustrumConsumerError: Claustrum scoped operation failed',
       )
       expect(String(error)).not.toContain('01'.repeat(32))
     }
