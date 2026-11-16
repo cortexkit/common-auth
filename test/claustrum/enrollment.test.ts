@@ -295,6 +295,11 @@ describe('enrollmentAuthority', () => {
           CLAUSTRUM_OPENCODE_ENROLLMENT_NAME,
         ),
       ).toMatchObject({ tokenGeneration: 1 })
+      // Linux stamps ctime from a coarse clock that ticks every few
+      // milliseconds, so a rewrite in the same tick keeps the old ctime and
+      // the file would look unchanged to any stat check. Wait past a tick so
+      // this test exercises the ctime comparison it is about.
+      await new Promise((resolve) => setTimeout(resolve, 25))
       await writeFile(
         paths.tokenPath,
         JSON.stringify({ token: secret, token_generation: 2 }),
