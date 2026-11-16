@@ -233,12 +233,19 @@ export async function exhaustReceiptWait<T>(
   return pending
 }
 
-/** Waits for real socket traffic with the mock daemon to land. */
+/**
+ * Waits for real socket traffic with the mock daemon to land. Some waits also
+ * cover a roster commit, which writes owner-only files. On GitHub's Windows
+ * runners one of those native creates measured up to about 1 s cold, and three
+ * members committing together up to about 4 s, while every lock was taken on
+ * the first try (.cortexkit/internal-docs/investigations/windows-roster-commit/).
+ * So Windows waits 10 s; if a wait needs more, investigate before raising it.
+ */
 export async function until(
   predicate: () => boolean,
   what = 'condition',
 ): Promise<void> {
-  const deadline = Date.now() + 2_000
+  const deadline = Date.now() + (process.platform === 'win32' ? 10_000 : 2_000)
   while (!predicate()) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
     await Bun.sleep(2)

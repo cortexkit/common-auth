@@ -95,6 +95,13 @@ test.skipIf =
   (name: string, body: () => Promise<void>, timeout?: number) =>
     traced(hooks.test.skipIf(condition), name, body, timeout)
 
+// Hub tests commit rosters through owner-only native file creates. On GitHub's
+// Windows runners a cold commit round measured up to about 4 s with no lock
+// retries or contention (.cortexkit/internal-docs/investigations/windows-roster-commit/),
+// so a test with two rounds can pass Bun's default 5 s. Windows gets 20 s; if a
+// test needs more, investigate before raising it.
+const WINDOWS_HUB_TEST_TIMEOUT_MS = 20_000
+
 function traced(
   register: (
     name: string,
@@ -103,7 +110,9 @@ function traced(
   ) => unknown,
   name: string,
   body: () => Promise<void>,
-  timeout?: number,
+  timeout = process.platform === 'win32'
+    ? WINDOWS_HUB_TEST_TIMEOUT_MS
+    : undefined,
 ) {
   register(
     name,
