@@ -44,9 +44,12 @@ describe('auth menu browser opener', () => {
     const encodedCommand = Buffer.from(expectedCommand, 'utf16le').toString(
       'base64',
     )
+    // Never the bare name, which the OS could resolve from the current folder.
+    const systemRoot =
+      process.env.SystemRoot ?? process.env.windir ?? 'C:\\Windows'
     expect(calls).toEqual([
       [
-        'powershell.exe',
+        `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
         [
           '-NoProfile',
           '-NonInteractive',
