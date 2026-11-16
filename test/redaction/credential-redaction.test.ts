@@ -285,6 +285,18 @@ test('credential error masking is literal complete and uses a non-retryable mark
   expect(error.cause).toBeUndefined()
 })
 
+test.each(['too_many_requests', 'Exhausted', 'unavailable'])(
+  'oversized error bodies retain OpenCode 1 non-API retry substring: %s',
+  (marker) => {
+    const source = Object.assign(new Error('Refused'), {
+      responseBody: `${'x'.repeat(80_000)}${marker}`,
+    })
+    const safe = redactCredentialError(source)
+    const body = Object.getOwnPropertyDescriptor(safe, 'responseBody')?.value
+    expect(body).toBe(JSON.stringify({ retry: [marker] }))
+  },
+)
+
 test('streamed errors redact split bearer chunks without rewriting normal model output', async () => {
   const token = 'opaque-secret'
   const normal = `data: {"type":"response.output_text.delta","delta":"${token}"}\r\n\r\n`

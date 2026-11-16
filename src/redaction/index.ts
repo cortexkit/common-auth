@@ -149,6 +149,10 @@ const retryBodyPatterns = [
   /\btry again (?:later|in\b)|\b(?:currently|temporarily) at capacity\b/i,
 ]
 
+// OpenCode 1's session/retry.ts non-API-error branch also retries these
+// substrings. Preserve them when compacting diagnostic bodies too.
+const nonApiRetryPattern = /too_many_requests|exhausted|unavailable/i
+
 /** Numeric request ids are quoted from their source lexeme, not a rounded JS number. */
 function requestIdFromBody(body: string): string | undefined {
   try {
@@ -205,6 +209,8 @@ function projectResponseBody(body: string, credential?: string): string {
   const markers = retryBodyPatterns.flatMap(
     (pattern) => pattern.exec(safe)?.[0] ?? [],
   )
+  const nonApiMarker = nonApiRetryPattern.exec(safe)?.[0]
+  if (nonApiMarker) markers.push(nonApiMarker)
   for (const marker of ['FreeUsageLimitError', 'GoUsageLimitError']) {
     if (safe.includes(marker)) markers.push(marker)
   }

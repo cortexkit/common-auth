@@ -71,7 +71,13 @@ const pi140Pattern = new RegExp(
 )
 
 export function hasUnsafeWording(text: string): boolean {
+  // OpenCode 1's session/retry.ts non-API-error branch retries when any of
+  // these substrings occurs in the message, even without a retryable flag.
+  const lower = text.toLowerCase()
   return (
+    lower.includes('too_many_requests') ||
+    lower.includes('exhausted') ||
+    lower.includes('unavailable') ||
     openCode1Patterns.some((pattern) => pattern.test(text)) ||
     pi140Pattern.test(text)
   )

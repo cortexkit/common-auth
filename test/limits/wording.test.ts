@@ -144,6 +144,20 @@ describe('new duration rendering', () => {
 
 describe('template registration', () => {
   test.each([
+    'The model is unavailable.',
+    'The accounts are Exhausted.',
+    'too_many_requests',
+    'prefixUnAvAiLaBlEsuffix',
+    'prefixEXHAUSTEDsuffix',
+    'prefixTOO_MANY_REQUESTSsuffix',
+  ])('rejects OpenCode 1 non-API error substring: %s', (text) => {
+    expect(() =>
+      registerLimitMessages({ refusals: { unsafe: () => text } }),
+    ).toThrow(UnsafeWordingError)
+    expect(hasUnsafeWording(text)).toBe(true)
+  })
+
+  test.each([
     '429m',
     '1500 requests',
     'rate_limit_error',
