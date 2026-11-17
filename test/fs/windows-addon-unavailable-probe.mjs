@@ -6,7 +6,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const root = await mkdtemp(join(tmpdir(), 'private-files-unavailable-'))
+const root = await mkdtemp(join(tmpdir(), 'private-files-addon-'))
 Object.defineProperty(process, 'platform', { value: 'win32' })
 const { windowsPrivateFiles, PrivateFileError } = await import(
   '../../src/fs/private-files.ts'

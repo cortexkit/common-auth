@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { hasUnsafeWording } from '../../src/limits/wording.ts'
 
 test('Windows refuses private files with ERR_PRIVATE_FILES_UNAVAILABLE when the native addon cannot load, writing nothing', async () => {
   const child = Bun.spawn(
@@ -19,6 +20,8 @@ test('Windows refuses private files with ERR_PRIVATE_FILES_UNAVAILABLE when the 
     enrollment: { code: 'ERR_PRIVATE_FILES_UNAVAILABLE' },
   })
   expect(result.atomic.message).toContain(
-    '(native-addon-unavailable). The Windows native addon of @cortexkit/private-files could not be loaded, so owner-only access cannot be enforced and nothing was read or written.',
+    '. The Windows native addon of @cortexkit/private-files could not be loaded, so owner-only access cannot be enforced and nothing was read or written.',
   )
+  // OpenCode 1 retries a plain error whose message matches its retry words.
+  expect(hasUnsafeWording(result.atomic.message)).toBe(false)
 })
