@@ -125,8 +125,12 @@ async function unpublished(sources: MoveSource[]): Promise<void> {
   await released(sources)
 }
 
-async function moved(sources: MoveSource[]): Promise<void> {
-  expect(await moveSettingsOnce(options(sources))).toEqual(result('moved'))
+async function moved(
+  sources: MoveSource[],
+  attempt: () => ReturnType<typeof moveSettingsOnce> = () =>
+    moveSettingsOnce(options(sources)),
+): Promise<void> {
+  expect(await attempt()).toEqual(result('moved'))
   expect(parse(await fs.readFile(target, 'utf8'))).toEqual({
     schema_version: 1,
     count: 4,
@@ -784,9 +788,21 @@ describe('settings move commit point', () => {
         return fs.unlink(path)
       },
     })
-    await moved(sources)
+    // The killed child leaves a real 10-second move lease and a 10-second
+    // lease on the source's preferences lock. The move lock waits for its
+    // lease to expire, but the two leases were last stamped at different
+    // moments, so the preferences lease can outlive it by longer than this
+    // source lock's 100 ms wait. An attempt in that gap
+    // reports busy and changes nothing; a real caller retries, so this does.
+    await moved(sources, async () => {
+      for (;;) {
+        const attempt = await moveSettingsOnce(options(sources))
+        if (attempt.outcome !== 'busy') return attempt
+        expect(removed).toEqual([])
+        await Bun.sleep(250)
+      }
+    })
     expect(removed).toEqual([staged])
     await absent(staged)
-    // The killed process leaves a real 10-second move lease; recovery waits for expiry.
   }, 20_000)
 })
