@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import type { Stats } from 'node:fs'
 import {
+  mkdir,
   mkdtemp,
   readFile,
   rename,
@@ -11,7 +12,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { acquirePiLock } from '../../src/pi-slot/lock.js'
 import { createPiSlot, PiSlotError } from '../../src/pi-slot/slot.js'
@@ -60,8 +61,7 @@ describe('pi slot races', () => {
       const f = await fixture()
       await createPiSlot(f.options).enterVault()
       const auth = await readFile(f.authPath)
-      const stash = await readFile(f.stashPath)
-      for (const target of [f.authPath, f.stashPath]) {
+      for (const target of [f.authPath]) {
         const saved = `${target}.saved`
         const slot = createPiSlot(f.options, undefined, {
           afterReadCheck: async (path) => {
@@ -76,7 +76,9 @@ describe('pi slot races', () => {
             new PiSlotError('unsafe-path'),
           )
           expect(await readFile(f.authPath)).toEqual(auth)
-          expect(await readFile(f.stashPath)).toEqual(stash)
+          await expect(stat(f.stashPath)).rejects.toMatchObject({
+            code: 'ENOENT',
+          })
         } finally {
           await rm(target)
           await rename(saved, target)
@@ -137,47 +139,38 @@ describe('pi slot races', () => {
   })
 })
 
-for (const target of ['auth', 'stash'] as const) {
-  test(`pi slot races compromised lease refuses ${target} rename without changing files`, async () => {
-    const f = await fixture()
-    const original = await readFile(f.authPath)
-    if (target === 'auth') {
-      await createPiSlot(f.options).enterVault()
-      await writeFile(f.authPath, original)
-    }
-    const stash = target === 'auth' ? await readFile(f.stashPath) : undefined
-    let renew: () => Promise<void> = async () => {
-      throw new Error('Missing renew hook')
-    }
-    let next: Awaited<ReturnType<typeof acquirePiLock>> | undefined
-    let successorMtime = -1
-    const slot = createPiSlot(f.options, undefined, {
-      onRenew: (resume) => {
-        renew = resume
-      },
-      beforeRename: async (path) => {
-        expect(path).toBe(target === 'auth' ? f.authPath : f.stashPath)
-        next = await successor(f.authPath, f.lockPath)
-        successorMtime = (await stat(f.lockPath)).mtimeMs
-        await renew()
-      },
-    })
-    try {
-      await expect(slot.enterVault()).rejects.toEqual(
-        new PiSlotError('lock-compromised'),
-      )
-      expect(await readFile(f.authPath)).toEqual(original)
-      if (stash) expect(await readFile(f.stashPath)).toEqual(stash)
-      else
-        await expect(stat(f.stashPath)).rejects.toMatchObject({
-          code: 'ENOENT',
-        })
-      expect((await stat(f.lockPath)).mtimeMs).toBe(successorMtime)
-    } finally {
-      await next?.release()
-    }
+test('pi slot races compromised lease refuses auth rename without changing files', async () => {
+  const f = await fixture()
+  const original = await readFile(f.authPath)
+  let renew: () => Promise<void> = async () => {
+    throw new Error('Missing renew hook')
+  }
+  let next: Awaited<ReturnType<typeof acquirePiLock>> | undefined
+  let successorMtime = -1
+  const slot = createPiSlot(f.options, undefined, {
+    onRenew: (resume) => {
+      renew = resume
+    },
+    beforeRename: async (path) => {
+      expect(path).toBe(f.authPath)
+      next = await successor(f.authPath, f.lockPath)
+      successorMtime = (await stat(f.lockPath)).mtimeMs
+      await renew()
+    },
   })
-}
+  try {
+    await expect(slot.enterVault()).rejects.toEqual(
+      new PiSlotError('lock-compromised'),
+    )
+    expect(await readFile(f.authPath)).toEqual(original)
+    await expect(stat(f.stashPath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    expect((await stat(f.lockPath)).mtimeMs).toBe(successorMtime)
+  } finally {
+    await next?.release()
+  }
+})
 
 test('pi slot races missing directory compromises release', async () => {
   const f = await fixture()
@@ -316,22 +309,56 @@ test('pi slot races expired renewal leaves matching directory untouched', async 
   }
 })
 
-for (const target of ['auth', 'stash'] as const) {
-  test(`pi slot races expired lease refuses ${target} rename with matching directory`, async () => {
+test('pi slot races expired lease refuses auth rename with matching directory', async () => {
+  const f = await fixture()
+  const auth = await readFile(f.authPath)
+  let before: Stats | undefined
+  let clock: ReturnType<typeof spyOn<typeof Date, 'now'>> | undefined
+  const slot = createPiSlot(f.options, undefined, {
+    beforeRename: async (path) => {
+      if (path !== f.authPath) return
+      before = await stat(f.lockPath)
+      clock = spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001)
+    },
+  })
+  try {
+    await expect(slot.enterVault()).rejects.toEqual(
+      new PiSlotError('lock-compromised'),
+    )
+    expect(await readFile(f.authPath)).toEqual(auth)
+    await expect(stat(f.stashPath)).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    if (!before) throw new Error('Missing paused lock snapshot')
+    const after = await stat(f.lockPath)
+    expect(after.ino).toBe(before.ino)
+    expect(after.mtimeMs).toBe(before.mtimeMs)
+  } finally {
+    clock?.mockRestore()
+  }
+})
+
+for (const loss of ['compromised', 'expired'] as const) {
+  test(`pi slot races ${loss} lease refuses legacy stash deletion`, async () => {
     const f = await fixture()
+    await createPiSlot(f.options).enterVault()
+    await mkdir(dirname(f.stashPath), { mode: 0o700 })
+    await writeFile(f.stashPath, 'legacy-secret', { mode: 0o600 })
     const auth = await readFile(f.authPath)
-    if (target === 'auth') {
-      await createPiSlot(f.options).enterVault()
-      await writeFile(f.authPath, auth)
-    }
-    const stash = target === 'auth' ? await readFile(f.stashPath) : undefined
-    let before: Stats | undefined
+    let next: Awaited<ReturnType<typeof acquirePiLock>> | undefined
     let clock: ReturnType<typeof spyOn<typeof Date, 'now'>> | undefined
+    let renew: () => Promise<void> = async () => {
+      throw new Error('Missing renew hook')
+    }
     const slot = createPiSlot(f.options, undefined, {
-      beforeRename: async (path) => {
-        if (path !== (target === 'auth' ? f.authPath : f.stashPath)) return
-        before = await stat(f.lockPath)
-        clock = spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001)
+      onRenew: (resume) => {
+        renew = resume
+      },
+      afterReadCheck: async () => {
+        if (loss === 'compromised') {
+          next = await successor(f.authPath, f.lockPath)
+          await renew()
+        } else clock = spyOn(Date, 'now').mockReturnValue(Date.now() + 10_001)
       },
     })
     try {
@@ -339,17 +366,10 @@ for (const target of ['auth', 'stash'] as const) {
         new PiSlotError('lock-compromised'),
       )
       expect(await readFile(f.authPath)).toEqual(auth)
-      if (stash) expect(await readFile(f.stashPath)).toEqual(stash)
-      else
-        await expect(stat(f.stashPath)).rejects.toMatchObject({
-          code: 'ENOENT',
-        })
-      if (!before) throw new Error('Missing paused lock snapshot')
-      const after = await stat(f.lockPath)
-      expect(after.ino).toBe(before.ino)
-      expect(after.mtimeMs).toBe(before.mtimeMs)
+      expect(await readFile(f.stashPath, 'utf8')).toBe('legacy-secret')
     } finally {
       clock?.mockRestore()
+      await next?.release()
     }
   })
 }

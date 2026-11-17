@@ -68,7 +68,7 @@ if (mode === 'pi-writer') {
   // The durable boundary runs under the helper's lock. A synchronous pipe read lets
   // the parent launch Pi before releasing that boundary without a timing-only race.
   await createPiSlot(options, (step) => {
-    if (step !== 'stash-written') return
+    if (step !== 'auth-written') return
     console.log('LOCKED')
     readFileSync(0)
   }).enterVault()

@@ -6,6 +6,7 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   utimes,
   writeFile,
 } from 'node:fs/promises'
@@ -38,6 +39,13 @@ async function fixture(text = original) {
 const bytes = (path: string) => readFile(path, 'utf8')
 async function absent(path: string) {
   await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
+}
+async function legacyStash(
+  f: Awaited<ReturnType<typeof fixture>>,
+  text: string | Buffer = original,
+) {
+  await mkdir(dirname(f.stashPath), { mode: 0o700 })
+  await writeFile(f.stashPath, text, { mode: 0o600 })
 }
 function child(
   mode: string,
@@ -98,7 +106,7 @@ describe('pi slot', () => {
       let writer: ReturnType<typeof child> | undefined
       const slot = createPiSlot(f.options, undefined, {
         beforeRename: async (path) => {
-          if (path !== f.stashPath) return
+          if (path !== f.authPath) return
           writer = child('pi-sync-writer', f.authPath, f.stashPath, version)
           report = JSON.parse(await new Response(writer.stdout).text())
           await finished(writer)
@@ -122,7 +130,7 @@ describe('pi slot', () => {
         expect(auth[provider]).toEqual({ type: 'api_key', key })
         expect(auth.google).toEqual({ type: 'api_key', key: 'literal-google' })
         await slot.exitVault()
-        expect(await bytes(f.authPath)).toBe(original)
+        expect(JSON.parse(await bytes(f.authPath))[provider]).toBeUndefined()
       } finally {
         writer?.kill()
         if (writer) await writer.exited
@@ -130,12 +138,9 @@ describe('pi slot', () => {
     }, 25_000)
   }
 
-  test('round trip preserves exact provider and other provider bytes', async () => {
+  test('enter writes the placeholder without a stash file', async () => {
     const f = await fixture()
-    expect(await f.slot.inspect()).toEqual({
-      slot: 'original',
-      stash: 'missing',
-    })
+    expect((await f.slot.inspect()).slot).toBe('original')
     await f.slot.enterVault()
     const swapped = await bytes(f.authPath)
     expect(swapped).toContain(
@@ -143,23 +148,30 @@ describe('pi slot', () => {
     )
     expect(JSON.parse(swapped)[provider]).toEqual({ type: 'api_key', key })
     expect((await stat(f.authPath)).mode & 0o777).toBe(0o600)
-    expect((await stat(f.stashPath)).mode & 0o777).toBe(0o600)
-    expect((await stat(dirname(f.stashPath))).mode & 0o777).toBe(0o700)
-    const stash = await bytes(f.stashPath)
+    await absent(f.stashPath)
+    const before = await stat(f.authPath)
     await f.slot.enterVault()
-    expect(await bytes(f.stashPath)).toBe(stash)
     expect(await bytes(f.authPath)).toBe(swapped)
+    expect((await stat(f.authPath)).ino).toBe(before.ino)
     expect(await f.slot.inspect()).toEqual({
       slot: 'placeholder',
-      stash: 'valid',
     })
-    expect(await f.slot.exitVault()).toBe('restored')
-    expect(await bytes(f.authPath)).toBe(original)
+  })
+
+  test('exit clears the placeholder preserving other provider bytes', async () => {
+    const f = await fixture()
+    await f.slot.enterVault()
+    await legacyStash(f)
+    expect(await f.slot.exitVault()).toBe('cleared')
+    expect(await bytes(f.authPath)).toBe(
+      '{\n  "google": { "type" : "api_key", "key": "literal-google" }\n}\n',
+    )
+    expect(await f.slot.inspect()).toEqual({ slot: 'empty' })
     await absent(f.stashPath)
     expect(await f.slot.exitVault()).toBe('nothing-to-do')
   })
 
-  test('empty slot round trip deletes only the placeholder', async () => {
+  test('empty slot enter and exit deletes only the placeholder', async () => {
     for (const text of [
       '{  \n}\n',
       '{"google": { "type":"api_key", "key":"keep" }\n}\n',
@@ -171,8 +183,8 @@ describe('pi slot', () => {
         type: 'api_key',
         key,
       })
-      expect(JSON.parse(await bytes(f.stashPath)).entry).toBeNull()
-      expect(await f.slot.exitVault()).toBe('restored')
+      await absent(f.stashPath)
+      expect(await f.slot.exitVault()).toBe('cleared')
       expect(await bytes(f.authPath)).toBe(text)
     }
   })
@@ -180,46 +192,56 @@ describe('pi slot', () => {
   test('raw scan preserves escapes Unicode and nested provider values', async () => {
     const credential =
       '{ "type":"oauth", "refresh":"token", "access":"quoted\\"} ,", "expires":1, "extra":[{"key":"雪"}, [false,null]] }'
-    for (const text of [
-      `{ "openai-codex":${credential}, "google":{"type":"api_key","key":"last"} }`,
-      `{ "google":{"type":"api_key","key":"first"}, "openai-codex":${credential} }`,
-      `{ "google":{"type":"api_key","key":"first"}, "openai-codex":${credential}, "anthropic":{"type":"api_key","key":"last"} }`,
-    ]) {
+    for (const [text, cleared] of [
+      [
+        `{ "openai-codex":${credential}, "google":{"type":"api_key","key":"last"} }`,
+        '{ "google":{"type":"api_key","key":"last"} }',
+      ],
+      [
+        `{ "google":{"type":"api_key","key":"first"}, "openai-codex":${credential} }`,
+        '{ "google":{"type":"api_key","key":"first"} }',
+      ],
+      [
+        `{ "google":{"type":"api_key","key":"first"}, "openai-codex":${credential}, "anthropic":{"type":"api_key","key":"last"} }`,
+        '{ "google":{"type":"api_key","key":"first"}, "anthropic":{"type":"api_key","key":"last"} }',
+      ],
+    ] as const) {
       const f = await fixture(text)
       await f.slot.enterVault()
       expect(JSON.parse(await bytes(f.authPath))[provider]).toEqual({
         type: 'api_key',
         key,
       })
-      await f.slot.exitVault()
-      expect(await bytes(f.authPath)).toBe(text)
+      expect(await f.slot.exitVault()).toBe('cleared')
+      expect(await bytes(f.authPath)).toBe(cleared)
     }
   })
 
-  test('foreign login exit conflict preserves both files', async () => {
+  test('exit preserves a new Pi login and deletes the legacy stash', async () => {
     const f = await fixture()
     await f.slot.enterVault()
     const foreign =
       '{"openai-codex":{"type":"oauth","refresh":"new-login","access":"new","expires":2},"google":{"type":"api_key","key":"keep"}}'
     await writeFile(f.authPath, foreign)
-    const stash = await bytes(f.stashPath)
-    expect((await f.slot.inspect()).slot).toBe('foreign')
-    expect(await f.slot.exitVault()).toBe('conflict')
+    await legacyStash(f)
+    expect(await f.slot.inspect()).toEqual({ slot: 'original' })
+    expect(await f.slot.exitVault()).toBe('nothing-to-do')
     expect(await bytes(f.authPath)).toBe(foreign)
-    expect(await bytes(f.stashPath)).toBe(stash)
+    await absent(f.stashPath)
   })
 
-  test('foreign login enter refuses credential free and unchanged', async () => {
+  test('enter replaces a new Pi login and deletes the legacy stash', async () => {
     const f = await fixture()
     await f.slot.enterVault()
     const foreign = '{"openai-codex":{"type":"api_key","key":"secret-foreign"}}'
     await writeFile(f.authPath, foreign)
-    const stash = await bytes(f.stashPath)
-    await expect(f.slot.enterVault()).rejects.toEqual(
-      new PiSlotError('conflict'),
-    )
-    expect(await bytes(f.authPath)).toBe(foreign)
-    expect(await bytes(f.stashPath)).toBe(stash)
+    await legacyStash(f)
+    await f.slot.enterVault()
+    expect(JSON.parse(await bytes(f.authPath))[provider]).toEqual({
+      type: 'api_key',
+      key,
+    })
+    await absent(f.stashPath)
   })
 
   test('placeholder refuses all Pi command and interpolation syntax', async () => {
@@ -247,34 +269,65 @@ describe('pi slot', () => {
     expect(resolveConfigValue(stored.key)).toBe(key)
   })
 
-  test('invalid stash refuses both transitions unchanged', async () => {
-    const f = await fixture()
-    await f.slot.enterVault()
-    const saved = JSON.parse(await bytes(f.stashPath))
-    saved.entry.refresh = 'tampered-credential'
-    const bad = JSON.stringify(saved)
-    await writeFile(f.stashPath, bad)
-    const auth = await bytes(f.authPath)
-    await expect(f.slot.enterVault()).rejects.toEqual(
-      new PiSlotError('invalid-stash'),
-    )
-    await expect(f.slot.exitVault()).rejects.toEqual(
-      new PiSlotError('invalid-stash'),
-    )
-    expect(await bytes(f.authPath)).toBe(auth)
-    expect(await bytes(f.stashPath)).toBe(bad)
-  })
-
-  test('missing stash never adopts or deletes a placeholder', async () => {
+  test('enter on the placeholder deletes a legacy stash without rewriting auth', async () => {
     const text = JSON.stringify({ [provider]: { type: 'api_key', key } })
     const f = await fixture(text)
-    await expect(f.slot.enterVault()).rejects.toEqual(
-      new PiSlotError('missing-stash'),
-    )
-    await expect(f.slot.exitVault()).rejects.toEqual(
-      new PiSlotError('missing-stash'),
-    )
+    await legacyStash(f)
+    const before = await stat(f.authPath)
+    const slot = createPiSlot(f.options, undefined, {
+      beforeRename: async () => {
+        throw new Error('Unexpected auth write')
+      },
+      afterReadCheck: async (path) => {
+        expect(path).toBe(f.authPath)
+      },
+    })
+    await slot.enterVault()
     expect(await bytes(f.authPath)).toBe(text)
+    expect((await stat(f.authPath)).ino).toBe(before.ino)
+    await absent(f.stashPath)
+  })
+
+  for (const operation of ['enterVault', 'exitVault'] as const) {
+    test(`${operation} deletes an unparseable legacy stash without reading it`, async () => {
+      const f = await fixture('{}')
+      await legacyStash(f, Buffer.from([0xff, 0x7b]))
+      const slot = createPiSlot(f.options, undefined, {
+        afterReadCheck: async (path) => {
+          expect(path).toBe(f.authPath)
+        },
+      })
+      expect(await slot.inspect()).toEqual({ slot: 'empty' })
+      await slot[operation]()
+      if (operation === 'exitVault') expect(await bytes(f.authPath)).toBe('{}')
+      await absent(f.stashPath)
+    })
+
+    for (const kind of ['symlink', 'directory'] as const) {
+      test(`${operation} refuses a legacy stash ${kind} without following it`, async () => {
+        const f = await fixture()
+        await mkdir(dirname(f.stashPath), { mode: 0o700 })
+        if (kind === 'symlink') await symlink(f.authPath, f.stashPath)
+        else await mkdir(f.stashPath)
+        await expect(f.slot[operation]()).rejects.toEqual(
+          new PiSlotError('unsafe-path'),
+        )
+        const auth = await bytes(f.authPath)
+        if (operation === 'enterVault')
+          expect(JSON.parse(auth)[provider]).toEqual({ type: 'api_key', key })
+        else expect(auth).toBe(original)
+        if (kind === 'symlink') expect(await bytes(f.stashPath)).toBe(auth)
+        else expect((await stat(f.stashPath)).isDirectory()).toBe(true)
+      })
+    }
+  }
+
+  test('placeholder is cleared even without a legacy stash', async () => {
+    const f = await fixture(
+      JSON.stringify({ [provider]: { type: 'api_key', key } }),
+    )
+    expect(await f.slot.exitVault()).toBe('cleared')
+    expect(JSON.parse(await bytes(f.authPath))).toEqual({})
     await absent(f.stashPath)
   })
 
@@ -307,16 +360,23 @@ describe('pi slot', () => {
   })
 
   for (const [mode, boundary] of [
-    ['crash-enter', 'stash-written'],
     ['crash-enter', 'auth-written'],
+    ['crash-enter', 'stash-deleted'],
     ['crash-exit', 'auth-written'],
     ['crash-exit', 'stash-deleted'],
   ]) {
-    test(`crash ${mode} after ${boundary} converges without loss`, async () => {
+    test(`crash ${mode} after ${boundary} converges without restoring credentials`, async () => {
       const f = await fixture()
       if (mode === 'crash-exit') await f.slot.enterVault()
+      await legacyStash(f)
       const crashed = child(mode ?? '', f.authPath, f.stashPath, boundary)
       await finished(crashed, 73)
+      if (boundary === 'auth-written') {
+        expect(await bytes(f.stashPath)).toBe(original)
+        expect(JSON.parse(await bytes(f.authPath))[provider]).toEqual(
+          mode === 'crash-enter' ? { type: 'api_key', key } : undefined,
+        )
+      }
       // Abrupt exits may leave the lock directory. Age only the dead child's lock
       // to exercise the real stale takeover without a 30-second wall-clock wait.
       try {
@@ -329,11 +389,13 @@ describe('pi slot', () => {
         await f.slot.enterVault()
         expect(await f.slot.inspect()).toEqual({
           slot: 'placeholder',
-          stash: 'valid',
         })
+        await absent(f.stashPath)
       }
       await f.slot.exitVault()
-      expect(await bytes(f.authPath)).toBe(original)
+      expect(await bytes(f.authPath)).toBe(
+        '{\n  "google": { "type" : "api_key", "key": "literal-google" }\n}\n',
+      )
       await absent(f.stashPath)
       expect(await readdir(dirname(f.stashPath))).toEqual([])
     })
@@ -363,10 +425,8 @@ describe('pi slot', () => {
         type: 'api_key',
         key,
       })
-      expect(await f.slot.exitVault()).toBe('restored')
-      expect(JSON.parse(await bytes(f.authPath))[provider].refresh).toBe(
-        'original-refresh',
-      )
+      expect(await f.slot.exitVault()).toBe('cleared')
+      expect(JSON.parse(await bytes(f.authPath))[provider]).toBeUndefined()
     } finally {
       writer.kill()
     }
@@ -387,7 +447,10 @@ describe('pi slot', () => {
       })
       await sleep(100)
       expect(acquired).toBe(false)
-      expect(await bytes(f.authPath)).toBe(original)
+      expect(JSON.parse(await bytes(f.authPath))[provider]).toEqual({
+        type: 'api_key',
+        key,
+      })
       holder.stdin.end()
       await finished(holder)
       await ready
@@ -402,7 +465,7 @@ describe('pi slot', () => {
       expect(JSON.parse(await bytes(f.authPath)).anthropic.key).toBe(
         'foreign-provider-key',
       )
-      expect(await f.slot.exitVault()).toBe('restored')
+      expect(await f.slot.exitVault()).toBe('cleared')
     } finally {
       holder.kill()
       writer?.kill()
@@ -417,13 +480,13 @@ describe('pi slot', () => {
     await f.slot.enterVault()
     await absent(`${f.authPath}.lock`)
     const auth = await bytes(f.authPath)
-    const stash = await bytes(f.stashPath)
+    await legacyStash(f)
     await mkdir(`${f.authPath}.lock`)
     await expect(
       openPiSlot({ ...f.options, lockTimeoutMs: 10 }).exitVault(),
     ).rejects.toEqual(new PiSlotError('lock-timeout'))
     expect(await bytes(f.authPath)).toBe(auth)
-    expect(await bytes(f.stashPath)).toBe(stash)
+    expect(await bytes(f.stashPath)).toBe(original)
   })
 
   test('holder renews mtime and detects a replaced lock', async () => {

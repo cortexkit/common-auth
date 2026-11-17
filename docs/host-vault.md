@@ -90,9 +90,12 @@ disposed custody refuses replacement.
 Every plugin must switch its authority reads to `vaultAuthority`, and accept
 `host` in OpenCode 2 login activation. On Pi, use `openPiSlot` from
 `@cortexkit/common-auth/pi-slot` (it holds Pi's `auth.json` lock while it
-writes) to save the native login in its stash and replace the provider's
+writes) to discard the native login and replace the provider's
 `auth.json` slot with the vault placeholder, just as for enrolled vault mode. The placeholder is a
 non-secret sentinel from `placeholderSecret(provider)`, not a usable credential.
+Disconnect clears the placeholder rather than restoring a login. If the vault
+lacks the login, the operator imports it first with `ck auth import --source pi`;
+plugins cannot write to the vault.
 Host setup still installs it in OpenCode 2's provider auth slot and runs the
 plugin's vault login: without that slot, OpenCode 2 does not route requests
 through the plugin. A hosted vault login succeeds when the accessor is

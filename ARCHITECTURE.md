@@ -39,7 +39,7 @@ Paths below are relative to the repository root.
 | `./limits`, `./limits/vault` | `src/limits/` | Limit signals, the marks registry, wait-or-switch decisions, fixed refusal wording. |
 | `./claustrum` | `src/claustrum/` | Vault enrollment, discovery, per-send authorization, the roster, insula quota, hosted mode. |
 | `./opencode2` | `src/opencode2/` | Installs the OpenCode 2 hooks that let a plugin choose accounts and decide retries. |
-| `./pi-slot` | `src/pi-slot/` | Moves Pi's own login aside while the vault serves, and restores it. |
+| `./pi-slot` | `src/pi-slot/` | Discards Pi's own login when the vault takes over; clears the placeholder on disconnect and deletes legacy login stashes. |
 | `./setup` | `src/setup/` | The shared `setup` command: host detection, registration, vault enrollment. |
 | `./commands`, `./auth-menu` | `src/commands/`, `src/auth-menu/` | The one slash-command menu model and its renderers; the terminal account menu. |
 | `./quota-sidebar`, `./tui`, `./tui-build`, `./tui-prefs`, `./sidebar-file` | same names | The shared sidebar frame, TUI loading and build, TUI preferences, the sidebar state file. |
