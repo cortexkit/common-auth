@@ -518,10 +518,9 @@ test('real writers have independently inspected ACLs and deny a standard second 
       privateParents: true,
     })
     await slot.enterVault()
-    assert.deepEqual(await slot.inspect(), {
-      slot: 'placeholder',
-      stash: 'valid',
-    })
+    // Entering the vault discards Pi's own login and keeps no copy of it.
+    assert.deepEqual(await slot.inspect(), { slot: 'placeholder' })
+    await assert.rejects(access(stashPath))
     let finishRenewal
     const renewed = new Promise((resolve) => {
       finishRenewal = resolve
@@ -584,7 +583,6 @@ test('real writers have independently inspected ACLs and deny a standard second 
       ...Object.values(dump.files),
       response,
       authPath,
-      stashPath,
       leasePath,
     ]
     const directories = [root, ...new Set(files.map(dirname))]
@@ -610,11 +608,12 @@ test('real writers have independently inspected ACLs and deny a standard second 
     lease = undefined
     await assert.rejects(access(leasePath))
     await assert.rejects(access(`${leasePath}.evicting`))
-    assert.equal(await slot.exitVault(), 'restored')
+    // Leaving the vault removes the placeholder and restores nothing.
+    assert.equal(await slot.exitVault(), 'cleared')
     await assert.rejects(access(stashPath))
     assert.equal(
-      JSON.parse(await readFile(authPath, 'utf8')).anthropic.key,
-      'private pi fixture',
+      JSON.parse(await readFile(authPath, 'utf8')).anthropic,
+      undefined,
     )
   } finally {
     if (!timedOut()) await lease?.release()
