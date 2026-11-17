@@ -30,8 +30,14 @@ import type {
 
 export const DEFAULT_MAX_RECORDS = 512
 
-/** Allow a one-hour cache lifetime plus the maximum session jitter. */
+/** Cache-bound holds allow a one-hour cache lifetime plus maximum session jitter. */
 export const MAX_RETRY_HOLD_MS = 3_621_000
+
+/**
+ * Terminal quota waits allow a seven-day reset plus margin while staying below
+ * the signed 32-bit millisecond timer limit (2^31 - 1 ms).
+ */
+export const MAX_TERMINAL_HOLD_MS = 691_200_000
 
 /**
  * The request header `model.request` sets to the attempt it started. The
@@ -1594,7 +1600,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                     hold &&
                     Number.isFinite(hold.delayMs) &&
                     hold.delayMs >= 0 &&
-                    hold.delayMs <= MAX_RETRY_HOLD_MS
+                    hold.delayMs <=
+                      (hold.kind === 'terminal'
+                        ? MAX_TERMINAL_HOLD_MS
+                        : MAX_RETRY_HOLD_MS)
                   ) {
                     // A recognised account limit can be recoverable even when
                     // the host treats its provider error as final.

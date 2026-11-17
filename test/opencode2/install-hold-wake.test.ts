@@ -19,6 +19,7 @@ import type {
 import {
   installOpenCode2Auth,
   MAX_RETRY_HOLD_MS,
+  MAX_TERMINAL_HOLD_MS,
   placeholderSecret,
 } from '../../src/opencode2/index.js'
 import {
@@ -391,6 +392,66 @@ describe('OpenCode 2 hold wake', () => {
       }
     })
   }
+
+  for (const [days, delayMs] of [
+    [7, 604_800_000],
+    [8, 691_200_000],
+  ] as const) {
+    test(`accepts a ${days}-day terminal hold without shortening the host delay`, async () => {
+      const s = await setup((input) =>
+        input.phase === 'retry'
+          ? { hold: { delayMs, target: now + delayMs, kind: 'terminal' } }
+          : 'A',
+      )
+      try {
+        await s.send()
+        expect((await s.retry()).decision).toEqual({
+          retry: true,
+          delay: delayMs,
+        })
+        expect(s.drops).toHaveLength(0)
+        expect(MAX_TERMINAL_HOLD_MS).toBe(691_200_000)
+      } finally {
+        await s.auth.dispose()
+      }
+    })
+  }
+
+  test('refuses a terminal hold over 8 days and releases the choice', async () => {
+    const delayMs = 691_200_001
+    const s = await setup((input) =>
+      input.phase === 'retry'
+        ? { hold: { delayMs, target: now + delayMs, kind: 'terminal' } }
+        : 'A',
+    )
+    try {
+      await s.send()
+      const hostDecision = { retry: true, delay: 5 }
+      expect((await s.retry(1, hostDecision)).decision).toBe(hostDecision)
+      expect(s.drops).toHaveLength(1)
+      expect(s.drops[0]?.accountId).toBe('A')
+    } finally {
+      await s.auth.dispose()
+    }
+  })
+
+  test('refuses an explicit non-terminal hold over the cache-bound maximum', async () => {
+    const delayMs = MAX_RETRY_HOLD_MS + 1
+    const s = await setup((input) =>
+      input.phase === 'retry'
+        ? { hold: { delayMs, target: now + delayMs, kind: 'hold' } }
+        : 'A',
+    )
+    try {
+      await s.send()
+      const hostDecision = { retry: false }
+      expect((await s.retry(1, hostDecision)).decision).toBe(hostDecision)
+      expect(s.drops).toHaveLength(1)
+      expect(s.drops[0]?.accountId).toBe('A')
+    } finally {
+      await s.auth.dispose()
+    }
+  })
 
   test('default retry schedule accepts holds at labels 2 through 11 and refuses label 12', async () => {
     const s = await setup((input) =>

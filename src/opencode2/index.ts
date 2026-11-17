@@ -6,6 +6,7 @@ export {
   DEFAULT_MAX_RECORDS,
   installOpenCode2Auth,
   MAX_RETRY_HOLD_MS,
+  MAX_TERMINAL_HOLD_MS,
 } from './install.js'
 export type {
   FormAnswer,

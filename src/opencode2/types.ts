@@ -115,14 +115,15 @@ export interface RetryHold {
     /**
      * Adapter-computed wait in milliseconds, including per-session jitter.
      * Finite, non-negative values up to MAX_RETRY_HOLD_MS (3_621_000) are
-     * accepted. Larger or invalid values keep the host's decision and release
-     * the choice rather than dispatching before the requested wait has elapsed.
+     * accepted, or up to MAX_TERMINAL_HOLD_MS (691_200_000) for kind 'terminal'.
+     * Larger or invalid values keep the host's decision and release the choice
+     * rather than dispatching before the requested wait has elapsed.
      */
     readonly delayMs: number
     /** An absolute wake target; its presence forces a request-phase re-check. */
     readonly target?: number
     readonly checkpoint?: WaitCheckpoint
-    /** Forwarded to wake.kind so terminal quota waits omit the cache bound. */
+    /** Terminal quota waits use the longer delay bound and omit the cache bound at wake. */
     readonly kind?: RetryWake['kind']
   }
 }
@@ -135,7 +136,7 @@ export interface RetryDisposition {
 /** Wait through one host retry, then choose afresh without reserving an account. */
 export interface RetryWaitThenReselect {
   readonly waitThenReselect: {
-    /** Same finite, non-negative delay bound as RetryHold.hold.delayMs. */
+    /** Finite, non-negative delay up to MAX_RETRY_HOLD_MS (3_621_000). */
     readonly delayMs: number
   }
 }
