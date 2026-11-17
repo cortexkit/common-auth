@@ -1,4 +1,4 @@
-/** Move a Pi provider slot aside without changing provider or model identifiers. */
+/** Replace a Pi provider login with a vault placeholder without changing provider or model identifiers. */
 
 export type {
   PiSlot,

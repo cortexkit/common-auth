@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, unlink } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -8,6 +7,7 @@ import {
   ensurePrivateDirectory,
   PrivateFileError,
   readPrivateBuffer,
+  verifySafeDirectory,
   windowsPrivateFiles,
 } from '../fs/private-files.js'
 import { acquirePiLock } from './lock.js'
@@ -15,10 +15,7 @@ import { acquirePiLock } from './lock.js'
 export type PiSlotErrorCode =
   | 'invalid-options'
   | 'invalid-auth'
-  | 'invalid-stash'
   | 'unsafe-path'
-  | 'missing-stash'
-  | 'conflict'
   | 'lock-timeout'
   | 'lock-compromised'
   | 'io'
@@ -37,10 +34,8 @@ export interface PiSlotOptions {
   authPath: string
   provider: string
   /**
-   * Where the provider's original Pi login is kept while the vault serves.
-   * Put it in a private directory, and give each provider its own file: one
-   * stash holds one provider's original login, and a second provider writing
-   * to it would overwrite the first one's backup.
+   * Where older versions kept the original Pi login; deleted when found.
+   * Keep the same path across upgrades so legacy credentials can be removed.
    */
   stashPath: string
   /**
@@ -54,26 +49,16 @@ export interface PiSlotOptions {
 }
 
 export interface PiSlotInspection {
-  slot: 'original' | 'placeholder' | 'foreign' | 'empty'
-  stash: 'valid' | 'missing'
+  slot: 'original' | 'placeholder' | 'empty'
 }
 
 export interface PiSlot {
   inspect(): Promise<PiSlotInspection>
   enterVault(): Promise<void>
-  exitVault(): Promise<'restored' | 'conflict' | 'nothing-to-do'>
+  exitVault(): Promise<'cleared' | 'nothing-to-do'>
 }
 
 type Entry = Record<string, unknown> | null
-interface Stash {
-  version: 1
-  provider: string
-  authIdentity: string
-  placeholderIdentity: string
-  entry: Entry
-  entryJson: string | null
-  sha256: string
-}
 interface Auth {
   text: string
   root: Root
@@ -151,26 +136,12 @@ function object(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
-  if (object(value)) {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(value) as string
-}
-function digest(value: unknown): string {
-  return createHash('sha256').update(canonical(value)).digest('hex')
-}
 function code(error: unknown): unknown {
   return object(error) ? error.code : undefined
 }
 
 async function safeRead(
   path: string,
-  privateFile = false,
   afterReadCheck?: (path: string) => Promise<void>,
 ): Promise<string | undefined> {
   if (windowsPrivateFiles) {
@@ -179,7 +150,7 @@ async function safeRead(
       const bytes = await readPrivateBuffer(path, true)
       const text = bytes.toString('utf8')
       if (!bytes.equals(Buffer.from(text)))
-        throw new PiSlotError(privateFile ? 'invalid-stash' : 'invalid-auth')
+        throw new PiSlotError('invalid-auth')
       return text
     } catch (error) {
       if (code(error) === 'ENOENT') return undefined
@@ -190,7 +161,7 @@ async function safeRead(
   try {
     file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
     const stat = await file.stat()
-    if (!stat.isFile() || (privateFile && (stat.mode & 0o777) !== 0o600)) {
+    if (!stat.isFile()) {
       throw new PiSlotError('unsafe-path')
     }
     await afterReadCheck?.(path)
@@ -206,7 +177,7 @@ async function safeRead(
     const bytes = await file.readFile()
     const text = bytes.toString('utf8')
     if (!bytes.equals(Buffer.from(text))) {
-      throw new PiSlotError(privateFile ? 'invalid-stash' : 'invalid-auth')
+      throw new PiSlotError('invalid-auth')
     }
     return text
   } catch (error) {
@@ -239,13 +210,6 @@ function parseAuth(text: string, provider: string): Auth {
   }
 }
 
-function entryText(auth: Auth): string | null {
-  const value = auth.property?.value
-  return value
-    ? auth.text.slice(value.offset, value.offset + value.length)
-    : null
-}
-
 function replaceEntry(
   auth: Auth,
   provider: string,
@@ -275,7 +239,7 @@ function replaceEntry(
   }
   if (next === null) return text
   const last = properties.at(-1)
-  // Insert next to the last value, not after its whitespace, so deletion reverses an empty-slot swap.
+  // Insert next to the last value so removal preserves the surrounding whitespace.
   const offset = last ? last.offset + last.length : root.offset + 1
   return `${text.slice(0, offset)}${last ? ',' : ''}${JSON.stringify(provider)}:${next}${text.slice(offset)}`
 }
@@ -323,7 +287,7 @@ export function openPiSlot(options: PiSlotOptions): PiSlot {
  */
 export function createPiSlot(
   options: PiSlotOptions,
-  onStep?: (step: 'stash-written' | 'auth-written' | 'stash-deleted') => void,
+  onStep?: (step: 'auth-written' | 'stash-deleted') => void,
   hooks?: {
     afterReadCheck?: (path: string) => Promise<void>
     onRenew?: (renew: () => Promise<void>) => void
@@ -349,35 +313,12 @@ export function createPiSlot(
   if (authPath === stashPath || stashPath === `${authPath}.lock`) {
     throw new PiSlotError('invalid-options')
   }
-  const authIdentity = digest(authPath)
-  const placeholderIdentity = digest(placeholderKey)
   const placeholder = { type: 'api_key', key: placeholderKey }
-  const isPlaceholder = (entry: Entry) => digest(entry) === digest(placeholder)
-
-  async function loadStash(): Promise<Stash | undefined> {
-    const text = await safeRead(stashPath, true, hooks?.afterReadCheck)
-    if (text === undefined) return undefined
-    try {
-      const stash = JSON.parse(text) as Stash
-      if (
-        stash.version !== 1 ||
-        stash.provider !== provider ||
-        stash.authIdentity !== authIdentity ||
-        stash.placeholderIdentity !== placeholderIdentity ||
-        (stash.entry !== null && !object(stash.entry)) ||
-        stash.sha256 !== digest(stash.entry) ||
-        (stash.entry === null
-          ? stash.entryJson !== null
-          : typeof stash.entryJson !== 'string' ||
-            digest(JSON.parse(stash.entryJson)) !== stash.sha256)
-      ) {
-        throw new Error()
-      }
-      return stash
-    } catch {
-      throw new PiSlotError('invalid-stash')
-    }
-  }
+  const isPlaceholder = (entry: Entry) =>
+    entry !== null &&
+    Object.keys(entry).length === 2 &&
+    entry.type === placeholder.type &&
+    entry.key === placeholder.key
 
   async function locked<T>(
     fn: (assertLock: () => void) => Promise<T>,
@@ -433,14 +374,26 @@ export function createPiSlot(
     }
   }
   async function load() {
-    const auth = parseAuth(
-      (await safeRead(authPath, false, hooks?.afterReadCheck)) ?? '{}',
+    return parseAuth(
+      (await safeRead(authPath, hooks?.afterReadCheck)) ?? '{}',
       provider,
     )
-    const stash = await loadStash()
-    return { auth, stash }
   }
   async function deleteStash(assertLock: () => void) {
+    // Legacy credentials are discarded without opening or parsing their contents.
+    try {
+      const file = await lstat(stashPath)
+      if (!file.isFile()) throw new PiSlotError('unsafe-path')
+    } catch (error) {
+      if (code(error) === 'ENOENT') return
+      throw error
+    }
+    if (windowsPrivateFiles) await verifySafeDirectory(dirname(stashPath))
+    else {
+      const dir = await lstat(dirname(stashPath))
+      if (!dir.isDirectory() || (dir.mode & 0o777) !== 0o700)
+        throw new PiSlotError('unsafe-path')
+    }
     assertLock()
     await unlink(stashPath)
     await syncDir(dirname(stashPath))
@@ -450,80 +403,43 @@ export function createPiSlot(
   return {
     inspect: () =>
       locked(async () => {
-        const { auth, stash } = await load()
+        const auth = await load()
         const slot = isPlaceholder(auth.entry)
           ? 'placeholder'
           : auth.entry === null
             ? 'empty'
-            : !stash || digest(auth.entry) === stash.sha256
-              ? 'original'
-              : 'foreign'
-        return { slot, stash: stash ? 'valid' : 'missing' }
+            : 'original'
+        return { slot }
       }),
     enterVault: () =>
       locked(async (assertLock) => {
-        const { auth, stash } = await load()
-        if (isPlaceholder(auth.entry)) {
-          if (!stash) throw new PiSlotError('missing-stash')
-          return
-        }
-        if (stash && digest(auth.entry) !== stash.sha256)
-          throw new PiSlotError('conflict')
-        if (!stash) {
-          if (windowsPrivateFiles)
-            await ensurePrivateDirectory(dirname(stashPath))
-          else {
-            await mkdir(dirname(stashPath), { recursive: true, mode: 0o700 })
-            const dir = await lstat(dirname(stashPath))
-            if (!dir.isDirectory() || (dir.mode & 0o777) !== 0o700)
-              throw new PiSlotError('unsafe-path')
-          }
-          const saved: Stash = {
-            version: 1,
-            provider,
-            authIdentity,
-            placeholderIdentity,
-            entry: auth.entry,
-            entryJson: entryText(auth),
-            sha256: digest(auth.entry),
-          }
-          await atomicWrite(
-            stashPath,
-            JSON.stringify(saved),
-            assertLock,
-            hooks?.beforeRename,
-          )
-          onStep?.('stash-written')
-        }
-        await atomicWrite(
-          authPath,
-          replaceEntry(auth, provider, JSON.stringify(placeholder)),
-          assertLock,
-          hooks?.beforeRename,
-        )
-        onStep?.('auth-written')
-      }),
-    exitVault: () =>
-      locked(async (assertLock) => {
-        const { auth, stash } = await load()
-        if (!stash) {
-          if (isPlaceholder(auth.entry)) throw new PiSlotError('missing-stash')
-          return 'nothing-to-do'
-        }
-        if (isPlaceholder(auth.entry)) {
+        const auth = await load()
+        if (!isPlaceholder(auth.entry)) {
           await atomicWrite(
             authPath,
-            replaceEntry(auth, provider, stash.entryJson),
+            replaceEntry(auth, provider, JSON.stringify(placeholder)),
             assertLock,
             hooks?.beforeRename,
           )
           onStep?.('auth-written')
-        } else if (digest(auth.entry) !== stash.sha256) {
-          return 'conflict'
         }
-        // Also completes a restore interrupted between the auth rename and stash deletion.
         await deleteStash(assertLock)
-        return 'restored'
+      }),
+    exitVault: () =>
+      locked(async (assertLock) => {
+        const auth = await load()
+        const cleared = isPlaceholder(auth.entry)
+        if (cleared) {
+          await atomicWrite(
+            authPath,
+            replaceEntry(auth, provider, null),
+            assertLock,
+            hooks?.beforeRename,
+          )
+          onStep?.('auth-written')
+        }
+        await deleteStash(assertLock)
+        return cleared ? 'cleared' : 'nothing-to-do'
       }),
   }
 }

@@ -478,7 +478,7 @@ are implemented as follows:
 | Logger | Ordered asynchronous append sink under a verified safe parent; retain the handle for automatic flushes, close before verified rotation/path changes, and discard it on IO errors. Hosts await `flushLogs()` to drain and close before shutdown; writable-by-others parents refuse. |
 | Dump | Dedicated private directory, exclusive private artifacts and secure baseline/response staging; unverified parents refuse rather than silently losing a dump. |
 | Enrollment | Handle-based token/status reads, shared safe-parent namespace checks, owner-only creation of missing directories and pending-state publication. Specific owned legacy files may migrate in safe default or override parents. No incidental token deletion. |
-| Pi slot | Handle-based auth/stash reads and owner-only staging. Existing parents must pass the safe-parent policy, irrespective of `privateParents`, and are never tightened. File-only Windows durability is explicit. |
+| Pi slot | Handle-based auth reads and owner-only staging; legacy stashes are deleted without reading them. Existing parents must pass the safe-parent policy, irrespective of `privateParents`, and are never tightened. File-only Windows durability is explicit. |
 
 `durable: true` retains the file-and-directory contract. On Windows directory
 metadata durability is unqualified, so it throws after rename with
@@ -542,34 +542,34 @@ Type exports: `AtomicWriteOptions`, `LockOptions`, `LockOwnershipDetails`, `Refr
 
 ### ./pi-slot
 
-On Windows Pi explicitly opts into file-only durability: the stash's bytes are
-file-flushed and its rename is published before the slot is changed. There is
-no directory metadata guarantee: **a crash between the stash rename and its
-directory metadata reaching disk could lose the stash on Windows.** This is not
-a claim about NTFS journal ordering. Windows checks safe auth/stash ancestry
+On Windows Pi explicitly opts into file-only durability: auth bytes are
+file-flushed before rename. There is no directory metadata guarantee for the
+auth rename or legacy stash deletion. This is not a claim about NTFS journal
+ordering. Windows checks safe auth/stash ancestry
 regardless of `privateParents`; it never tightens an existing parent. Specific
 trusted secret files may be permission-migrated after that check.
-Real Windows CI exercises stash enter/inspect/exit, ACLs and second-user denial.
+The Windows private-files workflow covers Pi transitions, ACLs and second-user denial.
 
 `openPiSlot({authPath, provider, stashPath, placeholderKey, lockTimeoutMs?})`
 returns asynchronous `inspect()`, `enterVault()` and `exitVault()` operations.
-`inspect()` reports `{slot: 'original'|'placeholder'|'foreign'|'empty',
-stash: 'valid'|'missing'}` without returning credentials. Without a stash, a
-non-placeholder credential is `original`; with a stash it must have the same
-canonical SHA-256 to be `original`. An absent slot is always `empty`.
-`exitVault()` returns `'restored'|'conflict'|'nothing-to-do'`. `PiSlotError`
-has a credential-free `code`; malformed input/stashes, unsafe paths, lost locks
+`inspect()` reports `{slot: 'original'|'placeholder'|'empty'}` without returning
+credentials or reading a legacy stash. Any non-placeholder entry is `original`;
+an absent slot is `empty`.
+`exitVault()` returns `'cleared'|'nothing-to-do'`. `PiSlotError`
+has a credential-free `code`; malformed auth input, unsafe paths, lost locks
 and lock timeouts throw typed errors rather than exposing filesystem or JSON
-parser messages. Invalid-state and conflict refusals do not rewrite either file.
+parser messages. Invalid auth input is refused without rewriting it.
 An I/O error after a durable rename may have committed that step: retry using
-the recovery rules below, not by deleting the stash.
+the recovery rules below.
 
-The plugin owns a dedicated stash path per auth file/provider and a non-secret,
+The plugin retains its legacy stash path per auth file/provider and a non-secret,
 deliberately unusable placeholder key. The key must be nonempty, must not start
 with `!`, and must not contain `$` anywhere (including Pi's interpolation and
-escape forms). Keep the same key and paths across restarts. On POSIX the stash is 0600
-inside a 0700 directory; existing non-private stash directories are refused,
-not chmodded. Regular files only are accepted; do not use symlinked auth files.
+escape forms). Keep the same key and paths across restarts and upgrades. The
+helper never creates a stash. Legacy stash cleanup requires a 0700 parent on
+POSIX; non-private stash directories are refused, not chmodded. Only regular
+files at the exact stash path are deleted; symlinks and directories are refused
+with `unsafe-path`, regardless of their contents. Do not use symlinked auth files.
 POSIX reads open with `O_NOFOLLOW`, validate the open descriptor, and read from
 that same descriptor; Windows uses the private-files handle-based read. A pathname replaced before the read's identity check is refused.
 
@@ -587,19 +587,19 @@ ELOCKED retries remain bounded (default 30 seconds). The lock implementation
 uses Node builtins and common-auth's atomic writer, not a runtime
 proper-lockfile dependency; Windows private-file operations use the published
 `@cortexkit/private-files` runtime dependency. Normal process exit releases owned locks; an abrupt
-kill or signal may leave a lock until its mtime becomes stale. Both auth writes
-and stash writes use a private same-directory temp, file fsync and rename;
+kill or signal may leave a lock until its mtime becomes stale. Auth writes
+use a private same-directory temp, file fsync and rename;
 directory fsync is confirmed on POSIX only. Unrelated provider values are never reserialized.
 
 Renewal and release check that the directory's device and inode match those
 recorded after acquisition and its mtime still equals the last mtime written by
 this holder. A changed or missing directory compromises the
-lease: no further renewal or release touches it, and the next auth or stash
-rename is refused. More than 10 seconds without a confirmed successful renewal
+lease: no further renewal or release touches it, and the next auth rename or
+stash deletion is refused. More than 10 seconds without a confirmed successful renewal
 also compromises the lease, even if the directory identity and mtime still match:
 a sync Pi writer is already entitled to take over. The helper checks this bound
 before renewal (including after an awaited stat) and at every write/deletion lock
-assertion, including immediately before an auth or stash rename. Failed renewals
+assertion, including immediately before an auth rename or stash deletion. Failed renewals
 still retry after one second unless the directory is missing or the 10-second
 loss bound has passed. These checks narrow, but do not eliminate, the protocol's
 takeover race. `stat` and `rmdir`/`utimes` are not atomic: a holder paused between
@@ -609,25 +609,37 @@ protocol has no on-disk owner identity; the device/inode checks are local only
 and do not change Pi's on-disk protocol. Adding an owner token would not fence
 Pi's writers.
 
-On entry, the current slot's raw JSON value (or null for absence), parsed entry,
-provider and canonical SHA-256 are durably stashed **before** installing the
-`{type:'api_key', key:placeholderKey}` placeholder. An existing valid stash plus
-the placeholder is an idempotent no-op. A stash plus the same original resumes
-the interrupted swap. A different credential with a stash throws `conflict`
-without changes. A placeholder without a stash throws `missing-stash`; it is
-never adopted as an original.
+On entry, any non-placeholder slot (including absence) is replaced with the
+`{type:'api_key', key:placeholderKey}` placeholder. The old login is discarded,
+never copied to another file. An existing placeholder leaves `auth.json`
+untouched. In either case, any legacy stash is then deleted without reading or
+parsing its secret contents, even if the file is malformed.
 
-On exit, the placeholder is replaced with the saved raw JSON, or removed for an
-originally empty slot, before the stash is durably deleted. A stash plus the
-original completes deletion after an interrupted restore. Foreign logins,
-including deletion of an originally populated slot, return `conflict` and keep
-the stash. No stash and no placeholder returns `nothing-to-do`. Never delete
-the stash to resolve a conflict automatically; let the account owner decide
-which login to retain. A stash hash detects corruption, not malicious rewriting
-by an actor who can already edit private credential files.
+On exit, the placeholder is removed entirely and the helper returns `cleared`.
+Any other entry, including a new Pi sign-in or an absent slot, is left untouched
+and returns `nothing-to-do`. Any legacy stash is then deleted in either case;
+nothing is ever restored. Auth writes always precede stash deletion, with a
+POSIX directory fsync after deletion. A crash between those steps leaves at
+most a legacy stash that the next enter or exit deletes. A cleanup refusal may
+therefore occur after the auth change has committed.
+
+#### Adopting 0.53.0
+
+This is a breaking Pi-slot change: `exitVault()` now returns
+`'cleared'|'nothing-to-do'`, not `'restored'|'conflict'|'nothing-to-do'`.
+`PiSlotInspection.stash` and the `foreign` slot state are removed; any
+non-placeholder entry is `original`. `PiSlotErrorCode` no longer includes
+`missing-stash`, `invalid-stash` or `conflict`. Keep `stashPath` configured to
+delete the credentials older versions left there.
+
+Connecting to the vault deletes Pi's saved sign-in for that provider. Disconnect
+leaves Pi signed out unless the user signed in again through Pi while connected.
+If the vault lacks the login, the operator must import it **before connecting**
+with `ck auth import --source pi`; plugins cannot write to the vault. After
+disconnect, Pi needs a new sign-in rather than recovering the discarded one.
 
 Pi's auth storage reloads when the file revision changes, but the model registry
-caches availability. **After a successful swap/restore, the extension must call
+caches availability. **After a successful enter/exit, the extension must call
 and await `ctx.modelRegistry.refresh()`**, including after restart recovery.
 This helper does not change Pi or register alternate providers/models: local
 and vault modes retain `google/`, `openai-codex/` and `anthropic/` identifiers.
