@@ -157,7 +157,7 @@ function policyAdapter(hostRetryLimit = 10) {
           remainingRetries:
             input.hostAttempt === undefined
               ? undefined
-              : hostRetryLimit - input.hostAttempt,
+              : hostRetryLimit + 2 - input.hostAttempt,
           wake: input.wake?.checkpoint
             ? { ...input.wake, checkpoint: input.wake.checkpoint }
             : undefined,
@@ -392,6 +392,32 @@ describe('OpenCode 2 hold wake', () => {
     })
   }
 
+  test('default retry schedule accepts holds at labels 2 through 11 and refuses label 12', async () => {
+    const s = await setup((input) =>
+      input.phase === 'retry' ? { hold: { delayMs: 1000 } } : 'A',
+    )
+    try {
+      for (const attempt of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
+        await s.send()
+        expect((await s.retry(attempt)).decision).toEqual({
+          retry: true,
+          delay: 1000,
+        })
+      }
+      expect(s.choices.filter((input) => input.phase === 'retry')).toHaveLength(
+        10,
+      )
+      expect(s.drops).toHaveLength(0)
+      await s.send()
+      const hostDecision = { retry: false }
+      expect((await s.retry(12, hostDecision)).decision).toBe(hostDecision)
+      expect(s.drops).toHaveLength(1)
+      expect(s.drops[0]?.accountId).toBe('A')
+    } finally {
+      await s.auth.dispose()
+    }
+  })
+
   for (const limit of [undefined, 4]) {
     for (const remaining of [0, 1]) {
       test(`retry budget ${limit ?? 'default 10'} with ${remaining} remaining ${remaining ? 'holds' : 'passes and leaves host retry'}`, async () => {
@@ -399,7 +425,7 @@ describe('OpenCode 2 hold wake', () => {
         const s = await setup(policy.choose, { hostRetryLimit: limit })
         try {
           await s.send()
-          const draft = await s.retry((limit ?? 10) - remaining)
+          const draft = await s.retry((limit ?? 10) + 2 - remaining)
           expect(draft.decision).toEqual(
             remaining ? { retry: true, delay: 2_716_000 } : { retry: false },
           )
@@ -428,9 +454,9 @@ describe('OpenCode 2 hold wake', () => {
         try {
           await s.send()
           const hostDecision = { retry: true, delay: 1234 }
-          expect((await s.retry(limit ?? 10, hostDecision)).decision).toEqual(
-            hostDecision,
-          )
+          expect(
+            (await s.retry((limit ?? 10) + 2, hostDecision)).decision,
+          ).toEqual(hostDecision)
           expect(s.drops).toHaveLength(1)
           expect(s.drops[0]?.accountId).toBe(
             typeof choice === 'string' ? 'B' : 'A',

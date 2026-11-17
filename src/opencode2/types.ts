@@ -69,7 +69,7 @@ export type HeaderEdits = Readonly<Record<string, string | null>>
 export interface ChooseAccountInput extends RequestScope {
   /** The retry hook's advance choice (which may hold), or a request's own choice. */
   readonly phase: 'retry' | 'request'
-  /** Retry hook draft's attempt count; also carried by a consumed hold's wake. */
+  /** Next-attempt label (first retry is 2); also carried by a consumed hold's wake. */
   readonly hostAttempt?: number
   /** Revalidate the held account before dispatch, even if the target is not due. */
   readonly wake?: RetryWake
@@ -587,8 +587,10 @@ export interface InstallOpenCode2AuthOptions {
   /** Most attempts kept before the oldest is abandoned and dropped. */
   readonly maxRecords?: number
   /**
-   * Host retry budget, default 10. When hostAttempt leaves no retry available,
-   * limit holds and reroutes keep the host's decision and release their choice.
+   * Number of host retries, default 10 (next-attempt labels 2 through 11).
+   * Remaining retries, including the one being decided, are
+   * hostRetryLimit + 2 - hostAttempt. With none available, limit holds and
+   * reroutes keep the host's decision and release their choice.
    */
   readonly hostRetryLimit?: number
   /**

@@ -579,7 +579,7 @@ describe('OpenCode 2 wait then reselect', () => {
     try {
       await fx.send()
       const decision: Decision = { retry: false }
-      expect((await fx.retry(decision, 2)).decision).toBe(decision)
+      expect((await fx.retry(decision, 4)).decision).toBe(decision)
       expect(fx.drops).toEqual([])
     } finally {
       await fx.auth.dispose()

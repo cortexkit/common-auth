@@ -208,7 +208,7 @@ async function install(policy: ReturnType<typeof fixture>) {
       if (account !== null) sends.push(account)
     },
     retry(
-      attempt = policy.hostRetryLimit - 1,
+      attempt = policy.hostRetryLimit + 1,
       decision: { retry: boolean; delay?: number } = { retry: false },
     ) {
       policy.limit()
@@ -235,7 +235,7 @@ describe('limits fixture adapter: OpenCode 2 single hold', () => {
         delay: 2_716_000,
       })
       expect(policy.calls).toHaveLength(2)
-      expect(policy.calls[1]).toMatchObject({ phase: 'retry', hostAttempt: 9 })
+      expect(policy.calls[1]).toMatchObject({ phase: 'retry', hostAttempt: 11 })
       expect(policy.decisions[1]).toMatchObject({
         action: 'hold',
         account: A,
@@ -264,7 +264,7 @@ describe('limits fixture adapter: OpenCode 2 single hold', () => {
       expect(policy.calls[2]).toMatchObject({
         phase: 'request',
         previousAccountId: 'A',
-        hostAttempt: 9,
+        hostAttempt: 11,
         wake: {
           target: now + 2_716_000,
           checkpoint: { accountKey: A, decidedAt: now },
@@ -315,8 +315,8 @@ describe('limits fixture adapter: OpenCode 2 single hold', () => {
       try {
         await s.send()
         const hostDecision = { retry: true, delay: 123 }
-        const result = await s.retry(4 - remainingRetries, hostDecision)
-        expect(policy.calls[1]?.hostAttempt).toBe(4 - remainingRetries)
+        const result = await s.retry(6 - remainingRetries, hostDecision)
+        expect(policy.calls[1]?.hostAttempt).toBe(6 - remainingRetries)
         if (remainingRetries === 0) {
           expect(policy.decisions[1]).toMatchObject({
             action: 'pass',
@@ -403,7 +403,7 @@ describe('limits fixture adapter: wake re-check', () => {
           expect(policy.calls).toHaveLength(3)
           expect(policy.calls[2]).toMatchObject({
             phase: 'request',
-            hostAttempt: 9,
+            hostAttempt: 11,
             wake: { target: now + 2_716_000 },
           })
           expect(s.headers).toEqual(alternative ? ['A', 'B'] : ['A'])
@@ -490,7 +490,7 @@ describe('limits fixture adapter: terminal holds and dispositions', () => {
       await s.send()
       expect(policy.calls).toHaveLength(3)
       expect(policy.calls[2]).toMatchObject({
-        hostAttempt: 9,
+        hostAttempt: 11,
         wake: { target: now + 600_000, kind: 'terminal' },
       })
       expect(policy.decisions[2]).toMatchObject({
@@ -515,7 +515,7 @@ describe('limits fixture adapter: terminal holds and dispositions', () => {
     try {
       await s.send()
       const hostDecision = { retry: true, delay: 321 }
-      expect((await s.retry(10, hostDecision)).decision).toEqual(hostDecision)
+      expect((await s.retry(12, hostDecision)).decision).toEqual(hostDecision)
       expect(policy.decisions[1]).toMatchObject({
         action: 'pass',
         hostRetry: 'leave',

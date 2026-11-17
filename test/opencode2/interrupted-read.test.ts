@@ -188,7 +188,7 @@ describe('interrupted HTTP output', () => {
             : { retry: true, delay: 37 }
         const decision = (
           await t.retry(
-            refusal === 'budget-exhausted' ? 4 : 1,
+            refusal === 'budget-exhausted' ? 6 : 1,
             hostDecision,
             refusal === 'host-payment'
               ? {
@@ -271,7 +271,7 @@ describe('interrupted HTTP output', () => {
     const t = await setup(true, 2)
     try {
       await t.interrupt((await t.send()).request)
-      expect((await t.retry(1)).decision).toEqual({ retry: true, delay: 37 })
+      expect((await t.retry(3)).decision).toEqual({ retry: true, delay: 37 })
     } finally {
       await t.auth.dispose()
     }

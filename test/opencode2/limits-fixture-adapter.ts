@@ -39,7 +39,7 @@ export function limitsFixtureAdapter(
           remainingRetries:
             input.hostAttempt === undefined
               ? undefined
-              : hostRetryLimit - input.hostAttempt,
+              : hostRetryLimit + 2 - input.hostAttempt,
           wake: input.wake?.checkpoint
             ? { ...input.wake, checkpoint: input.wake.checkpoint }
             : undefined,

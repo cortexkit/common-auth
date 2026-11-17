@@ -2438,11 +2438,15 @@ chooser and response/event seams; the installer does not select a preset or
 parse provider policy. Existing account-id, untargeted `RetryHold` and
 `undefined` results retain their meaning.
 
-- `ChooseAccountInput.hostAttempt` is the retry draft's count in phase `'retry'`
-  and the consumed retry's count on a wake call; ordinary request calls omit it.
-  The adapter uses `hostRetryLimit - hostAttempt` as remaining retries. The
-  installer also enforces the budget: with fewer than one remaining, a hold,
-  wait/reselect or reroute releases its choice and leaves the host's decision.
+- `ChooseAccountInput.hostAttempt` is the host's next-attempt label in phase
+  `'retry'` and the consumed retry's label on a wake call; ordinary request calls
+  omit it. The first retry is labelled 2. `hostRetryLimit` is the number of host
+  retries, so the adapter uses `hostRetryLimit + 2 - hostAttempt` as remaining
+  retries, including the retry being decided. The installer also enforces the
+  budget: with fewer than one remaining, a hold, wait/reselect or reroute releases
+  its choice and leaves the host's decision. **Since 0.54.0**, plugins get two more
+  hold opportunities on the default ten-retry schedule: all labels 2 through 11
+  may hold, while label 12 is outside the schedule and is refused.
 - `RetryHold.hold` additionally accepts `target`, `checkpoint` and
   `kind: 'hold' | 'terminal'`. A queued hold with a target always releases its
   reserved choice and calls `chooseAccount` in phase `'request'` with

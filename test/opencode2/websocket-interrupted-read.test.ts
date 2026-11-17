@@ -210,7 +210,7 @@ describe('interrupted WebSocket output', () => {
             : { retry: true, delay: 37 }
         const decision = (
           await t.retry(
-            refusal === 'budget-exhausted' ? 4 : 1,
+            refusal === 'budget-exhausted' ? 6 : 1,
             error,
             hostDecision,
           )

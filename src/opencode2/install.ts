@@ -269,6 +269,8 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   const logger = options.logger
   const maxRecords = Math.max(1, options.maxRecords ?? DEFAULT_MAX_RECORDS)
   const hostRetryLimit = options.hostRetryLimit ?? 10
+  // Retry labels start at 2; count the retry being decided as still available.
+  const remainingHostRetries = (attempt: number) => hostRetryLimit + 2 - attempt
   const forbidden = [
     ...(options.hostCredentials ?? [placeholderSecret(providerID)]),
     // An owned request must replace its placeholder even if a caller customizes
@@ -1312,7 +1314,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
             rec.readFailed === true &&
             draft.error.type === 'provider.transport' &&
             hostDecision.retry &&
-            hostRetryLimit - draft.attempt >= 1 &&
+            remainingHostRetries(draft.attempt) >= 1 &&
             !rec.limit &&
             !(rec.status !== undefined && rec.status >= 400) &&
             !(draft.error.status !== undefined && draft.error.status >= 400) &&
@@ -1574,7 +1576,7 @@ export async function installOpenCode2Auth<Q, A = unknown>(
                     rec.hostRetry = 'veto'
                     decision = { retry: false }
                     reason = 'adapter-veto'
-                  } else if (!(hostRetryLimit - draft.attempt >= 1)) {
+                  } else if (!(remainingHostRetries(draft.attempt) >= 1)) {
                     if (next) await releaseChoice(next)
                     next = undefined
                     reason = 'host-decides-last-account'
