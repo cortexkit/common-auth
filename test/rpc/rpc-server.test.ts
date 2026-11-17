@@ -1,4 +1,4 @@
-import { describe, expect, spyOn } from 'bun:test'
+import { beforeEach, describe, expect, spyOn } from 'bun:test'
 import {
   chmod,
   mkdir,
@@ -33,6 +33,7 @@ import {
   DEFAULT_RPC_TIMEOUT_MS,
 } from '../../src/rpc/rpc-client.js'
 import { startRpcServer as start } from '../../src/rpc/rpc-server.js'
+import { resetRpcSweepForTest } from '../../src/rpc/startup-sweep.js'
 import { lifetimeHooks } from '../fixtures/lifetime-hooks.js'
 import { makeTempDir } from '../fixtures/scratch'
 
@@ -60,6 +61,7 @@ const startRpcServer = (
 let stop: (() => Promise<void>) | null = null
 let dir: string
 const capture = createCaptureSink()
+beforeEach(() => resetRpcSweepForTest())
 afterEach(async () => {
   await stop?.()
   stop = null
@@ -67,6 +69,7 @@ afterEach(async () => {
   if (dir) await rm(dir, { recursive: true, force: true })
   resetNotificationsForTest(scope)
   capture.clear()
+  resetRpcSweepForTest()
 })
 describe('rpc-server', () => {
   test('apply callback receives sessionId unchanged; health is open and pending-notifications drains', async () => {
@@ -400,6 +403,85 @@ describe('rpc-server', () => {
     stop = server.stop
 
     expect(await readdir(root)).toEqual(['fixture-cafebabecafebabe'])
+  })
+
+  test('startup sweeps other folders only once per minute but always cleans its own', async () => {
+    dir = await makeTempDir('fixture-rpcsrv-')
+    const root = join(dir, 'state')
+    const staleDir = join(root, 'fixture-deadbeefdeadbeef')
+    const stalePath = join(staleDir, 'port-99999999.json')
+    const dead = { port: 1, token: 'dead', pid: 99999999, startedAt: 1 }
+    const seedOther = async () => {
+      await mkdir(staleDir, { recursive: true })
+      await writeFile(stalePath, JSON.stringify(dead), { mode: 0o600 })
+    }
+    let now = 0
+    resetRpcSweepForTest(() => now)
+    const startIn = async (name: string) => {
+      const server = await startRpcServer({
+        dir: join(root, name),
+        sweepRoot: root,
+        drain: drainNotifications,
+        apply: async () => ({ text: 'ok', knobs: {} }),
+      })
+      stop = server.stop
+      await server.stop()
+      stop = null
+    }
+
+    await seedOther()
+    await startIn('fixture-1111111111111111')
+    await expect(stat(stalePath)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    await seedOther()
+    const ownDir = join(root, 'fixture-2222222222222222')
+    await mkdir(ownDir)
+    await writeFile(join(ownDir, 'port-99999999.json'), JSON.stringify(dead))
+    await writeFile(join(ownDir, 'port-99999998.json'), '{broken')
+    await writeFile(
+      join(ownDir, `port-${process.ppid}.json`),
+      JSON.stringify({ ...dead, pid: process.ppid }),
+    )
+    now = 59_999
+    await startIn('fixture-2222222222222222')
+    expect(await readFile(stalePath, 'utf8')).toBe(JSON.stringify(dead))
+    // stop() removes the newly published record, leaving the protected folder.
+    expect(await readdir(ownDir)).toEqual([])
+
+    now = 60_000
+    await startIn('fixture-3333333333333333')
+    await expect(stat(stalePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  test('concurrent startups share the cross-project sweep budget', async () => {
+    dir = await makeTempDir('fixture-rpcsrv-')
+    const staleDir = join(dir, 'fixture-deadbeefdeadbeef')
+    await writePortFile(staleDir, { port: 1, token: 'dead', pid: 99999999 })
+    resetRpcSweepForTest(() => 0)
+    let siblingChecks = 0
+    const servers: Array<Awaited<ReturnType<typeof start>>> = []
+    stop = async () => {
+      for (const server of servers) await server.stop()
+    }
+    await Promise.all(
+      ['fixture-1111111111111111', 'fixture-2222222222222222'].map(
+        async (name) => {
+          const server = await start({
+            dir: join(dir, name),
+            sweepRoot: dir,
+            isManagedDir: (candidate) => {
+              if (candidate === 'fixture-deadbeefdeadbeef') siblingChecks += 1
+              return isManagedRpcStateDir(candidate, 'fixture-')
+            },
+            drain: drainNotifications,
+            apply: async () => ({ text: 'ok', knobs: {} }),
+          })
+          servers.push(server)
+        },
+      ),
+    )
+    expect(siblingChecks).toBe(1)
+    await expect(stat(staleDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   test('creates a managed RPC directory with 0700 permissions', async () => {

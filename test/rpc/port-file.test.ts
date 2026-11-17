@@ -337,6 +337,28 @@ describe('port-file', () => {
     expect(found?.token).toBe('survives')
   })
 
+  test('writePortFile succeeds after four ENOENT failures', async () => {
+    const projectDir = join(dir, 'fixture-deadbeefdeadbeef')
+    let calls = 0
+    const target = await writePortFile(
+      projectDir,
+      { port: 7777, token: 'survives', pid: process.pid },
+      {
+        beforeWrite: async () => {
+          calls += 1
+          if (calls <= 4) await rmdir(projectDir)
+        },
+      },
+    )
+
+    expect(calls).toBe(5)
+    expect(await stat(target)).toBeDefined()
+    expect(await discoverPortFile(projectDir)).toMatchObject({
+      port: 7777,
+      token: 'survives',
+    })
+  })
+
   test('writePortFile does not retry forever on a persistent ENOENT', async () => {
     const projectDir = join(dir, 'fixture-deadbeefdeadbeef')
     let calls = 0
@@ -352,9 +374,7 @@ describe('port-file', () => {
         },
       ),
     ).rejects.toMatchObject({ code: 'ENOENT' })
-    // Bounded: one initial attempt + exactly one retry = 2 invocations of
-    // beforeWrite. A third attempt would exceed the bounded retry policy.
-    expect(calls).toBe(2)
+    expect(calls).toBe(5)
   })
 
   test('sweepRpcState removes unusable entries and continues through sibling directories', async () => {

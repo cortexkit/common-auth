@@ -253,8 +253,8 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | rpc | Sweep removes corrupt port records | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState removes a corrupt port file |
 | rpc | Corrupt sibling does not endanger live record | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState leaves a valid live port file in a directory with a corrupt file |
 | rpc | Corrupt-record unlink failure is tolerated | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState ignores an unlink failure for a corrupt port file |
-| rpc | One ENOENT retry recovers concurrent directory removal | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | writePortFile recovers when the directory is removed between mkdir and write |
-| rpc | Persistent ENOENT stops after one retry | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | writePortFile does not retry forever on a persistent ENOENT |
+| rpc | Up to five attempts, 25 ms apart, recover concurrent directory removal on ENOENT | reference/openai-auth/packages/opencode/src/rpc/port-file.ts (retry budget extended locally) | writePortFile succeeds after four ENOENT failures |
+| rpc | Persistent ENOENT stops after five attempts | reference/openai-auth/packages/opencode/src/rpc/port-file.ts (retry budget extended locally) | writePortFile does not retry forever on a persistent ENOENT |
 | rpc | Sweep continues through siblings | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | sweepRpcState removes unusable entries and continues through sibling directories |
 | rpc | Numeric startedAt is written and used; non-numeric values sort last rather than being rejected | new (neither copy) | numeric startedAt is written; non-numeric startedAt sorts last without rejection |
 | rpc | Discovery unlinks dead usable records only | reference/openai-auth/packages/opencode/src/rpc/port-file.ts | discovery unlinks usable dead entries, ignores missing finite ports and preserves usable live entries |
@@ -266,7 +266,7 @@ The opencode2 rows (the `/opencode2` hooks on OpenCode 2's own drivers) are new:
 | rpc | Body limit counts bytes; answered 413 since 0.8.0 | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | rejects multibyte body where byte length exceeds limit but string length does not |
 | rpc | Stalled socket is reclaimed | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | destroys a socket that stalls part-way through sending a request |
 | rpc | Failed sweep does not block startup | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | starts when the state sweep fails |
-| rpc | Startup sweeps stale project state | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | startup sweeps stale project state outside the active directory |
+| rpc | Startup sweeps other projects at most once per 60 s per process; own-folder cleanup is unchanged | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts (sweep cadence bounded locally) | startup sweeps other folders only once per minute but always cleans its own |
 | rpc | secureDir true hardens RPC directory to 0700 | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | creates a managed RPC directory with 0700 permissions |
 | rpc | secureDir false preserves existing override permissions | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | does not chmod a foreign RPC override directory |
 | rpc | Slow apply survives the default inactivity period | reference/openai-auth/packages/opencode/src/rpc/rpc-server.ts | default timeout lets a slow apply handler respond before the socket is destroyed |

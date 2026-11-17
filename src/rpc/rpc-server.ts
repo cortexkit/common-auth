@@ -15,7 +15,8 @@ import {
   isSessionId,
   type RpcNotification,
 } from './notifications.js'
-import { sweepRpcState, writePortFile } from './port-file.js'
+import { writePortFile } from './port-file.js'
+import { sweepRpcStateOnStart } from './startup-sweep.js'
 
 export interface RpcServerHandle {
   port: number
@@ -356,7 +357,7 @@ export async function startRpcServer(
   server.unref()
   if (options.sweepRoot) {
     try {
-      await sweepRpcState(
+      await sweepRpcStateOnStart(
         options.sweepRoot,
         options.dir,
         options.isManagedDir,
