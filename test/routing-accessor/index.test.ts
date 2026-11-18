@@ -189,6 +189,23 @@ describe('askRouting', () => {
     })
   })
 
+  test('a continue ask with no usable candidates sends an explicit empty view', async () => {
+    const accountFor = mock((_request: unknown) => Promise.resolve(null))
+    install(() => ({ accountFor }))
+    await askRouting({ ...continueAsk, candidates: [] })
+    await askRouting({
+      ...continueAsk,
+      candidates: [{ ...candidate, credentialId: '' }],
+    })
+    const empty = {
+      view_digest:
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      accounts: [],
+    }
+    expect(accountFor.mock.calls[0]?.[0]).toHaveProperty('candidates', empty)
+    expect(accountFor.mock.calls[1]?.[0]).toHaveProperty('candidates', empty)
+  })
+
   test('sends the exact five_hour continue request', async () => {
     const accountFor = mock((_request: unknown, _options: unknown) =>
       Promise.resolve(null),
