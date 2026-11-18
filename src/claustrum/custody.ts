@@ -29,14 +29,27 @@ import {
   type WatchMode,
 } from './watch.js'
 
+// The vault may add auth methods; unknown values are refused by the classifier.
+type ScopedRow = Omit<ScopedInventoryRow, 'authMethod'> & {
+  readonly authMethod?: string
+}
+
+type ScopedInventory = Omit<
+  Awaited<ReturnType<ClaustrumClient['listScoped']>>,
+  'rows'
+> & { readonly rows: readonly ScopedRow[] }
+
 /**
  * claustrum-client adds watchScoped in 0.12.0 and reportUsageScoped in 0.14.0.
  * Older clients keep polling and simply do not send reply quota readings.
  */
 export type ClaustrumScopedClient = Pick<
   ClaustrumClient,
-  'listScoped' | 'getScoped' | 'reportAuthFailureScoped' | 'close'
-> & { insula?: InsulaUsageTransport } & ScopedWatchSource &
+  'getScoped' | 'reportAuthFailureScoped' | 'close'
+> & {
+  listScoped(enrollmentToken?: string): Promise<ScopedInventory>
+  insula?: InsulaUsageTransport
+} & ScopedWatchSource &
   ScopedUsageSource
 
 /** The two credential types a plugin's family can hold; routing differs by type. */
@@ -428,7 +441,7 @@ type ClassifiedCredential =
   | { kind: 'refused'; code: string }
 
 function credentialTypeOf(
-  row: ScopedInventoryRow,
+  row: ScopedRow,
   family: ClaustrumFamilyInput,
 ): ClassifiedCredential {
   const notMine = { kind: 'not-mine' } as const
@@ -842,7 +855,7 @@ export class ClaustrumScopedCustody {
     const refused: { credentialId?: string; code: string }[] = []
     let notMine = 0
     const candidates: Array<{
-      row: ScopedInventoryRow
+      row: ScopedRow
       type: VaultCredentialType
       member?: string
     }> = []
