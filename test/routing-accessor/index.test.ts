@@ -95,6 +95,17 @@ const input = {
   modelId: 'claude-sonnet',
   candidates: [candidate],
 }
+const continueAsk = {
+  ...input,
+  mode: 'continue',
+  requestId: 'continue-1',
+  exhausted: {
+    accountId: 'previous-account',
+    credentialId: 'previous-credential',
+    limitWindow: 'five_hour',
+    observedAtMs: 1_750_000_000_000,
+  },
+} as const
 
 function install(value: unknown): void {
   Object.defineProperty(globalThis, symbol, {
@@ -178,18 +189,148 @@ describe('askRouting', () => {
     })
   })
 
-  test('sends mode only for the exact continue value', async () => {
-    const accountFor = mock((_request: unknown) => Promise.resolve(null))
+  test('sends the exact five_hour continue request', async () => {
+    const accountFor = mock((_request: unknown, _options: unknown) =>
+      Promise.resolve(null),
+    )
     install(() => ({ accountFor }))
-    await askRouting({ ...input, mode: 'continue' })
-    await askRouting(input)
     await askRouting({
-      ...input,
-      mode: 'Continue',
-    } as unknown as AskRoutingInput)
-    expect(accountFor.mock.calls[0]?.[0]).toHaveProperty('mode', 'continue')
-    expect(accountFor.mock.calls[1]?.[0]).not.toHaveProperty('mode')
-    expect(accountFor.mock.calls[2]?.[0]).not.toHaveProperty('mode')
+      ...continueAsk,
+      exhausted: {
+        ...continueAsk.exhausted,
+        pool: 'model-pool.1',
+        resetsAtMs: 1_750_000_060_000,
+        retryAfterS: 59.75,
+      },
+    })
+    expect(accountFor.mock.calls).toStrictEqual([
+      [
+        {
+          provider: 'anthropic',
+          modelId: 'claude-sonnet',
+          mode: 'continue',
+          request_id: 'continue-1',
+          exhausted: {
+            account: 'previous-account',
+            credential_id: 'previous-credential',
+            limit_window: 'five_hour',
+            observed_at_ms: 1_750_000_000_000,
+            pool: 'model-pool.1',
+            resets_at_ms: 1_750_000_060_000,
+            retry_after_s: 59,
+          },
+          candidates: candidateView,
+        },
+        { deadlineMs: 1500 },
+      ],
+    ])
+  })
+
+  test('sends the exact signed_out continue request', async () => {
+    const accountFor = mock((_request: unknown, _options: unknown) =>
+      Promise.resolve(null),
+    )
+    install(() => ({ accountFor }))
+    await askRouting({
+      ...continueAsk,
+      requestId: 'continue-2',
+      exhausted: { ...continueAsk.exhausted, limitWindow: 'signed_out' },
+    })
+    expect(accountFor.mock.calls).toStrictEqual([
+      [
+        {
+          provider: 'anthropic',
+          modelId: 'claude-sonnet',
+          mode: 'continue',
+          request_id: 'continue-2',
+          exhausted: {
+            account: 'previous-account',
+            credential_id: 'previous-credential',
+            limit_window: 'signed_out',
+            observed_at_ms: 1_750_000_000_000,
+          },
+          candidates: candidateView,
+        },
+        { deadlineMs: 1500 },
+      ],
+    ])
+  })
+
+  test.each([undefined, 'Continue'])(
+    'omits continue fields for mode %p',
+    async (mode) => {
+      const accountFor = mock((_request: unknown) => Promise.resolve(null))
+      install(() => ({ accountFor }))
+      await askRouting({ ...continueAsk, mode } as unknown as AskRoutingInput)
+      expect(accountFor.mock.calls[0]?.[0]).toStrictEqual({
+        provider: 'anthropic',
+        modelId: 'claude-sonnet',
+        candidates: candidateView,
+      })
+    },
+  )
+
+  test.each([
+    ['no exhausted reason', { exhausted: undefined }],
+    [
+      'a bad window',
+      { exhausted: { ...continueAsk.exhausted, limitWindow: 'hourly' } },
+    ],
+    [
+      'a bad pool',
+      { exhausted: { ...continueAsk.exhausted, pool: 'Uppercase' } },
+    ],
+    [
+      'no observation time',
+      { exhausted: { ...continueAsk.exhausted, observedAtMs: undefined } },
+    ],
+    [
+      'a reset time on signed_out',
+      {
+        exhausted: {
+          ...continueAsk.exhausted,
+          limitWindow: 'signed_out',
+          resetsAtMs: 1,
+        },
+      },
+    ],
+    ['no request id', { requestId: undefined }],
+    ['a request id with a control character', { requestId: 'bad\nrequest' }],
+  ] as const)(
+    'rejects a continue with %s before calling routing',
+    async (_, invalid) => {
+      const accessor = mock(() => ({ accountFor: () => Promise.resolve(null) }))
+      install(accessor)
+      const request = {
+        ...continueAsk,
+        ...invalid,
+      } as unknown as AskRoutingInput
+      expect(await askRouting(request)).toBeUndefined()
+      expect(accessor).not.toHaveBeenCalled()
+    },
+  )
+
+  test('requires continue fields only for continue asks in the input type', () => {
+    expectTypeOf<typeof continueAsk>().toExtend<AskRoutingInput>()
+    expectTypeOf<
+      Omit<typeof continueAsk, 'exhausted'>
+    >().not.toExtend<AskRoutingInput>()
+    expectTypeOf<
+      Omit<typeof continueAsk, 'requestId'>
+    >().not.toExtend<AskRoutingInput>()
+    expectTypeOf<
+      Omit<typeof continueAsk, 'mode' | 'requestId'>
+    >().not.toExtend<AskRoutingInput>()
+    expectTypeOf<
+      Omit<typeof continueAsk, 'exhausted'> & {
+        exhausted: Omit<typeof continueAsk.exhausted, 'limitWindow'> & {
+          limitWindow: 'signed_out'
+          pool: string
+          resetsAtMs: number
+          retryAfterS: number
+        }
+      }
+    >().not.toExtend<AskRoutingInput>()
   })
 
   test('keeps existing caller types narrow and infers opted-in refusal types', async () => {

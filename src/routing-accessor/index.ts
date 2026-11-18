@@ -38,10 +38,34 @@ export interface RoutingCandidate {
   credentialId: string
 }
 
-export interface AskRoutingInput<
+type ContinueExhaustion = {
+  /** Vault account id, not the plugin's route id. */
+  accountId: string
+  credentialId: string
+  /** When the limit or sign-in signal was observed, in Unix milliseconds. */
+  observedAtMs: number
+} & (
+  | {
+      limitWindow: 'five_hour' | 'seven_day'
+      /** Scoped quota group matching `^[a-z0-9._-]{1,64}$`. */
+      pool?: string
+      /** Reset time in Unix milliseconds. */
+      resetsAtMs?: number
+      /** Non-negative seconds until retry, rounded down. */
+      retryAfterS?: number
+    }
+  | {
+      limitWindow: 'signed_out'
+      pool?: never
+      resetsAtMs?: never
+      retryAfterS?: never
+    }
+)
+
+export type AskRoutingInput<
   Candidate extends RoutingCandidate = RoutingCandidate,
   Refusals extends boolean = false,
-> {
+> = {
   sessionId: string
   provider: string
   modelId: string
@@ -61,13 +85,23 @@ export interface AskRoutingInput<
   holdWaitMaxS?: number
   /** Plugin sticky choice's vault credential id; an eligible-account hint, not a pin. */
   warmCredentialId?: string
-  /**
-   * Ask routing to move a request off its current account mid-run, after
-   * reporting `transient_backoff` or `exhausted`. Without this, the pin stays
-   * on the old account.
-   */
-  mode?: 'continue'
-}
+} & (
+  | { mode?: never; requestId?: never; exhausted?: never }
+  | {
+      /**
+       * Ask routing whether a run should move off its pinned account. Send to
+       * the selected account, or wait on it if the answer includes a hold.
+       * With `refusals: true`, a `{refused}` answer means keep the run paused
+       * on its account until the reset or, for `signed_out`, until the user
+       * signs in. Do not ask again while paused.
+       */
+      mode: 'continue'
+      /** One id per question (e.g. a fresh UUID); reuse it only to retry that same question. */
+      requestId: string
+      /** Required on a continue: a proved usage limit or a definite sign-in signal. */
+      exhausted: ContinueExhaustion
+    }
+)
 
 export interface RoutingHold {
   /** Uncapped advice from routing. The plugin must apply its own hold cap. */
@@ -184,11 +218,11 @@ export type ReportRoutingInput =
       /**
        * Report a 429 or similar response that isn't a proved quota limit. With
        * no provider retry time, use the final attempt's receipt time + 5,000 ms.
-       * Routing blocks new admissions on the account for every session until
-       * then but keeps the session's pin. To move this request, ask routing
-       * again with `mode: 'continue'` rather than sending on another account.
-       * Use `exhausted` with its window for a proved quota limit, and
-       * `credential_refused` for an API key refused for any use.
+       * Routing blocks only new admissions on the account until `retryAtMs`.
+       * The session's pin stays: wait until `retryAtMs` and retry the run on
+       * the same account. For a proved quota limit, report `exhausted` and ask
+       * routing to continue with the exhausted window. Use `credential_refused`
+       * for an API key refused for any use.
        */
       kind: 'transient_backoff'
       /** Absolute retry time in Unix milliseconds. */
@@ -270,6 +304,56 @@ function isBoundedControlFreeString(
 
 function isRoutingCode(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z0-9._-]{1,64}$/.test(value)
+}
+
+function continueExhaustion(value: unknown) {
+  if (!isObject(value) || Array.isArray(value)) return undefined
+  const { accountId, credentialId, limitWindow, observedAtMs } = value
+  if (
+    !isBoundedControlFreeString(accountId, 256) ||
+    !isBoundedControlFreeString(credentialId, 256) ||
+    typeof observedAtMs !== 'number' ||
+    !Number.isSafeInteger(observedAtMs) ||
+    observedAtMs <= 0 ||
+    (limitWindow !== 'five_hour' &&
+      limitWindow !== 'seven_day' &&
+      limitWindow !== 'signed_out')
+  )
+    return undefined
+
+  const exhausted = {
+    account: accountId,
+    credential_id: credentialId,
+    limit_window: limitWindow,
+    observed_at_ms: observedAtMs,
+  }
+  if (limitWindow === 'signed_out') {
+    if ('pool' in value || 'resetsAtMs' in value || 'retryAfterS' in value)
+      return undefined
+    return exhausted
+  }
+
+  const { pool, resetsAtMs, retryAfterS } = value
+  if (
+    (pool !== undefined && !isRoutingCode(pool)) ||
+    (resetsAtMs !== undefined &&
+      (typeof resetsAtMs !== 'number' ||
+        !Number.isSafeInteger(resetsAtMs) ||
+        resetsAtMs <= 0)) ||
+    (retryAfterS !== undefined &&
+      (typeof retryAfterS !== 'number' ||
+        !Number.isFinite(retryAfterS) ||
+        retryAfterS < 0))
+  )
+    return undefined
+  return {
+    ...exhausted,
+    ...(pool !== undefined ? { pool } : {}),
+    ...(resetsAtMs !== undefined ? { resets_at_ms: resetsAtMs } : {}),
+    ...(retryAfterS !== undefined
+      ? { retry_after_s: Math.floor(retryAfterS) }
+      : {}),
+  }
 }
 
 function billingCache(value: unknown): Record<string, unknown> | undefined {
@@ -485,6 +569,19 @@ export async function askRouting<Candidate extends RoutingCandidate>(
 ): Promise<RoutingSelection<Candidate> | RoutingRefusal | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
+    const request: Record<string, unknown> = {
+      provider: input.provider,
+      modelId: input.modelId,
+    }
+    if (input.mode === 'continue') {
+      const { requestId } = input
+      if (!isBoundedControlFreeString(requestId, 128)) return undefined
+      const exhausted = continueExhaustion(input.exhausted)
+      if (!exhausted) return undefined
+      request.mode = 'continue'
+      request.request_id = requestId
+      request.exhausted = exhausted
+    }
     const handle = routingHandle(input.sessionId)
     if (!handle) return undefined
     const accountFor = handle.accountFor
@@ -497,16 +594,11 @@ export async function askRouting<Candidate extends RoutingCandidate>(
       timer = setTimeout(() => resolve(undefined), deadlineMs)
       timer.unref()
     })
-    const request: Record<string, unknown> = {
-      provider: input.provider,
-      modelId: input.modelId,
-    }
     const cap = input.holdWaitMaxS
     if (typeof cap === 'number' && Number.isFinite(cap)) {
       request.hold_wait_max_s = Math.max(0, Math.floor(cap))
     }
     if (input.refusals === true) request.refusals = true
-    if (input.mode === 'continue') request.mode = 'continue'
     const warmCredentialId = input.warmCredentialId
     if (
       isBoundedControlFreeString(warmCredentialId, 256) &&
@@ -759,11 +851,7 @@ export function reportRouting(input: ReportRoutingInput): void {
           const { window, pool } = input
           if (window !== '5h' && window !== '7d') return
           // An undefined pool means the whole account, as an omitted one does.
-          if (
-            pool !== undefined &&
-            (typeof pool !== 'string' || !/^[a-z0-9._-]{1,64}$/.test(pool))
-          )
-            return
+          if (pool !== undefined && !isRoutingCode(pool)) return
           payload = {
             ...identity,
             outcome: 'exhausted',

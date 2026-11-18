@@ -1684,7 +1684,8 @@ Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
 
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
-| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS?, refusals?, warmCredentialId?, mode?: 'continue' }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | never throws or rejects |
+| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS?, refusals?, warmCredentialId? }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | never throws or rejects |
+| `askRouting(input)` (continue) | Adds `{ mode: 'continue', requestId, exhausted }` to the base input | Sends `mode`, `request_id` and `exhausted` for a proved quota limit or definite sign-in signal | Invalid continue fields return `undefined` without calling routing |
 | `askRouting(input)` (warm account hint) | Optional `warmCredentialId`: the vault credential id of the account the plugin's own sticky choice has this session on | Adds `warm_credential` to the account question only for a non-empty string of at most 256 characters, with no control characters (U+0000–U+001F or U+007F–U+009F), equal to a candidate's `credentialId` | Invalid or filtered-out hints are omitted without failing the call |
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` or `{ sessionId, accountId, credentialId, outcome: 'credential_refused', providerCode: string }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools, or invalid credential-refusal codes or credential ids, send nothing |
 | `reportRouting(input)` (transient backoff) | `{ sessionId, accountId, credentialId?, kind: 'transient_backoff', retryAtMs, providerCode? }` | `void`; sends `{ kind: 'transient_backoff', account_id, credential_id?, retry_at_ms, provider_code? }` through the session handle | never throws; an invalid field, even an optional field if supplied, drops the report |
@@ -1813,10 +1814,30 @@ most 256 characters with no control characters. If no valid pair remains, the
 entire wire member is omitted. No candidate metadata or credential secrets are
 sent.
 
-**Moving a request mid-run.** If a request must move off its current account,
-first report `transient_backoff` or `exhausted`, then ask routing again with
-`mode: 'continue'`. The report alone leaves the pin on the old account. The
-accessor sends `mode` only for the exact value `'continue'`.
+**Continuing a run.** For a proved quota limit, report `exhausted` with its
+window and ask with `mode: 'continue'`. A definite sign-in signal can also
+justify a continue, with `limitWindow: 'signed_out'`. A continue requires both
+`requestId` and `exhausted`; neither is sent on an ordinary ask. Use a unique
+`requestId` per question (for example a fresh UUID), reused only to retry that
+same question. It must be non-empty, control-free and at most 128 characters.
+The accessor sends it as `request_id`. Thalamus derives `selection_id` from
+the session and `request_id` and fills in `run_id`, `admission_id`,
+`conversation_key` and `previous_decision_id`.
+
+`exhausted` carries `accountId` (the vault account id) and `credentialId`,
+each non-empty, control-free and at most 256 characters. It also requires
+`limitWindow` (`five_hour`, `seven_day` or `signed_out`) and `observedAtMs`
+(a positive safe integer in Unix milliseconds). For a quota window, `pool`
+may name a group matching `^[a-z0-9._-]{1,64}$`, `resetsAtMs` may give the
+reset as a positive safe integer in Unix milliseconds, and `retryAfterS` may
+give a finite, non-negative retry delay in seconds, rounded down. These three
+optional fields must be absent for `signed_out`. On the wire the member is
+`{ account, credential_id, limit_window, observed_at_ms, pool?, resets_at_ms?, retry_after_s? }`.
+
+Send to the account routing selects, or wait on it if the answer includes a
+hold. Pass `refusals: true` to receive `{refused}`. On a continue refusal,
+keep the run paused on its account until the reset or, for `signed_out`,
+until the user signs in. Do not ask again while paused.
 
 **Opt-in refusals.** With `refusals: true`, a routing answer of
 `{ refused: { code, routing_code?, reason?, retry_after_secs?, resets_at_ms? } }` returns
@@ -1831,10 +1852,11 @@ dropped without losing the refusal. If none of the offered accounts are servable
 by routing, the relay can return `account_selection_final` with
 `routing_code: 'account_unservable'` and `reason: 'candidates_disjoint'`.
 
-A plugin receiving a refusal sends nothing: no own choice, no other account and
-no retry inside the request. It fails the request with a fixed local error, not
+A plugin receiving a refusal sends nothing: no own choice and no other account.
+On an admission refusal, it fails the request with a fixed local error, not
 message text from routing. The runner, rather than the plugin, uses the refusal's
-`retryAfterSecs` / `resetsAtMs` timing advice to continue the turn.
+`retryAfterSecs` / `resetsAtMs` timing advice to continue the turn. On a continue
+refusal, keep the run paused as described above.
 A missing handle, timeout, thrown or rejected call or unreadable answer
 still means the plugin keeps its own choice, even with refusals enabled. A
 routing outage must not stop requests. Existing callers keep the selection-only
@@ -1855,9 +1877,10 @@ before waiting, and still performs its normal vault authorization before a send.
 that isn't a proved quota limit. `retryAtMs` is a positive safe integer in Unix
 milliseconds. Use the provider's retry time, or the time the final attempt's
 response was received plus 5,000 ms if the provider gave no retry time. Routing
-blocks new admissions on that account for all sessions until then without
-changing the current pin. An actual quota limit still uses `exhausted` with its
-window, and an API key refused for any use still uses `credential_refused`.
+blocks only new admissions on that account until then. The session's pin stays:
+the run waits until `retryAtMs` and retries on the same account without a continue
+ask. For a proved quota limit, report `exhausted` and continue with its window
+instead. Use `credential_refused` for an API key refused for any use.
 `sessionId` (used to look up the handle) and `accountId` must be non-empty strings.
 If supplied, `credentialId` and `providerCode` must be non-empty strings with no
 control characters, at most 256 and 128 characters respectively. The provider
