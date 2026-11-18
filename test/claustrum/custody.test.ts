@@ -726,6 +726,85 @@ describe('scoped discovery', () => {
     ).toEqual([row.id, 'arbitrary-label'])
   })
 
+  test('a category family refuses gateway OAuth rows that otherwise belong to it', async () => {
+    const gateway = inventoryRow({
+      id: 'oauth:test:gateway',
+      authMethod: 'gateway',
+    })
+    const { custody } = fixture({
+      listScoped: async () => ({
+        ...unknownGrants,
+        view: 'v',
+        rows: [
+          row,
+          ...(['chatgpt', 'antigravity', 'oauth'] as const).map((authMethod) =>
+            inventoryRow({ id: `oauth:test:${authMethod}`, authMethod }),
+          ),
+          gateway,
+          inventoryRow({ id: 'oauth:test:apikey', authMethod: 'apikey' }),
+          { ...gateway, id: 'other-category', categories: ['other-native'] },
+          { ...gateway, id: 'wrong-adapter', refreshAdapter: 'cursor' },
+          { ...gateway, id: 'wrong-type', credentialType: 'apikey' },
+          { ...gateway, id: 'no-read', operations: ['sign'] },
+        ],
+      }),
+    })
+    const inventory = await custody.discover()
+    expect(inventory.credentials.map((c) => c.credentialId)).toEqual([
+      row.id,
+      'oauth:test:chatgpt',
+      'oauth:test:antigravity',
+      'oauth:test:oauth',
+    ])
+    expect(inventory.refused).toEqual([
+      { credentialId: gateway.id, code: 'unknown-auth-method' },
+      { credentialId: 'oauth:test:apikey', code: 'unknown-auth-method' },
+    ])
+    expect(inventory.notMine).toBeUndefined()
+  })
+
+  test('a category family that opts into API keys refuses non-apikey methods', async () => {
+    const key = inventoryRow({
+      id: 'apikey:test:legacy',
+      credentialType: 'api_key',
+      refreshAdapter: undefined,
+    })
+    const listScoped: ClaustrumScopedClient['listScoped'] = async () => ({
+      ...unknownGrants,
+      view: 'v',
+      rows: [
+        key,
+        { ...key, id: 'apikey:test:native', authMethod: 'apikey' },
+        { ...key, id: 'apikey:test:gateway', authMethod: 'gateway' },
+        { ...key, id: 'apikey:test:oauth', authMethod: 'oauth' },
+        {
+          ...key,
+          id: 'apikey:test:refreshable',
+          refreshAdapter: family.refreshAdapter,
+          authMethod: 'gateway',
+        },
+      ],
+    })
+    const off = await fixture({ listScoped }).custody.discover()
+    expect(off.credentials).toEqual([])
+    expect(off.refused).toBeUndefined()
+
+    const on = await fixture(
+      { listScoped },
+      { family: { ...family, apiKeys: true } },
+    ).custody.discover()
+    expect(
+      on.credentials.map((c) => [c.credentialId, c.credentialType]),
+    ).toEqual([
+      [key.id, 'api_key'],
+      ['apikey:test:native', 'api_key'],
+    ])
+    expect(on.refused).toEqual([
+      { credentialId: 'apikey:test:gateway', code: 'unknown-auth-method' },
+      { credentialId: 'apikey:test:oauth', code: 'unknown-auth-method' },
+    ])
+  })
+
   test('admits static API keys by type and category only when the family opts in', async () => {
     const rows = [
       row,

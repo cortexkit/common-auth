@@ -711,10 +711,9 @@ downstream observers such as openai-auth's `ObservedConsumer` in
 **Classifying families (next minor).** `ClaustrumScopedCustody` accepts the new
 `ClaustrumFamilyInput = ClaustrumFamily | ClassifyingClaustrumFamily<string>`.
 `ClaustrumFamily` remains the same extendable interface, including required
-`refreshAdapter` and optional `apiKeys`; existing adapter families keep their
-discovery behavior and inventory shape. `ClaustrumConsumerOptions.family` still
-accepts only that legacy interface. Several provider consumers share one
-classifying family through `ClaustrumDiscoveryHub`, below.
+`refreshAdapter` and optional `apiKeys`. `ClaustrumConsumerOptions.family` still
+accepts only that interface. Several provider consumers share one classifying
+family through `ClaustrumDiscoveryHub`, below.
 
 `ClassifyingClaustrumFamily<Code>` supplies `category`, `refusalCodes: readonly
 Code[]`, and `classify(row: VaultRowFacts)`. The library first requires `read`,
@@ -738,8 +737,14 @@ ids. Older vaults or clients before 0.6 may omit `authMethod`; the library never
 guesses from the id. A row with a recognized method but
 no `providerIds` (including claustrum-client 0.12 rows) is refused as the
 fixed library code `unmapped` before calling policy. An empty array still reaches
-policy: it can mean an old daemon or a row without provider mapping. Legacy non-classifying families
-keep their `credentialType`-based behavior and do not require `authMethod`.
+policy: it can mean an old daemon or a row without provider mapping.
+
+Category families still use `credentialType`, category, and refresh adapter to
+decide whether a row belongs to them. Once a row passes those checks, an absent
+`authMethod` is allowed for compatibility with older vaults. If present, the
+method must be `chatgpt`, `antigravity`, or `oauth` for OAuth rows, or `apikey`
+for opt-in API-key rows. Other methods, including `gateway`, are refused as
+`unknown-auth-method`.
 
 Only declared refusal codes matching `^[a-z][a-z0-9-]{0,31}$` are published.
 Thrown classifier errors, invalid results and undeclared or malformed codes
@@ -747,8 +752,9 @@ become the fixed library code `unclassified`; error messages are never published
 Callers should account for the library codes `unknown-auth-method`, `unmapped`
 and `unclassified` in addition to their declared codes.
 
-For classifying families only, `VaultInventory.refused` lists `{ credentialId?,
-code }` (blank ids omitted), and `notMine` counts rows without listing them.
+`VaultInventory.refused` lists `{ credentialId?, code }` (blank ids omitted).
+Category families omit the field if they refuse no rows. For classifying families
+only, `notMine` counts rows outside the family's responsibility.
 Admitted `VaultCredential` and malformed admitted `SkippedVaultRecord` values
 carry optional `member`. No refusal is admitted as a credential. These are
 in-memory discovery fields only: the roster file format is unchanged, including

@@ -389,18 +389,11 @@ const apiKeys: boolean | undefined = legacy.apiKeys
 void adapter
 void apiKeys
 
-test('legacy families keep their inventory shape and never read classifier metadata', async () => {
+test('category families keep their inventory shape for compatible methods without reading provider IDs', async () => {
   const legacyRow = row('xai')
-  Object.defineProperties(legacyRow, {
-    providerIds: {
-      get() {
-        throw new Error('legacy must not read providerIds')
-      },
-    },
-    authMethod: {
-      get() {
-        throw new Error('legacy must not read authMethod')
-      },
+  Object.defineProperty(legacyRow, 'providerIds', {
+    get() {
+      throw new Error('category families must not read providerIds')
     },
   })
   const inventory = await fixture([legacyRow], legacy).discover()

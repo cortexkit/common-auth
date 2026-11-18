@@ -59,7 +59,8 @@ export type VaultCredentialType = 'oauth' | 'api_key'
  * Which vault rows belong to this plugin. `refreshAdapter` classifies an OAuth
  * row by the protocol it speaks; `category` is the grant that authorizes this
  * consumer to read it. Static API keys carry no refresh adapter, so they are
- * admitted only when `apiKeys` is set and only by category.
+ * admitted only when `apiKeys` is set. If a row declares an auth method, it
+ * must agree with the credential type.
  */
 export interface ClaustrumFamily {
   refreshAdapter: string
@@ -176,8 +177,10 @@ export interface VaultInventory {
   readonly credentials: readonly VaultCredential[]
   readonly skipped: readonly SkippedVaultRecord[]
   /**
-   * Classifying families only: declared policy codes or the fixed library codes
-   * `unknown-auth-method`, `unmapped` and `unclassified`, never classifier errors.
+   * Refused rows and their codes, never classifier errors. Category families
+   * omit this field if no rows were refused and use only `unknown-auth-method`.
+   * Classifying families can also use declared policy codes, `unmapped` and
+   * `unclassified`.
    */
   readonly refused?: readonly { credentialId?: string; code: string }[]
   /** Classifying families only: rows outside this family's responsibility. */
@@ -490,28 +493,41 @@ function credentialTypeOf(
     }
     return { kind: 'refused', code: 'unclassified' }
   }
-  if (row.credentialType !== 'oauth' && row.credentialType !== 'api_key')
+  const type = row.credentialType
+  if (type === 'oauth') {
+    if (row.refreshAdapter !== family.refreshAdapter) return notMine
+  } else if (type === 'api_key') {
+    if (!family.apiKeys || row.refreshAdapter !== undefined) return notMine
+  } else {
     return notMine
-  if (row.credentialType === 'oauth')
-    return row.refreshAdapter === family.refreshAdapter
-      ? { kind: 'mine', type: 'oauth' }
-      : notMine
-  if (row.credentialType === 'api_key' && family.apiKeys)
-    return row.refreshAdapter === undefined
-      ? { kind: 'mine', type: 'api_key' }
-      : notMine
-  return notMine
+  }
+  const { authMethod } = rowFactsOf(row, { includeProviderIds: false })
+  // Older vaults omit the method. If present, it must match the serving type.
+  if (authMethod !== undefined) {
+    const matchesType =
+      type === 'oauth'
+        ? authMethod === 'chatgpt' ||
+          authMethod === 'antigravity' ||
+          authMethod === 'oauth'
+        : authMethod === 'apikey'
+    if (!matchesType) return { kind: 'refused', code: 'unknown-auth-method' }
+  }
+  return { kind: 'mine', type }
 }
 
 /** Structural access keeps the public facts independent of client declarations. */
-function rowFactsOf(row: {
-  readonly id: string
-}): Pick<VaultRowFacts, 'providerIds' | 'authMethod'> {
+function rowFactsOf(
+  row: { readonly id: string },
+  { includeProviderIds = true } = {},
+): Pick<VaultRowFacts, 'providerIds' | 'authMethod'> {
   const metadata = row as {
     readonly providerIds?: readonly string[]
     readonly authMethod?: string
   }
-  return { providerIds: metadata.providerIds, authMethod: metadata.authMethod }
+  return {
+    providerIds: includeProviderIds ? metadata.providerIds : undefined,
+    authMethod: metadata.authMethod,
+  }
 }
 
 /**
@@ -913,14 +929,15 @@ export class ClaustrumScopedCustody {
     for (const record of skipped)
       this.#logger.warn('skipped malformed vault record', record)
     const grantReach = grantReachOf(inventory)
+    const classifying = 'classify' in this.#family
     return {
       view: inventory.view,
       credentials: Object.freeze(credentials),
       skipped: Object.freeze(skipped),
-      ...('classify' in this.#family && {
+      ...((classifying || refused.length > 0) && {
         refused: Object.freeze(refused),
-        notMine,
       }),
+      ...(classifying && { notMine }),
       ...(grantReach && { grantReach }),
     }
   }
