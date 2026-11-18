@@ -1795,6 +1795,9 @@ with no third-party dependencies.
 after the auth plugin is found without reloading. A missing accessor, unserved
 session, malformed answer or accessor failure yields `undefined`: the plugin
 keeps its own choice. `candidates` never include a route the vault refused.
+They are the routable set, not the account the plugin's local selection would
+choose, so they can include routes that selection would skip for model or quota
+reasons.
 Beyond that, plugins may leave out accounts only under a user-configured
 eligibility rule, such as a killswitch floor the user turned on (the minimum share of a quota
 window an account must keep to be offered) or a per-model
