@@ -45,8 +45,12 @@ export function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+// `authMethod` is a plain string so tests can send methods that newer vaults
+// serve but the oldest supported client (the floor check) does not type.
 export function inventoryRow(
-  overrides: Partial<ScopedInventoryRow> = {},
+  overrides: Partial<Omit<ScopedInventoryRow, 'authMethod'>> & {
+    authMethod?: string
+  } = {},
 ): ScopedInventoryRow {
   return {
     id: 'oauth:test:work',
@@ -61,7 +65,7 @@ export function inventoryRow(
     recordVersion: 1,
     createdAtMs: null,
     ...overrides,
-  }
+  } as ScopedInventoryRow
 }
 
 /**
