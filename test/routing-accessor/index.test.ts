@@ -16,7 +16,7 @@ import {
   reportRouting,
 } from '../../src/routing-accessor/index.js'
 
-test('routing accessor keeps its dependency-free bridge closure', async () => {
+test('routing accessor imports only bridge modules and the Node crypto builtin', async () => {
   const build = await Bun.build({
     entrypoints: [
       new URL('../../src/routing-accessor/index.ts', import.meta.url).pathname,
@@ -33,7 +33,8 @@ test('routing accessor keeps its dependency-free bridge closure', async () => {
               return
             if (
               args.path === './handle.js' ||
-              args.path === './cache-policy.js'
+              args.path === './cache-policy.js' ||
+              args.path === 'node:crypto'
             )
               return
             throw new Error(
@@ -81,6 +82,13 @@ const candidate = {
   credentialId: 'vault-credential',
   route: { kind: 'oauth' },
 }
+const candidateView = {
+  view_digest:
+    '25478d57c66c318bc8ed460d02c02530eecc284dc35d8afaa6da0d73a119b6d3',
+  accounts: [
+    { account_id: 'vault-account', credential_id: 'vault-credential' },
+  ],
+}
 const input = {
   sessionId: 'session',
   provider: 'anthropic',
@@ -106,6 +114,84 @@ afterEach(() => {
 })
 
 describe('askRouting', () => {
+  test('sends candidates in input order with a digest of the sorted account lines', async () => {
+    const accounts = [
+      { accountId: 'b', credentialId: 'c2', label: 'not sent' },
+      { accountId: 'a', credentialId: 'c1', label: 'not sent' },
+    ]
+    const accountFor = mock((_request: unknown) =>
+      Promise.resolve({ account_id: 'a', credential_id: 'c1' }),
+    )
+    install(() => ({ accountFor }))
+    const selected = await askRouting({ ...input, candidates: accounts })
+    expect(selected?.candidate).toBe(accounts[1])
+    expect(accountFor.mock.calls[0]?.[0]).toEqual({
+      provider: 'anthropic',
+      modelId: 'claude-sonnet',
+      candidates: {
+        view_digest:
+          '10059db6eaf3fe5e8d2ccc17a5059ef02deca3ca6c1df44d17ff2ac5f3f7ea37',
+        accounts: [
+          { account_id: 'b', credential_id: 'c2' },
+          { account_id: 'a', credential_id: 'c1' },
+        ],
+      },
+    })
+  })
+
+  test('sorts digest lines by UTF-8 bytes instead of JavaScript string order', async () => {
+    const accountFor = mock((_request: unknown) => Promise.resolve(null))
+    install(() => ({ accountFor }))
+    await askRouting({
+      ...input,
+      candidates: [
+        { accountId: '\u{10000}', credentialId: 'c2' },
+        { accountId: '\uE000', credentialId: 'c1' },
+      ],
+    })
+    expect(accountFor.mock.calls[0]?.[0]).toHaveProperty(
+      'candidates.view_digest',
+      '2ca028d04c79fd58a037c31f5b8cbbb19cb3b32f7020f3c0d64232a34cbee0e9',
+    )
+  })
+
+  test('omits invalid candidates and leaves out the view when none are valid', async () => {
+    const invalid = [
+      { ...candidate, credentialId: '' },
+      { ...candidate, credentialId: 'x'.repeat(257) },
+      { ...candidate, credentialId: 'bad\u0080credential' },
+      { ...candidate, credentialId: 1 as unknown as string },
+      { ...candidate, accountId: '' },
+      { ...candidate, accountId: null as unknown as string },
+    ]
+    const accountFor = mock((_request: unknown) => Promise.resolve(null))
+    install(() => ({ accountFor }))
+    await askRouting({ ...input, candidates: [candidate, ...invalid] })
+    expect(accountFor.mock.calls[0]?.[0]).toHaveProperty(
+      'candidates',
+      candidateView,
+    )
+    await askRouting({ ...input, candidates: invalid })
+    expect(accountFor.mock.calls[1]?.[0]).toStrictEqual({
+      provider: 'anthropic',
+      modelId: 'claude-sonnet',
+    })
+  })
+
+  test('sends mode only for the exact continue value', async () => {
+    const accountFor = mock((_request: unknown) => Promise.resolve(null))
+    install(() => ({ accountFor }))
+    await askRouting({ ...input, mode: 'continue' })
+    await askRouting(input)
+    await askRouting({
+      ...input,
+      mode: 'Continue',
+    } as unknown as AskRoutingInput)
+    expect(accountFor.mock.calls[0]?.[0]).toHaveProperty('mode', 'continue')
+    expect(accountFor.mock.calls[1]?.[0]).not.toHaveProperty('mode')
+    expect(accountFor.mock.calls[2]?.[0]).not.toHaveProperty('mode')
+  })
+
   test('keeps existing caller types narrow and infers opted-in refusal types', async () => {
     answerWith({ account_id: candidate.accountId })
     const existingInput: AskRoutingInput<typeof candidate> = input
@@ -152,6 +238,7 @@ describe('askRouting', () => {
           modelId: 'claude-sonnet',
           hold_wait_max_s: 12,
           ...(refusals === true ? { refusals: true } : {}),
+          candidates: candidateView,
         },
         { deadlineMs: 1500 },
       )
@@ -167,6 +254,24 @@ describe('askRouting', () => {
     expect(await askRouting({ ...input, refusals: true })).toEqual({
       refused: { code },
     })
+  })
+
+  test('passes through the reason for a terminal account-selection refusal', async () => {
+    answerWith({
+      refused: {
+        code: 'account_selection_final',
+        routing_code: 'account_unservable',
+        reason: 'candidates_disjoint',
+      },
+    })
+    expect(await askRouting({ ...input, refusals: true })).toEqual({
+      refused: {
+        code: 'account_selection_final',
+        routingCode: 'account_unservable',
+        reason: 'candidates_disjoint',
+      },
+    })
+    expect(await askRouting(input)).toBeUndefined()
   })
 
   test.each([
@@ -219,7 +324,9 @@ describe('askRouting', () => {
       'slash/code',
       'trailing\n',
       'a'.repeat(65),
-    ].map((value) => ({ wire: 'routing_code' as const, value })),
+    ].flatMap((value) =>
+      (['routing_code', 'reason'] as const).map((wire) => ({ wire, value })),
+    ),
     ...[undefined, null, '1', -1, NaN, Infinity, -Infinity].map((value) => ({
       wire: 'retry_after_secs' as const,
       value,
@@ -244,6 +351,7 @@ describe('askRouting', () => {
         refused: {
           code: 'account_selection_refused',
           routing_code: 'quota.daily',
+          reason: 'quota_exhausted',
           retry_after_secs: 2.5,
           resets_at_ms: 1234,
           [wire]: value,
@@ -251,11 +359,13 @@ describe('askRouting', () => {
       })
       const validMembers: Record<string, unknown> = {
         routingCode: 'quota.daily',
+        reason: 'quota_exhausted',
         retryAfterSecs: 2.5,
         resetsAtMs: 1234,
       }
       const localName = {
         routing_code: 'routingCode',
+        reason: 'reason',
         retry_after_secs: 'retryAfterSecs',
         resets_at_ms: 'resetsAtMs',
       }
@@ -468,7 +578,11 @@ describe('askRouting', () => {
     expect(await askRouting({ ...input, deadlineMs })).toEqual({ candidate })
     expect(routing).toHaveBeenCalledWith('session')
     expect(accountFor).toHaveBeenCalledWith(
-      { provider: 'anthropic', modelId: 'claude-sonnet' },
+      {
+        provider: 'anthropic',
+        modelId: 'claude-sonnet',
+        candidates: candidateView,
+      },
       { deadlineMs: expected },
     )
     expect(accountFor.mock.contexts[0]).toBe(handle)
@@ -490,6 +604,7 @@ describe('askRouting', () => {
         provider: 'anthropic',
         modelId: 'claude-sonnet',
         hold_wait_max_s: expected,
+        candidates: candidateView,
       },
       { deadlineMs: 1500 },
     )
@@ -504,7 +619,11 @@ describe('askRouting', () => {
       install(() => ({ accountFor }))
       await askRouting({ ...input, holdWaitMaxS: cap })
       expect(accountFor).toHaveBeenCalledWith(
-        { provider: 'anthropic', modelId: 'claude-sonnet' },
+        {
+          provider: 'anthropic',
+          modelId: 'claude-sonnet',
+          candidates: candidateView,
+        },
         { deadlineMs: 1500 },
       )
     },
@@ -549,6 +668,77 @@ describe('askRouting', () => {
     expect(await askRouting(input)).toEqual({ candidate })
     install(() => null)
     expect(await askRouting(input)).toBeUndefined()
+  })
+})
+
+describe('reportRouting transient backoff', () => {
+  const backoff = {
+    kind: 'transient_backoff',
+    sessionId: 'session',
+    accountId: 'vault-account',
+    retryAtMs: 1700000005000,
+  } satisfies ReportRoutingInput
+
+  test('sends the exact payload through the session handle', () => {
+    const report = mock((_payload: unknown) => {})
+    const handle = { report }
+    const accessor = mock((_sessionId: string) => handle)
+    install(accessor)
+    const full = {
+      ...backoff,
+      credentialId: 'c'.repeat(256),
+      providerCode: ' RATE_LIMIT/Busy '.padEnd(128, 'x'),
+      ignored: 'not forwarded',
+    }
+    expect(reportRouting(full)).toBeUndefined()
+    expect(reportRouting(backoff)).toBeUndefined()
+    expect(accessor.mock.calls).toEqual([['session'], ['session']])
+    expect(report.mock.contexts).toEqual([handle, handle])
+    expect(report.mock.calls).toStrictEqual([
+      [
+        {
+          kind: 'transient_backoff',
+          account_id: 'vault-account',
+          credential_id: full.credentialId,
+          retry_at_ms: 1700000005000,
+          provider_code: full.providerCode,
+        },
+      ],
+      [
+        {
+          kind: 'transient_backoff',
+          account_id: 'vault-account',
+          retry_at_ms: 1700000005000,
+        },
+      ],
+    ])
+  })
+
+  test.each([
+    ['sessionId', ''],
+    ['sessionId', 1],
+    ['accountId', ''],
+    ['accountId', null],
+    ['retryAtMs', undefined],
+    ['retryAtMs', '1700000005000'],
+    ['retryAtMs', 0],
+    ['retryAtMs', -1],
+    ['retryAtMs', 1.5],
+    ['retryAtMs', Infinity],
+    ['retryAtMs', Number.MAX_SAFE_INTEGER + 1],
+    ['credentialId', null],
+    ['credentialId', ''],
+    ['credentialId', 'x'.repeat(257)],
+    ['credentialId', 'bad\u0080credential'],
+    ['providerCode', null],
+    ['providerCode', ''],
+    ['providerCode', 'x'.repeat(129)],
+    ['providerCode', 'bad\ncode'],
+  ])('drops the whole backoff when %s is invalid: %p', (field, value) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({ ...backoff, [field]: value } as ReportRoutingInput)
+    expect(report).not.toHaveBeenCalled()
   })
 })
 

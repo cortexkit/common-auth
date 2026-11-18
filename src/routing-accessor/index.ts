@@ -5,6 +5,7 @@
  * get no turn notes.
  */
 
+import { createHash } from 'node:crypto'
 import {
   type CacheWarmStopReason,
   isCacheWarmStopReason,
@@ -44,7 +45,7 @@ export interface AskRoutingInput<
   sessionId: string
   provider: string
   modelId: string
-  /** Only routes already eligible under the plugin's vault and killswitch rules. */
+  /** Only routes eligible under the vault and the user's configured rules. */
   candidates: readonly Candidate[]
   /** Defaults to 1500 ms, above routing's normal tail; clamped to 1–2000 ms. */
   deadlineMs?: number
@@ -60,6 +61,12 @@ export interface AskRoutingInput<
   holdWaitMaxS?: number
   /** Plugin sticky choice's vault credential id; an eligible-account hint, not a pin. */
   warmCredentialId?: string
+  /**
+   * Ask routing to move a request off its current account mid-run, after
+   * reporting `transient_backoff` or `exhausted`. Without this, the pin stays
+   * on the old account.
+   */
+  mode?: 'continue'
 }
 
 export interface RoutingHold {
@@ -82,6 +89,7 @@ export type RoutingRefusal = {
       | 'account_selection_refused'
       | 'account_selection_final'
     routingCode?: string
+    reason?: string
     retryAfterSecs?: number
     resetsAtMs?: number
   }
@@ -172,6 +180,21 @@ export type ReportRoutingInput =
             providerCode: string
           }
       ))
+  | (RoutingReportIdentity & {
+      /**
+       * Report a 429 or similar response that isn't a proved quota limit. With
+       * no provider retry time, use the final attempt's receipt time + 5,000 ms.
+       * Routing blocks new admissions on the account for every session until
+       * then but keeps the session's pin. To move this request, ask routing
+       * again with `mode: 'continue'` rather than sending on another account.
+       * Use `exhausted` with its window for a proved quota limit, and
+       * `credential_refused` for an API key refused for any use.
+       */
+      kind: 'transient_backoff'
+      /** Absolute retry time in Unix milliseconds. */
+      retryAtMs: number
+      providerCode?: string
+    })
   | {
       sessionId: string
       kind: 'turn_notes_supported'
@@ -232,6 +255,21 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function isBoundedControlFreeString(
+  value: unknown,
+  maxLength: number,
+): value is string {
+  return (
+    isNonEmptyString(value) &&
+    value.length <= maxLength &&
+    !/\p{Cc}/u.test(value)
+  )
+}
+
+function isRoutingCode(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z0-9._-]{1,64}$/.test(value)
 }
 
 function billingCache(value: unknown): Record<string, unknown> | undefined {
@@ -337,6 +375,28 @@ export function turnNotes(
   }
 }
 
+function candidateView(candidates: readonly RoutingCandidate[]) {
+  const accounts: { account_id: string; credential_id: string }[] = []
+  for (const { accountId, credentialId } of candidates) {
+    if (
+      isNonEmptyString(accountId) &&
+      isBoundedControlFreeString(credentialId, 256)
+    ) {
+      accounts.push({ account_id: accountId, credential_id: credentialId })
+    }
+  }
+  if (accounts.length === 0) return undefined
+
+  const lines = accounts
+    .map(({ account_id, credential_id }) =>
+      Buffer.from(`${account_id}\t${credential_id}\n`, 'utf8'),
+    )
+    .sort(Buffer.compare)
+  const hash = createHash('sha256')
+  for (const line of lines) hash.update(line)
+  return { view_digest: hash.digest('hex'), accounts }
+}
+
 function selectionFor<Candidate extends RoutingCandidate>(
   answer: unknown,
   candidates: readonly Candidate[],
@@ -377,13 +437,9 @@ function refusalFor(value: unknown): RoutingRefusal | undefined {
     return undefined
   }
   const refused: RoutingRefusal['refused'] = { code }
-  const routingCode = value.routing_code
-  if (
-    typeof routingCode === 'string' &&
-    /^[a-z0-9._-]{1,64}$/.test(routingCode)
-  ) {
-    refused.routingCode = routingCode
-  }
+  const { routing_code: routingCode, reason } = value
+  if (isRoutingCode(routingCode)) refused.routingCode = routingCode
+  if (isRoutingCode(reason)) refused.reason = reason
   const retryAfterSecs = value.retry_after_secs
   if (
     typeof retryAfterSecs === 'number' &&
@@ -407,14 +463,11 @@ function refusalFor(value: unknown): RoutingRefusal | undefined {
  * Ask routing for an eligible vault route. Any failure or unfamiliar answer
  * yields undefined so the plugin can keep its own choice. Opted-in routing
  * refusals instead stop the request. This does not admit routes. Callers never
- * pass an account the vault refused. A plugin may also leave out accounts its
- * user's own eligibility rules exclude, such as a per-model account list. Each
- * plugin decides whether its quota floors (a minimum share of a quota window
- * an account must keep) also filter candidates; routing keeps its own reserve
- * of each window.
- * Routing's pick among the candidates is final. Don't reject it under a local
- * floor, and don't add floors of the plugin's own that duplicate routing's
- * reserves.
+ * pass an account the vault refused. Beyond that, a plugin may leave accounts
+ * out only under a user-configured eligibility rule, such as a killswitch floor
+ * the user turned on or a per-model account list. Plugins ship no floors of
+ * their own by default. Routing's pick is final: never reject it under a local
+ * floor or choose another account afterwards.
  */
 export function askRouting<
   Candidate extends RoutingCandidate,
@@ -452,17 +505,18 @@ export async function askRouting<Candidate extends RoutingCandidate>(
       request.hold_wait_max_s = Math.max(0, Math.floor(cap))
     }
     if (input.refusals === true) request.refusals = true
+    if (input.mode === 'continue') request.mode = 'continue'
     const warmCredentialId = input.warmCredentialId
     if (
-      isNonEmptyString(warmCredentialId) &&
-      warmCredentialId.length <= 256 &&
-      !/\p{Cc}/u.test(warmCredentialId) &&
+      isBoundedControlFreeString(warmCredentialId, 256) &&
       input.candidates.some(
         (candidate) => candidate.credentialId === warmCredentialId,
       )
     ) {
       request.warm_credential = warmCredentialId
     }
+    const candidates = candidateView(input.candidates)
+    if (candidates) request.candidates = candidates
     const pending: unknown = accountFor.call(handle, request, { deadlineMs })
     if (!isObject(pending) || typeof pending.then !== 'function')
       return undefined
@@ -480,10 +534,10 @@ export async function askRouting<Candidate extends RoutingCandidate>(
 }
 
 /**
- * Report a vault request, billing result, plugin wait or turn-note event without
- * waiting for routing. Only contract fields are sent, and all accessor failures
- * are ignored. Headers must already be limited to rate-limit headers by the
- * caller; values are not filtered or redacted here.
+ * Report a vault request, account backoff, billing result, plugin wait or
+ * turn-note event without waiting for routing. Only contract fields are sent,
+ * and all accessor failures are ignored. Headers must already be limited to
+ * rate-limit headers by the caller; values are not filtered or redacted here.
  */
 export function reportRouting(input: ReportRoutingInput): void {
   try {
@@ -495,6 +549,32 @@ export function reportRouting(input: ReportRoutingInput): void {
     let payload: unknown
     if ('kind' in input) {
       switch (input.kind) {
+        case 'transient_backoff': {
+          const { accountId, credentialId, retryAtMs, providerCode } = input
+          if (
+            !isNonEmptyString(sessionId) ||
+            !isNonEmptyString(accountId) ||
+            !Number.isSafeInteger(retryAtMs) ||
+            retryAtMs <= 0 ||
+            (credentialId !== undefined &&
+              !isBoundedControlFreeString(credentialId, 256)) ||
+            (providerCode !== undefined &&
+              !isBoundedControlFreeString(providerCode, 128))
+          )
+            return
+          payload = {
+            kind: 'transient_backoff',
+            account_id: accountId,
+            ...(credentialId !== undefined
+              ? { credential_id: credentialId }
+              : {}),
+            retry_at_ms: retryAtMs,
+            ...(providerCode !== undefined
+              ? { provider_code: providerCode }
+              : {}),
+          }
+          break
+        }
         case 'wait': {
           const { phase, waitId, reason, nextMs, attempt, message, outcome } =
             input

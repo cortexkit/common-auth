@@ -1684,9 +1684,10 @@ Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
 
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
-| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS?, refusals?, warmCredentialId? }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | never throws or rejects |
-| `askRouting(input)` (warm account hint) | Optional `warmCredentialId`: the vault credential id of the account the plugin's own sticky choice has this session on | Adds `warm_credential` to the account question beside `hold_wait_max_s` and `refusals` only for a non-empty string of at most 256 characters, with no control characters (U+0000–U+001F or U+007F–U+009F), equal to a candidate's `credentialId` | Invalid or filtered-out hints are omitted without failing the call; omitting the hint leaves the existing wire shape unchanged |
+| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS?, refusals?, warmCredentialId?, mode?: 'continue' }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | never throws or rejects |
+| `askRouting(input)` (warm account hint) | Optional `warmCredentialId`: the vault credential id of the account the plugin's own sticky choice has this session on | Adds `warm_credential` to the account question only for a non-empty string of at most 256 characters, with no control characters (U+0000–U+001F or U+007F–U+009F), equal to a candidate's `credentialId` | Invalid or filtered-out hints are omitted without failing the call |
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` or `{ sessionId, accountId, credentialId, outcome: 'credential_refused', providerCode: string }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools, or invalid credential-refusal codes or credential ids, send nothing |
+| `reportRouting(input)` (transient backoff) | `{ sessionId, accountId, credentialId?, kind: 'transient_backoff', retryAtMs, providerCode? }` | `void`; sends `{ kind: 'transient_backoff', account_id, credential_id?, retry_at_ms, provider_code? }` through the session handle | never throws; an invalid field, even an optional field if supplied, drops the report |
 | `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
 | `reportRouting(input)` (turn notes) | `{ sessionId, kind: 'turn_notes_supported', model: string, supported: boolean }` or `{ sessionId, kind: 'turn_note_skipped', after_tool_use_id: string, reason: 'anchor_missing' \| 'before_user_message' \| 'unsupported_model' \| 'not_oauth' }` | `void`; one fire-and-forget call per event, never batched | never throws; invalid payloads send nothing |
 | `reportRouting(input)` (billing) | `{ sessionId, kind: 'billing', attemptId, requestKind, credentialId, provider, model, outcome, accountId?, providerRequestId?, providerResponseId?, userMessageId?, status?, attempt?, chargeBasis?, usage?, usageByModel?, cache? }` | `void`; synchronous and fire-and-forget, never waits for the handle | never throws; invalid required fields send nothing, invalid optional members are omitted |
@@ -1785,34 +1786,49 @@ billing reports without cache facts are unchanged.
 
 The optional `holdWaitMaxS` input can use the cap computed by
 [`holdWaitMaxS` from `./limits`](#limits). The routing accessor does not import
-limits policy, so callers that only ask or report routes keep a dependency-free
-entry.
+limits policy, so callers that only ask or report routes keep an entry without
+third-party dependencies.
 
 **Selection and fallback.** Each call looks up
 `globalThis[Symbol.for('cortexkit.routing')]` at call time, so a bridge installed
 after the auth plugin is found without reloading. A missing accessor, unserved
 session, malformed answer or accessor failure yields `undefined`: the plugin
-keeps its own choice. `candidates` never include a route the vault refused. A
-plugin may also leave out routes its user's own eligibility rules exclude (a
-per-model account list, for example). Each plugin decides whether its quota
-floors (a minimum share of a quota window an account must keep) also filter
-candidates; routing keeps its own reserve of each window. The
-answer must name a candidate's `accountId`; if it names a credential too, that must match the
-same candidate's `credentialId`. Only provider, model id, deadline, an optional
-`hold_wait_max_s` cap and an opted-in `refusals: true` are sent with the selection
-request, never candidate metadata or credentials. The `refusals` member is omitted
-unless the caller passes exactly `true`.
+keeps its own choice. `candidates` never include a route the vault refused.
+Beyond that, plugins may leave out accounts only under a user-configured
+eligibility rule, such as a killswitch floor the user turned on or a per-model
+account list. Plugins ship no floors of their own by default. Routing's pick is
+final: never reject it under a local floor or choose another account afterwards.
+The answer must name a candidate's `accountId`; if it names a credential too,
+it must match the same candidate's `credentialId`.
+
+The account question includes the provider and model id, with the deadline in
+the call options. The optional fields are `hold_wait_max_s`, `refusals` (only
+when exactly `true`), `warm_credential`, `mode`, and `candidates`. The wire
+`candidates` contains `accounts: [{ account_id, credential_id }]` in input order
+and `view_digest`, the lowercase SHA-256 hex of the UTF-8 lines
+`account_id + "\t" + credential_id + "\n"` sorted by byte order and joined. Only
+non-empty account and credential ids are sent; credential ids must also be at
+most 256 characters with no control characters. If no valid pair remains, the
+entire wire member is omitted. No candidate metadata or credential secrets are
+sent.
+
+**Moving a request mid-run.** If a request must move off its current account,
+first report `transient_backoff` or `exhausted`, then ask routing again with
+`mode: 'continue'`. The report alone leaves the pin on the old account. The
+accessor sends `mode` only for the exact value `'continue'`.
 
 **Opt-in refusals.** With `refusals: true`, a routing answer of
-`{ refused: { code, routing_code?, retry_after_secs?, resets_at_ms? } }` returns
-`{ refused: { code, routingCode?, retryAfterSecs?, resetsAtMs? } }`. The code must
+`{ refused: { code, routing_code?, reason?, retry_after_secs?, resets_at_ms? } }` returns
+`{ refused: { code, routingCode?, reason?, retryAfterSecs?, resetsAtMs? } }`. The code must
 be exactly `account_limit_exhausted`, `account_selection_refused` or
 `account_selection_final`. A missing or unknown code or a non-object `refused`
 yields `undefined`, as does any refusal when the caller has not opted in.
-Optional members are copied only when valid: `routing_code` must match
+Optional members are copied only when valid: `routing_code` and `reason` must match
 `^[a-z0-9._-]{1,64}$`, `retry_after_secs` must be finite and non-negative, and
 `resets_at_ms` must be a positive safe integer. An invalid optional member is
-dropped without losing the refusal.
+dropped without losing the refusal. If none of the offered accounts are servable
+by routing, the relay can return `account_selection_final` with
+`routing_code: 'account_unservable'` and `reason: 'candidates_disjoint'`.
 
 A plugin receiving a refusal sends nothing: no own choice, no other account and
 no retry inside the request. It fails the request with a fixed local error, not
@@ -1833,6 +1849,18 @@ The same bound is sent to the accessor and enforced locally
 with an unref'd timer. A hold is returned only when `retry_after_ms` is finite
 and non-negative. It is not capped here: the plugin must apply its own hold cap
 before waiting, and still performs its normal vault authorization before a send.
+
+**Transient backoff.** Report `transient_backoff` for a 429 or similar response
+that isn't a proved quota limit. `retryAtMs` is a positive safe integer in Unix
+milliseconds. Use the provider's retry time, or the time the final attempt's
+response was received plus 5,000 ms if the provider gave no retry time. Routing
+blocks new admissions on that account for all sessions until then without
+changing the current pin. An actual quota limit still uses `exhausted` with its
+window, and an API key refused for any use still uses `credential_refused`.
+`sessionId` (used to look up the handle) and `accountId` must be non-empty strings.
+If supplied, `credentialId` and `providerCode` must be non-empty strings with no
+control characters, at most 256 and 128 characters respectively. The provider
+code is sent verbatim. Any invalid field drops the whole report.
 
 **Routing-outcome reporting and privacy.** These reports send only `account_id`,
 `outcome`, and either `headers` for `served`, `window` and optional `pool` and

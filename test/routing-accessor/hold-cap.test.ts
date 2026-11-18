@@ -201,6 +201,13 @@ describe('holdWaitMaxS', () => {
         provider: 'anthropic',
         modelId: 'claude-sonnet',
         hold_wait_max_s: 420,
+        candidates: {
+          view_digest:
+            '729e91f6a15f2b16a232ffe7922a91f4cfd2a70076790bf36915a09f7a66aaf6',
+          accounts: [
+            { account_id: 'account-a', credential_id: 'credential-a' },
+          ],
+        },
       },
       { deadlineMs: 1500 },
     )

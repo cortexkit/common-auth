@@ -27,6 +27,16 @@ const input = {
   candidates: [candidate],
 } satisfies AskRoutingInput
 
+function candidateView(...candidates: AskRoutingInput['candidates']) {
+  return {
+    view_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    accounts: candidates.map(({ accountId, credentialId }) => ({
+      account_id: accountId,
+      credential_id: credentialId,
+    })),
+  }
+}
+
 describe('warm credential hints', () => {
   test('sends a matching candidate credential on the account question', async () => {
     const accountFor = mock((_request: unknown, _options: unknown) =>
@@ -49,6 +59,7 @@ describe('warm credential hints', () => {
           hold_wait_max_s: 12,
           refusals: true,
           warm_credential: 'oauth:anthropic:sticky',
+          candidates: candidateView(candidate),
         },
         { deadlineMs: 1500 },
       ],
@@ -70,7 +81,11 @@ describe('warm credential hints', () => {
     ).toEqual({ candidate: eligible })
     expect(accountFor.mock.calls).toEqual([
       [
-        { provider: 'anthropic', modelId: 'claude-sonnet' },
+        {
+          provider: 'anthropic',
+          modelId: 'claude-sonnet',
+          candidates: candidateView(eligible),
+        },
         { deadlineMs: 1500 },
       ],
     ])
@@ -121,7 +136,11 @@ describe('warm credential hints', () => {
       ).toEqual({ candidate })
       expect(accountFor.mock.calls).toEqual([
         [
-          { provider: 'anthropic', modelId: 'claude-sonnet' },
+          {
+            provider: 'anthropic',
+            modelId: 'claude-sonnet',
+            candidates: candidateView(candidate),
+          },
           { deadlineMs: 1500 },
         ],
       ])
@@ -143,6 +162,7 @@ describe('warm credential hints', () => {
             provider: 'anthropic',
             modelId: 'claude-sonnet',
             warm_credential: warmCredentialId,
+            candidates: candidateView(matching),
           },
           { deadlineMs: 1500 },
         ],
@@ -169,16 +189,22 @@ describe('warm credential hints', () => {
       provider: 'anthropic',
       modelId: 'claude-sonnet',
       warm_credential: candidate.credentialId,
+      candidates: candidateView(candidate, selected),
     })
   })
 
-  test('keeps legacy question bytes identical when no hint is passed', async () => {
+  test('keeps legacy question bytes when there is no hint or valid candidate', async () => {
     const accountFor = mock((_request: unknown, _options: unknown) =>
       Promise.resolve({ account_id: candidate.accountId }),
     )
     install(() => ({ accountFor }))
-    await askRouting(input)
-    await askRouting({ ...input, holdWaitMaxS: 12.9, refusals: true })
+    const withoutCandidates = { ...input, candidates: [] }
+    await askRouting(withoutCandidates)
+    await askRouting({
+      ...withoutCandidates,
+      holdWaitMaxS: 12.9,
+      refusals: true,
+    })
     expect(JSON.stringify(accountFor.mock.calls[0]?.[0])).toBe(
       '{"provider":"anthropic","modelId":"claude-sonnet"}',
     )
