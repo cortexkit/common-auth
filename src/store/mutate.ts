@@ -104,7 +104,10 @@ export type ReadResult =
       retryable?: true
     }
 
-const sharingRetryDelays = [5, 10, 20, 40, 80]
+// About 1 s in total. A replace usually clears in milliseconds, but an
+// OpenCode 2 turn ends if the first pool read of a request fails, and a
+// scanner opening the new file can hold it longer.
+const sharingRetryDelays = [5, 10, 20, 40, 80, 160, 320, 400]
 
 async function readText(path: string): Promise<string | undefined> {
   for (let attempt = 0; ; attempt++) {

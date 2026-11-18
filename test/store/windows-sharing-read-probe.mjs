@@ -77,7 +77,7 @@ switch (process.argv[2]) {
       retryable: true,
       reason: 'The store was changing; retry the operation once writes settle.',
     })
-    assert.deepEqual(reads, [configPath, ...Array(6).fill(statePath)])
+    assert.deepEqual(reads, [configPath, ...Array(9).fill(statePath)])
     break
   }
   case 'access-denied': {
@@ -106,7 +106,7 @@ switch (process.argv[2]) {
       assert.equal(hasUnsafeWording(error.message), false)
       return true
     })
-    assert.deepEqual(reads, Array(6).fill(configPath))
+    assert.deepEqual(reads, Array(9).fill(configPath))
     break
   }
   default:
