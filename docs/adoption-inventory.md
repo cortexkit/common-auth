@@ -1786,8 +1786,8 @@ billing reports without cache facts are unchanged.
 
 The optional `holdWaitMaxS` input can use the cap computed by
 [`holdWaitMaxS` from `./limits`](#limits). The routing accessor does not import
-limits policy, so callers that only ask or report routes keep an entry without
-third-party dependencies.
+limits policy, so callers that only ask or report routes import an entry point
+with no third-party dependencies.
 
 **Selection and fallback.** Each call looks up
 `globalThis[Symbol.for('cortexkit.routing')]` at call time, so a bridge installed
@@ -1795,7 +1795,8 @@ after the auth plugin is found without reloading. A missing accessor, unserved
 session, malformed answer or accessor failure yields `undefined`: the plugin
 keeps its own choice. `candidates` never include a route the vault refused.
 Beyond that, plugins may leave out accounts only under a user-configured
-eligibility rule, such as a killswitch floor the user turned on or a per-model
+eligibility rule, such as a killswitch floor the user turned on (the minimum share of a quota
+window an account must keep to be offered) or a per-model
 account list. Plugins ship no floors of their own by default. Routing's pick is
 final: never reject it under a local floor or choose another account afterwards.
 The answer must name a candidate's `accountId`; if it names a credential too,
