@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  createCaptureSink,
+  initLogger,
+  resetLoggerForTest,
+} from '../../src/logger/index.js'
+import {
   assertHostsStopped,
   type CommandRunner,
   createProcessFence as createSystemProcessFence,
@@ -63,6 +68,119 @@ const WITHOUT_COMPLETION_MARKER = [
 ]
 
 describe('setup process fence', () => {
+  test('Windows CIM retries an access violation within the original budget', async () => {
+    for (const exitCode of [3221225477, -1073741819]) {
+      for (const hasPwsh of [false, true]) {
+        const capture = createCaptureSink()
+        initLogger({ captureSink: capture.sink })
+        try {
+          const calls: Array<{
+            file: string
+            args: readonly string[]
+            timeout?: number
+          }> = []
+          const runner: CommandRunner = {
+            async run(file, args, options) {
+              calls.push({ file, args, timeout: options?.timeoutMs })
+              if (calls.length === 1) {
+                await Bun.sleep(25)
+                return { exitCode, stdout: '', stderr: '' }
+              }
+              return {
+                exitCode: 0,
+                stdout: cimAnswer([
+                  { Name: 'opencode.exe', ProcessId: 111, CommandLine: null },
+                ]),
+                stderr: '',
+              }
+            },
+          }
+          const fence = createProcessFence(runner, {
+            selfPid: NO_SELF,
+            platform: 'win32',
+            isFile: () => hasPwsh,
+          })
+          expect(await fence.listRunningHosts()).toEqual([
+            { pid: 111, command: 'opencode.exe' },
+          ])
+          expect(calls).toHaveLength(2)
+          expect(calls[1]?.file).toBe(calls[0]?.file)
+          expect(calls[1]?.args).toEqual(calls[0]?.args)
+          expect(calls[0]?.timeout).toBe(45_000)
+          expect(calls[1]?.timeout).toBeGreaterThan(0)
+          expect(calls[1]?.timeout).toBeLessThan(44_990)
+          expect(
+            capture.records.filter((record) => record.level === 'warn'),
+          ).toHaveLength(1)
+        } finally {
+          resetLoggerForTest()
+        }
+      }
+    }
+  })
+
+  test('Windows CIM refuses after a retry failure and does not retry other failures', async () => {
+    for (const [first, second, expectedCalls] of [
+      [3221225477, 3221225477, 2],
+      [-1073741819, 7, 2],
+      [7, 0, 1],
+    ] as const) {
+      let calls = 0
+      const fence = createProcessFence(
+        {
+          async run() {
+            calls++
+            return {
+              exitCode: calls === 1 ? first : second,
+              stdout: '',
+              stderr: '',
+              durationMs: 42,
+            }
+          },
+        },
+        { selfPid: NO_SELF, platform: 'win32' },
+      )
+      try {
+        await fence.listRunningHosts()
+        throw new Error('must refuse')
+      } catch (error) {
+        expect(error).toBeInstanceOf(ProcessInspectionError)
+        expect((error as ProcessInspectionError).refusalText).toBe(
+          `Process inspection failed; setup cannot prove hosts are stopped. CIM: exit code ${expectedCalls === 1 ? first : second} after 42 ms.`,
+        )
+      }
+      expect(calls).toBe(expectedCalls)
+    }
+  })
+
+  test('Windows CIM does not retry a timeout, signal or invalid answer', async () => {
+    for (const result of [
+      { exitCode: 3221225477, timedOut: true, stdout: '', stderr: '' },
+      {
+        exitCode: 3221225477,
+        signal: 'SIGTERM' as const,
+        stdout: '',
+        stderr: '',
+      },
+      { exitCode: 0, stdout: 'invalid JSON', stderr: '' },
+    ]) {
+      let calls = 0
+      const fence = createProcessFence(
+        {
+          async run() {
+            calls++
+            return result
+          },
+        },
+        { selfPid: NO_SELF, platform: 'win32' },
+      )
+      await expect(fence.listRunningHosts()).rejects.toBeInstanceOf(
+        ProcessInspectionError,
+      )
+      expect(calls).toBe(1)
+    }
+  })
+
   test('Windows CIM uses a 45 second one-shot budget and still refuses past it', async () => {
     for (const durationMs of [20_000, 45_001]) {
       const calls: string[] = []

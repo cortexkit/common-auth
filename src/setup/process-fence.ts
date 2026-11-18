@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs'
 import { win32 } from 'node:path'
+import { createLogger } from '../logger/index.js'
 import { defaultCommandRunner } from './command-runner.js'
 import type {
   CommandResult,
@@ -9,6 +10,7 @@ import type {
 } from './types.js'
 
 const WINDOWS_CIM_TIMEOUT_MS = 45_000
+const log = createLogger('setup-process-fence')
 // Native Windows PowerShell 5.1 on ARM took 22–44 s per process query, with
 // one cold CIM timeout at 45.8 s; pwsh took less than a second. See
 // .cortexkit/internal-docs/investigations/windows-arm-process-fence/report.md.
@@ -271,7 +273,9 @@ export async function listSetupProcesses(
       options.onStep?.({ ...inspection })
     }
   }
-  const inspectCim = (args: readonly string[]): Promise<CommandResult> => {
+  const inspectCim = async (
+    args: readonly string[],
+  ): Promise<CommandResult> => {
     const pwsh = win32.resolve(
       windowsEnv(env, 'ProgramFiles') ?? 'C:\\Program Files',
       'PowerShell',
@@ -289,20 +293,29 @@ export async function listSetupProcesses(
       options.onProgress?.(
         'Checking that OpenCode and Pi are not running. Without PowerShell 7 this can take up to a minute on Windows ARM; installing PowerShell 7 makes it fast.',
       )
-    return inspect(
-      'CIM',
+    const file =
       program === 'pwsh'
         ? pwsh
-        : win32.resolve(
-            system32,
-            'WindowsPowerShell',
-            'v1.0',
-            'powershell.exe',
-          ),
-      args,
-      slow ? WINDOWS_ARM_POWERSHELL_TIMEOUT_MS : WINDOWS_CIM_TIMEOUT_MS,
-      program,
-    )
+        : win32.resolve(system32, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    const timeoutMs = slow
+      ? WINDOWS_ARM_POWERSHELL_TIMEOUT_MS
+      : WINDOWS_CIM_TIMEOUT_MS
+    const started = performance.now()
+    const result = await inspect('CIM', file, args, timeoutMs, program)
+    const remaining = Math.floor(timeoutMs - (performance.now() - started))
+    if (
+      (result.exitCode === 3221225477 || result.exitCode === -1073741819) &&
+      !result.timedOut &&
+      !result.signal &&
+      !result.spawnError &&
+      remaining > 0
+    ) {
+      log.warn(
+        'Windows process query crashed with an access violation; retrying once',
+      )
+      return inspect('CIM', file, args, remaining, program)
+    }
+    return result
   }
   try {
     if (windows && options.hostImagesOnly) {
