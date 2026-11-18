@@ -40,7 +40,7 @@ test('packed tui selector probes the exact id and imports only the selected abso
       import: './src/quota-sidebar/index.tsx',
     })
     expect(manifest.peerDependencies['@cortexkit/opencode-sidebar']).toBe(
-      '~0.1.0',
+      '>=0.1.0 <0.4.0',
     )
     expect(
       manifest.peerDependenciesMeta['@cortexkit/opencode-sidebar'],
