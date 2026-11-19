@@ -26,6 +26,10 @@
   },
   "overrides": [
     {
+      "includes": ["test/claustrum/fixtures/login-conditions-v1/*.json"],
+      "formatter": { "enabled": false }
+    },
+    {
       "includes": ["**/*.test.ts"],
       "linter": {
         "rules": {

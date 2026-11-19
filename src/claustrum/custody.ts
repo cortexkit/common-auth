@@ -30,8 +30,9 @@ import {
 } from './watch.js'
 
 // The vault may add auth methods; unknown values are refused by the classifier.
-type ScopedRow = Omit<ScopedInventoryRow, 'authMethod'> & {
+type ScopedRow = Omit<ScopedInventoryRow, 'authMethod' | 'condition'> & {
   readonly authMethod?: string
+  readonly condition?: { readonly reason: string; readonly sinceMs: number }
 }
 
 type ScopedInventory = Omit<
@@ -42,18 +43,42 @@ type ScopedInventory = Omit<
 /**
  * claustrum-client adds watchScoped in 0.12.0 and reportUsageScoped in 0.14.0.
  * Older clients keep polling and simply do not send reply quota readings.
+ * The optional login condition methods match 0.21.0 without requiring it.
  */
 export type ClaustrumScopedClient = Pick<
   ClaustrumClient,
   'getScoped' | 'reportAuthFailureScoped' | 'close'
 > & {
   listScoped(enrollmentToken?: string): Promise<ScopedInventory>
+  reportCondition?(input: {
+    credentialId: string
+    recordVersion: number
+    reason: string
+    providerStatus: number
+    actionUrl?: string
+    enrollmentToken?: string
+  }): Promise<void>
+  clearCondition?(input: {
+    credentialId: string
+    recordVersion: number
+    enrollmentToken?: string
+  }): Promise<boolean>
   insula?: InsulaUsageTransport
 } & ScopedWatchSource &
   ScopedUsageSource
 
 /** The two credential types a plugin's family can hold; routing differs by type. */
 export type VaultCredentialType = 'oauth' | 'api_key'
+
+export type VaultConditionReason =
+  | 'provider_verification_required'
+  | 'provider_ineligible'
+
+export type VaultConditionOutcome =
+  | 'reported'
+  | 'skipped'
+  | 'unsupported'
+  | 'failed'
 
 /**
  * Which vault rows belong to this plugin. `refreshAdapter` classifies an OAuth
@@ -108,6 +133,10 @@ export interface VaultCredential {
   readonly state: string
   readonly email?: string
   readonly orgName?: string
+  readonly condition?: {
+    readonly reason: VaultConditionReason
+    readonly sinceMs: number
+  }
 }
 
 /**
@@ -530,6 +559,39 @@ function rowFactsOf(
   }
 }
 
+function isVaultConditionReason(
+  reason: unknown,
+): reason is VaultConditionReason {
+  return (
+    reason === 'provider_verification_required' ||
+    reason === 'provider_ineligible'
+  )
+}
+
+function vaultConditionOf(row: ScopedRow): VaultCredential['condition'] {
+  const condition = row.condition
+  if (!condition) return undefined
+  const { reason, sinceMs } = condition
+  if (
+    isVaultConditionReason(reason) &&
+    Number.isSafeInteger(sinceMs) &&
+    sinceMs > 0
+  )
+    return Object.freeze({ reason, sinceMs })
+  return undefined
+}
+
+function httpsActionUrl(actionUrl: string | undefined): string | undefined {
+  if (typeof actionUrl !== 'string') return undefined
+  try {
+    // Keep the original spelling so the vault can enforce its own link rules.
+    if (new URL(actionUrl).protocol === 'https:') return actionUrl
+  } catch {
+    // An unparseable link does not invalidate the condition itself.
+  }
+  return undefined
+}
+
 /**
  * The grants named in the vault's list reply, or undefined when it names none.
  * Both fields must be present: a reply carrying only one of them is treated as
@@ -572,6 +634,10 @@ export class ClaustrumScopedCustody {
     { token: string }
   >()
   readonly #reports = new WeakMap<ClaustrumScopedAttempt, Promise<void>>()
+  readonly #conditionReports = new Map<string, Promise<VaultConditionOutcome>>()
+  readonly #conditionClears = new Map<string, Promise<VaultConditionOutcome>>()
+  #conditionsUnsupported = false
+  #pendingConditionCalls = 0
   readonly #kept = new Map<string, KeptReceipt>()
   readonly #keptAttempts = new WeakMap<ClaustrumScopedAttempt, string>()
   readonly #usage: ScopedUsageReporter
@@ -590,8 +656,12 @@ export class ClaustrumScopedCustody {
   #closed = false
   /** The view of the last successful `discover()`, for `watchRoster`. */
   #discoveredView?: string
+  readonly #discoveredConditions = new Map<
+    string,
+    NonNullable<VaultCredential['condition']>
+  >()
   readonly #watches = new Set<{ restart(): void; stop(): void }>()
-  readonly #tokenReads = new Set<Promise<unknown>>()
+  readonly #shutdownWork = new Set<Promise<unknown>>()
   readonly #warnShutdown: (pendingOperations: number) => void
   #onDrainTimeout?: (pendingOperations: number) => void
   #disposing?: Promise<void>
@@ -679,6 +749,7 @@ export class ClaustrumScopedCustody {
     if (hasVaultHost() && !isVaultHostClient(next))
       throw new ClaustrumUnreachableError()
     this.#client = next
+    this.#conditionsUnsupported = false
     for (const watch of this.#watches) watch.restart()
   }
 
@@ -766,12 +837,12 @@ export class ClaustrumScopedCustody {
         phase: 'token read begin',
       })
     const pending = this.#readToken()
-    this.#tokenReads.add(pending)
+    this.#shutdownWork.add(pending)
     let value: EnrollmentTokenFile
     try {
       value = await pending
     } finally {
-      this.#tokenReads.delete(pending)
+      this.#shutdownWork.delete(pending)
       if (phaseDiagnostics.hasSubscribers)
         phaseDiagnostics.publish({
           logger: this.#logger,
@@ -837,6 +908,10 @@ export class ClaustrumScopedCustody {
   async discover(signal?: AbortSignal): Promise<VaultInventory> {
     const inventory = await this.#list(signal)
     this.#discoveredView = inventory.view
+    this.#discoveredConditions.clear()
+    for (const { credentialId, condition } of inventory.credentials) {
+      if (condition) this.#discoveredConditions.set(credentialId, condition)
+    }
     return inventory
   }
 
@@ -912,6 +987,7 @@ export class ClaustrumScopedCustody {
         })
         continue
       }
+      const condition = vaultConditionOf(row)
       credentials.push(
         Object.freeze({
           credentialId: row.id,
@@ -923,6 +999,7 @@ export class ClaustrumScopedCustody {
           state: row.state,
           ...(row.email !== undefined && { email: row.email }),
           ...(row.orgName !== undefined && { orgName: row.orgName }),
+          ...(condition && { condition }),
         }),
       )
     }
@@ -1436,6 +1513,146 @@ export class ClaustrumScopedCustody {
   }
 
   /**
+   * Report a provider login condition as bookkeeping after handing back the
+   * reply, never on the request path. Pass the receipt actually sent with it.
+   */
+  reportCondition(
+    attempt: ClaustrumScopedAttempt,
+    input: {
+      reason: VaultConditionReason
+      providerStatus: number
+      actionUrl?: string
+    },
+  ): Promise<VaultConditionOutcome> {
+    const provenance = this.#provenance.get(attempt)
+    if (!provenance)
+      return Promise.reject(
+        new ClaustrumConsumerError(
+          'no-receipt',
+          'Claustrum condition report requires an original dispatch receipt',
+        ),
+      )
+    const { reason, providerStatus } = input ?? {}
+    if (
+      this.#closed ||
+      this.#keptAttempts.has(attempt) ||
+      providerStatus !== 403 ||
+      !isVaultConditionReason(reason)
+    )
+      return Promise.resolve('skipped')
+    const { credentialId, recordVersion } = attempt
+    const actionUrl =
+      reason === 'provider_verification_required'
+        ? httpsActionUrl(input.actionUrl)
+        : undefined
+    return this.#conditionOnce(
+      this.#conditionReports,
+      JSON.stringify([credentialId, recordVersion, reason]),
+      { credentialId, recordVersion, reason },
+      (client) =>
+        client.reportCondition?.({
+          credentialId,
+          recordVersion,
+          reason,
+          providerStatus,
+          ...(actionUrl !== undefined && { actionUrl }),
+          enrollmentToken: provenance.token,
+        }),
+    )
+  }
+
+  /**
+   * Clear a listed condition as bookkeeping after handing back a successful
+   * reply, never on the request path. Pass the receipt actually sent with it.
+   */
+  clearCondition(
+    attempt: ClaustrumScopedAttempt,
+  ): Promise<VaultConditionOutcome> {
+    const provenance = this.#provenance.get(attempt)
+    if (!provenance)
+      return Promise.reject(
+        new ClaustrumConsumerError(
+          'no-receipt',
+          'Claustrum condition clear requires an original dispatch receipt',
+        ),
+      )
+    if (this.#closed || this.#keptAttempts.has(attempt))
+      return Promise.resolve('skipped')
+    const { credentialId, recordVersion } = attempt
+    const condition = this.#discoveredConditions.get(credentialId)
+    if (!condition) return Promise.resolve('skipped')
+    return this.#conditionOnce(
+      this.#conditionClears,
+      JSON.stringify([credentialId, condition.sinceMs]),
+      { credentialId, recordVersion, reason: condition.reason },
+      (client) =>
+        client.clearCondition?.({
+          credentialId,
+          recordVersion,
+          enrollmentToken: provenance.token,
+        }),
+    )
+  }
+
+  #conditionOnce(
+    outcomes: Map<string, Promise<VaultConditionOutcome>>,
+    key: string,
+    details: {
+      credentialId: string
+      recordVersion: number
+      reason: VaultConditionReason
+    },
+    send: (
+      client: ClaustrumScopedClient,
+    ) => Promise<void> | Promise<boolean> | undefined,
+  ): Promise<VaultConditionOutcome> {
+    const previous = outcomes.get(key)
+    if (previous) return previous
+    if (this.#conditionsUnsupported) return Promise.resolve('unsupported')
+    // A lost reply may already have committed. Keep the result so a later call
+    // for the same key does not retry it, even after client replacement.
+    const pending = Promise.resolve().then(
+      async (): Promise<VaultConditionOutcome> => {
+        const client = this.#client
+        if (this.#conditionsUnsupported) return 'unsupported'
+        try {
+          const sent = send(client)
+          if (!sent) return 'unsupported'
+          if ((await sent) === false)
+            this.#debugCondition('scoped login condition not cleared', details)
+          return 'reported'
+        } catch (error) {
+          if (
+            error instanceof ClaustrumCredentialError &&
+            error.code === 'unknown_method'
+          ) {
+            if (client === this.#client) this.#conditionsUnsupported = true
+            return 'unsupported'
+          }
+          this.#debugCondition('scoped login condition update failed', details)
+          return 'failed'
+        }
+      },
+    )
+    outcomes.set(key, pending)
+    this.#pendingConditionCalls++
+    this.#shutdownWork.add(pending)
+    void pending.then(() => {
+      this.#pendingConditionCalls--
+      this.#shutdownWork.delete(pending)
+    })
+    return pending
+  }
+
+  #debugCondition(message: string, details: object): void {
+    try {
+      this.#logger.debug(message, details)
+    } catch {
+      // A caller's logger must not turn bookkeeping into a rejection.
+    }
+  }
+
+  /**
    * Watch this consumer's visible vault accounts instead of listing them on a
    * short timer. Opens one `watchScoped` on this custody's client and calls
    * `onView` when the host must run its discovery (see
@@ -1551,16 +1768,19 @@ export class ClaustrumScopedCustody {
     this.#watches.clear()
     this.#kept.clear()
     const usage = this.#usage.close()
+    const keepClientOpen =
+      usage !== undefined || this.#pendingConditionCalls > 0
     if (usage) {
-      this.#tokenReads.add(usage)
-      void usage.then(() => this.#tokenReads.delete(usage))
-    } else this.#client.close()
-    this.#disposing = drainShutdown(this.#tokenReads, (count) =>
+      this.#shutdownWork.add(usage)
+      void usage.then(() => this.#shutdownWork.delete(usage))
+    }
+    if (!keepClientOpen) this.#client.close()
+    this.#disposing = drainShutdown(this.#shutdownWork, (count) =>
       (this.#onDrainTimeout ?? this.#warnShutdown)(count),
     ).finally(() => {
       this.#usage.drop()
       this.#usageServed.clear()
-      if (usage) this.#client.close()
+      if (keepClientOpen) this.#client.close()
     })
   }
 

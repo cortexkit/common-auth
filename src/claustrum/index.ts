@@ -51,6 +51,8 @@ export {
   type SkippedVaultRecord,
   VAULT_RECEIPT_WAIT_MS,
   VAULT_YOUNG_OUTAGE_MS,
+  type VaultConditionOutcome,
+  type VaultConditionReason,
   type VaultCredential,
   type VaultCredentialType,
   type VaultGrantReach,

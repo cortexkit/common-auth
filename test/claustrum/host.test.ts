@@ -41,18 +41,23 @@ const identity = {
 const now = 1_000_000
 const logger = { warn: () => {}, debug: () => {} }
 
-function client(): ClaustrumScopedClient {
+function client(marked = false): ClaustrumScopedClient {
   return {
     listScoped: mock(async () => ({
       view: 'view-one',
       rows: [
-        inventoryRow({
-          id: identity.credentialId,
-          authMethod: 'chatgpt',
-          refreshAdapter: 'openai',
-          accountId: identity.accountIdentity,
-          categories: ['openai-native'],
-        }),
+        {
+          ...inventoryRow({
+            id: identity.credentialId,
+            authMethod: 'chatgpt',
+            refreshAdapter: 'openai',
+            accountId: identity.accountIdentity,
+            categories: ['openai-native'],
+          }),
+          ...(marked && {
+            condition: { reason: 'provider_ineligible', sinceMs: 1 },
+          }),
+        },
       ],
       ...unknownGrants,
     })),
@@ -141,6 +146,60 @@ describe('Thalamus host vault', () => {
     consumers.push(value)
     return value
   }
+
+  const conditionInput = {
+    reason: 'provider_ineligible',
+    providerStatus: 403,
+  } as const
+
+  test('host custody forwards condition methods offered by the relay', async () => {
+    const report = mock(
+      async (
+        _input: Parameters<
+          NonNullable<ClaustrumScopedClient['reportCondition']>
+        >[0],
+      ) => {},
+    )
+    const clear = mock(
+      async (
+        _input: Parameters<
+          NonNullable<ClaustrumScopedClient['clearCondition']>
+        >[0],
+      ) => true,
+    )
+    globals[symbol] = () => ({
+      ...client(true),
+      reportCondition: report,
+      clearCondition: clear,
+    })
+    const scoped = custody()
+    await scoped.discover()
+    const attempt = await scoped.authorize(identity)
+    expect(await scoped.reportCondition(attempt, conditionInput)).toBe(
+      'reported',
+    )
+    expect(await scoped.clearCondition(attempt)).toBe('reported')
+    const served = {
+      credentialId: identity.credentialId,
+      recordVersion: 7,
+      enrollmentToken: '',
+    }
+    expect(report.mock.calls).toStrictEqual([
+      [{ ...served, ...conditionInput }],
+    ])
+    expect(clear.mock.calls).toStrictEqual([[served]])
+  })
+
+  test('host custody reports unsupported when the relay omits condition methods', async () => {
+    globals[symbol] = () => client(true)
+    const scoped = custody()
+    await scoped.discover()
+    const attempt = await scoped.authorize(identity)
+    expect(await scoped.reportCondition(attempt, conditionInput)).toBe(
+      'unsupported',
+    )
+    expect(await scoped.clearCondition(attempt)).toBe('unsupported')
+  })
 
   test('marker selects host authority and never reads a present enrollment token', async () => {
     const paths = {

@@ -78,6 +78,8 @@ async function request<T>(operation: () => Promise<T>): Promise<T> {
 function wrapHostClient(client: ClaustrumScopedClient): ClaustrumScopedClient {
   const watchScoped = client.watchScoped?.bind(client)
   const reportUsageScoped = client.reportUsageScoped?.bind(client)
+  const reportCondition = client.reportCondition?.bind(client)
+  const clearCondition = client.clearCondition?.bind(client)
   return {
     listScoped: (...args) => request(() => client.listScoped(...args)),
     getScoped: (...args) => request(() => client.getScoped(...args)),
@@ -101,6 +103,14 @@ function wrapHostClient(client: ClaustrumScopedClient): ClaustrumScopedClient {
     ...(reportUsageScoped && {
       reportUsageScoped: (...args: Parameters<typeof reportUsageScoped>) =>
         request(() => reportUsageScoped(...args)),
+    }),
+    ...(reportCondition && {
+      reportCondition: (...args: Parameters<typeof reportCondition>) =>
+        request(() => reportCondition(...args)),
+    }),
+    ...(clearCondition && {
+      clearCondition: (...args: Parameters<typeof clearCondition>) =>
+        request(() => clearCondition(...args)),
     }),
     ...(client.insula && {
       insula: wrapInsula(client.insula),

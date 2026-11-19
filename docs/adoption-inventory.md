@@ -650,6 +650,19 @@ already completed before the extension's first opportunity to enter vault mode.
 
 ### ./claustrum
 
+**Provider login conditions.** After handing back the provider reply, pass the
+receipt actually sent to `custody.reportCondition(attempt, { reason,
+providerStatus, actionUrl? })` for a 403 that indicates
+`provider_verification_required` or `provider_ineligible`. Only verification
+reports can include an HTTPS action link, which the vault validates. After a
+successful reply, call `custody.clearCondition(attempt)`; custody sends nothing
+unless the latest listing marks that login, and sends at most once per mark.
+Neither call belongs on the request path. These are best-effort updates tied
+to the receipt's record version, not token invalidations. A marked login can
+still serve its token.
+The vault initially supports these operations for Antigravity logins only.
+Older clients, vaults, or host relays may return `unsupported`.
+
 **Reply quota reporting.** `consumer.reportUsage({ routeId, credentialId,
 reading })` and `custody.reportUsage({ credentialId, reading })` return `void`
 synchronously, never a promise. Use the credential id from the actual served
