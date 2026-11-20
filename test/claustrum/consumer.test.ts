@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { ScopedInventoryRow } from '@cortexkit/claustrum-client'
 import {
   ClaustrumConsumer,
+  ClaustrumConsumerError,
   type ClaustrumConsumerOptions,
   ClaustrumDiscoveryHub,
   type ClaustrumScopedClient,
@@ -42,18 +43,30 @@ afterEach(async () => {
   await cleanupDirs()
 })
 
-async function fixture() {
+async function fixture({ marked = false } = {}) {
   const dir = await tempDir('claustrum-consumer-')
   const tokenPath = await writeToken(dir)
   const gets: Array<Parameters<ClaustrumScopedClient['getScoped']>[0]> = []
   const reports: Array<
     Parameters<ClaustrumScopedClient['reportAuthFailureScoped']>[0]
   > = []
+  const conditionReports: Array<
+    Parameters<NonNullable<ClaustrumScopedClient['reportCondition']>>[0]
+  > = []
+  const conditionClears: Array<
+    Parameters<NonNullable<ClaustrumScopedClient['clearCondition']>>[0]
+  > = []
   let connects = 0
   let lists = 0
   let closes = 0
   const rows: ScopedInventoryRow[] = ['oauth:test', 'oauth:test:work'].map(
-    (id, index) => inventoryRow({ id, accountId: `provider-${index}` }),
+    (id, index) => ({
+      ...inventoryRow({ id, accountId: `provider-${index}` }),
+      ...(marked &&
+        id === 'oauth:test' && {
+          condition: { reason: 'provider_ineligible' as const, sinceMs: 1 },
+        }),
+    }),
   )
   const client: ClaustrumScopedClient = {
     listScoped: async () => {
@@ -72,6 +85,13 @@ async function fixture() {
     },
     reportAuthFailureScoped: async (input) => {
       reports.push(input)
+    },
+    reportCondition: async (input) => {
+      conditionReports.push(input)
+    },
+    clearCondition: async (input) => {
+      conditionClears.push(input)
+      return true
     },
     close: () => {
       closes++
@@ -103,6 +123,8 @@ async function fixture() {
     consumer,
     gets,
     reports,
+    conditionReports,
+    conditionClears,
     rows,
     route,
     counts: () => ({ connects, lists, closes }),
@@ -406,6 +428,90 @@ test('each send gets a new scoped receipt bound to its provider identity', async
   expect(receipts[0]).not.toBe(receipts[1])
   expect(f.gets).toHaveLength(2)
   expect(f.reports).toHaveLength(0)
+})
+
+const loginCondition = {
+  reason: 'provider_ineligible',
+  providerStatus: 403,
+} as const
+
+test('consumer reports a login condition with the enrollment token and version of the receipt sent', async () => {
+  const f = await fixture()
+  const id = f.route(await f.consumer.refresh(), 'oauth:test:work')
+  const attempt = await f.consumer.authorize(id)
+  const nextToken = '02'.repeat(32)
+  await writeToken(f.dir, nextToken)
+  await f.consumer.authorize(id)
+  expect(f.gets.at(-1)?.enrollmentToken).toBe(nextToken)
+
+  expect(await f.consumer.reportCondition(attempt, loginCondition)).toBe(
+    'reported',
+  )
+  expect(f.conditionReports).toEqual([
+    {
+      ...loginCondition,
+      credentialId: 'oauth:test:work',
+      recordVersion: 3,
+      enrollmentToken: '01'.repeat(32),
+    },
+  ])
+})
+
+test('consumer clears a listed login condition once and skips an unmarked login', async () => {
+  const f = await fixture({ marked: true })
+  const roster = await f.consumer.refresh()
+  const unmarked = await f.consumer.authorize(
+    f.route(roster, 'oauth:test:work'),
+  )
+  expect(await f.consumer.clearCondition(unmarked)).toBe('skipped')
+  expect(f.conditionClears).toHaveLength(0)
+
+  const marked = await f.consumer.authorize(f.route(roster, 'oauth:test'))
+  expect(await f.consumer.clearCondition(marked)).toBe('reported')
+  expect(await f.consumer.clearCondition(marked)).toBe('reported')
+  expect(f.conditionClears).toEqual([
+    {
+      credentialId: 'oauth:test',
+      recordVersion: 3,
+      enrollmentToken: '01'.repeat(32),
+    },
+  ])
+})
+
+test('consumer rejects both login condition calls for a foreign receipt', async () => {
+  const f = await fixture({ marked: true })
+  const other = await fixture({ marked: true })
+  await f.consumer.authorize(f.route(await f.consumer.refresh(), 'oauth:test'))
+  const foreign = await other.consumer.authorize(
+    other.route(await other.consumer.refresh(), 'oauth:test'),
+  )
+
+  for (const call of [
+    () => f.consumer.reportCondition(foreign, loginCondition),
+    () => f.consumer.clearCondition(foreign),
+  ]) {
+    const result = call()
+    await expect(result).rejects.toBeInstanceOf(ClaustrumConsumerError)
+    await expect(result).rejects.toMatchObject({ kind: 'no-receipt' })
+  }
+  expect(f.conditionReports).toHaveLength(0)
+  expect(f.conditionClears).toHaveLength(0)
+  expect(other.conditionReports).toHaveLength(0)
+  expect(other.conditionClears).toHaveLength(0)
+})
+
+test('disposed consumer skips both login condition calls without contacting the vault', async () => {
+  const f = await fixture({ marked: true })
+  const id = f.route(await f.consumer.refresh(), 'oauth:test')
+  const attempt = await f.consumer.authorize(id)
+  await f.consumer.dispose()
+
+  expect(await f.consumer.reportCondition(attempt, loginCondition)).toBe(
+    'skipped',
+  )
+  expect(await f.consumer.clearCondition(attempt)).toBe('skipped')
+  expect(f.conditionReports).toHaveLength(0)
+  expect(f.conditionClears).toHaveLength(0)
 })
 
 test('profile 401 retries the new record and reports its version if it also fails', async () => {

@@ -657,6 +657,8 @@ providerStatus, actionUrl? })` for a 403 that indicates
 reports can include an HTTPS action link, which the vault validates. After a
 successful reply, call `custody.clearCondition(attempt)`; custody sends nothing
 unless the latest listing marks that login, and sends at most once per mark.
+Plugins that obtain receipts through `ClaustrumConsumer` call
+`consumer.reportCondition` and `consumer.clearCondition` instead.
 Neither call belongs on the request path. These are best-effort updates tied
 to the receipt's record version, not token invalidations. A marked login can
 still serve its token.

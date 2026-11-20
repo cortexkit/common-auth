@@ -246,6 +246,8 @@ function fakeVault(
     watches: 0,
     gets: [] as string[],
     reports: [] as string[],
+    conditionReports: [] as string[],
+    conditionClears: [] as string[],
     connections: [] as FakeConnection[],
     /** While set, a list waits for it after counting itself. */
     listGate: undefined as Promise<void> | undefined,
@@ -334,6 +336,13 @@ function fakeVault(
           },
           reportAuthFailureScoped: async (input) => {
             vault.reports.push(input.credentialId)
+          },
+          reportCondition: async (input) => {
+            vault.conditionReports.push(input.credentialId)
+          },
+          clearCondition: async (input) => {
+            vault.conditionClears.push(input.credentialId)
+            return true
           },
           close: () => {
             connection.closed = true
@@ -1642,6 +1651,38 @@ test('hub members: reportFailure goes only through the lease that issued the rec
     kind: 'closed',
   })
   expect(f.vault.reports).toEqual(['apikey:alpha:main'])
+})
+
+test('hub members: login condition calls use the issuing lease and skip its ended generation', async () => {
+  const f = await hubFixture()
+  const alpha = f.member('alpha')
+  const credentialId = 'apikey:alpha:main'
+  const input = { reason: 'provider_ineligible', providerStatus: 403 } as const
+  f.vault.rows = f.vault.rows.map((row) =>
+    row.id === credentialId
+      ? {
+          ...row,
+          condition: { reason: 'provider_ineligible' as const, sinceMs: 1 },
+        }
+      : row,
+  )
+  await alpha.refresh()
+  const attempt = await alpha.authorize(f.route(alpha, 'alpha'))
+  expect(await alpha.reportCondition(attempt, input)).toBe('reported')
+  expect(f.vault.conditionReports).toEqual([credentialId])
+
+  f.setActive(false)
+  await f.hub.refresh()
+  f.setActive(true)
+  await alpha.refresh()
+  const current = await alpha.authorize(f.route(alpha, 'alpha'))
+  expect(await alpha.reportCondition(attempt, input)).toBe('skipped')
+  expect(await alpha.clearCondition(attempt)).toBe('skipped')
+  expect(f.vault.conditionReports).toEqual([credentialId])
+  expect(f.vault.conditionClears).toHaveLength(0)
+
+  expect(await alpha.clearCondition(current)).toBe('reported')
+  expect(f.vault.conditionClears).toEqual([credentialId])
 })
 
 test('hub members: one member failing its first commit stays local', async () => {
