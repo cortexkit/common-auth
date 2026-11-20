@@ -168,6 +168,8 @@ export type ClaustrumLeasedCustody = Pick<
   ClaustrumScopedCustody,
   | 'authorize'
   | 'reportFailure'
+  | 'reportCondition'
+  | 'clearCondition'
   | 'reportUsage'
   | 'usageReportState'
   | 'forget'
@@ -178,7 +180,8 @@ export type ClaustrumLeasedCustody = Pick<
  * One acquisition of the hub's shared custody. `custody` throws `closed`
  * after `release()`, and once the connection it belongs to ended for any
  * reason, vault mode going off included. Best-effort `reportUsage` instead
- * ignores reports through an ended lease. `release()` is idempotent.
+ * ignores reports through an ended lease, and the condition calls resolve
+ * `skipped` through one. `release()` is idempotent.
  */
 export interface CustodyLease {
   readonly custody: ClaustrumLeasedCustody
@@ -840,6 +843,14 @@ export class ClaustrumDiscoveryHub {
       reportFailure: async (attempt, status, source) => {
         check()
         return custody.reportFailure(attempt, status, source)
+      },
+      reportCondition: async (attempt, input) => {
+        if (state.released || generation.ended) return 'skipped'
+        return custody.reportCondition(attempt, input)
+      },
+      clearCondition: async (attempt) => {
+        if (state.released || generation.ended) return 'skipped'
+        return custody.clearCondition(attempt)
       },
       reportUsage: (input) => {
         if (!state.released && !generation.ended) custody.reportUsage(input)

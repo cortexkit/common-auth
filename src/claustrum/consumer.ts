@@ -1115,8 +1115,10 @@ export class ClaustrumConsumer<Q = QuotaObservation> {
     await this.#custody.reportFailure(attempt, status, source)
   }
 
-  /** The custody that issued `attempt`, or a `no-receipt` refusal. */
-  #issuingCustody(attempt: ClaustrumScopedAttempt): ClaustrumScopedCustody {
+  /** The custody (or hub lease) that issued `attempt`, or a `no-receipt` refusal. */
+  #issuingCustody(
+    attempt: ClaustrumScopedAttempt,
+  ): Pick<ClaustrumScopedCustody, 'reportCondition' | 'clearCondition'> {
     const custody = this.#hub
       ? this.#issuedBy.get(attempt)?.custody
       : this.#custody
