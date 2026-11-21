@@ -978,6 +978,10 @@ export async function installOpenCode2Auth<Q, A = unknown>(
     )
     const newest = held.at(-1)
     if (!newest) return undefined
+    // A refusal on the newest attempt counts while it is still open: a
+    // WebSocket limit frame leaves its attempt open until the socket moves on.
+    if (newest.limit && !newest.rerouted && newest.endOrder === undefined)
+      return newest
     let refused: AttemptRecord<A> | undefined
     for (const rec of held) {
       if (

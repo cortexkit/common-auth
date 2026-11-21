@@ -110,6 +110,40 @@ async function setup(wait?: RetryHold | RetryWaitThenReselect) {
   }
 }
 
+describe('a refusal on the still-open newest attempt', () => {
+  test('a WebSocket limit frame before output is rerouted, though the attempt has not ended', async () => {
+    const t = await setup()
+    // The adapter won't retry a refused account on itself, so only a reroute
+    // can serve.
+    t.retrySameAccount.mockImplementation(() => undefined as never)
+    try {
+      const scope = scopeFor()
+      // An earlier HTTP attempt of the session is still open, so the refused
+      // WebSocket attempt can't be picked as the only one either.
+      await t.send()
+      const model = await t.host.fire('model.request', {
+        ...scope,
+        headers: {},
+      })
+      await t.host.fire('experimental.ws.handshake', {
+        ...scope,
+        url: 'wss://provider.invalid/v1/responses',
+        headers: { ...model.headers } as Record<string, string>,
+      })
+      await t.host.fire('experimental.ws.receive', {
+        ...scope,
+        frame: JSON.stringify({ type: 'refused' }),
+      })
+      t.plan.next = 'B'
+      const result = await t.retry(1, { retry: true, delay: 37 }, rateLimit)
+      expect(t.retries.at(-1)?.reason).toBe('reroute')
+      expect(result.decision).toEqual({ retry: true, delay: 0 })
+    } finally {
+      await t.auth.dispose()
+    }
+  })
+})
+
 describe('retry judges the failed primary, not a stale refused side request', () => {
   for (const kind of ['title', 'compaction'] as const) {
     for (const sideRetry of ['not-called', 'judged'] as const) {
