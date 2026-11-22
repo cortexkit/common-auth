@@ -8,6 +8,7 @@ import type {
   WaitCheckpoint,
 } from './decide.js'
 import { MAX_SAME_ACCOUNT_HOLD_MS, readMaxSameAccountWait } from './hold.js'
+import { MAX_TERMINAL_HOLD_MS } from './hold-bounds.js'
 import type { RequestHistory } from './request-history.js'
 import { sameAccount } from './request-history.js'
 import type { FamilyOf, Scope } from './scope.js'
@@ -42,6 +43,8 @@ export interface TerminalScanFacts {
   readonly familyOf: FamilyOf
   readonly maxAgeMs: number
   readonly maxSameAccountWait?: unknown
+  /** Set only when the user opts in to waiting for quota reset. Jitter must be a finite, non-negative integer. */
+  readonly waitForReset?: { readonly jitterMs: number }
   readonly activity?: SessionActivity
   /** Current session account, used to reject another account's cache record. */
   readonly accountKey?: AccountKey
@@ -61,6 +64,14 @@ export function scanTerminalReset(
   input: TerminalScanFacts,
   now: number,
 ): TerminalReset | undefined {
+  return findTerminalReset(input, now, false)
+}
+
+function findTerminalReset(
+  input: TerminalScanFacts,
+  now: number,
+  requireAll: boolean,
+): TerminalReset | undefined {
   if (!Number.isFinite(input.maxAgeMs) || input.maxAgeMs < 0) return undefined
   let best: TerminalReset | undefined
   for (const candidate of input.candidates) {
@@ -69,14 +80,19 @@ export function scanTerminalReset(
       (candidate.identity !== undefined &&
         candidate.readingIdentity !== undefined &&
         candidate.identity !== candidate.readingIdentity)
-    )
+    ) {
+      if (requireAll) return undefined
       continue
+    }
     const blockers = candidate.windows.filter(
       (window) =>
         window.blockedBy &&
         scopeCovers(window.scope, input.effectiveModel, input.familyOf),
     )
-    if (!blockers.length) continue
+    if (!blockers.length) {
+      if (requireAll) return undefined
+      continue
+    }
     const resets = blockers.map((window) => {
       const reset = window.reset
       const capturedAt = reset?.observedAt ?? reset?.checkedAt
@@ -90,7 +106,10 @@ export function scanTerminalReset(
         : undefined
     })
     // One unknown blocking window means this account has no known release time.
-    if (resets.some((reset) => reset === undefined)) continue
+    if (resets.some((reset) => reset === undefined)) {
+      if (requireAll) return undefined
+      continue
+    }
     const resetAt = Math.max(...(resets as number[]))
     if (best && best.resetAt <= resetAt) continue
     const floorDefined = blockers.some(
@@ -121,7 +140,7 @@ export function scanTerminalReset(
   return best
 }
 
-function applies(metadata: TerminalFacts, axes: LimitAxes): boolean {
+function settingCapApplies(metadata: TerminalFacts, axes: LimitAxes): boolean {
   return (
     metadata.source === 'pool' &&
     metadata.reason === 'quota' &&
@@ -129,19 +148,41 @@ function applies(metadata: TerminalFacts, axes: LimitAxes): boolean {
   )
 }
 
+function quotaResetWait(metadata: TerminalFacts, now: number) {
+  const scan = metadata.scan
+  const jitterMs = scan?.waitForReset?.jitterMs
+  if (
+    metadata.reason !== 'quota' ||
+    !scan ||
+    jitterMs === undefined ||
+    !Number.isInteger(jitterMs) ||
+    jitterMs < 0
+  )
+    return undefined
+  // Do not commit to a full reset wait unless every account has a known release.
+  const kept = findTerminalReset(scan, now, true)
+  if (!kept) return undefined
+  return {
+    kept,
+    delayMs: Math.ceil((kept.resetAt - now) / 1000) * 1000 + jitterMs,
+  }
+}
+
 export function terminalWaitDisabled(
   metadata: TerminalFacts,
   axes: LimitAxes,
+  now: number,
 ): boolean {
   return (
-    applies(metadata, axes) &&
-    readMaxSameAccountWait(metadata.scan?.maxSameAccountWait) === 0
+    settingCapApplies(metadata, axes) &&
+    readMaxSameAccountWait(metadata.scan?.maxSameAccountWait) === 0 &&
+    !quotaResetWait(metadata, now)
   )
 }
 
 /**
- * When no account is ready, cap the wait by the setting rather than cache expiry.
- * Unlike a same-account hold, this wait may proceed without a cache activity record.
+ * When no account is ready, an opt-in can wait for the full reset without a
+ * warm cache. Otherwise keep the preset's existing refusal and wait bounds.
  */
 export function terminalRefusalDecision(
   facts: PolicyFacts,
@@ -149,10 +190,11 @@ export function terminalRefusalDecision(
   history: RequestHistory,
   metadata: TerminalFacts,
 ): LimitDecision | undefined {
-  if (!applies(metadata, axes)) return undefined
+  const resetWait = quotaResetWait(metadata, facts.now)
+  if (!resetWait && !settingCapApplies(metadata, axes)) return undefined
   const scan = metadata.scan
   const setting = readMaxSameAccountWait(scan?.maxSameAccountWait)
-  const kept = scan && scanTerminalReset(scan, facts.now)
+  const kept = resetWait?.kept ?? (scan && scanTerminalReset(scan, facts.now))
   const base = kept ? kept.resetAt - facts.now : 300000
   const record = scan?.activity
   const account = scan?.accountKey ?? facts.attempted
@@ -160,9 +202,11 @@ export function terminalRefusalDecision(
     record && account && sameAccount(record.accountKey, account)
       ? effectiveCacheTtlMs(record.ttlMs) || 300000
       : 300000
-  const delayMs = Math.min(base, setting === 'max' ? ttl : 900000)
+  const delayMs =
+    resetWait?.delayMs ?? Math.min(base, setting === 'max' ? ttl : 900000)
   const final =
-    setting === 0 || (facts.host === 'pi' && facts.wake?.kind === 'terminal')
+    (!resetWait && setting === 0) ||
+    (facts.host === 'pi' && facts.wake?.kind === 'terminal')
   const retryAfterMs = final ? (kept ? base : undefined) : delayMs
   const policy = axes.refusals.quota[facts.host]
   const refuse: LimitDecision = {
@@ -202,7 +246,8 @@ export function terminalRefusalDecision(
     }
   if (
     facts.remainingRetries === undefined ||
-    delayMs > MAX_SAME_ACCOUNT_HOLD_MS
+    (resetWait && Number.isNaN(facts.remainingRetries)) ||
+    delayMs > (resetWait ? MAX_TERMINAL_HOLD_MS : MAX_SAME_ACCOUNT_HOLD_MS)
   )
     return refuse
   return { ...wait, action: 'hold', account: kept.account }

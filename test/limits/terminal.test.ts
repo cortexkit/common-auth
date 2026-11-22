@@ -16,6 +16,7 @@ import {
   type TerminalCandidate,
   type TerminalScanFacts,
   type TerminalWindow,
+  windowRouter,
 } from '../../src/limits/index.js'
 
 const now = 1_800_000_000_000
@@ -388,6 +389,185 @@ describe('AN54 and AN56 terminal host matrix', () => {
                 )
             }
           })
+})
+
+describe('waitForReset terminal quota opt-in', () => {
+  const optIn = (input: TerminalScanFacts, jitterMs = 0) => ({
+    ...input,
+    waitForReset: { jitterMs },
+  })
+  const retry = {
+    host: 'opencode2',
+    hostPhase: 'retry',
+    remainingRetries: 1,
+  } as const
+
+  test('OpenCode 1 advertises the full rounded wait plus jitter', () => {
+    const input = scan({
+      maxSameAccountWait: 'max',
+      candidates: [candidate([window(day + 1)])],
+      activity: { accountKey: A, lastAcceptedAt: now, ttlMs: hour },
+    })
+    expect(decide(input)).toMatchObject({ retryAfterMs: hour })
+    const result = decide(optIn(input, 20_000))
+    expect(result).toMatchObject({
+      action: 'refuse',
+      retryable: true,
+      hostRetry: 'leave',
+      retryAfterMs: day + 21_000,
+      resetAt: now + day + 1,
+    })
+    const built = wire(result)
+    if (built.kind !== 'http') throw new Error('Expected HTTP refusal')
+    expect(built.headers.get('retry-after')).toBe('86421')
+  })
+
+  test('OpenCode 2 holds past 15 minutes and the cache TTL in the retry phase', () => {
+    for (const maxSameAccountWait of [15, 'max'] as const) {
+      const input = scan({
+        maxSameAccountWait,
+        candidates: [candidate([window(day)])],
+        activity: { accountKey: A, lastAcceptedAt: now, ttlMs: hour },
+      })
+      expect(decide(optIn(input), retry)).toMatchObject({
+        action: 'hold',
+        account: A,
+        waitKind: 'terminal',
+        delayMs: day,
+        retryAfterMs: day,
+        target: now + day,
+      })
+    }
+  })
+
+  test('OpenCode 2 refuses pre-send and passes with no retries even when the same-account setting is off', () => {
+    const input = optIn(
+      scan({ maxSameAccountWait: 0, candidates: [candidate([window(day)])] }),
+    )
+    expect(
+      decide(input, { host: 'opencode2', hostPhase: 'request' }),
+    ).toMatchObject({
+      action: 'refuse',
+      retryable: true,
+      hostRetry: 'leave',
+      retryAfterMs: day,
+    })
+    expect(decide(input, { ...retry, remainingRetries: 0 })).toMatchObject({
+      action: 'pass',
+      reason: 'host-retries-exhausted',
+      hostRetry: 'leave',
+    })
+  })
+
+  test('OpenCode 2 refuses a hold when jitter takes it past eight days', () => {
+    const input = scan({ candidates: [candidate([window(8 * day)])] })
+    expect(decide(optIn(input, 1), retry)).toMatchObject({ action: 'refuse' })
+    expect(decide(optIn(input), retry)).toMatchObject({
+      action: 'hold',
+      delayMs: 8 * day,
+    })
+  })
+
+  test('Pi waits with the same-account setting off but refuses on a terminal wake', () => {
+    const input = optIn(
+      scan({ maxSameAccountWait: 0, candidates: [candidate([window(day)])] }),
+      2_000,
+    )
+    const waited = decide(input, { host: 'pi' })
+    expect(waited).toMatchObject({
+      action: 'wait-then-reselect',
+      waitKind: 'terminal',
+      delayMs: day + 2_000,
+    })
+    if (waited.action !== 'wait-then-reselect')
+      throw new Error('Expected Pi terminal wait')
+    const fresh = { at: waited.target + day, observedAt: waited.target }
+    expect(
+      decide(
+        { ...input, candidates: [candidate([window(day, { reset: fresh })])] },
+        {
+          host: 'pi',
+          now: waited.target,
+          clockNow: waited.target,
+          wake: {
+            checkpoint: waited.checkpoint,
+            target: waited.target,
+            kind: waited.waitKind,
+          },
+        },
+      ),
+    ).toMatchObject({
+      action: 'refuse',
+      family: 'pi-final',
+      retryable: false,
+      hostRetry: 'veto',
+      resetAt: fresh.at,
+    })
+  })
+
+  test('unknown or stale blockers restore legacy decisions even with another known account', () => {
+    const known = candidate([window(day)])
+    for (const reset of [
+      undefined,
+      { at: now + day, observedAt: now - 60_001 },
+    ]) {
+      const unreadable = candidate(
+        [window(day), window(day, { window: 'weekly', reset })],
+        { account: B, readingAccount: B },
+      )
+      for (const candidates of [[unreadable], [known, unreadable]]) {
+        const input = scan({ candidates })
+        const off = { ...input, maxSameAccountWait: 0 }
+        const noRetries = { ...retry, remainingRetries: 0 }
+        expect(decide(optIn(off), noRetries)).toEqual(decide(off, noRetries))
+        expect(decide(optIn(input))).toEqual(decide(input))
+      }
+    }
+    const other = candidate(
+      [window(hour), window(2 * day, { window: 'weekly' })],
+      {
+        account: B,
+        readingAccount: B,
+      },
+    )
+    expect(decide(optIn(scan({ candidates: [known, other] })))).toMatchObject({
+      retryAfterMs: day,
+    })
+  })
+
+  test('ignores invalid jitter but accepts zero', () => {
+    const input = scan({ candidates: [candidate([window(day)])] })
+    for (const jitter of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(decide(optIn(input, jitter))).toEqual(decide(input))
+    }
+    expect(decide(optIn(input))).toMatchObject({ retryAfterMs: day })
+  })
+
+  test('the opt-in works for both pool and vault quota refusals on baseline axes', () => {
+    const input = scan({ candidates: [candidate([window(day)])] })
+    for (const source of ['pool', 'vault'] as const) {
+      const terminal = { source, reason: 'quota', retryAfterMs: 5_000 } as const
+      for (const [evidence, retryAfterMs] of [
+        [input, 5_000],
+        [optIn({ ...input, candidates: [] }), 5_000],
+        [optIn(input), day],
+      ] as const) {
+        expect(
+          decide(
+            evidence,
+            { terminal: { ...terminal, scan: evidence } },
+            windowRouter,
+          ),
+        ).toMatchObject({
+          action: 'refuse',
+          family: 'openai-429',
+          retryable: true,
+          hostRetry: 'leave',
+          retryAfterMs,
+        })
+      }
+    }
+  })
 })
 
 describe('terminal bounds, delivery and baseline isolation', () => {

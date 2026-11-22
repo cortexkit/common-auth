@@ -1,4 +1,5 @@
 import type { SessionRetryDecision } from '@opencode/plugin/promise/session'
+import { MAX_TERMINAL_HOLD_MS } from '../limits/hold-bounds.js'
 import { OpenCode2AuthError } from './errors.js'
 import { placeholderSecret } from './integration.js'
 import { watchServerSentEvents } from './sse.js'
@@ -33,11 +34,7 @@ export const DEFAULT_MAX_RECORDS = 512
 /** Cache-bound holds allow a one-hour cache lifetime plus maximum session jitter. */
 export const MAX_RETRY_HOLD_MS = 3_621_000
 
-/**
- * Terminal quota waits allow a seven-day reset plus margin while staying below
- * the signed 32-bit millisecond timer limit (2^31 - 1 ms).
- */
-export const MAX_TERMINAL_HOLD_MS = 691_200_000
+export { MAX_TERMINAL_HOLD_MS }
 
 /**
  * The request header `model.request` sets to the attempt it started. The

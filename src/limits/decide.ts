@@ -72,7 +72,7 @@ export interface TerminalFacts {
   readonly hostRetry?: HostRetry
   readonly retryAfterMs?: number
   readonly resetAt?: number
-  /** Pool quota refusals require per-field scan evidence to retain a reset. */
+  /** Per-field reset evidence for terminal quota waits and capped pool refusals. */
   readonly scan?: TerminalScanFacts
 }
 
@@ -424,7 +424,7 @@ export function decideAfterLimit(
   ) {
     return facts.terminal &&
       (facts.terminal.retryable === false ||
-        terminalWaitDisabled(facts.terminal, axes))
+        terminalWaitDisabled(facts.terminal, axes, facts.now))
       ? refusal(facts, axes, history, facts.terminal.reason, facts.terminal)
       : pass('host-retries-exhausted')
   }

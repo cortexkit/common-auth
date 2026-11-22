@@ -1460,10 +1460,26 @@ publication never blocks the request path. Deadline equality permits a new
 probe, not an extra millisecond wait.
 
 Only `confirmed-affinity` currently selects `shortLimit.holdBound: 'cache-ttl'`
-and `terminalMetadata: 'setting-capped-fresh'`. Its terminal setting applies to
-`terminal.source: 'pool'`, not vault refusals. The other presets select
-`'disabled'` and `'baseline'`, and changing the setting does not change their
-decisions. Choosing these axes for another plugin is adoption work.
+and `terminalMetadata: 'setting-capped-fresh'`. Its terminal cap from
+`maxSameAccountWait` applies to `terminal.source: 'pool'`, not vault refusals.
+The other presets select `'disabled'` and `'baseline'`, and changing that setting
+does not change their decisions. Choosing these axes for another plugin is
+adoption work.
+
+**Opt-in terminal reset wait.** Set `TerminalScanFacts.waitForReset: { jitterMs }`
+only when the user has enabled waiting for quota reset. The opt-in applies to
+terminal quota on pool or vault routes, independent of the terminal metadata
+axis. Every scan candidate must have a fresh, known future reset for each
+blocking window. The scan takes the latest blocking reset per account, then the
+earliest across accounts. If the scan cannot establish that reset, or if jitter
+is not a finite non-negative integer, the decision is unchanged.
+
+The wait rounds the time until reset up to whole seconds, then adds `jitterMs`.
+Neither the cache TTL nor `maxSameAccountWait` (including `0`) bounds it.
+OpenCode 1 refuses with a retryable `Retry-After` for the full wait. OpenCode 2
+offers a terminal hold only in the retry phase with a retry left and a delay of
+at most eight days. Pi waits and reselects once; a terminal wake that still
+cannot send refuses instead of waiting again.
 
 **Counted unconfirmed retains.** `confirmed-affinity` also sets
 `unconfirmedRetainLimit: 2`; the other three presets leave it unset. This is an
@@ -1538,9 +1554,10 @@ The library supplies host refusal envelopes, duration rendering and wording
 validation. Plugins supply typed message templates, not replacement wire
 builders. New local-pool terminal text distinguishes the capped retry delay
 from the true reset; stale or unknown evidence never becomes a real wait.
-Setting `0` uses non-retryable refusal plus veto, with only a known true reset
-as informational Retry-After. Recorded-format conformance texts remain tagged
-"changes on adoption": they are not the shared formatter's wording guarantee.
+Without an applicable `waitForReset` opt-in, setting `0` uses non-retryable
+refusal plus veto, with only a known true reset as informational Retry-After.
+Recorded-format conformance tests marked "changes on adoption" capture the
+original plugin text, not wording the shared formatter promises to preserve.
 Auth wording and Pi error-event presentation remain plugin-owned. The Pi wait
 helper only waits with an abortable countdown and returns `'elapsed'` or
 `'aborted'`; it never sends. The caller performs the wake re-check, sends or
