@@ -3,11 +3,12 @@
 // package's `/routing` subpath, per-send authorization, 401 reporting, the
 // declined-account interlock and the host-slot guard. Needs the optional
 // peer `@cortexkit/claustrum-client`.
-import {
-  ClaustrumClient,
-  type ClaustrumClientOptions,
-} from '@cortexkit/claustrum-client'
+import { ClaustrumClient } from '@cortexkit/claustrum-client'
 import { ClaustrumUnreachableError } from './availability.js'
+import {
+  type CompatibleClaustrumClientOptions,
+  claustrumWireOptions,
+} from './client-options.js'
 import type { ClaustrumScopedClient } from './custody.js'
 import { insulaUsageTransport } from './insula.js'
 
@@ -200,14 +201,14 @@ export const SCOPED_CONNECT_TIMEOUT_MS = 10_000
  * and a client that arrives after this deadline is closed, not returned.
  */
 export async function connectClaustrumScopedClient(
-  options: ClaustrumClientOptions & {
+  options: CompatibleClaustrumClientOptions & {
     connectionFile: string
     connectTimeoutMs?: number
   },
 ): Promise<ClaustrumScopedClient> {
   const { connectTimeoutMs, ...client } = options
   const limit = connectTimeoutMs ?? SCOPED_CONNECT_TIMEOUT_MS
-  const connecting = ClaustrumClient.connect(client)
+  const connecting = ClaustrumClient.connect(claustrumWireOptions(client))
   let expired = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<never>((_resolve, reject) => {

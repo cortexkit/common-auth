@@ -150,6 +150,7 @@ export interface MockDaemon {
   insula?: { response: Wire; refusal?: string; hang?: 'open' | 'usage' }
   usageGets: number
   insulaOpens: number
+  insulaIdentities: Array<Wire | undefined>
   /**
    * How `auth.watch_scoped` is answered. Defaults to `unknown_method`, as a
    * vault from before watches existed answers.
@@ -254,6 +255,7 @@ export async function startMockDaemon(input: {
     insula: input.insula,
     usageGets: 0,
     insulaOpens: 0,
+    insulaIdentities: [],
     vaultWatch: 'unknown_method',
     vaultWatchRequests: 0,
     vaultWatches: [],
@@ -602,6 +604,7 @@ export async function startMockDaemon(input: {
         }
         if (header.ty !== subc.FrameType.Request) continue
         const request = JSON.parse(body.toString('utf8')) as {
+          identity?: Wire
           method?: string
           op?: string
           params?: Wire
@@ -613,6 +616,7 @@ export async function startMockDaemon(input: {
             if (moduleId === 'insula') {
               insulaSocket = true
               state.insulaOpens++
+              state.insulaIdentities.push(request.identity)
               if (state.insula?.hang === 'open') continue
               const refusal =
                 state.insula?.refusal ??

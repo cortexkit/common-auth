@@ -1,6 +1,8 @@
 import { expect } from 'bun:test'
-import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
+import { storeIdentity } from '@cortexkit/claustrum-client'
 import {
   acquireInsulaQuotaSource,
   ClaustrumConsumer,
@@ -11,6 +13,7 @@ import {
   type InsulaUsageEntry,
   recordVaultQuota,
 } from '../../src/claustrum/index.ts'
+import { insulaUsageTransport } from '../../src/claustrum/insula.ts'
 import {
   mergeQuotaObservation,
   type QuotaObservation,
@@ -29,6 +32,34 @@ afterEach(async () => {
 })
 
 const NOW = Date.parse('2026-09-30T12:00:00Z')
+
+test('insula opens routes with a storage-based session and only legacy clients send the project root', async () => {
+  const dir = await tempDir('insula-identity-')
+  const projectRoot = await realpath(dir)
+  const storagePath = await realpath(await tempDir('insula-store-'))
+  const daemon = await startMockDaemon({
+    directory: dir,
+    insula: { response: { result: [] } },
+  })
+  daemons.push(daemon)
+
+  const transport = insulaUsageTransport({
+    connectionFile: daemon.connectionFile,
+    projectRoot,
+    storagePath,
+  })
+  await transport.getUsage()
+
+  // The compatibility check also runs this test with claustrum-client 0.6.2.
+  expect(daemon.insulaIdentities).toStrictEqual([
+    {
+      harness: 'opencode',
+      session: `store-${createHash('sha256').update(storagePath).digest('hex')}`,
+      ...(storeIdentity.length === 1 ? {} : { project_root: projectRoot }),
+    },
+  ])
+})
+
 function entry(overrides: Record<string, unknown> = {}) {
   return {
     provider: 'codex',

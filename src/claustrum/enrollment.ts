@@ -20,7 +20,6 @@ import {
 } from 'node:path'
 import {
   ClaustrumCredentialError,
-  type ClaustrumClientOptions as ClaustrumEnrollmentClientOptions,
   ClaustrumClient as ClaustrumWireClient,
   type EnrollmentPollOutcome,
   type EnrollmentTokenFile,
@@ -36,6 +35,10 @@ import {
   windowsPrivateFiles,
   writePrivateAtomic,
 } from '../fs/private-files.js'
+import {
+  type CompatibleClaustrumClientOptions,
+  claustrumWireOptions,
+} from './client-options.js'
 import { ClaustrumConsumerError } from './errors.js'
 import { hasVaultHost } from './host.js'
 
@@ -204,9 +207,9 @@ export interface ClaustrumEnrollmentConnection
  * environment and knows no host paths.
  */
 export function connectClaustrumEnrollmentClient(
-  options: ClaustrumEnrollmentClientOptions & { connectionFile: string },
+  options: CompatibleClaustrumClientOptions & { connectionFile: string },
 ): Promise<ClaustrumEnrollmentConnection> {
-  return ClaustrumWireClient.connect(options)
+  return ClaustrumWireClient.connect(claustrumWireOptions(options))
 }
 
 interface PendingEnrollmentState extends EnrollmentGrantProposal {

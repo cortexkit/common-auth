@@ -10,9 +10,9 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.14",
-        "@cortexkit/claustrum-client": "^0.21.0",
+        "@cortexkit/claustrum-client": "^0.22.0",
         "@cortexkit/opencode-sidebar": "0.3.0",
-        "@cortexkit/subc-client": "0.24.0",
+        "@cortexkit/subc-client": "0.26.8",
         "@earendil-works/pi-coding-agent": "1.0.4",
         "@opencode/plugin": "2.0.21",
         "@opentui/core": ">=0.5.12",
@@ -30,7 +30,7 @@
       "peerDependencies": {
         "@cortexkit/claustrum-client": ">=0.6.2",
         "@cortexkit/opencode-sidebar": ">=0.1.0 <0.4.0",
-        "@cortexkit/subc-client": "^0.16.0 || ^0.22.0 || ^0.24.0",
+        "@cortexkit/subc-client": "^0.16.0 || ^0.22.0 || ^0.24.0 || ^0.26.8",
         "@opencode/plugin": ">=2.0.21",
         "@opentui/core": ">=0.4.5",
         "@opentui/solid": ">=0.4.5",
@@ -190,7 +190,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.14", "", { "os": "win32", "cpu": "x64" }, "sha512-oJWmBhoHsnhUKIke+0gXDX0mltJrWHA1UyHsrTlXwX0TL64ilVZAo+TYZm97baecV0esBdpzy3k96q+09JaZUQ=="],
 
-    "@cortexkit/claustrum-client": ["@cortexkit/claustrum-client@0.21.0", "", { "dependencies": { "@cortexkit/store": "^0.2.3", "@cortexkit/subc-client": "^0.24.0" } }, "sha512-36wFsjQOFlma7Mcd4JxYd86PTSu2oBYF4CL6dOJqISe+U+trzlSq1wrrezUr0aio+8qkquoIXGYJ/hDOSRvkPw=="],
+    "@cortexkit/claustrum-client": ["@cortexkit/claustrum-client@0.22.0", "", { "dependencies": { "@cortexkit/store": "^0.2.3", "@cortexkit/subc-client": "^0.26.8" } }, "sha512-obIzV3mgTZpLhOoHF3bJPodeH1L7WG+r/i/h589AQblxoJj1He7SV106mQ7p+MppC+UsALRIsFeocVZ2ZzfHAw=="],
 
     "@cortexkit/opencode-sidebar": ["@cortexkit/opencode-sidebar@0.3.0", "", { "peerDependencies": { "@opentui/core": ">=0.4.5", "@opentui/solid": ">=0.4.5", "solid-js": ">=1.9.12 <2" } }, "sha512-jyVL2kKOS2IXEdJYrmKhNpNMyKgf3WRske5sbzPkVhzYJ53vFFV0CAqvect9JTR2pG4gTmKJIOU+WcRC9Qiruw=="],
 
@@ -198,7 +198,7 @@
 
     "@cortexkit/store": ["@cortexkit/store@0.2.3", "", { "dependencies": { "@cortexkit/private-files": "^0.2.0" } }, "sha512-cOCjAhb2rJp9u71xHXTlb2tS67237hHVN5DCB+aVh9S/FSu1UjOj8j/LjTSnVAZYXrNuWWb8eoQghiEcDtNT8g=="],
 
-    "@cortexkit/subc-client": ["@cortexkit/subc-client@0.24.0", "", {}, "sha512-adx2FoWdJqqEyOOChX3I7SKOUhoxDohK1lCn6Kj4OQvB4jIKONJ/8MoCc/jDnRidoiOx+k+K/nZcybHMYbBc5Q=="],
+    "@cortexkit/subc-client": ["@cortexkit/subc-client@0.26.8", "", {}, "sha512-Vu7YbQymDgmsgNJWMMFhJqexB4WAtOdke+921La6dfOixswb0i/2wg47d7ANoKzNhhDgcaub2lEnEiaXDBLVsg=="],
 
     "@earendil-works/chord": ["@earendil-works/chord@1.1.0", "", { "dependencies": { "esbuild": "0.28.2" } }, "sha512-gsHzKfyQ3t0ZIQ3cLBjJ5Vqy1TYnFyruHIV3g3BwmulCDYe5BW4yT9vaJk9QzN6YANILIO75uzuq+Gdxtzz1og=="],
 

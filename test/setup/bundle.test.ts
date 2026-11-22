@@ -25,7 +25,7 @@ test('setup keeps Claustrum imports static and bundles without lazy chunks', asy
     ).toEqual([])
   }
 
-  // Peers stay external; the published setup implementation must remain in one entry bundle.
+  // Plugins keep @cortexkit/private-files, @cortexkit/claustrum-client and @cortexkit/subc-client external to share one copy of each per install.
   const outdir = await mkdtemp(join(tmpdir(), 'common-auth-setup-bundle-'))
   try {
     const result = await Bun.build({
@@ -34,7 +34,11 @@ test('setup keeps Claustrum imports static and bundles without lazy chunks', asy
       format: 'esm',
       splitting: true,
       outdir,
-      external: ['@cortexkit/claustrum-client', '@cortexkit/private-files'],
+      external: [
+        '@cortexkit/claustrum-client',
+        '@cortexkit/private-files',
+        '@cortexkit/subc-client',
+      ],
     })
     expect(result.success).toBe(true)
     expect(result.outputs.map((output) => output.kind)).toEqual(['entry-point'])
