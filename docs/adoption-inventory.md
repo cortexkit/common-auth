@@ -1697,7 +1697,7 @@ turn notes for request shaping and plugin wait reports. Routing's account ids ar
 vault account ids, not plugin route ids or local pool row ids. Local pool rows are
 unknown to routing. No auth plugin adopts this client yet.
 
-Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
+Runtime exports: `askRouting`, `askRoutingUntilCapacity`, `reportRouting`, `turnNotes`,
 `CACHE_WARM_STOP_REASONS`, `isCacheWarmStopReason`, `PLUGIN_WAIT_REASONS`. Type exports:
 `RoutingCandidate`, `AskRoutingInput`, `RoutingHold`, `RoutingSelection`, `RoutingRefusal`,
 `ReportRoutingInput`, `BillingUsage`, `BillingRequestKind`, `BillingOutcome`,
@@ -1705,9 +1705,10 @@ Runtime exports: `askRouting`, `reportRouting`, `turnNotes`,
 
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
-| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS?, refusals?, warmCredentialId? }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | never throws or rejects |
+| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS?, refusals?, warmCredentialId?, requestId? }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | never throws or rejects |
 | `askRouting(input)` (continue) | Adds `{ mode: 'continue', requestId, exhausted }` to the base input | Sends `mode`, `request_id` and `exhausted` for a proved quota limit or definite sign-in signal | Invalid continue fields return `undefined` without calling routing |
 | `askRouting(input)` (warm account hint) | Optional `warmCredentialId`: the vault credential id of the account the plugin's own sticky choice has this session on | Adds `warm_credential` to the account question only for a non-empty string of at most 256 characters, with no control characters (U+0000–U+001F or U+007F–U+009F), equal to a candidate's `credentialId` | Invalid or filtered-out hints are omitted without failing the call |
+| `askRoutingUntilCapacity(input, options)` | Same input, plus `{ signal?, now?, sleep? }` | Waits and retries only on `concurrency_full`; returns any other answer with the same type as `askRouting` with refusals enabled | Rejects with the signal's abort reason on cancellation |
 | `reportRouting(input)` | `{ sessionId, accountId, credentialId?, outcome: 'served', headers: Record<string, string> }` or `{ sessionId, accountId, credentialId?, outcome: 'exhausted', window: '5h' \| '7d', pool?: string, resetsAt? }` or `{ sessionId, accountId, credentialId, outcome: 'credential_refused', providerCode: string }` | `void`; fire-and-forget, never awaits routing | never throws; invalid exhausted windows or pools, or invalid credential-refusal codes or credential ids, send nothing |
 | `reportRouting(input)` (transient backoff) | `{ sessionId, accountId, credentialId?, kind: 'transient_backoff', retryAtMs, providerCode? }` | `void`; sends `{ kind: 'transient_backoff', account_id, credential_id?, retry_at_ms, provider_code? }` through the session handle | never throws; an invalid field, even an optional field if supplied, drops the report |
 | `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
@@ -1829,7 +1830,10 @@ it must match the same candidate's `credentialId`.
 
 The account question includes the provider and model id, with the deadline in
 the call options. The optional fields are `hold_wait_max_s`, `refusals` (only
-when exactly `true`), `warm_credential`, `mode`, and `candidates`. The wire
+when exactly `true`), `warm_credential`, `request_id`, `mode`, and `candidates`.
+Use a unique `requestId` per question (for example a fresh UUID), reused only
+to retry that same question. The accessor sends it as `request_id` only if it
+is non-empty, control-free and at most 128 characters. The wire
 `candidates` contains `accounts: [{ account_id, credential_id }]` in input order
 and `view_digest`, the lowercase SHA-256 hex of the UTF-8 lines
 `account_id + "\t" + credential_id + "\n"` sorted by byte order and joined. Only
@@ -1841,10 +1845,8 @@ sent.
 **Continuing a run.** For a proved quota limit, report `exhausted` with its
 window and ask with `mode: 'continue'`. A definite sign-in signal can also
 justify a continue, with `limitWindow: 'signed_out'`. A continue requires both
-`requestId` and `exhausted`; neither is sent on an ordinary ask. Use a unique
-`requestId` per question (for example a fresh UUID), reused only to retry that
-same question. It must be non-empty, control-free and at most 128 characters.
-The accessor sends it as `request_id`. Thalamus derives `selection_id` from
+`requestId` and `exhausted`; an ordinary ask may send `requestId` but does not
+send `exhausted`. Thalamus derives `selection_id` from
 the session and `request_id` and fills in `run_id`, `admission_id`,
 `conversation_key` and `previous_decision_id`.
 
@@ -1861,23 +1863,25 @@ optional fields must be absent for `signed_out`. On the wire the member is
 Send to the account routing selects, or wait on it if the answer includes a
 hold. Pass `refusals: true` to receive `{refused}`. On a continue refusal,
 keep the run paused on its account until the reset or, for `signed_out`,
-until the user signs in. Do not ask again while paused.
+until the user signs in. Use `askRoutingUntilCapacity` when the caller can
+wait and re-ask on a capacity refusal.
 
 **Opt-in refusals.** With `refusals: true`, a routing answer of
 `{ refused: { code, routing_code?, reason?, retry_after_secs?, resets_at_ms? } }` returns
 `{ refused: { code, routingCode?, reason?, retryAfterSecs?, resetsAtMs? } }`. The code must
-be exactly `account_limit_exhausted`, `account_selection_refused` or
-`account_selection_final`. A missing or unknown code or a non-object `refused`
+be exactly `account_limit_exhausted`, `account_selection_refused`,
+`account_selection_final` or `concurrency_full`. A missing or unknown code or a non-object `refused`
 yields `undefined`, as does any refusal when the caller has not opted in.
 Optional members are copied only when valid: `routing_code` and `reason` must match
 `^[a-z0-9._-]{1,64}$`, `retry_after_secs` must be finite and non-negative, and
 `resets_at_ms` must be a positive safe integer. An invalid optional member is
-dropped without losing the refusal. If none of the offered accounts are servable
+dropped without losing the refusal, except that `concurrency_full` requires a
+valid reset and otherwise yields `undefined`. If none of the offered accounts are servable
 by routing, the relay can return `account_selection_final` with
 `routing_code: 'account_unservable'` and `reason: 'candidates_disjoint'`.
 
 A plugin receiving a refusal sends nothing: no own choice and no other account.
-On an admission refusal, it fails the request with a fixed local error, not
+On a non-capacity admission refusal, it fails the request with a fixed local error, not
 message text from routing. The runner, rather than the plugin, uses the refusal's
 `retryAfterSecs` / `resetsAtMs` timing advice to continue the turn. On a continue
 refusal, keep the run paused as described above.
@@ -1887,6 +1891,16 @@ routing outage must not stop requests. Existing callers keep the selection-only
 return type; explicitly typed opt-in inputs use `AskRoutingInput<Candidate, true>`
 (or `boolean` for a dynamic flag), while its second type parameter defaults to
 `false` for existing typed inputs.
+
+**Capacity waits.** `askRoutingUntilCapacity` opts into refusals and sends
+`waits_for_capacity: true` on every ask. Plain `askRouting` does not send that
+flag, so the relay maps a capacity refusal to `account_selection_final` rather
+than letting a caller that cannot wait send past the cap. The helper pauses the
+same run until `resetsAtMs` (or waits one second if the reset is in the past),
+then re-asks with the same `requestId`. If a first ask has no valid id, the
+helper creates a UUID. There is no overall cap because the wait is not a
+failure. Pass an `AbortSignal` if the host provides one; OpenCode 2's WebSocket
+handshake does not. The default wait uses an unref'd timer, cleared on abort.
 
 **Deadlines and holds.** `deadlineMs` defaults to 1500, clamps to 1–2000 ms, and
 uses 1500 for `NaN`. Routing's normal admission tail is under a second outside

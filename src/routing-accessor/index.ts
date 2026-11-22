@@ -5,12 +5,14 @@
  * get no turn notes.
  */
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   type CacheWarmStopReason,
   isCacheWarmStopReason,
 } from './cache-policy.js'
 import { routingHandle } from './handle.js'
+
+const REQUEST_ID_MAX_LENGTH = 128
 
 export type {
   CacheTouchInput,
@@ -91,14 +93,19 @@ export type AskRoutingInput<
   /** Plugin sticky choice's vault credential id; an eligible-account hint, not a pin. */
   warmCredentialId?: string
 } & (
-  | { mode?: never; requestId?: never; exhausted?: never }
+  | {
+      mode?: never
+      /** One id per question (e.g. a fresh UUID); reuse it only to retry that same question. */
+      requestId?: string
+      exhausted?: never
+    }
   | {
       /**
        * Ask routing whether a run should move off its pinned account. Send to
        * the selected account, or wait on it if the answer includes a hold.
        * With `refusals: true`, a `{refused}` answer means keep the run paused
        * on its account until the reset or, for `signed_out`, until the user
-       * signs in. Do not ask again while paused.
+       * signs in. Use `askRoutingUntilCapacity` to retry capacity waits.
        */
       mode: 'continue'
       /** One id per question (e.g. a fresh UUID); reuse it only to retry that same question. */
@@ -127,6 +134,7 @@ export type RoutingRefusal = {
       | 'account_limit_exhausted'
       | 'account_selection_refused'
       | 'account_selection_final'
+      | 'concurrency_full'
     routingCode?: string
     reason?: string
     retryAfterSecs?: number
@@ -519,7 +527,8 @@ function refusalFor(value: unknown): RoutingRefusal | undefined {
   if (
     code !== 'account_limit_exhausted' &&
     code !== 'account_selection_refused' &&
-    code !== 'account_selection_final'
+    code !== 'account_selection_final' &&
+    code !== 'concurrency_full'
   ) {
     return undefined
   }
@@ -542,6 +551,8 @@ function refusalFor(value: unknown): RoutingRefusal | undefined {
     resetsAtMs > 0
   ) {
     refused.resetsAtMs = resetsAtMs
+  } else if (code === 'concurrency_full') {
+    return undefined
   }
   return { refused }
 }
@@ -549,7 +560,7 @@ function refusalFor(value: unknown): RoutingRefusal | undefined {
 /**
  * Ask routing for an eligible vault route. Any failure or unfamiliar answer
  * yields undefined so the plugin can keep its own choice. Opted-in routing
- * refusals instead stop the request. This does not admit routes. Callers never
+ * refusals instead withhold selection. This does not admit routes. Callers never
  * pass an account the vault refused. Beyond that, a plugin may leave accounts
  * out only under a user-configured eligibility rule, such as a killswitch floor
  * the user turned on (the minimum share of a quota window an account must keep
@@ -567,8 +578,15 @@ export function askRouting<
   | (Refusals extends true ? RoutingRefusal : never)
   | undefined
 >
-export async function askRouting<Candidate extends RoutingCandidate>(
+export function askRouting<Candidate extends RoutingCandidate>(
   input: AskRoutingInput<Candidate, boolean>,
+): Promise<RoutingSelection<Candidate> | RoutingRefusal | undefined> {
+  return askRoutingOnce(input, false)
+}
+
+async function askRoutingOnce<Candidate extends RoutingCandidate>(
+  input: AskRoutingInput<Candidate, boolean>,
+  waitsForCapacity: boolean,
 ): Promise<RoutingSelection<Candidate> | RoutingRefusal | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -576,14 +594,20 @@ export async function askRouting<Candidate extends RoutingCandidate>(
       provider: input.provider,
       modelId: input.modelId,
     }
+    const { requestId } = input
     if (input.mode === 'continue') {
-      const { requestId } = input
-      if (!isBoundedControlFreeString(requestId, 128)) return undefined
+      if (!isBoundedControlFreeString(requestId, REQUEST_ID_MAX_LENGTH))
+        return undefined
       const exhausted = continueExhaustion(input.exhausted)
       if (!exhausted) return undefined
       request.mode = 'continue'
       request.request_id = requestId
       request.exhausted = exhausted
+    } else if (
+      input.mode === undefined &&
+      isBoundedControlFreeString(requestId, REQUEST_ID_MAX_LENGTH)
+    ) {
+      request.request_id = requestId
     }
     const handle = routingHandle(input.sessionId)
     if (!handle) return undefined
@@ -602,6 +626,7 @@ export async function askRouting<Candidate extends RoutingCandidate>(
       request.hold_wait_max_s = Math.max(0, Math.floor(cap))
     }
     if (input.refusals === true) request.refusals = true
+    if (waitsForCapacity) request.waits_for_capacity = true
     const warmCredentialId = input.warmCredentialId
     if (
       isBoundedControlFreeString(warmCredentialId, 256) &&
@@ -632,6 +657,94 @@ export async function askRouting<Candidate extends RoutingCandidate>(
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function sleepForCapacity(
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  do {
+    signal?.throwIfAborted()
+    // A delay above the platform timer limit would fire almost immediately.
+    const delay = Math.min(ms, 2_147_483_647)
+    await new Promise<void>((resolve, reject) => {
+      function onAbort() {
+        clearTimeout(timer)
+        reject(signal?.reason)
+      }
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort)
+        resolve()
+      }, delay)
+      timer.unref()
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
+    ms -= delay
+  } while (ms > 0)
+}
+
+/**
+ * Retry the same routing question until capacity opens or routing gives a
+ * different answer. There is no overall deadline: a capacity wait is never
+ * terminal. Pass an AbortSignal when available; OpenCode 2's WebSocket
+ * handshake has no AbortSignal.
+ *
+ * Each ask sends `waits_for_capacity: true`. Without that flag, the relay
+ * maps a capacity refusal to `account_selection_final` so a caller that
+ * cannot wait does not send past the cap.
+ */
+export async function askRoutingUntilCapacity<
+  Candidate extends RoutingCandidate,
+>(
+  input: AskRoutingInput<Candidate, boolean>,
+  options: {
+    signal?: AbortSignal
+    now?: () => number
+    sleep?: (ms: number, signal: AbortSignal | undefined) => Promise<void>
+  },
+): Promise<RoutingSelection<Candidate> | RoutingRefusal | undefined> {
+  const { signal, now = Date.now, sleep = sleepForCapacity } = options
+  signal?.throwIfAborted()
+  const request: AskRoutingInput<Candidate, true> =
+    input.mode === 'continue'
+      ? { ...input, refusals: true }
+      : {
+          ...input,
+          refusals: true,
+          requestId: isBoundedControlFreeString(
+            input.requestId,
+            REQUEST_ID_MAX_LENGTH,
+          )
+            ? input.requestId
+            : randomUUID(),
+        }
+  async function askUntilReady() {
+    while (true) {
+      signal?.throwIfAborted()
+      const answer = await askRoutingOnce(request, true)
+      signal?.throwIfAborted()
+      if (answer && 'refused' in answer) {
+        const { code, resetsAtMs } = answer.refused
+        if (code === 'concurrency_full' && resetsAtMs !== undefined) {
+          const remainingMs = resetsAtMs - now()
+          signal?.throwIfAborted()
+          await sleep(remainingMs < 0 ? 1000 : remainingMs, signal)
+          continue
+        }
+      }
+      return answer
+    }
+  }
+
+  if (!signal) return askUntilReady()
+  // An in-flight routing ask or an injected sleep may not observe the signal.
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+    void askUntilReady()
+      .finally(() => signal.removeEventListener('abort', onAbort))
+      .then(resolve, reject)
+  })
 }
 
 /**

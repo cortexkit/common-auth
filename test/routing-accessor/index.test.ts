@@ -10,6 +10,7 @@ import {
 import {
   type AskRoutingInput,
   askRouting,
+  askRoutingUntilCapacity,
   type ReportRoutingInput,
   type RoutingRefusal,
   type RoutingSelection,
@@ -251,7 +252,10 @@ describe('askRouting', () => {
     await askRouting({
       ...continueAsk,
       requestId: 'continue-2',
-      exhausted: { ...continueAsk.exhausted, limitWindow: 'signed_out' },
+      exhausted: {
+        ...continueAsk.exhausted,
+        limitWindow: 'signed_out' as const,
+      },
     })
     expect(accountFor.mock.calls).toStrictEqual([
       [
@@ -273,17 +277,42 @@ describe('askRouting', () => {
     ])
   })
 
-  test.each([undefined, 'Continue'])(
-    'omits continue fields for mode %p',
-    async (mode) => {
-      const accountFor = mock((_request: unknown) => Promise.resolve(null))
+  test('omits continue fields for an unsupported mode', async () => {
+    const accountFor = mock((_request: unknown) => Promise.resolve(null))
+    install(() => ({ accountFor }))
+    await askRouting({
+      ...continueAsk,
+      mode: 'Continue',
+    } as unknown as AskRoutingInput)
+    expect(accountFor.mock.calls[0]?.[0]).toStrictEqual({
+      provider: 'anthropic',
+      modelId: 'claude-sonnet',
+      candidates: candidateView,
+    })
+  })
+
+  test('sends a first-ask request id without continue fields', async () => {
+    const requestId = 'a'.repeat(128)
+    const accountFor = mock((_request: unknown) => Promise.resolve(null))
+    install(() => ({ accountFor }))
+    await askRouting({ ...input, requestId })
+    expect(accountFor.mock.calls[0]?.[0]).toStrictEqual({
+      provider: 'anthropic',
+      modelId: 'claude-sonnet',
+      request_id: requestId,
+      candidates: candidateView,
+    })
+  })
+
+  test.each(['', 'a'.repeat(129), 'bad\nrequest', 'bad\u0080request'])(
+    'omits an invalid first-ask request id: %p',
+    async (requestId) => {
+      const accountFor = mock((_request: unknown) =>
+        Promise.resolve({ account_id: candidate.accountId }),
+      )
       install(() => ({ accountFor }))
-      await askRouting({ ...continueAsk, mode } as unknown as AskRoutingInput)
-      expect(accountFor.mock.calls[0]?.[0]).toStrictEqual({
-        provider: 'anthropic',
-        modelId: 'claude-sonnet',
-        candidates: candidateView,
-      })
+      expect(await askRouting({ ...input, requestId })).toEqual({ candidate })
+      expect(accountFor.mock.calls[0]?.[0]).not.toHaveProperty('request_id')
     },
   )
 
@@ -413,6 +442,38 @@ describe('askRouting', () => {
       refused: { code },
     })
   })
+
+  test('returns an opted-in concurrency_full refusal with its reset', async () => {
+    answerWith({
+      refused: {
+        code: 'concurrency_full',
+        routing_code: 'no_route',
+        resets_at_ms: 1_750_000_060_000,
+      },
+    })
+    expect(await askRouting({ ...input, refusals: true })).toEqual({
+      refused: {
+        code: 'concurrency_full',
+        routingCode: 'no_route',
+        resetsAtMs: 1_750_000_060_000,
+      },
+    })
+    expect(await askRouting(input)).toBeUndefined()
+  })
+
+  test.each([undefined, '1', 0, -1, 1.5, Infinity, 2 ** 53])(
+    'drops a concurrency_full refusal without a valid reset: %p',
+    async (reset) => {
+      answerWith({
+        refused: {
+          code: 'concurrency_full',
+          routing_code: 'no_route',
+          ...(reset === undefined ? {} : { resets_at_ms: reset }),
+        },
+      })
+      expect(await askRouting({ ...input, refusals: true })).toBeUndefined()
+    },
+  )
 
   test('passes through the reason for a terminal account-selection refusal', async () => {
     answerWith({
@@ -827,6 +888,196 @@ describe('askRouting', () => {
     install(() => null)
     expect(await askRouting(input)).toBeUndefined()
   })
+})
+
+describe('askRoutingUntilCapacity', () => {
+  const reset = 1_750_000_060_000
+  const capacityRefusal = (resetsAtMs: number) => ({
+    refused: {
+      code: 'concurrency_full',
+      routing_code: 'no_route',
+      resets_at_ms: resetsAtMs,
+    },
+  })
+  const selection = { account_id: candidate.accountId }
+
+  test('advertises capacity waits only from the helper and reuses its generated id', async () => {
+    let now = reset - 2000
+    let capacityAsks = 0
+    const accountFor = mock(async (request: Record<string, unknown>) => {
+      if (request.waits_for_capacity !== true) {
+        return { refused: { code: 'account_selection_final' } }
+      }
+      capacityAsks++
+      if (capacityAsks === 1) return capacityRefusal(reset)
+      if (capacityAsks === 2) return capacityRefusal(reset + 3000)
+      expect(now).toBe(reset + 3000)
+      return selection
+    })
+    install(() => ({ accountFor }))
+
+    expect(await askRouting({ ...input, refusals: true })).toEqual({
+      refused: { code: 'account_selection_final' },
+    })
+    expect(accountFor.mock.calls[0]?.[0]).not.toHaveProperty(
+      'waits_for_capacity',
+    )
+
+    const sleep = mock(async (ms: number, _signal: AbortSignal | undefined) => {
+      now += ms
+    })
+    const result = await askRoutingUntilCapacity(input, {
+      now: () => now,
+      sleep,
+    })
+    expect(result).toEqual({ candidate })
+    expect(sleep.mock.calls).toEqual([
+      [2000, undefined],
+      [3000, undefined],
+    ])
+    const asks = accountFor.mock.calls.slice(1).map(([request]) => request)
+    const requestId = asks[0]?.request_id
+    expect(requestId).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    )
+    expect(asks).toEqual(
+      Array(3).fill({
+        provider: input.provider,
+        modelId: input.modelId,
+        request_id: requestId,
+        refusals: true,
+        waits_for_capacity: true,
+        candidates: candidateView,
+      }),
+    )
+  })
+
+  test.each([
+    ['in the past', reset + 1, 1000],
+    ['due now', reset, 0],
+  ] as const)(
+    'retries a reset %s with the caller id',
+    async (_, now, waitMs) => {
+      const accountFor = mock(
+        (_request: unknown): Promise<unknown> => Promise.resolve(selection),
+      )
+      accountFor.mockImplementationOnce(() =>
+        Promise.resolve(capacityRefusal(reset)),
+      )
+      install(() => ({ accountFor }))
+      const sleep = mock(
+        async (_ms: number, _signal: AbortSignal | undefined) => {},
+      )
+      expect(
+        await askRoutingUntilCapacity(continueAsk, { now: () => now, sleep }),
+      ).toEqual({ candidate })
+      expect(sleep.mock.calls).toEqual([[waitMs, undefined]])
+      expect(accountFor.mock.calls).toHaveLength(2)
+      for (const [request] of accountFor.mock.calls) {
+        expect(request).toMatchObject({
+          mode: 'continue',
+          request_id: continueAsk.requestId,
+          refusals: true,
+          waits_for_capacity: true,
+        })
+      }
+    },
+  )
+
+  test('aborts during an injected wait even if the sleeper has not settled', async () => {
+    const controller = new AbortController()
+    const reason = new Error('request cancelled')
+    const entered = Promise.withResolvers<void>()
+    const waiting = Promise.withResolvers<void>()
+    const accountFor = mock(async () => capacityRefusal(reset))
+    install(() => ({ accountFor }))
+    const sleep = mock((_ms: number, _signal: AbortSignal | undefined) => {
+      entered.resolve()
+      return waiting.promise
+    })
+    const pending = askRoutingUntilCapacity(input, {
+      now: () => reset - 2000,
+      signal: controller.signal,
+      sleep,
+    })
+    await entered.promise
+    expect(sleep).toHaveBeenCalledWith(2000, controller.signal)
+    const rejected = pending.catch((error: unknown) => error)
+    controller.abort(reason)
+    expect(await rejected).toBe(reason)
+    waiting.resolve()
+    await waiting.promise
+    expect(accountFor).toHaveBeenCalledTimes(1)
+  })
+
+  test('aborts between asks after the wait resolves', async () => {
+    const controller = new AbortController()
+    const accountFor = mock(async () => capacityRefusal(reset))
+    install(() => ({ accountFor }))
+    const sleep = mock(async () => {
+      queueMicrotask(() => controller.abort())
+    })
+    await expect(
+      askRoutingUntilCapacity(input, {
+        now: () => reset - 2000,
+        signal: controller.signal,
+        sleep,
+      }),
+    ).rejects.toHaveProperty('name', 'AbortError')
+    expect(sleep).toHaveBeenCalledTimes(1)
+    expect(accountFor).toHaveBeenCalledTimes(1)
+  })
+
+  test('clears the unrefed default capacity timer on abort', async () => {
+    const controller = new AbortController()
+    const reason = new Error('request cancelled')
+    const unref = mock(() => {})
+    const timer = { unref } as unknown as ReturnType<typeof setTimeout>
+    const scheduled = Promise.withResolvers<void>()
+    const setTimeoutOriginal = setTimeout
+    const setTimer = spyOn(globalThis, 'setTimeout').mockImplementation(((
+      callback: () => void,
+      ms: number,
+    ) => {
+      if (ms !== 2000) return setTimeoutOriginal(callback, ms)
+      scheduled.resolve()
+      return timer
+    }) as typeof setTimeout)
+    const clearTimer = spyOn(globalThis, 'clearTimeout')
+    const accountFor = mock(async () => capacityRefusal(reset))
+    install(() => ({ accountFor }))
+    const pending = askRoutingUntilCapacity(input, {
+      now: () => reset - 2000,
+      signal: controller.signal,
+    })
+    await scheduled.promise
+    expect(setTimer).toHaveBeenCalledWith(expect.any(Function), 2000)
+    expect(unref).toHaveBeenCalledTimes(1)
+    const rejected = pending.catch((error: unknown) => error)
+    controller.abort(reason)
+    expect(await rejected).toBe(reason)
+    expect(clearTimer).toHaveBeenCalledWith(timer)
+    expect(accountFor).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([
+    [selection, { candidate }],
+    [
+      { refused: { code: 'account_limit_exhausted' } },
+      { refused: { code: 'account_limit_exhausted' } },
+    ],
+    [null, undefined],
+  ] as const)(
+    'returns a non-capacity answer without waiting: %p',
+    async (answer, expected) => {
+      const accountFor = mock(async () => answer)
+      install(() => ({ accountFor }))
+      const sleep = mock(async () => {})
+      expect(await askRoutingUntilCapacity(input, { sleep })).toEqual(expected)
+      expect(accountFor).toHaveBeenCalledTimes(1)
+      expect(sleep).not.toHaveBeenCalled()
+    },
+  )
 })
 
 describe('reportRouting transient backoff', () => {
