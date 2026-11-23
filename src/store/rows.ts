@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Attribution } from './attribution.js'
+import type { Attribution, ReplaceAttribution } from './attribution.js'
 import { PoolOperationError } from './errors.js'
 import { assertNotInsideHook, runInsideHook } from './hooks.js'
 import {
@@ -181,6 +181,11 @@ export interface RowWriteOptions extends RowOperationOptions {
    * `recordQuota` and `updateProviderState` take the same fence.
    */
   attribution?: Attribution
+}
+
+/** Options of `replace`, including a fence for a row last seen without a credential. */
+export interface ReplaceOptions extends RowWriteOptions {
+  attribution?: ReplaceAttribution
 }
 
 /**
@@ -619,6 +624,7 @@ export function assertRowAttribution(
   id: string,
   row: PoolRow | undefined,
   fence: Attribution,
+  expect?: ReplaceAttribution['expect'],
 ): void {
   if (!row) throw unknownRow(operation, id)
   // A row that failed validation has no usable credential epoch to compare.
@@ -626,7 +632,8 @@ export function assertRowAttribution(
     throw refusal(operation, id, 'invalid-row', `row ${id} failed validation`)
   if (
     (row.credentialEpoch ?? 1) !== fence.credentialEpoch ||
-    row.identity !== fence.identity
+    row.identity !== fence.identity ||
+    (expect?.credential === 'absent' && row.credential !== undefined)
   )
     throw refusal(
       operation,
@@ -1256,7 +1263,7 @@ export async function replaceRow(
   id: string,
   credential: PoolCredential,
   input: CredentialWriteInput = {},
-  options: RowWriteOptions = {},
+  options: ReplaceOptions = {},
 ): Promise<{
   id: string
   credential: StoredCredential
@@ -1272,6 +1279,17 @@ export async function replaceRow(
     async (locks, progress) => {
       checkInput('replace', id, credential)
       validateAttribution('replace', id, options.attribution)
+      const expected = options.attribution?.expect
+      if (
+        expected !== undefined &&
+        (!isRecord(expected) || expected.credential !== 'absent')
+      )
+        throw refusal(
+          'replace',
+          id,
+          'invalid-input',
+          "the attribution's credential expectation must be 'absent'",
+        )
       const incoming =
         input.providerState === undefined
           ? undefined
@@ -1298,7 +1316,13 @@ export async function replaceRow(
             // the fence with that row before finishing the interrupted write
             // on disk, so a stale caller does not even complete a replacement
             // it was never issued for.
-            assertRowAttribution('replace', id, tx.row(id), options.attribution)
+            assertRowAttribution(
+              'replace',
+              id,
+              tx.row(id),
+              options.attribution,
+              expected,
+            )
             await tx.completeTorn()
           }
           const row = requireUsableRow('replace', id, tx.row(id), credential)

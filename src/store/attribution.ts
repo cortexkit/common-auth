@@ -37,6 +37,12 @@ export interface Attribution {
   identity?: string
 }
 
+/** An attribution fence for `replace`. */
+export interface ReplaceAttribution extends Attribution {
+  /** Require the row to still hold no credential, even if its epoch and identity match. */
+  expect?: { credential: 'absent' }
+}
+
 export function assertQuotaEpoch(id: string, attribution: Attribution): void {
   if (!isCredentialEpoch(attribution?.credentialEpoch))
     throw refusal(

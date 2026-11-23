@@ -218,6 +218,8 @@ function applyHeaderEditsTo(target: Headers, edits: HeaderEdits): void {
   }
 }
 
+type HookRegistration = { dispose(): Promise<void> | void }
+
 /**
  * Installs multi-account auth on OpenCode 2's own provider drivers. Every
  * hook is scoped to `adapter.providerID`:
@@ -267,6 +269,25 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   ctx: OpenCode2HookContext,
   adapter: OpenCode2AuthAdapter<Q, A, ChooseAccountResult>,
   options: InstallOpenCode2AuthOptions = {},
+): Promise<OpenCode2AuthInstallation<Q, A>> {
+  const registrations: HookRegistration[] = []
+  try {
+    return await installAuth(ctx, adapter, options, registrations)
+  } catch (error) {
+    // A failed install leaves no handle for the caller to clean up. A disposal
+    // failure must neither skip another hook nor hide the installation error.
+    await Promise.allSettled(
+      registrations.map(async (registration) => registration.dispose()),
+    )
+    throw error
+  }
+}
+
+async function installAuth<Q, A>(
+  ctx: OpenCode2HookContext,
+  adapter: OpenCode2AuthAdapter<Q, A, ChooseAccountResult>,
+  options: InstallOpenCode2AuthOptions,
+  registrations: HookRegistration[],
 ): Promise<OpenCode2AuthInstallation<Q, A>> {
   const { providerID } = adapter
   const ownership = options.gateOnPlaceholder
@@ -1003,7 +1024,6 @@ export async function installOpenCode2Auth<Q, A = unknown>(
   }
 
   const scoped = { providerID }
-  const registrations: Array<{ dispose(): Promise<void> | void }> = []
   registrations.push(
     await ctx.session.hook(
       'model.request',

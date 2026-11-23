@@ -3,6 +3,7 @@ import {
   ATTEMPT_HEADER,
   installOpenCode2Auth,
   OpenCode2AuthError,
+  type OpenCode2HookContext,
   placeholderSecret,
 } from '../../src/opencode2/index.js'
 import {
@@ -116,6 +117,37 @@ describe('installOpenCode2Auth', () => {
     })
     expect(other.headers).toEqual({ authorization: 'Bearer other' })
     expect(choices).toEqual([])
+  })
+
+  test('disposes both earlier hooks when the third registration rejects', async () => {
+    const { adapter } = fakeAdapter()
+    const registered: string[] = []
+    const disposed: string[] = []
+    const registrationError = new Error('registration failed')
+    const ctx: OpenCode2HookContext = {
+      session: {
+        async hook(name) {
+          registered.push(name)
+          if (registered.length === 3) throw registrationError
+          return {
+            async dispose() {
+              disposed.push(name)
+              if (name === 'model.request') throw new Error('disposal failed')
+            },
+          }
+        },
+      },
+    }
+
+    await expect(installOpenCode2Auth(ctx, adapter)).rejects.toBe(
+      registrationError,
+    )
+    expect(registered).toEqual([
+      'model.request',
+      'http.request',
+      'http.response',
+    ])
+    expect(disposed.sort()).toEqual(['http.request', 'model.request'])
   })
 
   test('model.request picks the account per session and kind and sets its headers', async () => {

@@ -36,6 +36,78 @@ async function rowOf(store: PoolStore): Promise<PoolRow> {
   return row
 }
 
+async function seedEmptyRow(): Promise<void> {
+  await s.writeConfig({
+    version: 1,
+    accounts: [{ id: 'a', type: 'oauth', addedAt: 1, accountId: 'acct-a' }],
+    commonAuthPool: { schemaVersion: 1, rows: {} },
+  })
+}
+
+test('an attributed replace with an absence expectation succeeds on an empty row', async () => {
+  await seedEmptyRow()
+  const writer = s.open()
+  await writer.replace(
+    'a',
+    oauth('r-new'),
+    { identity: 'acct-a' },
+    {
+      attribution: {
+        credentialEpoch: 1,
+        identity: 'acct-a',
+        expect: { credential: 'absent' },
+      },
+    },
+  )
+  expect((await rowOf(writer)).credential).toMatchObject({ refresh: 'r-new' })
+})
+
+test('an attributed replace refuses after another handle fills the empty row', async () => {
+  await seedEmptyRow()
+  const writer = s.open()
+  const empty = await rowOf(writer)
+  expect(empty.credential).toBeUndefined()
+  expect(empty.identity).toBe('acct-a')
+  const attribution = {
+    credentialEpoch: empty.credentialEpoch ?? 1,
+    identity: empty.identity,
+  }
+
+  const filler = s.open()
+  const filled = await filler.add({
+    id: 'a',
+    credential: oauth('r-filled'),
+    identity: 'acct-a',
+  })
+  expect(filled.outcome).toBe('completed')
+  expect(filled.credentialEpoch).toBe(attribution.credentialEpoch)
+
+  const error = await rejectionOf(
+    writer.replace(
+      'a',
+      oauth('r-late'),
+      { identity: 'acct-a' },
+      { attribution: { ...attribution, expect: { credential: 'absent' } } },
+    ),
+  )
+  expect(error).toMatchObject({
+    kind: 'attribution',
+    phase: 'before-first-write',
+    retryable: true,
+  })
+  expect((await rowOf(filler)).credential).toMatchObject({
+    refresh: 'r-filled',
+  })
+
+  await writer.replace(
+    'a',
+    oauth('r-late'),
+    { identity: 'acct-a' },
+    { attribution },
+  )
+  expect((await rowOf(filler)).credential).toMatchObject({ refresh: 'r-late' })
+})
+
 for (const operation of ['replace', 'rotate'] as const) {
   test(`an attributed ${operation} with a matching epoch and identity succeeds`, async () => {
     const store = s.open()

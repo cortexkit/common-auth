@@ -1,4 +1,4 @@
-export type { Attribution } from './attribution.js'
+export type { Attribution, ReplaceAttribution } from './attribution.js'
 export type {
   PoolFailureKind,
   PoolFailurePhase,
@@ -60,6 +60,7 @@ export type {
   RemoveView,
   ReorderOptions,
   ReorderResult,
+  ReplaceOptions,
   RowOperationOptions,
   RowProjection,
   RowToggleOptions,
