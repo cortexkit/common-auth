@@ -974,6 +974,7 @@ Ordinary object settings may omit fields in a file; lower levels fill them in.
 | `hosts` | Required string: `'both'`, `'opencode'`, `'pi'` or descriptive text. Documentation only; it does not gate reads. |
 | `overrides.host` | Optional `true`. Allows `opencode` and `pi` keys in an override object. |
 | `overrides.model` | Optional `true`. Allows model-id keys. Matching uses the exact model id the plugin passes. Canonicalize ids in the plugin if needed. |
+| `overrides.isolatedHosts` | Optional non-empty readonly array of host names, for example `['pi']`. Requires `overrides.host: true` and cannot be combined with `overrides.model: true`. |
 | `project` | `'user-only'` by default, or `'allowed'`. Only the latter accepts project values. The plugin reviews which settings are safe to allow per project. |
 | `legacy` | Optional readonly array of `{ source: string, path: readonly string[] }`. Metadata only; the plugin still supplies the move's `map`. |
 
@@ -1038,6 +1039,12 @@ model override wins, then an allowed host override, then the override object's
 disallowed values are skipped before resolution. Objects fill fields recursively
 from lower files and the declaration default. Lists and records replace whole
 values. Returned values are copies, so mutating them cannot change later reads.
+
+For a host listed in `overrides.isolatedHosts`, only an override object's own
+entry for that host counts at each level. Plain values and `default` keys are
+skipped for that host without a report if valid. With no usable host entry in
+any participating file, the declaration default applies. Other hosts keep the
+usual read rules. The option does not change writes or the JSON Schema.
 
 Only a missing new project file triggers `legacyProject`. An unreadable or
 unparseable new project file does not. The legacy source follows the same project

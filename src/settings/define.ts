@@ -13,7 +13,11 @@ export interface SettingDeclaration<
   readonly value: D
   readonly default: ValueDescriptor extends D ? unknown : ValueOf<D>
   readonly hosts: 'both' | 'opencode' | 'pi' | string
-  readonly overrides?: { readonly host?: true; readonly model?: true }
+  readonly overrides?: {
+    readonly host?: true
+    readonly model?: true
+    readonly isolatedHosts?: readonly string[]
+  }
   readonly project?: 'user-only' | 'allowed'
   readonly legacy?: readonly {
     readonly source: string
@@ -50,13 +54,28 @@ export function defineSettings<const S extends Declarations>(definition: {
     if (name === 'sidebar' && declaration.value.kind !== 'object') {
       throw new TypeError('The sidebar setting must use an object descriptor')
     }
+    const { overrides } = declaration
     if (
-      declaration.overrides !== undefined &&
+      overrides !== undefined &&
       (declaration.value.kind === 'object' ||
         declaration.value.kind === 'record')
     ) {
       throw new TypeError(
         `Object and record settings cannot use overrides: ${name}`,
+      )
+    }
+    if (
+      overrides?.isolatedHosts !== undefined &&
+      (overrides.host !== true ||
+        overrides.model === true ||
+        !Array.isArray(overrides.isolatedHosts) ||
+        overrides.isolatedHosts.length === 0 ||
+        !Array.from(overrides.isolatedHosts).every(
+          (host) => typeof host === 'string',
+        ))
+    ) {
+      throw new TypeError(
+        `isolatedHosts must be a non-empty array of host names and requires host overrides without model overrides: ${name}`,
       )
     }
     if (

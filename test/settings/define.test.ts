@@ -397,6 +397,19 @@ describe('defineSettings', () => {
     ).toEqual({ width: 1 })
   })
 
+  test.each([
+    { isolatedHosts: ['pi'] },
+    { host: true, isolatedHosts: [] },
+    { host: true, model: true, isolatedHosts: ['pi'] },
+  ] as const)('rejects invalid isolatedHosts options %j', (overrides) => {
+    expect(() =>
+      defineSettings({
+        plugin: 'example',
+        settings: { count: { ...declaration, overrides } },
+      }),
+    ).toThrow(TypeError)
+  })
+
   test.each([object({}), record(integer())])(
     'rejects overrides on %j',
     (value: ValueDescriptor) => {

@@ -33,6 +33,13 @@ const definition = defineSettings({
       project: 'allowed',
       overrides: { host: true, model: true },
     },
+    isolated_wait: {
+      value: integer(),
+      default: 10,
+      hosts: 'both',
+      project: 'allowed',
+      overrides: { host: true, isolatedHosts: ['pi'] },
+    },
     private_value: { value: integer(), default: 20, hosts: 'both' },
   },
 })
@@ -78,6 +85,82 @@ function entry(
 }
 
 describe('settings levels', () => {
+  test.each([
+    ['a scalar', 3],
+    ['an override default', { default: 3 }],
+  ] as const)(
+    'Pi ignores %s only for isolated settings',
+    async (_name, value) => {
+      await put(file, JSON.stringify({ isolated_wait: value, wait: value }))
+      const handle = openSettings(definition, {
+        file,
+        log: logger(),
+        separateInstall: false,
+      })
+      expect(await handle.get('isolated_wait', { host: 'pi' })).toBe(10)
+      expect(await handle.get('isolated_wait', host)).toBe(3)
+      expect(await handle.get('wait', { host: 'pi' })).toBe(3)
+      expect(handle.report()).toEqual([])
+    },
+  )
+
+  test('an isolated host uses its own project entry before its own user entry', async () => {
+    await put(file, '{ "isolated_wait": { "pi": 3 } }')
+    await put(projectFile, '{ "isolated_wait": { "pi": 4 } }')
+    const handle = openSettings(definition, {
+      file,
+      log: logger(),
+      separateInstall: false,
+    })
+    const pi = { host: 'pi' }
+    expect(await handle.get('isolated_wait', pi)).toBe(3)
+    expect(await handle.get('isolated_wait', { ...pi, project })).toBe(4)
+
+    await put(projectFile, '{ "isolated_wait": { "default": 5 } }')
+    expect(await handle.get('isolated_wait', { ...pi, project })).toBe(3)
+    expect(await handle.get('isolated_wait', { ...host, project })).toBe(5)
+    expect(handle.report()).toEqual([])
+  })
+
+  test('isolated hosts do not suppress reports for malformed values or unknown keys', async () => {
+    await put(
+      file,
+      '{ "isolated_wait": { "default": "bad", "pi": 3, "unknown": 4 } }',
+    )
+    const handle = openSettings(definition, {
+      file,
+      log: logger(),
+      separateInstall: false,
+    })
+    expect(await handle.get('isolated_wait', { host: 'pi' })).toBe(3)
+    expect(handle.report()).toEqual([
+      entry('user', file, ['isolated_wait', 'default'], 'invalid-value'),
+      entry('user', file, ['isolated_wait', 'unknown'], 'override-not-allowed'),
+    ])
+  })
+
+  test('a Pi edit of an isolated setting promotes the scalar and preserves the OpenCode value', async () => {
+    await put(file, '{ "isolated_wait": 3 }')
+    const handle = openSettings(definition, {
+      file,
+      log: logger(),
+      separateInstall: false,
+    })
+    const pi = { host: 'pi' }
+    expect(
+      await handle.update(
+        [{ setting: 'isolated_wait', level: 'pi', value: 4 }],
+        pi,
+      ),
+    ).toEqual({ outcome: 'updated' })
+    expect(JSON.parse(await readFile(file, 'utf8')).isolated_wait).toEqual({
+      default: 3,
+      pi: 4,
+    })
+    expect(await handle.get('isolated_wait', host)).toBe(3)
+    expect(await handle.get('isolated_wait', pi)).toBe(4)
+  })
+
   test('project values apply only to allowed settings and an explicit project', async () => {
     await put(file, '{ "wait": 2, "private_value": 21 }')
     await put(projectFile, '{ "wait": 3, "private_value": 99 }')

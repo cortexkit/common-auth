@@ -256,6 +256,22 @@ describe('settingsJsonSchema', () => {
     },
   )
 
+  test('isolated hosts do not change the schema for host overrides', () => {
+    const shared = { value: integer(), default: 1, hosts: 'both' }
+    const definition = defineSettings({
+      plugin: 'example',
+      settings: {
+        normal: { ...shared, overrides: { host: true } },
+        isolated: {
+          ...shared,
+          overrides: { host: true, isolatedHosts: ['pi'] },
+        },
+      },
+    })
+    const { properties } = settingsJsonSchema(definition)
+    expect(properties.isolated).toEqual(properties.normal)
+  })
+
   test('override values retain list item completeness and numeric bounds', () => {
     const definition = defineSettings({
       plugin: 'example',
