@@ -13,6 +13,8 @@ import {
 import { routingHandle } from './handle.js'
 
 const REQUEST_ID_MAX_LENGTH = 128
+// Give the bridge time to abandon the ask without waiting forever on a broken bridge.
+const ASK_JOIN_GRACE_MS = 500
 
 export type {
   CacheTouchInput,
@@ -80,6 +82,8 @@ export type AskRoutingInput<
   candidates: readonly Candidate[]
   /** Defaults to 1500 ms, above routing's normal tail; clamped to 1–2000 ms. */
   deadlineMs?: number
+  /** Cancels the ask and rejects with the signal's abort reason. */
+  signal?: AbortSignal
   /** Opt in to refusals, which stop the request instead of using a local choice. */
   refusals?: Refusals
   /**
@@ -558,9 +562,10 @@ function refusalFor(value: unknown): RoutingRefusal | undefined {
 }
 
 /**
- * Ask routing for an eligible vault route. Any failure or unfamiliar answer
- * yields undefined so the plugin can keep its own choice. Opted-in routing
- * refusals instead withhold selection. This does not admit routes. Callers never
+ * Ask routing for an eligible vault route. Bridge failures and unfamiliar answers
+ * yield undefined so the plugin can keep its own choice. Aborting rejects with
+ * the signal's reason after the bridge settles or the join grace passes.
+ * Opted-in routing refusals withhold selection. This does not admit routes. Callers never
  * pass an account the vault refused. Beyond that, a plugin may leave accounts
  * out only under a user-configured eligibility rule, such as a killswitch floor
  * the user turned on (the minimum share of a quota window an account must keep
@@ -588,8 +593,13 @@ async function askRoutingOnce<Candidate extends RoutingCandidate>(
   input: AskRoutingInput<Candidate, boolean>,
   waitsForCapacity: boolean,
 ): Promise<RoutingSelection<Candidate> | RoutingRefusal | undefined> {
+  const interrupted = Symbol()
+  let signal: AbortSignal | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
   try {
+    signal = input.signal
+    signal?.throwIfAborted()
     const request: Record<string, unknown> = {
       provider: input.provider,
       modelId: input.modelId,
@@ -617,8 +627,13 @@ async function askRoutingOnce<Candidate extends RoutingCandidate>(
     const deadlineMs = Number.isNaN(requested)
       ? 1500
       : Math.min(2000, Math.max(1, requested))
-    const expired = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), deadlineMs)
+    const stopped = new Promise<typeof interrupted>((resolve) => {
+      const stop = () => resolve(interrupted)
+      if (signal) {
+        onAbort = stop
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
+      timer = setTimeout(stop, deadlineMs)
       timer.unref()
     })
     const cap = input.holdWaitMaxS
@@ -643,10 +658,26 @@ async function askRoutingOnce<Candidate extends RoutingCandidate>(
     // missing view would let it hand back the refused account.
     if (candidates.accounts.length > 0 || request.mode === 'continue')
       request.candidates = candidates
-    const pending: unknown = accountFor.call(handle, request, { deadlineMs })
+    signal?.throwIfAborted()
+    const pending: unknown = accountFor.call(
+      handle,
+      request,
+      signal ? { deadlineMs, signal } : { deadlineMs },
+    )
     if (!isObject(pending) || typeof pending.then !== 'function')
       return undefined
-    const answer: unknown = await Promise.race([pending, expired])
+    const bridge = Promise.resolve(pending)
+    const answer = await Promise.race([bridge, stopped])
+    if (answer === interrupted) {
+      clearTimeout(timer)
+      const grace = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ASK_JOIN_GRACE_MS)
+        timer.unref()
+      })
+      await Promise.race([bridge, grace])
+      return undefined
+    }
+    signal?.throwIfAborted()
     if (input.refusals === true && isObject(answer) && 'refused' in answer) {
       return refusalFor(answer.refused)
     }
@@ -656,6 +687,8 @@ async function askRoutingOnce<Candidate extends RoutingCandidate>(
     return undefined
   } finally {
     clearTimeout(timer)
+    if (onAbort) signal?.removeEventListener('abort', onAbort)
+    signal?.throwIfAborted()
   }
 }
 
@@ -703,14 +736,19 @@ export async function askRoutingUntilCapacity<
     sleep?: (ms: number, signal: AbortSignal | undefined) => Promise<void>
   },
 ): Promise<RoutingSelection<Candidate> | RoutingRefusal | undefined> {
-  const { signal, now = Date.now, sleep = sleepForCapacity } = options
+  const {
+    signal = input.signal,
+    now = Date.now,
+    sleep = sleepForCapacity,
+  } = options
   signal?.throwIfAborted()
   const request: AskRoutingInput<Candidate, true> =
     input.mode === 'continue'
-      ? { ...input, refusals: true }
+      ? { ...input, refusals: true, signal }
       : {
           ...input,
           refusals: true,
+          signal,
           requestId: isBoundedControlFreeString(
             input.requestId,
             REQUEST_ID_MAX_LENGTH,
@@ -718,33 +756,25 @@ export async function askRoutingUntilCapacity<
             ? input.requestId
             : randomUUID(),
         }
-  async function askUntilReady() {
-    while (true) {
-      signal?.throwIfAborted()
-      const answer = await askRoutingOnce(request, true)
-      signal?.throwIfAborted()
-      if (answer && 'refused' in answer) {
-        const { code, resetsAtMs } = answer.refused
-        if (code === 'concurrency_full' && resetsAtMs !== undefined) {
-          const remainingMs = resetsAtMs - now()
-          signal?.throwIfAborted()
+  while (true) {
+    signal?.throwIfAborted()
+    const answer = await askRoutingOnce(request, true)
+    signal?.throwIfAborted()
+    if (answer && 'refused' in answer) {
+      const { code, resetsAtMs } = answer.refused
+      if (code === 'concurrency_full' && resetsAtMs !== undefined) {
+        const remainingMs = resetsAtMs - now()
+        signal?.throwIfAborted()
+        try {
           await sleep(remainingMs < 0 ? 1000 : remainingMs, signal)
-          continue
+        } finally {
+          signal?.throwIfAborted()
         }
+        continue
       }
-      return answer
     }
+    return answer
   }
-
-  if (!signal) return askUntilReady()
-  // An in-flight routing ask or an injected sleep may not observe the signal.
-  return new Promise((resolve, reject) => {
-    const onAbort = () => reject(signal.reason)
-    signal.addEventListener('abort', onAbort, { once: true })
-    void askUntilReady()
-      .finally(() => signal.removeEventListener('abort', onAbort))
-      .then(resolve, reject)
-  })
 }
 
 /**

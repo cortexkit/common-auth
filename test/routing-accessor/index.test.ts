@@ -119,6 +119,27 @@ function answerWith(answer: unknown): void {
   install(() => ({ accountFor: () => Promise.resolve(answer) }))
 }
 
+function controlAskTimers() {
+  const unref = mock(() => {})
+  const timers: { fire: () => void; ms: number; unref: typeof unref }[] = []
+  spyOn(globalThis, 'setTimeout').mockImplementation(((
+    fire: () => void,
+    ms: number,
+  ) => {
+    const timer = { fire, ms, unref }
+    timers.push(timer)
+    return timer
+  }) as unknown as typeof setTimeout)
+  const clearTimer = spyOn(globalThis, 'clearTimeout').mockImplementation(
+    () => {},
+  )
+  return { timers, clearTimer, unref }
+}
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
 afterEach(() => {
   mock.restore()
   Reflect.deleteProperty(globalThis, symbol)
@@ -848,35 +869,110 @@ describe('askRouting', () => {
     },
   )
 
+  test('forwards the signal only when supplied and cleans up after the answer', async () => {
+    const { signal } = new AbortController()
+    const add = spyOn(signal, 'addEventListener')
+    const remove = spyOn(signal, 'removeEventListener')
+    const { timers, clearTimer } = controlAskTimers()
+    const accountFor = mock(
+      (
+        _request: unknown,
+        _options: { deadlineMs: number; signal?: AbortSignal },
+      ) => Promise.resolve({ account_id: candidate.accountId }),
+    )
+    install(() => ({ accountFor }))
+
+    const request = { ...input, deadlineMs: 7, signal }
+    expect(await askRouting(request)).toEqual({ candidate })
+    expect(await askRouting(input)).toEqual({ candidate })
+    expect(accountFor.mock.calls.map(([, options]) => options)).toStrictEqual([
+      { deadlineMs: 7, signal },
+      { deadlineMs: 1500 },
+    ])
+    expect(accountFor.mock.calls[0]?.[1].signal).toBe(signal)
+    expect(add).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0]?.[1])
+    expect(clearTimer).toHaveBeenCalledWith(timers[0])
+    expect(clearTimer).toHaveBeenCalledWith(timers[1])
+  })
+
+  test('rejects a pre-aborted ask without calling routing', async () => {
+    const reason = new Error('request cancelled')
+    const request = { ...input, signal: AbortSignal.abort(reason) }
+    const routing = mock(() => ({ accountFor: () => Promise.resolve(null) }))
+    install(routing)
+
+    expect(await askRouting(request).catch((error: unknown) => error)).toBe(
+      reason,
+    )
+    expect(routing).not.toHaveBeenCalled()
+  })
+
+  test('joins the bridge on abort and discards its answer', async () => {
+    const controller = new AbortController()
+    const reason = new Error('request cancelled')
+    const add = spyOn(controller.signal, 'addEventListener')
+    const remove = spyOn(controller.signal, 'removeEventListener')
+    const { timers, clearTimer } = controlAskTimers()
+    const bridge = Promise.withResolvers<unknown>()
+    install(() => ({ accountFor: () => bridge.promise }))
+    const request = { ...input, deadlineMs: 7, signal: controller.signal }
+    const settled = mock((_result: unknown) => {})
+    const result = askRouting(request).catch((error: unknown) => error)
+    void result.then(settled)
+
+    controller.abort(reason)
+    await nextTurn()
+    expect(settled).not.toHaveBeenCalled()
+    expect(clearTimer).toHaveBeenCalledWith(timers[0])
+    expect(timers.map(({ ms }) => ms)).toEqual([7, 500])
+
+    bridge.resolve({ account_id: candidate.accountId })
+    expect(await result).toBe(reason)
+    expect(clearTimer).toHaveBeenCalledWith(timers[1])
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0]?.[1])
+  })
+
+  test('joins the bridge on local expiry and discards its answer', async () => {
+    const { timers, clearTimer } = controlAskTimers()
+    const bridge = Promise.withResolvers<unknown>()
+    install(() => ({ accountFor: () => bridge.promise }))
+    const settled = mock((_result: unknown) => {})
+    const result = askRouting({ ...input, deadlineMs: 7 })
+    void result.then(settled)
+
+    timers[0]?.fire()
+    await nextTurn()
+    expect(settled).not.toHaveBeenCalled()
+    expect(timers.map(({ ms }) => ms)).toEqual([7, 500])
+
+    bridge.resolve({ account_id: candidate.accountId })
+    expect(await result).toBeUndefined()
+    expect(clearTimer).toHaveBeenCalledWith(timers[0])
+    expect(clearTimer).toHaveBeenCalledWith(timers[1])
+  })
+
   test.each([false, true])(
-    'times out a never-settling accountFor using an unref timer with refusals = %p',
+    'times out a never-settling accountFor at deadline plus grace with refusals = %p',
     async (refusals) => {
-      let expire: (() => void) | undefined
-      const unref = mock(() => {})
-      const timer = { unref } as unknown as ReturnType<typeof setTimeout>
-      const setTimer = spyOn(globalThis, 'setTimeout').mockImplementation(((
-        callback: () => void,
-      ) => {
-        expire = callback as () => void
-        return timer
-      }) as typeof setTimeout)
-      const clearTimer = spyOn(globalThis, 'clearTimeout').mockImplementation(
-        () => {},
-      )
+      const { timers, clearTimer, unref } = controlAskTimers()
       install(() => ({ accountFor: () => new Promise(() => {}) }))
       const pending = askRouting({ ...input, deadlineMs: 7, refusals })
-      let settled = false
-      void pending.then(() => {
-        settled = true
-      })
-      await Promise.resolve()
-      expect(settled).toBe(false)
-      expect(setTimer).toHaveBeenCalledWith(expect.any(Function), 7)
+      const settled = mock((_result: unknown) => {})
+      void pending.then(settled)
+      expect(timers.map(({ ms }) => ms)).toEqual([7])
       expect(unref).toHaveBeenCalledTimes(1)
-      expect(expire).toBeDefined()
-      expire?.()
+
+      timers[0]?.fire()
+      await nextTurn()
+      expect(settled).not.toHaveBeenCalled()
+      expect(timers.map(({ ms }) => ms)).toEqual([7, 500])
+      expect(unref).toHaveBeenCalledTimes(2)
+      timers[1]?.fire()
+
       expect(await pending).toBeUndefined()
-      expect(clearTimer).toHaveBeenCalledWith(timer)
+      expect(clearTimer).toHaveBeenCalledWith(timers[0])
+      expect(clearTimer).toHaveBeenCalledWith(timers[1])
     },
   )
 
@@ -904,16 +1000,19 @@ describe('askRoutingUntilCapacity', () => {
   test('advertises capacity waits only from the helper and reuses its generated id', async () => {
     let now = reset - 2000
     let capacityAsks = 0
-    const accountFor = mock(async (request: Record<string, unknown>) => {
-      if (request.waits_for_capacity !== true) {
-        return { refused: { code: 'account_selection_final' } }
-      }
-      capacityAsks++
-      if (capacityAsks === 1) return capacityRefusal(reset)
-      if (capacityAsks === 2) return capacityRefusal(reset + 3000)
-      expect(now).toBe(reset + 3000)
-      return selection
-    })
+    const { signal } = new AbortController()
+    const accountFor = mock(
+      async (request: Record<string, unknown>, _options: unknown) => {
+        if (request.waits_for_capacity !== true) {
+          return { refused: { code: 'account_selection_final' } }
+        }
+        capacityAsks++
+        if (capacityAsks === 1) return capacityRefusal(reset)
+        if (capacityAsks === 2) return capacityRefusal(reset + 3000)
+        expect(now).toBe(reset + 3000)
+        return selection
+      },
+    )
     install(() => ({ accountFor }))
 
     expect(await askRouting({ ...input, refusals: true })).toEqual({
@@ -928,13 +1027,17 @@ describe('askRoutingUntilCapacity', () => {
     })
     const result = await askRoutingUntilCapacity(input, {
       now: () => now,
+      signal,
       sleep,
     })
     expect(result).toEqual({ candidate })
     expect(sleep.mock.calls).toEqual([
-      [2000, undefined],
-      [3000, undefined],
+      [2000, signal],
+      [3000, signal],
     ])
+    for (const [, options] of accountFor.mock.calls.slice(1)) {
+      expect(options).toStrictEqual({ deadlineMs: 1500, signal })
+    }
     const asks = accountFor.mock.calls.slice(1).map(([request]) => request)
     const requestId = asks[0]?.request_id
     expect(requestId).toMatch(
@@ -984,7 +1087,36 @@ describe('askRoutingUntilCapacity', () => {
     },
   )
 
-  test('aborts during an injected wait even if the sleeper has not settled', async () => {
+  test('joins an in-flight capacity ask on abort and does not re-ask', async () => {
+    const controller = new AbortController()
+    const reason = new Error('request cancelled')
+    const bridge = Promise.withResolvers<unknown>()
+    const accountFor = mock(
+      (_request: unknown, _options: unknown) => bridge.promise,
+    )
+    install(() => ({ accountFor }))
+    const pending = askRoutingUntilCapacity(input, {
+      signal: controller.signal,
+    })
+    const settled = mock((_result: unknown) => {})
+    const result = pending.catch((error: unknown) => error)
+    void result.then(settled)
+
+    expect(accountFor).toHaveBeenCalledTimes(1)
+    controller.abort(reason)
+    await nextTurn()
+    expect(settled).not.toHaveBeenCalled()
+
+    bridge.resolve(capacityRefusal(reset))
+    expect(await result).toBe(reason)
+    expect(accountFor.mock.calls[0]?.[1]).toHaveProperty(
+      'signal',
+      controller.signal,
+    )
+    expect(accountFor).toHaveBeenCalledTimes(1)
+  })
+
+  test('joins an injected wait on abort before rejecting', async () => {
     const controller = new AbortController()
     const reason = new Error('request cancelled')
     const entered = Promise.withResolvers<void>()
@@ -1002,11 +1134,14 @@ describe('askRoutingUntilCapacity', () => {
     })
     await entered.promise
     expect(sleep).toHaveBeenCalledWith(2000, controller.signal)
+    const settled = mock((_result: unknown) => {})
     const rejected = pending.catch((error: unknown) => error)
+    void rejected.then(settled)
     controller.abort(reason)
-    expect(await rejected).toBe(reason)
+    await nextTurn()
+    expect(settled).not.toHaveBeenCalled()
     waiting.resolve()
-    await waiting.promise
+    expect(await rejected).toBe(reason)
     expect(accountFor).toHaveBeenCalledTimes(1)
   })
 

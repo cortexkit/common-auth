@@ -1729,7 +1729,7 @@ Runtime exports: `askRouting`, `askRoutingUntilCapacity`, `reportRouting`, `turn
 
 | export | parameters | returns | errors |
 | --- | --- | --- | --- |
-| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, holdWaitMaxS?, refusals?, warmCredentialId?, requestId? }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | never throws or rejects |
+| `askRouting(input)` | `{ sessionId, provider, modelId, candidates: { accountId, credentialId, ...metadata }[], deadlineMs?, signal?, holdWaitMaxS?, refusals?, warmCredentialId?, requestId? }`; deadline defaults to 1500 ms, above routing's normal tail so ordinary latency does not bypass routing | `Promise<RoutingSelection<Candidate> \| undefined>`; `refusals: true` also admits `RoutingRefusal`. The selection's `candidate` is the original eligible input object with its inferred type | Rejects with the signal's abort reason on cancellation; bridge failures still return `undefined` |
 | `askRouting(input)` (continue) | Adds `{ mode: 'continue', requestId, exhausted }` to the base input | Sends `mode`, `request_id` and `exhausted` for a proved quota limit or definite sign-in signal | Invalid continue fields return `undefined` without calling routing |
 | `askRouting(input)` (warm account hint) | Optional `warmCredentialId`: the vault credential id of the account the plugin's own sticky choice has this session on | Adds `warm_credential` to the account question only for a non-empty string of at most 256 characters, with no control characters (U+0000–U+001F or U+007F–U+009F), equal to a candidate's `credentialId` | Invalid or filtered-out hints are omitted without failing the call |
 | `askRoutingUntilCapacity(input, options)` | Same input, plus `{ signal?, now?, sleep? }` | Waits and retries only on `concurrency_full`; returns any other answer with the same type as `askRouting` with refusals enabled | Rejects with the signal's abort reason on cancellation |
@@ -1924,16 +1924,29 @@ same run until `resetsAtMs` (or waits one second if the reset is in the past),
 then re-asks with the same `requestId`. If a first ask has no valid id, the
 helper creates a UUID. There is no overall cap because the wait is not a
 failure. Pass an `AbortSignal` if the host provides one; OpenCode 2's WebSocket
-handshake does not. The default wait uses an unref'd timer, cleared on abort.
+handshake does not. `options.signal` takes precedence over `input.signal`.
+The helper passes the signal to every ask and waits for the current ask or
+sleep to finish before rejecting on cancellation. It does not start another ask
+after cancellation. The default wait uses a timer that does not keep the
+process alive and is cleared on abort.
 
 **Deadlines and holds.** `deadlineMs` defaults to 1500, clamps to 1–2000 ms, and
 uses 1500 for `NaN`. Routing's normal admission tail is under a second outside
 host starvation; the default sits above that tail so ordinary latency does not
 make the plugin skip routing and pick for itself.
-The same bound is sent to the accessor and enforced locally
-with an unref'd timer. A hold is returned only when `retry_after_ms` is finite
-and non-negative. It is not capped here: the plugin must apply its own hold cap
-before waiting, and still performs its normal vault authorization before a send.
+The same bound is sent to the bridge and enforced locally with a timer that does
+not keep the process alive.
+Pass `signal: AbortSignal` to cancel an ask. If it is already aborted,
+`askRouting` rejects without calling the bridge. A routing ask does not outlive
+the caller awaiting it: on abort or local expiry, the accessor waits for the
+bridge call to settle and discards any late answer. Older bridges ignore the
+signal but still honour `deadlineMs`. The accessor waits at most 500 ms beyond
+abort or local expiry to protect against a bridge that fails to settle. It then
+returns `undefined` on expiry or rejects with `signal.reason` on abort.
+
+A hold is returned only when `retry_after_ms` is finite and non-negative. It is
+not capped here: the plugin must apply its own hold cap before waiting, and still
+performs its normal vault authorization before a send.
 
 **Transient backoff.** Report `transient_backoff` for a 429 or similar response
 that isn't a proved quota limit. `retryAtMs` is a positive safe integer in Unix
