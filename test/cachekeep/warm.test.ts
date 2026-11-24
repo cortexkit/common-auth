@@ -409,7 +409,8 @@ describe('CacheKeepManager tick/prewarm', () => {
   })
 
   test('on success: resets cacheExpiresAt and lastWarmedAt', async () => {
-    const { mgr } = makeManager(clock)
+    const onWarmed = mock((_key: string, _input: { at: number }) => {})
+    const { mgr } = makeManager(clock, {}, { onWarmed })
     mgr.track({ sessionKey: 'sess-1', bodyText: body('test') })
     const originalExpiry = clock.now() + TTL_MS
     clock.advance(DUE_MS)
@@ -420,6 +421,7 @@ describe('CacheKeepManager tick/prewarm', () => {
     expect(target.cacheExpiresAt).toBeGreaterThan(originalExpiry)
     expect(target.lastWarmedAt).toBe(clock.now())
     expect(target.warmCount).toBe(1)
+    expect(onWarmed.mock.calls).toEqual([['sess-1', { at: clock.now() }]])
   })
 
   test('backs off on non-2xx responses without resetting expiry', async () => {
@@ -478,6 +480,101 @@ describe('CacheKeepManager tick/prewarm', () => {
         hit_rate: 0.98,
       }),
     )
+  })
+
+  test('stops a previously warmed target removed by readUsage without reporting another warm', async () => {
+    const events: unknown[] = []
+    let removeOnUsage = false
+    const { mgr, send, log } = makeManager(
+      clock,
+      {},
+      {
+        readUsage: ({ target }) => {
+          if (removeOnUsage) mgr.remove(target.sessionKey)
+          return { input_tokens: 5000 }
+        },
+        onWarmed: (key, { at }) => {
+          events.push(['warmed', key, at])
+        },
+        onWarmStopped: (key, { at, reason }) => {
+          events.push(['stopped', key, at, reason])
+        },
+      },
+    )
+    try {
+      mgr.track({ sessionKey: 'sess-1', bodyText: body('test') })
+      clock.advance(DUE_MS)
+      await mgr.tick()
+      const firstWarmAt = clock.now()
+      expect(events).toEqual([['warmed', 'sess-1', firstWarmAt]])
+
+      removeOnUsage = true
+      log.debug.mockClear()
+      clock.advance(DUE_MS)
+      await mgr.tick()
+
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(mgr.status().tracked).toBe(0)
+      expect(events).toEqual([
+        ['warmed', 'sess-1', firstWarmAt],
+        ['stopped', 'sess-1', clock.now(), 'session-ended'],
+      ])
+      expect(log.debug).toHaveBeenCalledWith(
+        'cachekeep fired',
+        expect.objectContaining({
+          sessionKey: 'sess-1',
+          input_tokens: 5000,
+          warmCount: 1,
+        }),
+      )
+    } finally {
+      mgr.stop()
+    }
+  })
+
+  test('reports only the later warm for a replacement tracked by readUsage', async () => {
+    const onWarmed = mock((_key: string, _input: { at: number }) => {})
+    const oldBody = body('old')
+    const newBody = body('new')
+    const { mgr, send } = makeManager(
+      clock,
+      {},
+      {
+        onWarmed,
+        profile: ({ bodyText }) =>
+          bodyText === oldBody ? { maxWarms: 1 } : undefined,
+        readUsage: ({ target: { sessionKey, bodyText } }) => {
+          if (bodyText === oldBody) {
+            mgr.remove(sessionKey)
+            mgr.track({ sessionKey, bodyText: newBody })
+          }
+          return undefined
+        },
+      },
+    )
+    try {
+      mgr.track({ sessionKey: 'sess-1', bodyText: oldBody })
+      clock.advance(DUE_MS)
+      await mgr.tick()
+
+      expect(onWarmed).not.toHaveBeenCalled()
+      expect(mgr.status().targets).toHaveLength(1)
+      expect(mgr.status().targets[0]).toMatchObject({
+        sessionKey: 'sess-1',
+        cacheExpiresAt: clock.now() + TTL_MS,
+        warmCount: 0,
+      })
+      expect(mgr.status().targets[0]?.lastWarmedAt).toBeUndefined()
+
+      clock.advance(DUE_MS)
+      await mgr.tick()
+
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(send.mock.calls[1]?.[0].target.bodyText).toBe(newBody)
+      expect(onWarmed.mock.calls).toEqual([['sess-1', { at: clock.now() }]])
+    } finally {
+      mgr.stop()
+    }
   })
 
   test('a usage reader that throws never fails a warm that worked', async () => {

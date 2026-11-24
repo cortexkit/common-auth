@@ -131,10 +131,12 @@ one-shot due times. Only `auto` without costs retains legacy idle/profile warm
 bounds; all targets retain lifetime, target-count, byte and LRU bounds. Wire
 `onWarmed(sessionKey, { at })` to report a successful warm touch with the applied
 lifetime, and `onWarmStopped(sessionKey, { at, reason })` to report retirement.
-The manager calls these without awaiting them and reports stops only for targets
-that have actually warmed. Besides the stop reasons `decideCacheKeep` returns, it reports
-`session-ended` (the plan or the session went away), `evicted` (dropped to make
-room under the target or byte caps), `stopped` (the manager was stopped),
+The manager calls these without awaiting them. It reports a warm only if the
+same target is still tracked after `readUsage`, and reports stops only for
+targets that have actually warmed. Besides the stop reasons `decideCacheKeep`
+returns, it reports `session-ended` (the plan or the session went away),
+`evicted` (dropped to make room under the target or byte caps), `stopped` (the
+manager was stopped),
 `account-changed` (the session now routes to another account), `expired` (an
 unplanned target whose cache lapsed), `deadline-missed` (a planned target whose
 cache lapsed before its warm completed), and `idle`. Real requests reset count, costs and warm timestamps,

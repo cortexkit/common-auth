@@ -61,7 +61,10 @@ export interface CacheKeepPlan {
 export interface CacheKeepAdapter<M> {
   /** Read a fresh policy; undefined preserves legacy only if never planned. */
   plan?(sessionKey: string): CacheKeepPlan | undefined
-  /** Successful warm reports never block scheduling. */
+  /**
+   * Report a successful warm only if the same target is still tracked after
+   * reading usage. Never blocks scheduling.
+   */
   onWarmed?(sessionKey: string, input: { at: number }): void | Promise<void>
   /** Report retirement only after a target has successfully warmed. */
   onWarmStopped?(
@@ -923,16 +926,21 @@ export class CacheKeepManager<M = undefined> {
       // Usage is for the log line only and must never fail a warm that worked.
     }
     const now = this.now()
-    target.cacheExpiresAt = now + target.ttlMs
-    target.lastWarmedAt = now
-    target.backoffUntil = undefined
-    this.clearRetry(target)
-    target.failures = 0
-    target.warmCount += 1
-    target.hasWarmed = true
-    target.warmCostSoFar += nextWarmCost
-    if (this.adapter.onWarmed) {
-      this.report(() => this.adapter.onWarmed?.(sessionKey, { at: now }))
+    // Reading usage can retire or replace the target. Log the served request
+    // either way, but only count a warm for the target that was replayed.
+    const current = this.isCurrent(sessionKey, target)
+    if (current) {
+      target.cacheExpiresAt = now + target.ttlMs
+      target.lastWarmedAt = now
+      target.backoffUntil = undefined
+      this.clearRetry(target)
+      target.failures = 0
+      target.warmCount += 1
+      target.hasWarmed = true
+      target.warmCostSoFar += nextWarmCost
+      if (this.adapter.onWarmed) {
+        this.report(() => this.adapter.onWarmed?.(sessionKey, { at: now }))
+      }
     }
     this.log?.debug('cachekeep fired', {
       sessionKey,
@@ -940,6 +948,7 @@ export class CacheKeepManager<M = undefined> {
       warmCount: target.warmCount,
       ...usage,
     })
+    if (!current) return
     if (
       this.usesLegacyBounds(target) &&
       target.maxWarms !== undefined &&
