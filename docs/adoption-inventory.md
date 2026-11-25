@@ -1848,7 +1848,10 @@ involved in refusal fallback. Every fallback row has:
 
 An `answer` row requires `cause`: `refused_here` for a retry after a refusal
 on this step or `round` for a later step in the fallback round. A `refused` row
-must not have `cause`. A malformed fallback is omitted without dropping billing.
+must not have `cause`. An invalid optional member (`category`, `credited` or
+`round`) is left out on its own. An invalid required member, or `cause` on a
+`refused` row, drops the whole `fallback`. In both cases the billing row is
+still sent.
 Optional members are copied only when valid: `category` must match
 `^[a-z0-9_-]{1,64}$`; `credited` must be a boolean and is only sent on client
 answer rows; `round` is `{ steps, steps_left }` in both input and output, with
