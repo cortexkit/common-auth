@@ -40,7 +40,207 @@ const minimalPayload = {
   outcome: 'completed',
 }
 
+const refusedFallback = {
+  hostRequestId: 'host-request',
+  role: 'refused',
+  by: 'provider',
+  requestedModel: 'claude-opus',
+} as const
+
+const refusedFallbackPayload = {
+  host_request_id: 'host-request',
+  role: 'refused',
+  by: 'provider',
+  requested_model: 'claude-opus',
+}
+
+describe('fallback attempt reports', () => {
+  const attempt = {
+    sessionId: 'session',
+    kind: 'fallback_attempt',
+    requestId: 'host-request',
+    by: 'provider',
+    cause: 'round',
+  } as const
+
+  test('sends only the fallback attempt wire fields', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    const input = { ...attempt, accountId: 'ignored' }
+    reportRouting(input)
+    expect(report.mock.calls).toEqual([
+      [
+        {
+          kind: 'fallback_attempt',
+          request_id: 'host-request',
+          by: 'provider',
+          cause: 'round',
+        },
+      ],
+    ])
+  })
+
+  test.each([
+    ['sessionId', undefined],
+    ['sessionId', ''],
+    ['requestId', undefined],
+    ['requestId', ''],
+    ['requestId', 'x'.repeat(257)],
+    ['requestId', 'host\u0085request'],
+    ['by', undefined],
+    ['by', 'plugin'],
+    ['cause', undefined],
+    ['cause', 'retry'],
+  ])('drops the whole report for invalid %s=%p', (key, value) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({ ...attempt, [key]: value } as unknown as ReportRoutingInput)
+    expect(report.mock.calls).toEqual([])
+  })
+})
+
 describe('billing reports', () => {
+  test('sends only the billing fields when fallback is absent', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting(billing)
+    expect(report.mock.calls).toEqual([[minimalPayload]])
+  })
+
+  test('projects a full client fallback answer onto the billing report', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    const fallback = {
+      ...refusedFallback,
+      role: 'answer',
+      by: 'client',
+      category: 'policy_1-other',
+      cause: 'refused_here',
+      credited: false,
+      round: { steps: 3, steps_left: 2, ignored: true },
+      ignored: true,
+    } as const
+    reportRouting({ ...billing, fallback })
+    expect(report.mock.calls).toEqual([
+      [
+        {
+          ...minimalPayload,
+          fallback: {
+            ...refusedFallbackPayload,
+            role: 'answer',
+            by: 'client',
+            category: 'policy_1-other',
+            cause: 'refused_here',
+            credited: false,
+            round: { steps: 3, steps_left: 2 },
+          },
+        },
+      ],
+    ])
+  })
+
+  test('projects a minimal refused fallback onto the billing report', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({ ...billing, fallback: refusedFallback })
+    expect(report.mock.calls).toEqual([
+      [{ ...minimalPayload, fallback: refusedFallbackPayload }],
+    ])
+  })
+
+  test.each([
+    ['null fallback', null],
+    ['missing hostRequestId', { ...refusedFallback, hostRequestId: undefined }],
+    ['empty hostRequestId', { ...refusedFallback, hostRequestId: '' }],
+    [
+      'long hostRequestId',
+      { ...refusedFallback, hostRequestId: 'x'.repeat(257) },
+    ],
+    [
+      'hostRequestId control',
+      { ...refusedFallback, hostRequestId: 'host\nreq' },
+    ],
+    ['unknown role', { ...refusedFallback, role: 'retry' }],
+    ['unknown by', { ...refusedFallback, by: 'plugin' }],
+    ['empty requestedModel', { ...refusedFallback, requestedModel: '' }],
+    ['cause on a refused row', { ...refusedFallback, cause: 'refused_here' }],
+    [
+      'undefined cause on a refused row',
+      { ...refusedFallback, cause: undefined },
+    ],
+    ['missing cause on an answer row', { ...refusedFallback, role: 'answer' }],
+    ['unknown cause', { ...refusedFallback, role: 'answer', cause: 'retry' }],
+  ])('keeps billing but drops fallback for %s', (_name, fallback) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({ ...billing, fallback } as unknown as ReportRoutingInput)
+    expect(report.mock.calls).toEqual([[minimalPayload]])
+  })
+
+  test('keeps billing if fallback metadata cannot be read', () => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    reportRouting({
+      ...billing,
+      get fallback(): never {
+        throw new Error('unreadable fallback')
+      },
+    })
+    expect(report.mock.calls).toEqual([[minimalPayload]])
+  })
+
+  test.each([
+    ['category containing a dot', { category: 'policy.other' }],
+    [
+      'round with more steps left than total',
+      { round: { steps: 2, steps_left: 3 } },
+    ],
+    ['round with negative steps left', { round: { steps: 2, steps_left: -1 } }],
+    ['round with fractional steps', { round: { steps: 1.5, steps_left: 0 } }],
+    [
+      'round with unsafe steps',
+      { round: { steps: Number.MAX_SAFE_INTEGER + 1, steps_left: 0 } },
+    ],
+    ['credit on a refused row', { credited: true }],
+  ])('omits %s but keeps the refused fallback', (_name, extra) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    const fallback = { ...refusedFallback, ...extra }
+    reportRouting({ ...billing, fallback } as unknown as ReportRoutingInput)
+    expect(report.mock.calls).toEqual([
+      [{ ...minimalPayload, fallback: refusedFallbackPayload }],
+    ])
+  })
+
+  test.each([
+    ['provider', true],
+    ['client', 'true'],
+  ])('omits invalid credit on a %s answer row', (by, credited) => {
+    const report = mock((_payload: unknown) => {})
+    install(() => ({ report }))
+    const fallback = {
+      ...refusedFallback,
+      role: 'answer',
+      by,
+      cause: 'round',
+      credited,
+    }
+    reportRouting({ ...billing, fallback } as unknown as ReportRoutingInput)
+    expect(report.mock.calls).toEqual([
+      [
+        {
+          ...minimalPayload,
+          fallback: {
+            ...refusedFallbackPayload,
+            role: 'answer',
+            by,
+            cause: 'round',
+          },
+        },
+      ],
+    ])
+  })
+
   test('includes cache facts in the full billing report', () => {
     const report = mock((_payload: unknown) => {})
     install(() => ({ report }))

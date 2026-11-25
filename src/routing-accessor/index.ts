@@ -1,6 +1,6 @@
 /**
- * Optional THALAMUS routing for vault mode, plugin wait reports and advisory turn
- * notes for request shaping. Account ids are vault account ids, not local pool
+ * Optional THALAMUS routing for vault mode, billing, wait and fallback reports,
+ * and advisory turn notes. Account ids are vault account ids, not local pool
  * rows. Nothing is persisted here; plugins on routes the runner does not serve
  * get no turn notes.
  */
@@ -174,6 +174,20 @@ export interface BillingUsage {
   reasoningIncludedInOutput?: boolean
 }
 
+type FallbackBy = 'client' | 'provider'
+type FallbackCause = 'refused_here' | 'round'
+
+type BillingFallbackInput = {
+  hostRequestId: string
+  requestedModel: string
+  category?: string
+  round?: { steps: number; steps_left: number }
+} & (
+  | { role: 'refused'; by: FallbackBy; cause?: never; credited?: never }
+  | { role: 'answer'; by: 'client'; cause: FallbackCause; credited?: boolean }
+  | { role: 'answer'; by: 'provider'; cause: FallbackCause; credited?: never }
+)
+
 /** Keep this closed list aligned with the routing contract when adding a reason. */
 export const PLUGIN_WAIT_REASONS = [
   'account_limit',
@@ -277,6 +291,13 @@ export type ReportRoutingInput =
     }
   | {
       sessionId: string
+      kind: 'fallback_attempt'
+      requestId: string
+      by: FallbackBy
+      cause: FallbackCause
+    }
+  | {
+      sessionId: string
       kind: 'billing'
       attemptId: string
       requestKind: BillingRequestKind
@@ -298,6 +319,7 @@ export type ReportRoutingInput =
         implicit?: true
         warming?: { on: boolean; stopReason?: CacheWarmStopReason }
       }
+      fallback?: BillingFallbackInput
     }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -321,6 +343,14 @@ function isBoundedControlFreeString(
 
 function isRoutingCode(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z0-9._-]{1,64}$/.test(value)
+}
+
+function isFallbackBy(value: unknown): value is FallbackBy {
+  return value === 'client' || value === 'provider'
+}
+
+function isFallbackCause(value: unknown): value is FallbackCause {
+  return value === 'refused_here' || value === 'round'
 }
 
 function continueExhaustion(value: unknown) {
@@ -397,6 +427,51 @@ function billingCache(value: unknown): Record<string, unknown> | undefined {
     }
   }
   return Object.keys(cache).length > 0 ? cache : undefined
+}
+
+function billingFallbackRound(value: unknown) {
+  if (!isObject(value) || Array.isArray(value)) return
+  const { steps, steps_left } = value
+  if (
+    typeof steps !== 'number' ||
+    typeof steps_left !== 'number' ||
+    !Number.isSafeInteger(steps) ||
+    !Number.isSafeInteger(steps_left) ||
+    steps_left < 0 ||
+    steps_left > steps
+  )
+    return
+  return { steps, steps_left }
+}
+
+function billingFallback(value: unknown): Record<string, unknown> | undefined {
+  if (!isObject(value) || Array.isArray(value)) return
+  const { hostRequestId, role, by, requestedModel, category, cause, credited } =
+    value
+  if (
+    !isBoundedControlFreeString(hostRequestId, 256) ||
+    !isNonEmptyString(requestedModel) ||
+    !isFallbackBy(by) ||
+    (role !== 'refused' && role !== 'answer')
+  )
+    return
+  if (role === 'answer' ? !isFallbackCause(cause) : 'cause' in value) return
+
+  const round = billingFallbackRound(value.round)
+  return {
+    host_request_id: hostRequestId,
+    role,
+    by,
+    requested_model: requestedModel,
+    ...(typeof category === 'string' && /^[a-z0-9_-]{1,64}$/.test(category)
+      ? { category }
+      : {}),
+    ...(role === 'answer' ? { cause } : {}),
+    ...(role === 'answer' && by === 'client' && typeof credited === 'boolean'
+      ? { credited }
+      : {}),
+    ...(round ? { round } : {}),
+  }
 }
 
 function billingUsage(
@@ -778,10 +853,11 @@ export async function askRoutingUntilCapacity<
 }
 
 /**
- * Report a vault request, account backoff, billing result, plugin wait or
- * turn-note event without waiting for routing. Only contract fields are sent,
- * and all accessor failures are ignored. Headers must already be limited to
- * rate-limit headers by the caller; values are not filtered or redacted here.
+ * Report a vault request, account backoff, billing result, fallback attempt,
+ * plugin wait or turn-note event without waiting for routing. Only contract
+ * fields are sent, and all accessor failures are ignored. Headers must already
+ * be limited to rate-limit headers by the caller; values are not filtered or
+ * redacted here.
  */
 export function reportRouting(input: ReportRoutingInput): void {
   try {
@@ -861,6 +937,23 @@ export function reportRouting(input: ReportRoutingInput): void {
           }
           break
         }
+        case 'fallback_attempt': {
+          const { requestId, by, cause } = input
+          if (
+            !isNonEmptyString(sessionId) ||
+            !isBoundedControlFreeString(requestId, 256) ||
+            !isFallbackBy(by) ||
+            !isFallbackCause(cause)
+          )
+            return
+          payload = {
+            kind: 'fallback_attempt',
+            request_id: requestId,
+            by,
+            cause,
+          }
+          break
+        }
         case 'billing': {
           const {
             attemptId,
@@ -898,6 +991,12 @@ export function reportRouting(input: ReportRoutingInput): void {
             return
           const usage = billingUsage(inputUsage)
           const cache = billingCache(inputCache)
+          let fallback: ReturnType<typeof billingFallback>
+          try {
+            fallback = billingFallback(input.fallback)
+          } catch {
+            // Unreadable fallback metadata must not suppress billing.
+          }
           const usageByModel: Record<string, unknown>[] = []
           if (Array.isArray(inputUsageByModel)) {
             for (const entry of inputUsageByModel) {
@@ -948,6 +1047,7 @@ export function reportRouting(input: ReportRoutingInput): void {
               ? { usage_by_model: usageByModel }
               : {}),
             ...(cache ? { cache } : {}),
+            ...(fallback ? { fallback } : {}),
           }
           break
         }

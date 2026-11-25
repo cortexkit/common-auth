@@ -1717,9 +1717,10 @@ Pure functions; every input is per call and nothing is persisted. Rate-limit mar
 ### ./routing-accessor
 
 Optional process-global THALAMUS routing for **vault mode only**, plus advisory
-turn notes for request shaping and plugin wait reports. Routing's account ids are
-vault account ids, not plugin route ids or local pool row ids. Local pool rows are
-unknown to routing. No auth plugin adopts this client yet.
+turn notes for request shaping and reports for plugin waits and refusal fallback.
+Routing's account ids are vault account ids, not plugin route ids or local pool
+row ids. Local pool rows are unknown to routing. No auth plugin adopts this
+client yet.
 
 Runtime exports: `askRouting`, `askRoutingUntilCapacity`, `reportRouting`, `turnNotes`,
 `CACHE_WARM_STOP_REASONS`, `isCacheWarmStopReason`, `PLUGIN_WAIT_REASONS`. Type exports:
@@ -1737,8 +1738,9 @@ Runtime exports: `askRouting`, `askRoutingUntilCapacity`, `reportRouting`, `turn
 | `reportRouting(input)` (transient backoff) | `{ sessionId, accountId, credentialId?, kind: 'transient_backoff', retryAtMs, providerCode? }` | `void`; sends `{ kind: 'transient_backoff', account_id, credential_id?, retry_at_ms, provider_code? }` through the session handle | never throws; an invalid field, even an optional field if supplied, drops the report |
 | `turnNotes(sessionId)` | session id | `readonly { afterToolUseId: string, text: string }[]` in the order returned by `turn_notes()`; fresh objects | never throws; if no routing handle is available or reading it fails, returns `[]`; invalid entries are dropped |
 | `reportRouting(input)` (turn notes) | `{ sessionId, kind: 'turn_notes_supported', model: string, supported: boolean }` or `{ sessionId, kind: 'turn_note_skipped', after_tool_use_id: string, reason: 'anchor_missing' \| 'before_user_message' \| 'unsupported_model' \| 'not_oauth' }` | `void`; one fire-and-forget call per event, never batched | never throws; invalid payloads send nothing |
-| `reportRouting(input)` (billing) | `{ sessionId, kind: 'billing', attemptId, requestKind, credentialId, provider, model, outcome, accountId?, providerRequestId?, providerResponseId?, userMessageId?, status?, attempt?, chargeBasis?, usage?, usageByModel?, cache? }` | `void`; synchronous and fire-and-forget, never waits for the handle | never throws; invalid required fields send nothing, invalid optional members are omitted |
+| `reportRouting(input)` (billing) | `{ sessionId, kind: 'billing', attemptId, requestKind, credentialId, provider, model, outcome, accountId?, providerRequestId?, providerResponseId?, userMessageId?, status?, attempt?, chargeBasis?, usage?, usageByModel?, cache?, fallback? }` | `void`; synchronous and fire-and-forget, never waits for the handle | never throws; invalid required fields send nothing, invalid optional members are omitted |
 | `reportRouting(input)` (wait) | `{ sessionId, kind: 'wait', phase, waitId, reason: PluginWaitReason, nextMs?, attempt?, message?, outcome? }` | `void`; fire-and-forget through the session handle's `report({ kind: 'wait', phase, wait_id, reason, next_ms?, attempt?, message?, outcome? })`, with no session or account fields on the wire | never throws; invalid required fields send nothing, invalid optional members are dropped, and `outcome` is dropped on `start`; missing or throwing accessors are ignored |
+| `reportRouting(input)` (fallback attempt) | `{ sessionId, kind: 'fallback_attempt', requestId, by, cause }` | `void`; fire-and-forget through the session handle's `report({ kind: 'fallback_attempt', request_id, by, cause })` | never throws; invalid inputs send nothing |
 
 `warmCredentialId` is a hint, never a pin, and does not change how `askRouting`
 reads the answer. Routing uses it only while it holds no account for the
@@ -1796,8 +1798,8 @@ out without dropping the report. Input names are camelCase; the handle receives
 only `kind`, `attempt_id`, `request_kind`, `credential_id`, `provider`, `model`,
 `outcome` and the valid optional `account_id`, `provider_request_id`,
 `provider_response_id`, `user_message_id`, `status`, `attempt`, `charge_basis`,
-`usage`, `usage_by_model` and `cache`. The session id is used to find the handle, not sent
-in the payload. Unknown input members are never copied.
+`usage`, `usage_by_model`, `cache` and `fallback`. The session id is used to find
+the handle, not sent in the payload. Unknown input members are never copied.
 
 `BillingUsage` accepts optional `input`, `output`, `cacheRead`, `cacheWrite`,
 `cacheWrite5m`, `cacheWrite1h` and `reasoning` counts, plus the optional boolean
@@ -1830,6 +1832,34 @@ still accepts future strings, and `reportCacheWarmStopped` still forwards any
 string unchanged; only billing has the closed reason set. No other cache or
 warming members are copied. An empty sanitized cache object is omitted, and
 billing reports without cache facts are unchanged.
+
+**Refusal fallback.** Add `fallback` to a billing row for a physical request
+involved in refusal fallback. Every fallback row has:
+
+- `hostRequestId` (wire `host_request_id`): the host request id shared by the
+  physical attempts for that request. It must have 1–256 characters and no
+  C0, DEL or C1 control characters.
+- `role`: `refused` for the attempt that ended in a refusal or `answer` for the
+  attempt that served the step on another model.
+- `by`: `client` for the plugin's retry or round, or `provider` for server-side
+  fallback.
+- `requestedModel` (wire `requested_model`): the non-empty name of the model
+  the host requested.
+
+An `answer` row requires `cause`: `refused_here` for a retry after a refusal
+on this step or `round` for a later step in the fallback round. A `refused` row
+must not have `cause`. A malformed fallback is omitted without dropping billing.
+Optional members are copied only when valid: `category` must match
+`^[a-z0-9_-]{1,64}$`; `credited` must be a boolean and is only sent on client
+answer rows; `round` is `{ steps, steps_left }` in both input and output, with
+non-negative safe integers and `steps_left <= steps`. Unknown members are never
+copied.
+
+Send `fallback_attempt` when starting a fallback retry or round step so the
+runner knows to wait for the matching billing rows. Its `requestId` (wire
+`request_id`) is the same id as `fallback.hostRequestId` and follows the same
+validation. `by` and `cause` use the same values as billing answer rows.
+`sessionId` must be a non-empty string and is not sent in the payload.
 
 The optional `holdWaitMaxS` input can use the cap computed by
 [`holdWaitMaxS` from `./limits`](#limits). The routing accessor does not import
