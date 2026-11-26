@@ -35,6 +35,9 @@ jobs:
         run: bun run check:opentui-0511
       - name: Check source file sizes
         run: node scripts/check-source-size.mjs
+      - name: Check tracked CortexKit files
+        shell: bash
+        run: scripts/check-cortexkit-layout.sh
       - name: Lint
         run: bun run lint
       - name: Test

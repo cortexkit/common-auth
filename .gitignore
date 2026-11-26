@@ -1,4 +1,7 @@
 .cortexkit/*
+!.cortexkit/release-notes/
+!.cortexkit/skills/
+!.cortexkit/rules/
 !.cortexkit/WORKER.md
 node_modules/
 dist/
@@ -6,3 +9,4 @@ test/.scratch/
 /target/scratch/
 windows-private-files-evidence/
 windows-vault-evidence/
+target/

@@ -101,11 +101,6 @@ toolchain() {
   printf 'Using Bun %s (%s)\n' "$current_bun" "$(command -v bun)"
   node --version
 }
-private_tracking() {
-  local ignored
-  ignored=$(git ls-files -ci --exclude-standard -- .cortexkit) || return
-  [[ -z "$ignored" ]] || { printf '%s\n' "$ignored"; return 1; }
-}
 release_version() {
   node --input-type=module -e 'import { readFileSync } from "node:fs"; const { version } = JSON.parse(readFileSync("package.json", "utf8")); if (process.env.RELEASE_REF !== `refs/tags/v${version}`) { console.error("Tag does not match package.json version"); process.exit(1); }'
 }
@@ -117,7 +112,7 @@ run build bun run build
 run typecheck bun run typecheck
 run format bun run format:check
 run lint bun run lint
-run private-tracking private_tracking
+run cortexkit-layout scripts/check-cortexkit-layout.sh
 run source-size node scripts/check-source-size.mjs
 run dist-imports bun test test/fs/private-files-external.test.ts \
   test/setup/bundle.test.ts test/redaction/subpath.test.ts \
