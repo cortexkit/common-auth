@@ -168,9 +168,9 @@ describe('same-account retry hold', () => {
   test('cancelling the host wait releases a hold exactly once', async () => {
     const s = await setup()
     await s.retry()
-    await s.host.publish('session.status', {
+    await s.host.publish('session.execution.interrupted', {
       sessionID: 'ses_1',
-      status: { type: 'idle' },
+      reason: 'user',
     })
     expect(s.drops).toEqual([expectedDrop])
     await s.request()
@@ -179,8 +179,7 @@ describe('same-account retry hold', () => {
     expect(s.drops).toHaveLength(1)
   })
 
-  // Auth does not handle the host's session.execution.interrupted event yet.
-  test.skip('stopping a retry wait starts the next turn with a fresh account choice', async () => {
+  test('stopping a retry wait starts the next turn with a fresh account choice', async () => {
     const s = await setup(true)
     try {
       expect((await s.retry()).decision).toEqual({
@@ -205,7 +204,29 @@ describe('same-account retry hold', () => {
     }
   })
 
-  test('a delayed idle event does not refuse the next turn while it selects an account', async () => {
+  test('shutdown interruption does not release a pending retry hold', async () => {
+    const s = await setup(true)
+    try {
+      expect((await s.retry()).decision).toEqual({
+        retry: true,
+        delay: 920_000,
+      })
+      await s.host.publish('session.execution.interrupted', {
+        sessionID: 'ses_1',
+        reason: 'shutdown',
+      })
+      s.onRequestChoice(async () => 'B')
+
+      const retry = await s.send()
+      expect(retry.request.headers.get('authorization')).toBe('Bearer tok-A')
+      expect(s.choices).toHaveLength(2)
+      expect(s.drops).toEqual([])
+    } finally {
+      await s.auth.dispose()
+    }
+  })
+
+  test('a delayed terminal does not refuse the next turn while it selects an account', async () => {
     const s = await setup()
     let answer!: (accountId: string) => void
     let entered!: () => void
@@ -225,9 +246,8 @@ describe('same-account retry hold', () => {
     )
     try {
       await choosing
-      await s.host.publish('session.status', {
+      await s.host.publish('session.execution.succeeded', {
         sessionID: 'ses_1',
-        status: { type: 'idle' },
       })
       answer('B')
       expect(await requested).toEqual({ ok: true })
@@ -259,7 +279,7 @@ describe('same-account retry hold', () => {
     }
   })
 
-  test('a retry queued after idle observation survives deferred idle cleanup', async () => {
+  test('an unpinned retry queued after terminal observation survives deferred cleanup', async () => {
     const s = await setup()
     let answer!: (choice: ChooseAccountResult) => void
     let entered!: () => void
@@ -275,9 +295,8 @@ describe('same-account retry hold', () => {
     })
     const retried = s.retry()
     await choosing
-    await s.host.publish('session.status', {
+    await s.host.publish('session.execution.succeeded', {
       sessionID: 'ses_1',
-      status: { type: 'idle' },
     })
     answer({ hold: { delayMs: 920_000 } })
     expect((await retried).decision).toEqual({ retry: true, delay: 920_000 })

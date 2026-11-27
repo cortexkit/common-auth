@@ -526,7 +526,7 @@ describe('installOpenCode2Auth', () => {
     expect(installation.size).toBe(1)
   })
 
-  test('subscribes only to session deletion and forgets the deleted session', async () => {
+  test('subscribes to session deletion and execution terminals and forgets the deleted session', async () => {
     const host = fakeHost()
     const { adapter } = fakeAdapter()
     const installation = await installOpenCode2Auth(host.ctx, adapter)
@@ -538,7 +538,12 @@ describe('installOpenCode2Auth', () => {
       expect(
         installation.accountFor(scope.sessionID, scope.kind),
       ).toBeUndefined()
-      expect(host.subscribedTypes).toEqual(['session.deleted'])
+      expect(host.subscribedTypes).toEqual([
+        'session.deleted',
+        'session.execution.succeeded',
+        'session.execution.failed',
+        'session.execution.interrupted',
+      ])
     } finally {
       await installation.dispose()
     }

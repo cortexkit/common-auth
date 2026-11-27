@@ -280,7 +280,7 @@ describe('identity-preserving retries', () => {
 
 describe('same-account recovery lifecycle', () => {
   for (const cancel of [
-    'idle',
+    'execution-failed',
     'forget',
     'delete',
     'dispose',
@@ -293,10 +293,10 @@ describe('same-account recovery lifecycle', () => {
         await t.send(false)
         await t.send()
         expect((await t.retry()).decision).toEqual({ retry: true, delay: 0 })
-        if (cancel === 'idle')
-          await t.host.publish('session.status', {
+        if (cancel === 'execution-failed')
+          await t.host.publish('session.execution.failed', {
             sessionID: 'ses_1',
-            status: { type: 'idle' },
+            error: { type: 'unknown', message: 'Execution failed' },
           })
         if (cancel === 'forget') t.auth.forgetSession('ses_1')
         if (cancel === 'delete')

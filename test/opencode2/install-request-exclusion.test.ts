@@ -262,7 +262,7 @@ describe('OpenCode 2 logical request exclusions', () => {
       'retry-false',
       'veto',
       'cancel',
-      'idle',
+      'execution-succeeded',
       'forget',
       'deleted',
     ] as const) {
@@ -278,14 +278,13 @@ describe('OpenCode 2 logical request exclusions', () => {
           await fx.respond(await fx.send())
           await fx.retry()
           if (
-            ending === 'idle' ||
+            ending === 'execution-succeeded' ||
             ending === 'forget' ||
             ending === 'deleted'
           ) {
-            if (ending === 'idle')
-              await fx.host.publish('session.status', {
+            if (ending === 'execution-succeeded')
+              await fx.host.publish('session.execution.succeeded', {
                 sessionID: scope.sessionID,
-                status: { type: 'idle' },
               })
             else if (ending === 'forget') fx.auth.forgetSession(scope.sessionID)
             else

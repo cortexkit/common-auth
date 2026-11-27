@@ -593,9 +593,9 @@ describe('OpenCode 2 wait then reselect', () => {
     try {
       await fx.send()
       await fx.retry()
-      await fx.host.publish('session.status', {
+      await fx.host.publish('session.execution.interrupted', {
         sessionID,
-        status: { type: 'idle' },
+        reason: 'user',
       })
       fx.auth.forgetSession(sessionID)
       await fx.send()

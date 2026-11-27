@@ -310,7 +310,7 @@ async function installAuth<Q, A>(
   const byRequest = new WeakMap<Request, AttemptRecord<A>>()
   /** Retries the retry hook asked for, by `sessionID:kind`. */
   const pendingRetries = new Map<string, PendingRetry>()
-  // A shared clock orders each session's retries without retaining idle session state.
+  // A shared clock orders retries and terminal observations without retaining session state.
   let retryOrder = 0
   // The host names only session/kind for frames and only session for retry.
   // A transport's prepared credential, never global login state, owns these.
@@ -1792,6 +1792,25 @@ async function installAuth<Q, A>(
     }
   }
 
+  const releaseUnpinnedRetries = (sessionID: string) => {
+    const observedOrder = ++retryOrder
+    // A terminal can arrive after the next run has queued a genuine retry.
+    // Keep output pins so a reply the user has already seen cannot move accounts.
+    void inChoiceOrder(sessionID, async () => {
+      for (const [key, pending] of pendingRetries) {
+        if (
+          pending.sessionID === sessionID &&
+          pending.order < observedOrder &&
+          !pending.request.outputRoute
+        ) {
+          pendingRetries.delete(key)
+          retireRequest(pending.request)
+          await releaseRetry(pending)
+        }
+      }
+    })
+  }
+
   const abort = new AbortController()
   const events = ctx.event
   if (events) {
@@ -1801,7 +1820,12 @@ async function installAuth<Q, A>(
         // and still deliver all public events.
         const subscriptionOptions = {
           signal: abort.signal,
-          types: ['session.deleted'] as const,
+          types: [
+            'session.deleted',
+            'session.execution.succeeded',
+            'session.execution.failed',
+            'session.execution.interrupted',
+          ] as const,
         }
         const sessionEvents: ReturnType<typeof events.subscribe> =
           events.subscribe(subscriptionOptions)
@@ -1809,26 +1833,12 @@ async function installAuth<Q, A>(
           if (event.type === 'session.deleted')
             forgetSession(event.data.sessionID)
           else if (
-            event.type === 'session.status' &&
-            event.data.status.type === 'idle'
-          ) {
-            const sessionID = event.data.sessionID
-            const idleOrder = ++retryOrder
-            // Idle can arrive late from an earlier turn. Release only choices
-            // already queued when observed, never a selection still in flight.
-            void inChoiceOrder(sessionID, async () => {
-              for (const [key, pending] of pendingRetries) {
-                if (
-                  pending.sessionID === sessionID &&
-                  pending.order < idleOrder
-                ) {
-                  pendingRetries.delete(key)
-                  retireRequest(pending.request)
-                  await releaseRetry(pending)
-                }
-              }
-            })
-          }
+            event.type === 'session.execution.succeeded' ||
+            event.type === 'session.execution.failed' ||
+            (event.type === 'session.execution.interrupted' &&
+              event.data.reason !== 'shutdown')
+          )
+            releaseUnpinnedRetries(event.data.sessionID)
         }
       } catch (error) {
         if (!abort.signal.aborted) {

@@ -291,19 +291,81 @@ describe('a continuation after output keeps its account on the next hop', () => 
     })
   }
 
-  test('a new user turn can move accounts after the previous turn showed output', async () => {
+  test('a new user turn can move accounts after a post-output retry completes', async () => {
     const t = await setup()
     try {
       await t.interrupt((await t.send()).request)
       expect((await t.retry(1)).decision.retry).toBe(true)
       expect(t.retries.at(-1)?.reason).toBe('continue-same-account')
 
-      await t.host.publish('session.status', {
+      await t.respond((await t.send()).request, 200, 'primary')
+      await t.host.publish('session.execution.succeeded', {
         sessionID: scopeFor().sessionID,
-        status: { type: 'idle' },
       })
       t.plan.next = 'B'
       expect((await t.send()).request.headers.get('x-account')).toBe('B')
+    } finally {
+      await t.auth.dispose()
+    }
+  })
+
+  test('an execution terminal preserves the output pin on a pending wait', async () => {
+    const t = await setup({ waitThenReselect: { delayMs: 25 } })
+    try {
+      await t.interrupt((await t.send()).request)
+      expect((await t.retry(1)).decision.retry).toBe(true)
+      const continuation = (await t.send()).request
+      expect(continuation.headers.get('x-account')).toBe('A')
+      await t.respond(continuation, 429, 'primary')
+      expect(
+        (await t.retry(2, { retry: true, delay: 37 }, rateLimit)).decision,
+      ).toEqual({ retry: true, delay: 25 })
+      expect(t.retries.at(-1)?.reason).toBe('wait-then-reselect')
+
+      await t.host.publish('session.execution.interrupted', {
+        sessionID: scopeFor().sessionID,
+        reason: 'user',
+      })
+      t.plan.next = 'B'
+      t.plan.limited.add('A')
+
+      await expect(t.send()).rejects.toThrow(
+        new OpenCode2AuthError({
+          kind: 'no-account',
+          providerID: scopeFor().model.providerID,
+          sessionID: scopeFor().sessionID,
+          requestKind: 'primary',
+        }),
+      )
+      expect(
+        t.accountHeaders.mock.calls.map(([input]) => input.accountId),
+      ).toEqual(['A', 'A'])
+    } finally {
+      await t.auth.dispose()
+    }
+  })
+
+  test('a terminal observed late preserves a newer post-output retry', async () => {
+    const t = await setup()
+    try {
+      t.plan.next = 'B'
+      await t.respond((await t.send()).request, 200, 'primary')
+      const previousTerminal = {
+        type: 'session.execution.succeeded',
+        data: { sessionID: scopeFor().sessionID },
+      }
+
+      t.plan.next = 'A'
+      const nextRun = (await t.send()).request
+      expect(nextRun.headers.get('x-account')).toBe('A')
+      await t.interrupt(nextRun)
+      expect((await t.retry(1)).decision.retry).toBe(true)
+      expect(t.retries.at(-1)?.reason).toBe('continue-same-account')
+
+      t.plan.next = 'B'
+      await t.host.publish(previousTerminal.type, previousTerminal.data)
+
+      expect((await t.send()).request.headers.get('x-account')).toBe('A')
     } finally {
       await t.auth.dispose()
     }
