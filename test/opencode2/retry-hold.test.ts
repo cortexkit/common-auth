@@ -179,6 +179,32 @@ describe('same-account retry hold', () => {
     expect(s.drops).toHaveLength(1)
   })
 
+  // Auth does not handle the host's session.execution.interrupted event yet.
+  test.skip('stopping a retry wait starts the next turn with a fresh account choice', async () => {
+    const s = await setup(true)
+    try {
+      expect((await s.retry()).decision).toEqual({
+        retry: true,
+        delay: 920_000,
+      })
+
+      // The host interrupts the wait without sending another provider request.
+      await s.host.publish('session.execution.interrupted', {
+        sessionID: 'ses_1',
+        reason: 'user',
+      })
+      s.onRequestChoice(async () => 'B')
+      const next = await s.send()
+
+      expect(next.request.headers.get('authorization')).toBe('Bearer tok-B')
+      expect(s.choices).toHaveLength(3)
+      expect(s.choices[2]?.rerouteFrom).toBeUndefined()
+      expect(s.drops).toEqual([expectedDrop])
+    } finally {
+      await s.auth.dispose()
+    }
+  })
+
   test('a delayed idle event does not refuse the next turn while it selects an account', async () => {
     const s = await setup()
     let answer!: (accountId: string) => void
