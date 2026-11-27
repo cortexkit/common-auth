@@ -19,6 +19,7 @@ export function fakeHost() {
   const pending: Array<{ type: string; data: unknown }> = []
   let wake: (() => void) | undefined
   let subscriptions = 0
+  let subscribedTypes: readonly string[] | undefined
   let activeSubscriptions = 0
   const ctx = {
     session: {
@@ -42,8 +43,9 @@ export function fakeHost() {
       },
     },
     event: {
-      subscribe(options?: { signal?: AbortSignal }) {
+      subscribe(options?: { signal?: AbortSignal; types?: readonly string[] }) {
         subscriptions += 1
+        subscribedTypes = options?.types
         return {
           async *[Symbol.asyncIterator]() {
             activeSubscriptions += 1
@@ -74,6 +76,9 @@ export function fakeHost() {
     hooks,
     get subscriptions() {
       return subscriptions
+    },
+    get subscribedTypes() {
+      return subscribedTypes
     },
     get activeSubscriptions() {
       return activeSubscriptions

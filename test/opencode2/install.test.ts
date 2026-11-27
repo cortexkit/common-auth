@@ -526,6 +526,24 @@ describe('installOpenCode2Auth', () => {
     expect(installation.size).toBe(1)
   })
 
+  test('subscribes only to session deletion and forgets the deleted session', async () => {
+    const host = fakeHost()
+    const { adapter } = fakeAdapter()
+    const installation = await installOpenCode2Auth(host.ctx, adapter)
+    try {
+      const scope = scopeFor()
+      await host.fire('model.request', { ...scope, headers: {} })
+      expect(installation.accountFor(scope.sessionID, scope.kind)).toBe('A')
+      await host.publish('session.deleted', { sessionID: scope.sessionID })
+      expect(
+        installation.accountFor(scope.sessionID, scope.kind),
+      ).toBeUndefined()
+      expect(host.subscribedTypes).toEqual(['session.deleted'])
+    } finally {
+      await installation.dispose()
+    }
+  })
+
   test('a throwing listener is logged and never reaches the host', async () => {
     const host = fakeHost()
     const { adapter } = fakeAdapter()

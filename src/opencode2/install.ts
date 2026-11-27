@@ -1797,7 +1797,15 @@ async function installAuth<Q, A>(
   if (events) {
     void (async () => {
       try {
-        for await (const event of events.subscribe({ signal: abort.signal })) {
+        // OpenCode 2.2.0 added bus filtering; older hosts ignore `types`
+        // and still deliver all public events.
+        const subscriptionOptions = {
+          signal: abort.signal,
+          types: ['session.deleted'] as const,
+        }
+        const sessionEvents: ReturnType<typeof events.subscribe> =
+          events.subscribe(subscriptionOptions)
+        for await (const event of sessionEvents) {
           if (event.type === 'session.deleted')
             forgetSession(event.data.sessionID)
           else if (
