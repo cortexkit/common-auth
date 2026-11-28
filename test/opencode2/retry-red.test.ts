@@ -6,6 +6,7 @@ import {
   installOpenCode2Auth,
   OpenCode2AuthError,
   type OpenCode2AuthEvents,
+  placeholderSecret,
   type RetryHold,
   type RetryWaitThenReselect,
   type SameAccountRetryInput,
@@ -20,12 +21,16 @@ const rateLimit = {
   status: 429,
 } satisfies HostError
 
-async function setup(wait?: RetryHold | RetryWaitThenReselect) {
+async function setup(wait?: RetryHold | RetryWaitThenReselect, gated = false) {
   const host = fakeHost()
-  const retrySameAccount = mock(({ accountId }: SameAccountRetryInput) => ({
-    accountId,
-  }))
-  const { adapter, plan } = fakeAdapter(undefined, { retrySameAccount })
+  const retrySameAccount = mock(
+    (input: SameAccountRetryInput): { accountId: string } | undefined => ({
+      accountId: input.accountId,
+    }),
+  )
+  const { adapter, choices, plan } = fakeAdapter(undefined, {
+    retrySameAccount,
+  })
   const accountHeaders = mock(adapter.accountHeaders)
   const dropChoice = mock(() => {})
   const auth = await installOpenCode2Auth(
@@ -37,19 +42,28 @@ async function setup(wait?: RetryHold | RetryWaitThenReselect) {
       chooseAccount: (input: ChooseAccountInput) =>
         input.phase === 'retry' && wait ? wait : adapter.chooseAccount(input),
     },
-    { hostRetryLimit: 4 },
+    {
+      hostRetryLimit: 4,
+      ...(gated && {
+        gateOnPlaceholder: {
+          credential: (headers: Headers) =>
+            headers.get('authorization')?.replace(/^Bearer /, ''),
+        },
+      }),
+    },
   )
   const retries: OpenCode2AuthEvents<unknown>['retry'][] = []
   auth.on('retry', (event) => {
     retries.push(event)
   })
-  const send = async (kind: Kind = 'primary') => {
+  const send = async (kind: Kind = 'primary', prompt?: string) => {
     const scope = scopeFor(kind)
     const model = await host.fire('model.request', { ...scope, headers: {} })
     return host.fire('http.request', {
       ...scope,
       request: new Request('https://provider.invalid/response', {
         headers: model.headers,
+        ...(prompt !== undefined && { method: 'POST', body: prompt }),
       }),
     })
   }
@@ -97,6 +111,7 @@ async function setup(wait?: RetryHold | RetryWaitThenReselect) {
     })
   return {
     auth,
+    choices,
     host,
     plan,
     send,
@@ -366,6 +381,109 @@ describe('a continuation after output keeps its account on the next hop', () => 
       await t.host.publish(previousTerminal.type, previousTerminal.data)
 
       expect((await t.send()).request.headers.get('x-account')).toBe('A')
+    } finally {
+      await t.auth.dispose()
+    }
+  })
+})
+
+describe('pending retries across execution and transport boundaries', () => {
+  // A user interrupt currently leaves the cancelled continuation's account pending.
+  test.skip('a new prompt does not inherit a cancelled continuation', async () => {
+    const t = await setup()
+    try {
+      const first = (await t.send('primary', 'First prompt')).request
+      expect(first.headers.get('x-account')).toBe('A')
+      await t.interrupt(first)
+      expect((await t.retry(1)).decision).toEqual({ retry: true, delay: 37 })
+      expect(t.retries.at(-1)?.reason).toBe('continue-same-account')
+
+      await t.host.publish('session.execution.interrupted', {
+        sessionID: scopeFor().sessionID,
+        reason: 'user',
+      })
+      t.plan.limited.add('A')
+      t.plan.next = 'B'
+
+      const next = (await t.send('primary', 'New prompt')).request
+      expect(next.headers.get('x-account')).toBe('B')
+    } finally {
+      await t.auth.dispose()
+    }
+  })
+
+  // The handshake currently clears the pending account before HTTP fallback can reuse it.
+  test.skip('HTTP fallback after a failed continuation handshake stays on the output account or refuses', async () => {
+    const t = await setup(undefined, true)
+    const scope = scopeFor()
+    const modelRequest = () =>
+      t.host.fire('model.request', {
+        ...scope,
+        headers: {
+          authorization: `Bearer ${placeholderSecret(scope.model.providerID)}`,
+        },
+      })
+    const handshake = (headers: Record<string, string>) =>
+      t.host.fire('experimental.ws.handshake', {
+        ...scope,
+        url: 'wss://provider.invalid/v1/responses',
+        headers: { ...headers },
+      })
+    try {
+      const first = await handshake((await modelRequest()).headers)
+      expect(new Headers(first.headers).get('x-account')).toBe('A')
+      await t.host.fire('experimental.ws.receive', {
+        ...scope,
+        frame: JSON.stringify({ type: 'delta' }),
+      })
+      expect((await t.retry(1)).decision).toEqual({ retry: true, delay: 37 })
+      expect(t.retries.at(-1)?.reason).toBe('continue-same-account')
+
+      t.plan.next = 'B'
+      const { headers } = await modelRequest()
+      const retryHandshake = await handshake(headers)
+      expect(new Headers(retryHandshake.headers).get('x-account')).toBe('A')
+
+      const fallback = await t.host
+        .fire('http.request', {
+          ...scope,
+          request: new Request('https://provider.invalid/v1/responses', {
+            headers,
+          }),
+        })
+        .catch((error: unknown) => {
+          if (
+            error instanceof OpenCode2AuthError &&
+            error.kind === 'no-account'
+          )
+            return undefined
+          throw error
+        })
+      if (fallback) expect(fallback.request.headers.get('x-account')).toBe('A')
+    } finally {
+      await t.auth.dispose()
+    }
+  })
+
+  // A late success currently releases a hold queued by the next execution.
+  test.skip('a late success does not remove the next execution’s pre-output hold', async () => {
+    const target = Date.now() + 25
+    const t = await setup({ hold: { delayMs: 25, target } })
+    try {
+      const earlier = (await t.send()).request
+      await t.respond(earlier, 200, 'primary')
+      const earlierSuccess = { sessionID: scopeFor().sessionID }
+
+      const successor = (await t.send()).request
+      await t.respond(successor, 429, 'primary')
+      t.retrySameAccount.mockReturnValue(undefined)
+      const result = await t.retry(1, { retry: true, delay: 37 }, rateLimit)
+      expect(result.decision).toEqual({ retry: true, delay: 25 })
+      expect(t.retries.at(-1)?.reason).toBe('hold')
+
+      await t.host.publish('session.execution.succeeded', earlierSuccess)
+      await t.send()
+      expect(t.choices.at(-1)?.wake).toEqual({ target })
     } finally {
       await t.auth.dispose()
     }
