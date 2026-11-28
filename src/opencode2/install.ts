@@ -322,9 +322,9 @@ async function installAuth<Q, A>(
   const pendingRetries = new Map<string, PendingRetry>()
   // OpenCode can fall back to HTTP after a WebSocket handshake. The HTTP hook
   // carries no link to it, so keep the output account by session and kind.
-  // An ambiguous send failure can leave the next request pinned or refused:
-  // a terminal may belong to an earlier run, so only an attributable reply
-  // (or forgetting the session) proves the guard can be removed safely.
+  // An ambiguous send failure can leave the next request pinned or refused.
+  // A terminal may belong to an earlier run, so only a user interrupt clears
+  // the guard without an attributable reply or explicit session cleanup.
   const fallbackGuards = new Map<string, FallbackGuard>()
   let warnedFallbackLimit = false
   // A shared clock orders retries and terminal observations without retaining session state.
@@ -1881,11 +1881,15 @@ async function installAuth<Q, A>(
     ),
   )
 
-  const forgetSession = (sessionID: string) => {
-    revokeSelections(sessionID)
+  const clearFallbackGuards = (sessionID: string) => {
     for (const [key, fallback] of fallbackGuards) {
       if (fallback.sessionID === sessionID) fallbackGuards.delete(key)
     }
+  }
+
+  const forgetSession = (sessionID: string) => {
+    revokeSelections(sessionID)
+    clearFallbackGuards(sessionID)
     latestTransportOwned.delete(sessionID)
     // A foreign send can retry after forgetting and reuse of this session id.
     // Retain its ownership history until disposal; owned-only ids need no tombstone.
@@ -1905,16 +1909,23 @@ async function installAuth<Q, A>(
     }
   }
 
-  const releaseUnpinnedRetries = (sessionID: string) => {
+  const releaseTerminalRetries = (
+    sessionID: string,
+    userInterrupted: boolean,
+  ) => {
     const observedOrder = ++retryOrder
-    // A terminal can arrive after the next run has queued a genuine retry.
-    // Keep output pins so a reply the user has already seen cannot move accounts.
+    // OpenCode does not identify which run ended. Keep output pins on other
+    // terminals, but let the next prompt choose afresh after a user interrupt.
+    // A late interrupt could let a newer reply change accounts, but only if the
+    // installer falls far enough behind for the next run to start, show output,
+    // be cut off and queue its continuation before the interrupt is observed.
+    if (userInterrupted) clearFallbackGuards(sessionID)
     void inChoiceOrder(sessionID, async () => {
       for (const [key, pending] of pendingRetries) {
         if (
           pending.sessionID === sessionID &&
           pending.order < observedOrder &&
-          !pending.request.outputRoute
+          (userInterrupted || !pending.request.outputRoute)
         ) {
           pendingRetries.delete(key)
           retireRequest(pending.request)
@@ -1951,7 +1962,11 @@ async function installAuth<Q, A>(
             (event.type === 'session.execution.interrupted' &&
               event.data.reason !== 'shutdown')
           )
-            releaseUnpinnedRetries(event.data.sessionID)
+            releaseTerminalRetries(
+              event.data.sessionID,
+              event.type === 'session.execution.interrupted' &&
+                event.data.reason === 'user',
+            )
         }
       } catch (error) {
         if (!abort.signal.aborted) {

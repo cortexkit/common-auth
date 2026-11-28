@@ -315,9 +315,10 @@ export interface OpenCode2AuthAdapter<
   chooseAccount(input: ChooseAccountInput): Promise<Choice> | Choice
   /**
    * Releases a kept retry choice that will not be used: no retry, a changed
-   * model or agent, execution ending for a retry without an output pin (except
-   * shutdown), session forgetting/deletion, disposal, record eviction or a
-   * targeted hold's wake re-check. A hold releases the refused account's choice.
+   * model or agent, a user interrupt, a non-shutdown terminal event for a retry
+   * without an output pin, session forgetting/deletion, disposal, record
+   * eviction or a targeted hold's wake re-check. A hold releases the refused
+   * account's choice.
    * Called once with the original choose input plus its returned accountId,
    * never for a used choice. Awaited before any later chooseAccount for the
    * same session; errors are logged and swallowed. A model/agent change
@@ -530,10 +531,10 @@ export interface OpenCode2AuthAdapter<
     | undefined
   /**
    * Releases a returned same-account recovery that will not be sent: a rejected
-   * account ID, selection revocation, changed model/agent, execution ending for
-   * a retry without an output pin (except shutdown), forgetting/deletion, disposal
-   * or eviction. Receives the original callback input and returned accountId,
-   * once, never for a consumed recovery.
+   * account ID, selection revocation, changed model/agent, a user interrupt,
+   * a non-shutdown terminal event for a retry without an output pin,
+   * forgetting/deletion, disposal or eviction. Receives the original callback
+   * input and returned accountId, once, never for a consumed recovery.
    * Awaited before later selection for the session; errors are logged and swallowed.
    * A callback that declines or throws must clean up its own uncommitted state.
    */

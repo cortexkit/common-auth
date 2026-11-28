@@ -37,6 +37,7 @@ async function setup(
   })
   const accountHeaders = mock(adapter.accountHeaders)
   const dropChoice = mock(() => {})
+  const dropSameAccountRetry = mock((_input: SameAccountRetryInput) => {})
   const warn = mock((_message: string, _data?: unknown) => {})
   const auth = await installOpenCode2Auth(
     host.ctx,
@@ -44,6 +45,7 @@ async function setup(
       ...adapter,
       accountHeaders,
       dropChoice,
+      dropSameAccountRetry,
       ...(gated && { rewriteWebSocketFrame: ({ frame }) => frame }),
       chooseAccount: (input: ChooseAccountInput) =>
         input.phase === 'retry' && wait ? wait : adapter.chooseAccount(input),
@@ -131,6 +133,7 @@ async function setup(
     retrySameAccount,
     accountHeaders,
     dropChoice,
+    dropSameAccountRetry,
     warn,
   }
 }
@@ -399,41 +402,45 @@ describe('a continuation after output keeps its account on the next hop', () => 
     }
   })
 
-  test('an execution terminal preserves the output pin on a pending wait', async () => {
-    const t = await setup({ waitThenReselect: { delayMs: 25 } })
-    try {
-      await t.interrupt((await t.send()).request)
-      expect((await t.retry(1)).decision.retry).toBe(true)
-      const continuation = (await t.send()).request
-      expect(continuation.headers.get('x-account')).toBe('A')
-      await t.respond(continuation, 429, 'primary')
-      expect(
-        (await t.retry(2, { retry: true, delay: 37 }, rateLimit)).decision,
-      ).toEqual({ retry: true, delay: 25 })
-      expect(t.retries.at(-1)?.reason).toBe('wait-then-reselect')
+  test.each([
+    ['succeeded', 'session.execution.succeeded', {}],
+    ['superseded', 'session.execution.interrupted', { reason: 'superseded' }],
+    ['shutdown', 'session.execution.interrupted', { reason: 'shutdown' }],
+  ] as const)(
+    'a %s terminal preserves the output pin on a pending wait',
+    async (_terminal, type, data) => {
+      const t = await setup({ waitThenReselect: { delayMs: 25 } })
+      try {
+        await t.interrupt((await t.send()).request)
+        expect((await t.retry(1)).decision.retry).toBe(true)
+        const continuation = (await t.send()).request
+        expect(continuation.headers.get('x-account')).toBe('A')
+        await t.respond(continuation, 429, 'primary')
+        expect(
+          (await t.retry(2, { retry: true, delay: 37 }, rateLimit)).decision,
+        ).toEqual({ retry: true, delay: 25 })
+        expect(t.retries.at(-1)?.reason).toBe('wait-then-reselect')
 
-      await t.host.publish('session.execution.interrupted', {
-        sessionID: scopeFor().sessionID,
-        reason: 'user',
-      })
-      t.plan.next = 'B'
-      t.plan.limited.add('A')
+        await t.host.publish(type, { ...data, sessionID: scopeFor().sessionID })
+        t.plan.next = 'B'
+        t.plan.limited.add('A')
 
-      await expect(t.send()).rejects.toThrow(
-        new OpenCode2AuthError({
-          kind: 'no-account',
-          providerID: scopeFor().model.providerID,
-          sessionID: scopeFor().sessionID,
-          requestKind: 'primary',
-        }),
-      )
-      expect(
-        t.accountHeaders.mock.calls.map(([input]) => input.accountId),
-      ).toEqual(['A', 'A'])
-    } finally {
-      await t.auth.dispose()
-    }
-  })
+        await expect(t.send()).rejects.toThrow(
+          new OpenCode2AuthError({
+            kind: 'no-account',
+            providerID: scopeFor().model.providerID,
+            sessionID: scopeFor().sessionID,
+            requestKind: 'primary',
+          }),
+        )
+        expect(
+          t.accountHeaders.mock.calls.map(([input]) => input.accountId),
+        ).toEqual(['A', 'A'])
+      } finally {
+        await t.auth.dispose()
+      }
+    },
+  )
 
   test('a terminal observed late preserves a newer post-output retry', async () => {
     const t = await setup()
@@ -463,8 +470,7 @@ describe('a continuation after output keeps its account on the next hop', () => 
 })
 
 describe('pending retries across execution and transport boundaries', () => {
-  // A user interrupt currently leaves the cancelled continuation's account pending.
-  test.skip('a new prompt does not inherit a cancelled continuation', async () => {
+  test('a new prompt does not inherit a cancelled continuation', async () => {
     const t = await setup()
     try {
       const first = (await t.send('primary', 'First prompt')).request
@@ -482,6 +488,9 @@ describe('pending retries across execution and transport boundaries', () => {
 
       const next = (await t.send('primary', 'New prompt')).request
       expect(next.headers.get('x-account')).toBe('B')
+      expect(t.dropSameAccountRetry.mock.calls).toEqual(
+        t.retrySameAccount.mock.calls,
+      )
     } finally {
       await t.auth.dispose()
     }
@@ -549,6 +558,27 @@ describe('pending retries across execution and transport boundaries', () => {
         sessionID: t.scope.sessionID,
       })
       expect((await t.http(headers)).request.headers.get('x-account')).toBe('A')
+    } finally {
+      await t.auth.dispose()
+    }
+  })
+
+  test('a user interrupt clears the fallback guard for the next request in that session', async () => {
+    const t = await setupFallback()
+    const other = scopeFor('primary', 'ses_other')
+    try {
+      await t.queueContinuation(other)
+      await t.handshake(undefined, other)
+      await t.continuation()
+      await t.host.publish('session.execution.interrupted', {
+        sessionID: t.scope.sessionID,
+        reason: 'user',
+      })
+
+      expect((await t.http()).request.headers.get('x-account')).toBe('B')
+      expect(
+        (await t.http(undefined, other)).request.headers.get('x-account'),
+      ).toBe('A')
     } finally {
       await t.auth.dispose()
     }
