@@ -53,6 +53,14 @@ interface RequestToken {
   outputRoute?: Pick<AccountRequest, 'accountId' | 'modelID' | 'agent'>
 }
 
+interface FallbackGuard {
+  readonly sessionID: string
+  readonly request: RequestToken
+  readonly route: NonNullable<RequestToken['outputRoute']>
+  readonly sameAccountRetry: boolean
+  httpAttemptId?: string
+}
+
 /**
  * One attempt: an account chosen for one send of one session and request
  * kind. Several attempts of one session and kind can be open at once.
@@ -82,6 +90,8 @@ interface AttemptRecord<A> {
    * for the same attempt is a new send and gets a new attempt.
    */
   transport?: Transport
+  /** Older guarded HTTP sends cannot retire the current handoff's request. */
+  fallbackHandoff?: FallbackGuard
   status?: number
   outputStarted: boolean
   /** An attributed read failed: witnessed by the HTTP reader or an unfinished socket response. */
@@ -310,6 +320,13 @@ async function installAuth<Q, A>(
   const byRequest = new WeakMap<Request, AttemptRecord<A>>()
   /** Retries the retry hook asked for, by `sessionID:kind`. */
   const pendingRetries = new Map<string, PendingRetry>()
+  // OpenCode can fall back to HTTP after a WebSocket handshake. The HTTP hook
+  // carries no link to it, so keep the output account by session and kind.
+  // An ambiguous send failure can leave the next request pinned or refused:
+  // a terminal may belong to an earlier run, so only an attributable reply
+  // (or forgetting the session) proves the guard can be removed safely.
+  const fallbackGuards = new Map<string, FallbackGuard>()
+  let warnedFallbackLimit = false
   // A shared clock orders retries and terminal observations without retaining session state.
   let retryOrder = 0
   // The host names only session/kind for frames and only session for retry.
@@ -541,8 +558,12 @@ async function installAuth<Q, A>(
     // An error status can end before retry runs, and a limit may have arrived
     // on an earlier event. Neither is a successful logical request.
     if (
-      error?.reason === 'cancelled' ||
-      (!error && !rec.limit && (rec.status === undefined || rec.status < 400))
+      fallbackGuards.get(rec.key)?.request !== rec.request &&
+      (!rec.fallbackHandoff || rec.fallbackHandoff.httpAttemptId === rec.id) &&
+      (error?.reason === 'cancelled' ||
+        (!error &&
+          !rec.limit &&
+          (rec.status === undefined || rec.status < 400)))
     )
       retireRequest(rec.request)
     rec.endOrder = ++attemptOrder
@@ -590,6 +611,45 @@ async function installAuth<Q, A>(
       requestKind: scope.kind,
       ...(message === undefined ? {} : { message }),
     })
+
+  const requireFallbackRoom = (key: string, scope: RequestScope) => {
+    if (fallbackGuards.has(key) || fallbackGuards.size < maxRecords) return
+    // Dropping an unresolved guard could let its eventual fallback change accounts.
+    if (!warnedFallbackLimit) {
+      warnedFallbackLimit = true
+      warn('opencode2 auth reached the continuation fallback guard limit', {
+        maxRecords,
+      })
+    }
+    throw noAccount(scope)
+  }
+
+  const checkFallbackRoute = (scope: RequestScope, fallback: FallbackGuard) => {
+    if (
+      fallback.route.modelID !== scope.modelID ||
+      fallback.route.agent !== scope.agent ||
+      mixed(scope.sessionID)
+    )
+      throw noAccount(scope)
+  }
+
+  const guardFallback = (rec: AttemptRecord<A>) => {
+    const route = rec.request.outputRoute
+    if (!route) return
+    requireFallbackRoom(rec.key, rec.scope)
+    const fallback = fallbackGuards.get(rec.key)
+    if (fallback) {
+      if (fallback.request !== rec.request) throw noAccount(rec.scope)
+      delete fallback.httpAttemptId
+    } else {
+      fallbackGuards.set(rec.key, {
+        sessionID: rec.scope.sessionID,
+        request: rec.request,
+        route,
+        sameAccountRetry: rec.sameAccountRetry === true,
+      })
+    }
+  }
 
   const revokeSelections = (sessionID: string) => {
     inFlight.get(sessionID)?.clear()
@@ -673,10 +733,18 @@ async function installAuth<Q, A>(
     transport?: Transport,
   ): Promise<AttemptRecord<A>> => {
     const key = keyOf(scope.sessionID, scope.kind)
-    const { input, accountId, sameAccountRetry, request } =
+    const { input, accountId, sameAccountRetry, request, fallback } =
       await afterChoiceWork(scope.sessionID, async () => {
         assertActive()
         const retried = pendingRetries.get(key)
+        const fallback = fallbackGuards.get(key)
+        if (fallback) {
+          checkFallbackRoute(scope, fallback)
+          if (retried && retried.request !== fallback.request)
+            throw noAccount(scope)
+        }
+        if (transport === 'ws' && retried?.request.outputRoute)
+          requireFallbackRoom(key, scope)
         pendingRetries.delete(key)
         const others = attemptsOf(key)
         if (
@@ -692,7 +760,7 @@ async function installAuth<Q, A>(
               kind: scope.kind,
             },
           )
-        if (!retried) {
+        if (!retried && !fallback) {
           // A failed attempt that the host never retried must not seed the next
           // logical request. Live attempts keep their own independent tokens.
           const live = new Set(
@@ -703,8 +771,12 @@ async function installAuth<Q, A>(
           for (const rec of others)
             if (!live.has(rec.request)) retireRequest(rec.request)
         }
-        const request = retried?.request ?? { excluded: new Set<string>() }
-        const previousAccountId = retried?.accountId ?? newestOf(key)?.accountId
+        const request = fallback?.request ??
+          retried?.request ?? { excluded: new Set<string>() }
+        const previousAccountId =
+          retried?.accountId ??
+          fallback?.route.accountId ??
+          newestOf(key)?.accountId
         supersede(key)
         const next = retried?.next
         const sameAccount = retried?.sameAccount
@@ -718,7 +790,7 @@ async function installAuth<Q, A>(
           next.input.agent === scope.agent
         const wake = retried?.wake
         const committed = matches && wake === undefined ? next : undefined
-        const outputRoute = request.outputRoute
+        const outputRoute = fallback?.route ?? request.outputRoute
         const input: ChooseAccountInput = {
           ...scope,
           phase: 'request',
@@ -755,9 +827,15 @@ async function installAuth<Q, A>(
             await inChoiceOrder(scope.sessionID, () => releaseChoice(committed))
           throw noAccount(scope)
         }
-        const choice = sameRoute
+        // A physical fallback is not a new retry decision. A later retry that
+        // needs to choose again cannot use the unresolved guard to skip that check.
+        let choice: ChooseAccountResult = sameRoute
           ? sameAccount.accountId
-          : (committed?.accountId ?? (await adapter.chooseAccount(input)))
+          : committed?.accountId
+        if (choice === undefined) {
+          if (!fallback) choice = await adapter.chooseAccount(input)
+          else if (!retried) choice = fallback.route.accountId
+        }
         let accountId = typeof choice === 'string' ? choice : undefined
         if (
           (outputRoute &&
@@ -777,14 +855,27 @@ async function installAuth<Q, A>(
           accountId = undefined
           assertActive()
         }
-        return { input, accountId, sameAccountRetry: sameRoute, request }
+        return {
+          input,
+          accountId,
+          sameAccountRetry: sameRoute || fallback?.sameAccountRetry === true,
+          request,
+          fallback,
+        }
       })
     assertActive()
     let headers: HeaderEdits = {}
     let data: A | undefined
     if (accountId !== undefined) {
-      const result = await adapter.accountHeaders({ ...scope, accountId })
+      let result: Awaited<ReturnType<typeof adapter.accountHeaders>>
+      try {
+        result = await adapter.accountHeaders({ ...scope, accountId })
+      } catch (error) {
+        if (fallback) throw noAccount(scope)
+        throw error
+      }
       assertActive()
+      if (fallback) checkFallbackRoute(scope, fallback)
       if (isHeadersResult(result)) {
         headers = result.headers
         data = result.attempt
@@ -862,9 +953,16 @@ async function installAuth<Q, A>(
         )
       }
     }
+    const fallback = fallbackGuards.get(key)
+    if (fallback) {
+      checkFallbackRoute(scope, fallback)
+      if (rec?.request !== fallback.request) rec = undefined
+    }
     if (!rec || rec.transport !== undefined || rec.ended)
       rec = await select(scope, hook, assertActive, transport)
     else {
+      if (transport === 'ws' && rec.request.outputRoute)
+        requireFallbackRoom(key, scope)
       rec.transport = transport
       if (rec.attempt) rec.attempt.transport = transport
     }
@@ -1094,6 +1192,12 @@ async function installAuth<Q, A>(
             applyHeaderEditsTo(headers, rec.headers)
             guard(rec.scope, headers.entries())
             const final = new Request(request, { headers })
+            const fallback = fallbackGuards.get(rec.key)
+            if (fallback?.request === rec.request) {
+              checkFallbackRoute(rec.scope, fallback)
+              fallback.httpAttemptId = rec.id
+              rec.fallbackHandoff = fallback
+            }
             byRequest.set(final, rec)
             draft.request = final
           })
@@ -1118,6 +1222,8 @@ async function installAuth<Q, A>(
           }
           return
         }
+        if (fallbackGuards.get(rec.key)?.httpAttemptId === rec.id)
+          fallbackGuards.delete(rec.key)
         const original = draft.response
         if (adapter.answeredBy && rec.attempt) {
           const attempt = rec.attempt
@@ -1254,6 +1360,7 @@ async function installAuth<Q, A>(
             if (ownership?.refuseMisplaced)
               applyHeaderEdits(draft.headers, rec.headers)
             guard(rec.scope, Object.entries(draft.headers))
+            guardFallback(rec)
             if (ownership) ownedSockets.add(rec.key)
           })
         })
@@ -1289,8 +1396,11 @@ async function installAuth<Q, A>(
     await ctx.session.hook(
       'experimental.ws.receive',
       (draft) => {
-        if (ownership && !ownedSockets.has(keyOf(draft.sessionID, draft.kind)))
-          return
+        const key = keyOf(draft.sessionID, draft.kind)
+        if (ownership && !ownedSockets.has(key)) return
+        const fallback = fallbackGuards.get(key)
+        if (fallback && fallback.httpAttemptId === undefined)
+          fallbackGuards.delete(key)
         const rec = liveOnSocket(draft.sessionID, draft.kind)
         if (!rec) return
         try {
@@ -1773,6 +1883,9 @@ async function installAuth<Q, A>(
 
   const forgetSession = (sessionID: string) => {
     revokeSelections(sessionID)
+    for (const [key, fallback] of fallbackGuards) {
+      if (fallback.sessionID === sessionID) fallbackGuards.delete(key)
+    }
     latestTransportOwned.delete(sessionID)
     // A foreign send can retry after forgetting and reuse of this session id.
     // Retain its ownership history until disposal; owned-only ids need no tombstone.
@@ -1879,6 +1992,7 @@ async function installAuth<Q, A>(
         abandon(rec, 'the installation was disposed')
       attempts.clear()
       for (const key of pendingRetries.keys()) discardPending(key)
+      fallbackGuards.clear()
       ownedSockets.clear()
       latestTransportOwned.clear()
       transportSeen.clear()
