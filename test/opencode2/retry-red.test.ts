@@ -637,7 +637,10 @@ describe('pending retries across execution and transport boundaries', () => {
     }
   })
 
-  // Without a run ID on hooks or terminals, keeping the hold would bring back stale holds; losing it only means a fresh choice before output, never a shown reply moving accounts.
+  // Known limit, so skipped: terminals name only the session, not the run. If
+  // cleanup kept holds across a terminal, a hold from a stopped run would steer
+  // the next prompt. Losing this newer hold only means a fresh choice before any
+  // output, never a shown reply moving accounts.
   test.skip('a late success does not remove the next execution’s pre-output hold', async () => {
     const target = Date.now() + 25
     const t = await setup({ hold: { delayMs: 25, target } })
